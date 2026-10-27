@@ -189,11 +189,13 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     expect(
       within(web).getByText("Installed from a link (plugins.example.com)"),
     ).toBeInTheDocument();
-    expect(within(web).getByRole("button", { name: "Enable plugin" })).toBeEnabled();
+    expect(within(web).getByRole("switch", { name: "GitHub Pull Requests" })).toBeEnabled();
 
     const local = screen.getByText("Kubernetes Pods").closest(".rounded-xl") as HTMLElement;
     expect(within(local).getAllByText("Needs the desktop app").length).toBeGreaterThan(0);
-    expect(within(local).getByRole("button", { name: "Needs the desktop app" })).toBeDisabled();
+    const localSwitch = within(local).getByRole("switch", { name: "Kubernetes Pods" });
+    expect(localSwitch).toBeDisabled();
+    expect(localSwitch).toHaveAttribute("title", "Needs the desktop app");
   });
 
   it("says an uninstall removes the plugin's files from this browser, naming it by id without a name", () => {
@@ -304,9 +306,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       listPlugins([makePlugin({ fingerprint_changed: true, enabled: false })]);
       render(<PluginSettingsPage />);
 
-      const toggle = screen.getByRole("button", {
-        name: "Trust the new version before enabling",
-      });
+      const toggle = screen.getByRole("switch", { name: "Test Plugin" });
       expect(toggle).toBeDisabled();
       expect(toggle).toHaveAttribute("title", "Trust the new version before enabling");
       fireEvent.click(toggle);
@@ -318,14 +318,32 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       listPlugins([makePlugin({ fingerprint_changed: true, enabled: true })]);
       render(<PluginSettingsPage />);
 
-      const toggle = screen.getByRole("button", { name: "Disable plugin" });
+      const toggle = screen.getByRole("switch", { name: "Test Plugin" });
       expect(toggle).toBeEnabled();
+      expect(toggle).toHaveAttribute("aria-checked", "true");
       expect(toggle).toHaveAttribute("title", "Disable plugin");
       fireEvent.click(toggle);
       expect(disable).toHaveBeenCalledWith("dev.example.test");
       expect(enable).not.toHaveBeenCalled();
       expect(screen.getByText("Plugin bundle has changed")).toBeInTheDocument();
     });
+  });
+
+  it("names each switch after its plugin and gives its state", () => {
+    listPlugins([
+      makePlugin({ plugin_id: "dev.example.on", display_name: "On Plugin", enabled: true }),
+      makePlugin({ plugin_id: "dev.example.off", display_name: "Off Plugin", enabled: false }),
+    ]);
+    render(<PluginSettingsPage />);
+
+    expect(screen.getByRole("switch", { name: "On Plugin" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("switch", { name: "Off Plugin" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 
   describe("the switch of a plugin with permissions not granted", () => {
@@ -353,7 +371,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       ]);
       render(<PluginSettingsPage />);
 
-      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      fireEvent.click(screen.getByRole("switch", { name: "Test Plugin" }));
       expect(enable).not.toHaveBeenCalled();
       const dialog = screen.getByRole("dialog");
       expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
@@ -374,7 +392,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       ]);
       render(<PluginSettingsPage />);
 
-      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      fireEvent.click(screen.getByRole("switch", { name: "Test Plugin" }));
       expect(enable).toHaveBeenCalledWith("dev.example.test", expect.anything());
       expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
     });
@@ -389,7 +407,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       listPlugins([makePlugin({ capabilities: ["ui.panel"] })]);
       render(<PluginSettingsPage />);
 
-      fireEvent.click(screen.getByRole("button", { name: "Enable plugin" }));
+      fireEvent.click(screen.getByRole("switch", { name: "Test Plugin" }));
       const dialog = screen.getByRole("dialog");
       fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
       expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
@@ -650,9 +668,11 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
         within(dialog).getByText("Git repository https://github.com/rim-platform/plugin-k8s-pods"),
       ).toBeInTheDocument();
 
-      const panel = within(dialog).getByText("ui.panel").closest("li") as HTMLElement;
+      const panel = within(dialog).getByText("Render UI Panels").closest("li") as HTMLElement;
       expect(panel).toHaveTextContent("Granted");
-      const fetch = within(dialog).getByText("network.fetch").closest("li") as HTMLElement;
+      const fetch = within(dialog)
+        .getByText("Connect to listed sites")
+        .closest("li") as HTMLElement;
       expect(fetch).toHaveTextContent("Not granted");
       expect(within(dialog).getByText("https://k8s.example.com:6443")).toBeInTheDocument();
 

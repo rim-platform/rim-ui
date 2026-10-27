@@ -275,6 +275,24 @@ describe("PluginSettingsDialog", () => {
     expect(document.querySelector('input[type="password"]')).toBeNull();
   });
 
+  it("offers only Close in the web app when every setting is secret", () => {
+    const secretOnly: PluginInfo = {
+      ...PLUGIN,
+      settings_schema: SCHEMA.filter((setting) => setting.key === "api_token"),
+    };
+    mockHost(formState({ values: {}, secrets: { api_token: false }, secrets_available: false }));
+    const onClose = vi.fn();
+    render(<PluginSettingsDialog plugin={secretOnly} onClose={onClose} />);
+
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset to defaults" })).toBeNull();
+    const footerClose = screen
+      .getAllByRole("button", { name: "Close" })
+      .find((button) => button.textContent === "Close");
+    fireEvent.click(footerClose!);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("says why secret settings cannot be read when the vault does not open", () => {
     open(formState({ secrets: {}, secrets_error: "the keyring is locked" }));
     expect(

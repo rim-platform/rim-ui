@@ -98,16 +98,27 @@ function Centered({ children }: { children: ReactNode }) {
   );
 }
 
+/** The line above the workspace's name: what the viewer can do with the link, or their standing. */
+function linkSubtitle(preview: PublicJoinLinkPreviewData): string {
+  switch (preview.viewer) {
+    case PublicJoinLinkViewer.BANNED:
+      return "You can't join";
+    case PublicJoinLinkViewer.MEMBER:
+      return "You're a member of";
+    case PublicJoinLinkViewer.REQUEST_OPEN:
+      return "You asked to join";
+    default:
+      return preview.mode === PublicJoinLinkMode.REQUESTS ? "You can ask to join" : "You can join";
+  }
+}
+
 function LinkCard({ token, preview }: { token: string; preview: PublicJoinLinkPreviewData }) {
-  const asks = preview.mode === PublicJoinLinkMode.REQUESTS;
   return (
     <Centered>
       <div className="w-full max-w-lg space-y-6">
         <header className="text-center">
           <BrandHeading />
-          <p className="mt-1 text-sm text-rim-text-muted">
-            {asks ? "You can ask to join" : "You can join"}
-          </p>
+          <p className="mt-1 text-sm text-rim-text-muted">{linkSubtitle(preview)}</p>
           <h2 className="mt-2 text-lg font-semibold text-rim-text">{preview.name}</h2>
         </header>
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
@@ -125,11 +136,7 @@ function ViewerAction({ token, preview }: { token: string; preview: PublicJoinLi
     case PublicJoinLinkViewer.MEMBER:
       return <AlreadyMember preview={preview} />;
     case PublicJoinLinkViewer.BANNED:
-      return (
-        <p role="alert" className={ERROR_BOX}>
-          {BANNED_MESSAGE}
-        </p>
-      );
+      return <Banned />;
     case PublicJoinLinkViewer.REQUEST_OPEN:
       return <Waiting preview={preview} />;
     case PublicJoinLinkViewer.NOT_MEMBER:
@@ -218,6 +225,20 @@ function useOpenWorkspace() {
     setWorkspaceId(serverId);
     navigate("/");
   };
+}
+
+function Banned() {
+  const navigate = useNavigate();
+  return (
+    <div className="space-y-4">
+      <p role="alert" className={ERROR_BOX}>
+        {BANNED_MESSAGE}
+      </p>
+      <Button type="button" className="w-full" onClick={() => navigate("/")}>
+        Open RIM
+      </Button>
+    </div>
+  );
 }
 
 function AlreadyMember({ preview }: { preview: PublicJoinLinkPreviewData }) {

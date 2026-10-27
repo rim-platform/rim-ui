@@ -227,7 +227,7 @@ describe("InviteDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
     expect(mutate).toHaveBeenCalledWith({ serverId: "ws-1", role: "MEMBER" }, expect.anything());
-    expect(screen.getByText(/It expires in 7 days\./)).toBeInTheDocument();
+    expect(screen.getByText(/and it expires in 7 days\./)).toBeInTheDocument();
   });
 
   it.each([
@@ -247,7 +247,7 @@ describe("InviteDialog", () => {
       { serverId: "ws-1", role: "MEMBER", expiresInDays: days },
       expect.anything(),
     );
-    expect(screen.getByText(new RegExp(`It expires in ${label}\\.`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`and it expires in ${label}\\.`))).toBeInTheDocument();
   });
 
   it("puts a server VALIDATION about the expiry on the expiry field, not the email field", () => {
@@ -315,9 +315,9 @@ describe("InviteDialog", () => {
   });
 
   it.each([
-    [3, { maxUses: 3 }, "Each link can be used up to 3 times."],
-    [1, { maxUses: 1 }, "Each link can be used once."],
-    [50, {}, "Each link can be used up to 10 times."],
+    [3, { maxUses: 3 }, "Up to 3 people can join with it"],
+    [1, { maxUses: 1 }, "One person can join with it"],
+    [50, {}, "Up to 10 people can join with it"],
   ])("asks for no more uses than the instance's cap of %i", (cap, uses, text) => {
     const mutate = vi.fn();
     mockCreateInvite({ mutate });
@@ -325,12 +325,28 @@ describe("InviteDialog", () => {
       wrapper: withLimits({ inviteMaxUses: cap }),
     });
 
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.getByText(text, { exact: false })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
     expect(mutate).toHaveBeenCalledWith(
       { serverId: "ws-1", role: "MEMBER", ...uses },
       expect.anything(),
     );
+  });
+
+  it("says the same number of people after the link is generated", () => {
+    const mutate = vi.fn((_input, options) => {
+      options?.onSuccess?.({ createInvite: { inviteToken: "tok-1", inviteId: "inv-1" } });
+    });
+    mockCreateInvite({ mutate });
+    render(<InviteDialog open onClose={() => {}} />, {
+      wrapper: withLimits({ inviteMaxUses: 3 }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /generate invite link/i }));
+
+    expect(
+      screen.getByText("Up to 3 people can join with it, and it expires in", { exact: false }),
+    ).toBeInTheDocument();
   });
 
   it("shows the daily invite cap, and that it is reached once the server refuses", () => {

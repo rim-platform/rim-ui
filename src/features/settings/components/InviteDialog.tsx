@@ -94,6 +94,10 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
   const limits = useServerInfo().limits;
   const usesCap = limits?.inviteMaxUses;
   const maxUses = usesCap != null && usesCap < DEFAULT_INVITE_USES ? usesCap : undefined;
+  // How many people one link admits, said the same way before and after it is generated.
+  const linkUses = maxUses ?? DEFAULT_INVITE_USES;
+  const usesSentence =
+    linkUses === 1 ? "One person can join with it" : `Up to ${linkUses} people can join with it`;
   const dailyCap = limits?.invitesPerUserPerDay;
   // The client has no count of today's invites; a refusal for the daily cap means it is reached.
   const refusedDaily =
@@ -173,8 +177,8 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
         {!inviteLink ? (
           <>
             <p className="text-sm text-rim-text-muted">
-              Generate an invite link to share with the people you want to add to this workspace. It
-              admits up to {DEFAULT_INVITE_USES} people.
+              Generate an invite link to share with the people you want to add to this workspace.{" "}
+              {usesSentence}.
             </p>
             <div>
               <p className="mb-1 text-xs font-medium text-rim-text">Joins as</p>
@@ -265,13 +269,6 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
                 hideReason
               />
             )}
-            {usesCap != null && (
-              <p className="text-xs text-rim-text-muted">
-                {maxUses === 1
-                  ? "Each link can be used once."
-                  : `Each link can be used up to ${maxUses ?? DEFAULT_INVITE_USES} times.`}
-              </p>
-            )}
             <LimitNote limit={dailyLimit} />
             {showGenericError && (
               <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
@@ -290,8 +287,8 @@ export function InviteDialog({ open, onClose, workspaceId: target }: InviteDialo
         ) : (
           <>
             <p className="text-sm text-rim-text-muted">
-              Share this link with the person you want to invite. It expires in{" "}
-              {expiryLabel(expiresInDays)}.
+              Share this link with {linkUses === 1 ? "the person" : "the people"} you want to
+              invite. {usesSentence}, and it expires in {expiryLabel(expiresInDays)}.
             </p>
             <div className="flex items-center gap-2 rounded-lg border border-rim-line bg-rim-void px-3 py-2.5">
               <span className="min-w-0 flex-1 truncate text-sm text-rim-text">{inviteLink}</span>

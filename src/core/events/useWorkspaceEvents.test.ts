@@ -883,7 +883,7 @@ describe("pipeline firings", () => {
     applyWorkspaceEvent(fired(1), withPipeline(2), "ws-1");
 
     expect(toast.warning).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
-      description: "1 of 2 actions ran (trigger: NewMessage)",
+      description: "1 of 2 actions ran after a new message",
     });
     expect(toast.success).not.toHaveBeenCalled();
   });
@@ -892,7 +892,7 @@ describe("pipeline firings", () => {
     applyWorkspaceEvent(fired(2), withPipeline(2), "ws-1");
 
     expect(toast.success).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
-      description: "2 of 2 actions ran (trigger: NewMessage)",
+      description: "2 of 2 actions ran after a new message",
     });
     expect(toast.warning).not.toHaveBeenCalled();
   });
@@ -901,7 +901,7 @@ describe("pipeline firings", () => {
     applyWorkspaceEvent(fired(1), new QueryClient(), "ws-1");
 
     expect(toast.success).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
-      description: "1 action ran (trigger: NewMessage)",
+      description: "1 action ran after a new message",
     });
   });
 });

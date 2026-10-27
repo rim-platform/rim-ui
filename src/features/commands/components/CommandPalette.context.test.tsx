@@ -260,11 +260,21 @@ describe("CommandPalette search", () => {
     expect(first.previousElementSibling).toHaveTextContent("Chat");
   });
 
-  it("lists chat.create_group as New message", () => {
+  it("is a modal dialog named Command palette", () => {
     render(<CommandPalette />);
     act(() => useCommandStore.getState().openCommandPalette());
 
-    expect(screen.getByText("New message")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
+  });
+
+  it("lists chat.create_group as New Message", () => {
+    render(<CommandPalette />);
+    act(() => useCommandStore.getState().openCommandPalette());
+
+    expect(screen.getByText("New Message")).toBeInTheDocument();
     expect(screen.getByText("Start a direct message or a group conversation.")).toBeInTheDocument();
     expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
   });
@@ -388,7 +398,7 @@ describe("CommandPalette pipes", () => {
 
   it("offers only commands the server runs with this context after a pipe", () => {
     openPalette();
-    expect(screen.getByText("Toggle Zen mode")).toBeInTheDocument();
+    expect(screen.getByText("Toggle Zen Mode")).toBeInTheDocument();
 
     typeInPalette("x|");
 
@@ -396,7 +406,7 @@ describe("CommandPalette pipes", () => {
     expect(screen.queryByText("Kick Member")).not.toBeInTheDocument();
     expect(screen.queryByText("Create Channel")).not.toBeInTheDocument();
     expect(screen.queryByText("Search Messages")).not.toBeInTheDocument();
-    expect(screen.queryByText("Toggle Zen mode")).not.toBeInTheDocument();
+    expect(screen.queryByText("Toggle Zen Mode")).not.toBeInTheDocument();
   });
 
   it("refuses a stage that runs only in the app without sending it", async () => {
@@ -408,7 +418,7 @@ describe("CommandPalette pipes", () => {
 
     expect(mutateAsync).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(
-      "Pipe stage 1: Toggle Zen mode runs only in this app, so it cannot be part of a pipe.",
+      "Pipe stage 1: Toggle Zen Mode runs only in this app, so it cannot be part of a pipe.",
     );
   });
 });

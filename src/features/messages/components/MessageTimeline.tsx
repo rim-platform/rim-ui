@@ -19,6 +19,7 @@ import { useMessageContextMenu } from "../hooks/useMessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
+import { LockMark } from "../../e2ee/components/LockMark";
 import { ConversationContinuity } from "../../relay/components/ConversationContinuity";
 import { DmRequestBar } from "../../relay/components/DmRequestBar";
 import { incomingRequestOf } from "../../relay/components/useDmRequestActions";
@@ -327,11 +328,22 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
           {/* Top sentinel for the infinite-scroll trigger; scrolls with the content. */}
           <div ref={topSentinelRef} aria-hidden className="absolute inset-x-0 top-0 h-1" />
           {items.length === 0 ? (
-            <p className="py-11 text-center text-sm text-rim-text-muted">
-              {isLensActive
-                ? "No messages match this lens."
-                : "No messages yet. Start the conversation below."}
-            </p>
+            <div className="py-11">
+              <p className="text-center text-sm text-rim-text-muted">
+                {isLensActive
+                  ? "No messages match this lens."
+                  : "No messages yet. Start the conversation below."}
+              </p>
+              {!isLensActive && e2ee.encrypted && (
+                <p
+                  data-testid="timeline-empty-encrypted"
+                  className="flex items-center justify-center gap-1 text-xs text-rim-text-faint"
+                >
+                  <LockMark />
+                  This conversation is end-to-end encrypted.
+                </p>
+              )}
+            </div>
           ) : (
             <div
               data-virtual-list

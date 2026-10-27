@@ -38,8 +38,8 @@ describe("PluginAuditPanel", () => {
     const history = screen.getByRole("region", { name: "Permission history" });
     const items = history.querySelectorAll("li");
     expect(items).toHaveLength(3);
-    expect(items[0].textContent).toMatch(/^ui.panel revoked/);
-    expect(items[2].textContent).toMatch(/^chat.read granted/);
+    expect(items[0].textContent).toMatch(/^Render UI Panels revoked/);
+    expect(items[2].textContent).toMatch(/^Read Chat Messages granted/);
 
     const reads = screen.getByRole("region", { name: "Encrypted messages read" });
     const days = [...reads.querySelectorAll("li")].map((li) => li.textContent);
@@ -49,13 +49,41 @@ describe("PluginAuditPanel", () => {
   it("revokes an encrypted grant first when its plain one is revoked", async () => {
     revoke.mockClear();
     render(<PluginAuditPanel plugin={plugin} />);
-    fireEvent.click(screen.getByRole("button", { name: "Revoke chat.read" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Read Chat Messages" }));
     await waitFor(() => expect(revoke).toHaveBeenCalledTimes(2));
     expect(revoke.mock.calls).toEqual([
       [{ pluginId: "dev.example.reader", capability: "chat.read.encrypted" }],
       [{ pluginId: "dev.example.reader", capability: "chat.read" }],
     ]);
     expect(screen.getByText("Revoking a permission stops the plugin.")).toBeInTheDocument();
+  });
+
+  it("names permissions as the permission prompt does", () => {
+    render(
+      <PluginAuditPanel
+        plugin={{
+          ...plugin,
+          approved_capabilities: ["ui.panel", "network.fetch"],
+          audit: {
+            grants: [
+              { capability: "ui.panel", action: "granted", at: "2026-10-01T09:00:00Z" },
+              { capability: "network.fetch", action: "granted", at: "2026-10-01T09:00:01Z" },
+            ],
+            encrypted_reads: {},
+          },
+        }}
+      />,
+    );
+    const approved = screen.getByRole("region", { name: "Approved permissions" });
+    const history = screen.getByRole("region", { name: "Permission history" });
+    for (const region of [approved, history]) {
+      expect(region).toHaveTextContent("Render UI Panels");
+      expect(region).toHaveTextContent("Connect to listed sites");
+      expect(region).not.toHaveTextContent("network.fetch");
+    }
+    expect(
+      screen.getByRole("button", { name: "Revoke Connect to listed sites" }),
+    ).toBeInTheDocument();
   });
 
   it("says when nothing was recorded", () => {

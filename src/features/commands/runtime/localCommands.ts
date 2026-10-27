@@ -24,38 +24,38 @@ function localCommand(id: string, title: string, description: string): CommandDe
 export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   localCommand(
     "workspace.show_shortcuts",
-    "Show keyboard shortcuts",
+    "Show Keyboard Shortcuts",
     "List every shortcut that works right now",
   ),
   localCommand(
     "workspace.toggle_vim_mode",
-    "Toggle Vim mode",
+    "Toggle Vim Mode",
     "Turn the modal normal and insert layer on or off",
   ),
   localCommand(
     "workspace.previous_unread_channel",
-    "Previous unread conversation",
+    "Previous Unread Conversation",
     "Go to the previous conversation with unread messages",
   ),
   localCommand(
     "workspace.navigate_panel_left",
-    "Focus the pane to the left",
+    "Focus the Pane to the Left",
     "Move keyboard focus to the pane on the left",
   ),
   localCommand(
     "workspace.navigate_panel_right",
-    "Focus the pane to the right",
+    "Focus the Pane to the Right",
     "Move keyboard focus to the pane on the right",
   ),
   localCommand(
     "workspace.cycle_layout_preset",
-    "Cycle layout preset",
+    "Cycle Layout Preset",
     "Switch to the next saved layout",
   ),
-  localCommand("workspace.toggle_zen_mode", "Toggle Zen mode", "Hide everything but the timeline"),
+  localCommand("workspace.toggle_zen_mode", "Toggle Zen Mode", "Hide everything but the timeline"),
   localCommand(
     "workspace.cycle_display_density",
-    "Cycle display density",
+    "Cycle Display Density",
     "Switch between comfortable, compact and ultra compact",
   ),
 ];
@@ -75,7 +75,7 @@ export const CLIENT_COMMAND_LABELS: Readonly<
   Record<string, { title: string; description: string }>
 > = {
   "chat.create_group": {
-    title: "New message",
+    title: "New Message",
     description: "Start a direct message or a group conversation.",
   },
 };

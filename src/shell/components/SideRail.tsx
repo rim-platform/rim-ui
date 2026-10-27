@@ -15,6 +15,7 @@ import { NotificationBellButton } from "../../features/notifications/components/
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
+import { Avatar } from "../../shared/ui/Avatar";
 import { cn } from "../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -46,8 +47,6 @@ export function SideRail() {
       inDirectSpace ? directSpaceIds.includes(space) : space === workspaceId,
     ),
   );
-
-  const avatarInitial = (user?.displayName ?? user?.username ?? "?").charAt(0).toUpperCase();
 
   const pluginPanels = runningPluginPanels(plugins);
   // Where the plugin panel menu opens, beside the Plugins item; null while it is closed.
@@ -146,12 +145,18 @@ export function SideRail() {
         <SettingsButton mainSurface={mainSurface} setMainSurface={setMainSurface} />
       </div>
 
-      <UserMenu avatarInitial={avatarInitial} username={user?.username} />
+      <UserMenu user={user} />
     </aside>
   );
 }
 
-function UserMenu({ avatarInitial, username }: { avatarInitial: string; username?: string }) {
+/** The signed-in person's avatar at the foot of the rail, opening status, settings and sign-out. */
+function UserMenu({
+  user,
+}: {
+  user: { id: string; username: string; displayName: string; avatarUrl: string | null } | undefined;
+}) {
+  const username = user?.username;
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [statusPosition, setStatusPosition] = useState<{ x: number; y: number } | null>(null);
   const setMainSurface = useShellStore((s) => s.setMainSurface);
@@ -188,9 +193,14 @@ function UserMenu({ avatarInitial, username }: { avatarInitial: string; username
         title={username ?? "User"}
         aria-label={username ?? "User menu"}
         onClick={handleAvatarClick}
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-rim-accent/20 text-xs font-medium text-rim-accent transition hover:bg-rim-accent/30"
+        className="rounded-full transition hover:brightness-110"
       >
-        {avatarInitial}
+        <Avatar
+          url={user?.avatarUrl}
+          name={user?.displayName || user?.username || "?"}
+          userId={user?.id ?? "me"}
+          size="md"
+        />
       </button>
 
       {menuPosition && (

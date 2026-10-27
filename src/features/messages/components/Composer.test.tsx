@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { server } from "../../../test/mocks/server";
 import { useAttachmentUploadStore } from "../api/useAttachmentUploads";
+import { MAX_ATTACHMENT_BYTES } from "../api/attachmentTypes";
 import { useDraftStore } from "../state/useDraftStore";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -597,19 +598,31 @@ describe("Composer — attachments switch", () => {
     expect(callsTo(requestMock, "mutation FinalizeAttachment")).toHaveLength(1);
   });
 
-  it("blocks unsupported files before creating a message", async () => {
+  it("refuses an unsupported file when it is attached", async () => {
     serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
       "mutation SendMessage": () => ({ sendMessage: { id: "unexpected" } }),
     });
     renderWith();
-    const textbox = await screen.findByRole("textbox");
+    await screen.findByRole("textbox");
     dropFile("program.exe");
-    fireEvent.submit(textbox.closest("form")!);
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("unsupported")),
-    );
+
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("unsupported"));
+    expect(screen.queryByText("program.exe")).toBeNull();
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
-    expect(screen.getByText("program.exe")).toBeInTheDocument();
+  });
+
+  it("refuses a file over 25 MiB when it is attached", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER);
+    renderWith();
+    const textbox = await screen.findByRole("textbox");
+    const big = new File(["x"], "big.bin");
+    Object.defineProperty(big, "size", { value: MAX_ATTACHMENT_BYTES + 1 });
+    fireEvent.drop(textbox.closest("form")!, { dataTransfer: { files: [big] } });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "big.bin is larger than 25 MiB, the largest file you can attach.",
+    );
+    expect(screen.queryByText("big.bin")).toBeNull();
   });
 
   it("submits once and preserves text entered while that send is pending", async () => {

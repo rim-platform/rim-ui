@@ -4,7 +4,19 @@ import type { PresenceStatus } from "./usePresenceStore";
 
 describe("usePresenceStore", () => {
   beforeEach(() => {
-    usePresenceStore.setState({ presenceMap: {} });
+    usePresenceStore.setState({ presenceMap: {}, selfId: null });
+  });
+
+  it("keeps the viewer's own status over the server's list and events", () => {
+    const store = usePresenceStore.getState();
+    store.setSelf("me", "ONLINE");
+    store.setBulk([
+      { userId: "me", status: "OFFLINE" },
+      { userId: "bob", status: "ONLINE" },
+    ]);
+    store.setPresence("me", "OFFLINE");
+
+    expect(usePresenceStore.getState().presenceMap).toMatchObject({ me: "ONLINE", bob: "ONLINE" });
   });
 
   it("starts with empty presence map", () => {

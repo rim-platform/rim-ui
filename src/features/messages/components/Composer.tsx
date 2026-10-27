@@ -564,8 +564,15 @@ function MessageComposer(props: ComposerProps) {
     }
   }
 
+  /** Stages the files that can be sent; each one that cannot is refused with a toast. */
   function addFiles(files: FileList | File[]) {
-    const arr = Array.from(files).map((file) => ({
+    const encrypted = Boolean(encryption || draft?.encrypted);
+    const accepted = Array.from(files).filter((file) => {
+      const problem = attachmentProblem(file, encrypted);
+      if (problem) toast.error(problem);
+      return problem === null;
+    });
+    const arr = accepted.map((file) => ({
       file,
       previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
     }));

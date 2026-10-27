@@ -34,6 +34,7 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { ConversationMembersPanel } from "./ConversationMembersPanel";
 
@@ -112,6 +113,7 @@ describe("ConversationMembersPanel", () => {
 
   afterEach(() => {
     useAuthStore.setState({ session: null });
+    useRelayStore.setState({ info: null });
   });
 
   it("lists the members, the viewer first and marked", async () => {
@@ -276,6 +278,35 @@ describe("ConversationMembersPanel", () => {
     expect(within(me).getByTestId("role-badge")).toHaveTextContent("Moderator");
     fireEvent.contextMenu(me);
     expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
+  });
+
+  it("shows no role badges in the direct space, where everyone is a guest", async () => {
+    useRelayStore.setState({
+      info: { serverId: "relay", roles: [], directSpaceId: "ws-1" },
+    });
+    const group = makeConversation({
+      conversationType: ConversationTypeEnum.GROUP,
+      memberIds: ["me", "u-alice"],
+      memberCount: 2,
+    });
+    routeRequests(requestMock, {
+      "query Me": () => ({ me: currentUser }),
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) => ({
+          ...m,
+          memberRole: ServerMemberRoleGql.GUEST,
+        })),
+      }),
+      "query Server(": () => ({
+        server: { id: "ws-1", name: "Direct", viewerRole: ServerMemberRoleGql.GUEST },
+      }),
+      "query Conversation(": () => ({ conversation: group }),
+      "query InboxConversations": () => emptyInbox,
+    });
+    await renderPanel(ServerMemberRoleGql.GUEST);
+
+    expect(screen.getByTestId("member-row-u-alice")).toBeInTheDocument();
+    expect(screen.queryByTestId("role-badge")).toBeNull();
   });
 
   it("gives ordinary members no badge, no moderation and no removal", async () => {

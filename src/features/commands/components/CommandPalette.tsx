@@ -390,6 +390,9 @@ export function CommandPalette() {
 
       {/* Palette */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="relative w-full max-w-lg rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}

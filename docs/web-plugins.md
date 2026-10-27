@@ -86,16 +86,19 @@ hash to the value after `#sha256=` before anything reads them, on every platform
   match the pin, and the UI checks them again. A refused scheme, redirect, size or hash is an
   `[AUDIT] event=plugin_bundle_fetch_refused` line in the app's log. Any `https://` host
   works, GitHub release assets included.
-- **Web.** The browser fetches the link without credentials, so the bundle's host must send
-  `Access-Control-Allow-Origin`. GitHub Pages, `raw.githubusercontent.com` and jsDelivr do;
-  GitHub release assets do not, so a link to one fails in the web app. A bundle the workspace's
-  plugin registry keeps on its own server comes from the app's own origin and needs none.
+- **Web.** The browser asks the RIM server to fetch the link (`POST /api/plugin-bundles/fetch`,
+  the `plugin_link_fetch` feature, [installing plugins from links in the
+  browser](web-plugin-links.md)). The server fetches only public `https://` addresses, follows
+  at most 10 safe redirects and checks the pin; the app checks the bytes again. Any public host
+  works, GitHub release assets included; a host on `localhost` or a private network is refused.
+  A bundle the workspace's plugin registry keeps on its own server comes from the app's own
+  origin.
 
 A workspace registry entry whose bundle is on another host is fetched the same way: through
 `plugin_fetch_bundle` on the desktop, with the entry's signed SHA-256 as the pin, so an entry
-pointing at a GitHub release asset installs there; from the browser without credentials on the
-web, where that host must send `Access-Control-Allow-Origin`. The workspace server's own copy
-is fetched from the app with the session on both.
+pointing at a GitHub release asset installs there; from the browser through the same server
+fetch on the web. The workspace server's own copy is fetched from the app with the session on
+both.
 
 ## Build and try the showcase
 
@@ -115,16 +118,17 @@ pick `dist/chat.rim.github-prs` of that clone. Approve both permissions with **A
 open **Pull requests** from the side rail's Plugins menu, or with **Open Pull requests** in the
 command palette.
 
-**Web.** Serve the bundle with CORS, for example from the clone's `dist` folder:
+**Web.** Put `dist/chat.rim.github-prs-<version>.rimbundle` on a public `https://` host, for
+example as a GitHub release asset; the RIM server fetches it, so a host on your own machine does
+not work. Then start the web app:
 
 ```sh
-npx http-server dist --cors -S -C cert.pem -K key.pem   # any https server with Access-Control-Allow-Origin: *
-npm run dev                                             # in rim-ui
+npm run dev   # in rim-ui
 ```
 
 Sign in, open Settings → Plugins → Install from link and paste
 `https://<host>/chat.rim.github-prs-<version>.rimbundle#sha256=<the printed hash>`. The
-bundle is fetched without credentials, must hash to the link's value, and must pass the
+bundle is fetched by the RIM server, must hash to the link's value, and must pass the
 manifest rules before the permission prompt opens. Installs from a workspace's plugin
 registry come with that registry; the install record already keeps their shape
 (`{ kind: "registry", … }`).

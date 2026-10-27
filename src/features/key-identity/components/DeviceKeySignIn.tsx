@@ -41,8 +41,25 @@ import { BrowserKeyNotice } from "./BrowserKeyNotice";
 const inputClass =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
 
+/** The start of an account's id, for an account this device knows no username for. */
+function idLabel(account: LocalKeyAccount): string {
+  return `${account.principalId.slice(0, 14)}…`;
+}
+
+/**
+ * How the sign-in list names an account: its username, or, before the first sign-in after a
+ * recovery or a link, which of the two it is.
+ */
 function accountLabel(account: LocalKeyAccount): string {
-  return account.username ?? `${account.principalId.slice(0, 14)}…`;
+  if (account.username) return account.username;
+  return account.hasIdentityKey ? "your recovered account" : "your linked account";
+}
+
+/** The sign-in button's label for an account. */
+function signInLabel(account: LocalKeyAccount): string {
+  return account.username
+    ? `Sign in as ${account.username}`
+    : `Sign in to ${accountLabel(account)}`;
 }
 
 /**
@@ -86,7 +103,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
     ) {
       setOpenId(null);
       setNotice(
-        `The sign-up of ${accountLabel(account)} never completed, so its keys were removed from ${here}. Create the account again.`,
+        `The sign-up of ${account.username ?? idLabel(account)} never completed, so its keys were removed from ${here}. Create the account again.`,
       );
       await qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(endpoint) });
       return true;
@@ -137,8 +154,11 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
             >
               <span className="flex items-center justify-center gap-2">
                 <KeyRound className="h-4 w-4" />
-                Sign in as {accountLabel(account)}
+                {signInLabel(account)}
               </span>
+              {!account.username && (
+                <span className="block font-mono text-[11px] opacity-75">{idLabel(account)}</span>
+              )}
             </Button>
           )}
           {revokedId === account.principalId && (

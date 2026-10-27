@@ -13,6 +13,7 @@ import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadg
 import { MemberMenuButton } from "../../workspaces/components/MemberMenuButton";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { joinNames } from "../../e2ee/utils/names";
 import { useConversation } from "../api/useConversation";
 import {
@@ -43,7 +44,8 @@ interface ConversationMembersPanelProps {
  * The open conversation's members, shown in the tool panel. Any member but a guest can invite
  * (channels and groups); Owner/Moderator can remove others; the viewer's own row offers Leave.
  * Rows show the workspace role and any timeout, and open the person's menu on a right click,
- * the ContextMenu key, a long press or their actions button.
+ * the ContextMenu key, a long press or their actions button. No role badges in the direct
+ * space, where everyone is a guest.
  */
 export function ConversationMembersPanel({
   workspaceId,
@@ -107,6 +109,7 @@ function MembersList({
   const memberLookup = useMemberLookup(workspaceId);
   const canModerate = useCanModerate(workspaceId);
   const isGuest = useIsGuest(workspaceId);
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const [inviteIds, setInviteIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -253,7 +256,7 @@ function MembersList({
                 <span className="flex min-w-0 items-center gap-1">
                   <span className="truncate text-sm text-rim-text">{member.displayName}</span>
                   {isSelf && <span className="text-xs text-rim-text-faint">(you)</span>}
-                  <RoleBadge role={member.role} />
+                  <RoleBadge role={inDirectSpace ? null : member.role} />
                   {member.pending && (
                     <span className="shrink-0 rounded border border-rim-accent/40 px-1 text-[10px] uppercase tracking-wider text-rim-accent">
                       Invited

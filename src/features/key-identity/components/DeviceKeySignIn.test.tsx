@@ -329,6 +329,30 @@ describe("DeviceKeySignIn", () => {
     );
     expect(api.forgetDeviceKeys).toHaveBeenCalledWith("rimp1_alice");
   });
+
+  it("names a recovered account without a username as the recovered account", async () => {
+    api.listDeviceKeyAccounts.mockResolvedValue([
+      { ...alice, username: null, hasIdentityKey: true },
+    ]);
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    const button = await screen.findByRole("button", {
+      name: /^Sign in to your recovered account/,
+    });
+    expect(button).toHaveTextContent("rimp1_alice…");
+    expect(screen.queryByRole("button", { name: /Sign in as rimp1/ })).toBeNull();
+  });
+
+  it("names a linked account without a username as the linked account", async () => {
+    api.listDeviceKeyAccounts.mockResolvedValue([
+      { ...alice, username: null, hasIdentityKey: false },
+    ]);
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    expect(
+      await screen.findByRole("button", { name: /^Sign in to your linked account/ }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("RecoverAccount", () => {

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { CONFLICT, graphqlErrorCode } from "../../../core/graphql/errors";
 import type { MessageItem } from "../../../core/types/messages";
 import { toast } from "../../../shared/toast";
 import { encryptedReport } from "../../e2ee/utils/report";
@@ -42,7 +43,8 @@ function description(direct: boolean, encrypted: boolean): string {
  * Reports a message with a required reason: to the workspace moderators, or for a DM or group
  * (a direct space, which has no moderators) to the people who run its server. An encrypted
  * message is reported by revealing its content with the proof that its sender's device sent
- * it; a message this device could not read or verify cannot be reported.
+ * it; a message this device could not read or verify cannot be reported. A message the viewer
+ * already reported says so and closes.
  */
 export function ReportMessageDialog({
   workspaceId,
@@ -61,18 +63,31 @@ export function ReportMessageDialog({
   const encrypted = message && (message.e2ee || message.encryption) ? message : null;
   const report = encrypted ? encryptedReport(encrypted, workspaceId, trimmed) : null;
   const refusal = report && "refusal" in report ? report.refusal : null;
+  // Set when the server answered that the viewer already reported this message.
+  const alreadyReported = useRef(false);
+
+  /** Takes the server's "already reported" answer as done; any other failure goes on. */
+  function noteAlreadyReported(err: unknown) {
+    if (graphqlErrorCode(err) === CONFLICT) {
+      alreadyReported.current = true;
+      return;
+    }
+    throw err;
+  }
 
   function send() {
     if (report) {
       if ("refusal" in report) return Promise.reject(new Error(report.refusal));
-      return reportEncrypted.mutateAsync({ input: report.input });
+      return reportEncrypted.mutateAsync({ input: report.input }).catch(noteAlreadyReported);
     }
-    return reportMessage.mutateAsync({
-      serverId: workspaceId,
-      conversationId,
-      messageId,
-      reason: trimmed,
-    });
+    return reportMessage
+      .mutateAsync({
+        serverId: workspaceId,
+        conversationId,
+        messageId,
+        reason: trimmed,
+      })
+      .catch(noteAlreadyReported);
   }
 
   return (
@@ -89,13 +104,15 @@ export function ReportMessageDialog({
       errorFallback="Could not report the message"
       onConfirm={send}
       onDone={() => {
-        toast.success(
-          direct
-            ? "Message reported to the people who run the server"
-            : workspaceName
-              ? `Reported to the moderators of ${workspaceName}`
-              : "Message reported to the moderators",
-        );
+        if (alreadyReported.current) toast.info("You already reported this message.");
+        else
+          toast.success(
+            direct
+              ? "Message reported to the people who run the server"
+              : workspaceName
+                ? `Reported to the moderators of ${workspaceName}`
+                : "Message reported to the moderators",
+          );
         onClose();
       }}
       onClose={onClose}

@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { useChannels } from "../api/useChannels";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useArchivedChannels, useChannels } from "../api/useChannels";
 import { useJoinChannelMutation } from "../api/useChannelMembership";
 import { useOpenConversation } from "../hooks/useOpenConversation";
 import type { ConversationSummary } from "../types";
@@ -18,27 +19,20 @@ interface BrowseChannelsDialogProps {
 /**
  * Every unarchived channel the viewer can see (public ones, joined or not, plus private ones
  * they belong to). Join adds a channel to the sidebar and opens it; View opens a public channel
- * without joining (the composer is replaced by a join bar).
+ * without joining (the composer is replaced by a join bar). Owners and Moderators also see
+ * archived channels under Archived, to open and unarchive them.
  */
 export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDialogProps) {
   const [query, setQuery] = useState("");
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const { data, isPending, isError } = useChannels(workspaceId);
+  const canModerate = useCanModerate(workspaceId);
+  const { data: archivedData } = useArchivedChannels(workspaceId, canModerate);
   const join = useJoinChannelMutation();
   const openConversation = useOpenConversation();
 
-  const channels = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const items = data?.items ?? [];
-    const filtered = needle
-      ? items.filter(
-          (c) =>
-            (c.title ?? "").toLowerCase().includes(needle) ||
-            (c.topic ?? "").toLowerCase().includes(needle),
-        )
-      : items;
-    return [...filtered].sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
-  }, [data, query]);
+  const channels = useMemo(() => matching(data?.items ?? [], query), [data, query]);
+  const archived = useMemo(() => matching(archivedData ?? [], query), [archivedData, query]);
 
   function open(conversationId: string) {
     openConversation(conversationId, workspaceId);
@@ -136,7 +130,51 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
             </li>
           ))}
         </ul>
+        {archived.length > 0 && (
+          <>
+            <h3 className="mt-3 px-2 text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+              Archived
+            </h3>
+            <ul aria-label="Archived channels" className="space-y-1">
+              {archived.map((channel) => (
+                <li
+                  key={channel.id}
+                  data-testid={`browse-archived-${channel.id}`}
+                  className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/5"
+                >
+                  <ChannelIcon
+                    conversation={channel}
+                    className="h-4 w-4 shrink-0 text-rim-text-muted"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-rim-text">{channel.title ?? "Untitled"}</p>
+                    <p className="truncate text-xs text-rim-text-faint">
+                      Archived
+                      {channel.topic ? ` · ${channel.topic}` : ""}
+                    </p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => open(channel.id)}>
+                    View
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
     </Dialog>
   );
+}
+
+/** The channels whose title or topic holds `query`, sorted by title. */
+function matching(items: readonly ConversationSummary[], query: string): ConversationSummary[] {
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? items.filter(
+        (c) =>
+          (c.title ?? "").toLowerCase().includes(needle) ||
+          (c.topic ?? "").toLowerCase().includes(needle),
+      )
+    : items;
+  return [...filtered].sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
 }

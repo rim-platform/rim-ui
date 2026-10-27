@@ -30,6 +30,9 @@ const BROWSE_FILTER: ChannelListFilter = { joinedOnly: false, includeArchived: f
 /** Channels the viewer has joined, archived ones included: the sidebar list. */
 const JOINED_FILTER: ChannelListFilter = { joinedOnly: true, includeArchived: true };
 
+/** Every channel the viewer can see, archived ones included: the source of the Archived list. */
+const ARCHIVED_FILTER: ChannelListFilter = { joinedOnly: false, includeArchived: true };
+
 async function fetchChannels(serverId: string, filter: ChannelListFilter) {
   const res = await graphqlClient.request<{ channels: ConversationSummaryPage }>(ChannelsDocument, {
     serverId,
@@ -52,6 +55,24 @@ export function useChannels(workspaceId?: string) {
     enabled: Boolean(workspaceId) && !direct,
     staleTime: 30_000,
     queryFn: () => fetchChannels(workspaceId!, BROWSE_FILTER),
+  });
+}
+
+/**
+ * Archived channels the viewer can see, for the browse dialog's Archived section. Not fetched
+ * in a direct space or while `enabled` is false.
+ *
+ * @param workspaceId - The workspace whose channels are listed.
+ * @param enabled - Whether to fetch them, such as only for the workspace's moderators.
+ */
+export function useArchivedChannels(workspaceId: string | undefined, enabled: boolean) {
+  const direct = useIsDirectSpace(workspaceId);
+  return useQuery({
+    queryKey: queryKeys.archivedChannels(workspaceId),
+    enabled: enabled && Boolean(workspaceId) && !direct,
+    staleTime: 30_000,
+    queryFn: () => fetchChannels(workspaceId!, ARCHIVED_FILTER),
+    select: (page) => page.items.filter((c) => c.archivedAt),
   });
 }
 

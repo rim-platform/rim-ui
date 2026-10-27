@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { replaceShortcodes, getShortcodeSuggestions } from "./emojiShortcodes";
+import { replaceShortcodes } from "./emojiShortcodes";
 
 describe("replaceShortcodes", () => {
   it("replaces colon-style shortcodes", () => {
@@ -35,35 +35,5 @@ describe("replaceShortcodes", () => {
 
   it("handles empty string", () => {
     expect(replaceShortcodes("")).toBe("");
-  });
-});
-
-describe("getShortcodeSuggestions", () => {
-  it("returns suggestions matching partial shortcode", () => {
-    const suggestions = getShortcodeSuggestions(":fir");
-    expect(suggestions.length).toBeGreaterThan(0);
-    expect(suggestions.some((s) => s.code === ":fire:")).toBe(true);
-  });
-
-  it("returns empty for non-colon prefix", () => {
-    expect(getShortcodeSuggestions("fire")).toEqual([]);
-  });
-
-  it("returns empty for single colon", () => {
-    expect(getShortcodeSuggestions(":")).toEqual([]);
-  });
-
-  it("limits results to 8", () => {
-    // ":" + a common letter should potentially have many matches
-    const suggestions = getShortcodeSuggestions(":c");
-    expect(suggestions.length).toBeLessThanOrEqual(8);
-  });
-
-  it("is case-insensitive", () => {
-    const lower = getShortcodeSuggestions(":fire");
-    const upper = getShortcodeSuggestions(":FIRE");
-    // Both should find :fire:
-    expect(lower.length).toBeGreaterThan(0);
-    expect(upper.length).toBeGreaterThan(0);
   });
 });

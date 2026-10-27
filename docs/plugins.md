@@ -80,10 +80,10 @@ Settings → Plugins has three install buttons.
 - **Install from link** (desktop and web) takes a link of the form
   `https://<host>/<name>.rimbundle#sha256=<hash>`, then **Install**. The bundle is fetched
   without credentials, must hash to the value after `#sha256=` and must pass the manifest rules
-  before anything is installed. The desktop app fetches the link itself, so a link to a GitHub
-  release asset installs; it follows redirects only to other `https://` links and stops reading
-  past 8 MiB. The web app fetches from the browser, so there the bundle's host must allow
-  cross-origin requests ([web plugins](web-plugins.md#installing-from-a-link)). A link to a
+  before anything is installed. The desktop app fetches the link itself; the web app asks the
+  RIM server to fetch it ([web plugins](web-plugins.md#installing-from-a-link)). Either way a
+  link to a GitHub release asset installs; only public `https://` hosts are fetched, redirects
+  only to other `https://` links, and reading stops past 8 MiB. A link to a
   plugin already installed opens **Replace \<name\>?**, which shows the version change and the
   permissions added or dropped; the permissions are approved again afterwards.
 
@@ -113,9 +113,8 @@ Moderators. An entry pins one exact version through a statement its publisher si
 identity key. Every client verifies that statement against the publisher's key log before it
 offers the plugin, so the server is not trusted for what the plugin is, and checks a bundle's
 size and SHA-256 before asking for any consent. A bundle an entry keeps on another host, such
-as a GitHub release asset, is fetched by the desktop app itself, as **Install from link** does;
-the web app needs that host to allow cross-origin requests. An instance can switch the registry
-off.
+as a GitHub release asset, is fetched by the desktop app itself, and by the RIM server for the
+web app, as **Install from link** does. An instance can switch the registry off.
 [Workspace plugins](workspace-plugins.md) has the details.
 
 - **The palette's "Workspace plugins" section** lists the entries this device has not

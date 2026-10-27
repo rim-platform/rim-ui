@@ -161,10 +161,16 @@ export function disabledFeatureOf(err: unknown): string | undefined {
   return typeof feature === "string" && feature ? feature : undefined;
 }
 
-/** The wording for a `RATE_LIMITED` refusal, with the seconds to wait when the server gave them. */
+/**
+ * The wording for a `RATE_LIMITED` refusal, with the wait when the server gave it: seconds under
+ * a minute, whole minutes rounded up from a minute on.
+ */
 export function rateLimitedMessage(seconds: number | undefined): string {
   if (seconds === undefined) return "Slow down: try again in a moment";
-  return `Slow down: try again in ${Math.max(1, Math.ceil(seconds))} s`;
+  const s = Math.max(1, Math.ceil(seconds));
+  if (s < 60) return `Slow down: try again in ${s} s`;
+  const m = Math.ceil(s / 60);
+  return `Slow down: try again in ${m} minute${m === 1 ? "" : "s"}`;
 }
 
 /** The wording for an `UPSTREAM_UNAVAILABLE` failure. */
@@ -207,9 +213,10 @@ export function timedOutMessage(until: string): string {
  * The server's human-readable message for a failed request, else `err.message`, else
  * `fallback`. A `TIMED_OUT` error reads "You are timed out until …", a `FEATURE_DISABLED` one
  * "<Feature> is switched off on this server", a `RATE_LIMITED` one "Slow down: try again in
- * N s", an `UPSTREAM_UNAVAILABLE` one names no server id, a request that never reached the
- * server says so, and a server fault reads `SERVER_FAULT_MESSAGE`, wherever they surface. Never
- * the serialized response of a `ClientError`: one without GraphQL errors gets `fallback`.
+ * N s" (N minutes from a minute up), an `UPSTREAM_UNAVAILABLE` one names no server id, a request
+ * that never reached the server says so, and a server fault reads `SERVER_FAULT_MESSAGE`,
+ * wherever they surface. Never the serialized response of a `ClientError`: one without GraphQL
+ * errors gets `fallback`.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);

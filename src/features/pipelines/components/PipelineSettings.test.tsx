@@ -6,6 +6,7 @@ import { withLimits } from "../../../test/limits";
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { useToastStore } from "../../../shared/toast";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import type { Pipeline } from "../api/usePipelines";
 
 const requestMock = vi.fn();
@@ -107,7 +108,18 @@ beforeEach(() => {
     if (!handler) throw new Error(`unexpected operation ${operationName(doc)}`);
     return Promise.resolve(handler(vars));
   });
-  handlers = { Pipelines: () => ({ pipelines: [basePipeline, disabledPipeline] }) };
+  handlers = {
+    Pipelines: () => ({ pipelines: [basePipeline, disabledPipeline] }),
+    Channels: () => ({
+      channels: {
+        items: [
+          makeConversation({ id: "conv-7", title: "ops" }),
+          makeConversation({ id: "conv-8", title: "alerts" }),
+        ],
+        pageInfo: { hasNext: false, hasPrev: false },
+      },
+    }),
+  };
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
   useToastStore.setState({ toasts: [] });
 });
@@ -228,7 +240,8 @@ describe("PipelineSettings create flow", () => {
     fireEvent.change(screen.getByDisplayValue("New Message"), {
       target: { value: PipelineTriggerKindGql.REACTIONS_UPDATED },
     });
-    fireEvent.change(screen.getByPlaceholderText("Scope to conversation ID (optional)"), {
+    await screen.findByRole("option", { name: "#ops" });
+    fireEvent.change(screen.getByLabelText("Scope to conversation"), {
       target: { value: "conv-7" },
     });
     fireEvent.click(screen.getByText("Add filter"));
@@ -274,6 +287,35 @@ describe("PipelineSettings create flow", () => {
     ]);
     // Invalidation refetches the list.
     await waitFor(() => expect(callsTo("Pipelines").length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("offers the workspace's channels by name for the scope and the In conversation filter", async () => {
+    handlers.CreatePipeline = () => ({ createPipeline: { ...basePipeline, id: "p-3" } });
+    await openCreate();
+    const scope = screen.getByLabelText("Scope to conversation");
+    await within(scope).findByRole("option", { name: "#ops" });
+
+    expect(
+      within(scope)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Any conversation", "#alerts", "#ops"]);
+
+    fireEvent.change(screen.getByPlaceholderText("My pipeline"), { target: { value: "Ops" } });
+    fireEvent.click(screen.getByText("Add filter"));
+    fireEvent.change(screen.getByDisplayValue("Message contains pattern"), {
+      target: { value: "ConversationIs" },
+    });
+    fireEvent.change(screen.getByLabelText("Conversation"), { target: { value: "conv-7" } });
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: "chat.notify" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Pipelines");
+    expect(callsTo("CreatePipeline")[0].input).toMatchObject({
+      filter: { conditions: [{ conditionType: "ConversationIs", conversationId: "conv-7" }] },
+    });
   });
 
   it("drops empty action rows and an invalid cooldown", async () => {
@@ -414,6 +456,23 @@ describe("PipelineSettings edit, toggle and delete", () => {
       },
     ]);
     expect(callsTo("CreatePipeline")).toHaveLength(0);
+  });
+
+  it("keeps a scoped conversation the viewer cannot see", async () => {
+    handlers.Pipelines = () => ({
+      pipelines: [
+        { ...basePipeline, trigger: { ...basePipeline.trigger, conversationId: "conv-x" } },
+      ],
+    });
+    render(<PipelineSettings />);
+    await screen.findByText("Escalate urgent");
+    fireEvent.click(screen.getAllByTitle("Edit pipeline")[0]);
+
+    const scope = screen.getByLabelText("Scope to conversation") as HTMLSelectElement;
+    expect(scope.value).toBe("conv-x");
+    expect(within(scope).getByRole("option", { selected: true })).toHaveTextContent(
+      "A conversation you cannot see",
+    );
   });
 
   it("removing a filter row sends no filter", async () => {

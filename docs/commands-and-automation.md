@@ -179,7 +179,7 @@ device starts with; Vim, the same with Vim mode on; or Mouse-friendly, which lea
 D, L, Ctrl+Shift+Z and the Ctrl arrows to the browser and the text field. **Export profile** and
 **Import profile** share one ([Keybind profiles](keyboard.md#keybind-profiles)).
 
-**Vim mode.** The **Vim mode** switch in Settings → Keyboard, or the "Toggle Vim mode" command,
+**Vim mode.** The **Vim mode** switch in Settings → Keyboard, or the "Toggle Vim Mode" command,
 adds a modal layer: <kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd> move in normal mode, and
 a text field is insert mode ([Vim mode](keyboard.md#vim-mode)).
 

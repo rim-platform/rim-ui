@@ -351,11 +351,11 @@ describe("UserCommandSettings creating a command", () => {
     expect(options).not.toContain("Post Message");
   });
 
-  it("names chat.create_group as New message", () => {
+  it("names chat.create_group as New Message", () => {
     openCreate();
     const options = stepOptions();
 
-    expect(options).toContain("New message");
+    expect(options).toContain("New Message");
     expect(options).not.toContain("Create Group");
   });
 

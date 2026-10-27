@@ -222,6 +222,63 @@ describe("KeySignupForm", () => {
     expect(api.beginEnrollment).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["al ice!", "Use only letters (a–z), digits, _ and -."],
+    ["Ab", "Use 3 to 32 characters."],
+    ["r_alice", "Usernames starting with r_ are kept for people from other servers."],
+    ["Deleted-x", "Usernames starting with deleted- are kept for deleted accounts."],
+  ])("refuses the username %s before making any keys", async (username, problem) => {
+    const user = userEvent.setup();
+    renderForm();
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+    );
+    await user.type(screen.getByLabelText(/^username/i), username);
+    await user.click(screen.getByRole("button", { name: /create keys/i }));
+
+    expect(screen.getByText(problem)).toBeInTheDocument();
+    expect(api.beginEnrollment).not.toHaveBeenCalled();
+    expect(api.signupWithKey).not.toHaveBeenCalled();
+  });
+
+  it("shows the lowercase username it will save", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(screen.getByText("3 to 32 characters: letters, digits, _ and -.")).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^username/i), "Alice");
+    expect(screen.getByText("Saved as alice.")).toBeInTheDocument();
+  });
+
+  it("puts the server's username refusal on the field as a sentence", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey.mockRejectedValueOnce(
+      serverError("VALIDATION", "username must be between 3 and 32 characters"),
+    );
+    renderForm();
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    expect(
+      await screen.findByText("Username must be between 3 and 32 characters."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says a reserved name in a plain sentence", async () => {
+    const user = userEvent.setup();
+    api.signupWithKey.mockRejectedValueOnce(serverError("VALIDATION", "this name is reserved"));
+    renderForm();
+
+    await reachKit(user);
+    await user.click(screen.getByRole("button", { name: /^create account$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This name is reserved on this server. Choose another username or display name.",
+    );
+  });
+
   it("shows a taken username under the field and retries with the same keys", async () => {
     const user = userEvent.setup();
     api.signupWithKey
@@ -337,7 +394,9 @@ describe("KeySignupForm", () => {
     await reachKit(user);
     await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
-    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(
+      await screen.findByText("This invite admits only the email address it was issued for."),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/"response"/)).toBeNull();
   });
 
@@ -364,13 +423,13 @@ describe("KeySignupForm", () => {
     ],
     [
       "a validation error, in the server's words",
-      serverError("VALIDATION", "username must be 3 to 32 characters"),
-      /username must be 3 to 32 characters/,
+      serverError("VALIDATION", "display name must be at most 64 characters"),
+      /Display name must be at most 64 characters\./,
     ],
     [
       "an email-bound invite refusing a key-only signup, in the server's words",
       serverError("VALIDATION", "this invite admits only the email address it was issued for"),
-      /this invite admits only the email address it was issued for/,
+      /This invite admits only the email address it was issued for\./,
     ],
     [
       "a rate limit, with the wait",
@@ -413,7 +472,7 @@ describe("KeySignupForm", () => {
     await reachKit(user);
     await user.click(screen.getByRole("button", { name: /^create account$/i }));
     await screen.findByRole("alert");
-    await user.click(screen.getByRole("button", { name: /discard keys/i }));
+    await user.click(screen.getByRole("button", { name: /start over/i }));
 
     expect(api.discardKeySignup).toHaveBeenCalledWith(draft, ENTRY);
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();
@@ -455,7 +514,7 @@ describe("KeySignupForm", () => {
     await reachKit(user);
     await user.click(screen.getByRole("button", { name: /^create account$/i }));
     await screen.findByRole("alert");
-    await user.click(screen.getByRole("button", { name: /discard keys/i }));
+    await user.click(screen.getByRole("button", { name: /start over/i }));
 
     // The answer naming the workspace was lost; the invite's preview names it.
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-ada", "srv-preview"));
@@ -575,6 +634,19 @@ describe("KeySignupForm", () => {
 
       expect(onSuccess).toHaveBeenCalledWith("u-ada", null);
       expect(api.confirmRecoveryKitSaved).not.toHaveBeenCalled();
+    });
+
+    it("keeps the device name and offers no Start over after a refusal when the kit comes after", async () => {
+      const user = userEvent.setup();
+      api.signupWithKey.mockRejectedValueOnce(serverError("EXPIRED_TOKEN"));
+      renderForm();
+
+      await createAccount(user);
+
+      await screen.findByRole("alert");
+      expect(screen.getByLabelText(/name of this device/i)).toBeDisabled();
+      expect(screen.queryByRole("button", { name: /start over|discard keys/i })).toBeNull();
+      expect(screen.queryByText(/start over makes new keys/i)).toBeNull();
     });
 
     it("keeps the keys after a refusal and retries with them, showing no kit yet", async () => {
