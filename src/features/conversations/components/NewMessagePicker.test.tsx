@@ -29,7 +29,11 @@ vi.mock("../../e2ee/runtime/groups", () => groups);
 vi.mock("../../e2ee/web/webAccount", () => ({ isWebAccount: () => false }));
 
 const start = vi.hoisted(() => ({ startDirectConversation: vi.fn() }));
-const relayApi = vi.hoisted(() => ({ fetchContacts: vi.fn() }));
+const relayApi = vi.hoisted(() => ({
+  fetchContacts: vi.fn(),
+  fetchBlockedPrincipals: vi.fn(),
+  unblockPrincipal: vi.fn(),
+}));
 const identity = vi.hoisted(() => ({ fetchVerifiedIdentity: vi.fn(), resolveIdentity: vi.fn() }));
 vi.mock("../../relay/conversations/startDirect", () => start);
 vi.mock("../../relay/api/relayApi", () => relayApi);
