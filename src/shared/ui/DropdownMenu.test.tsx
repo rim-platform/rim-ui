@@ -104,6 +104,35 @@ describe("DropdownMenu", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("stays open when the page scrolls under it by itself", () => {
+    const onClose = vi.fn();
+    render(<DropdownMenu items={makeItems()} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.scroll(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes when the user scrolls outside it with the wheel or a finger", () => {
+    const onWheelClose = vi.fn();
+    const { unmount } = render(
+      <DropdownMenu items={makeItems()} position={{ x: 0, y: 0 }} onClose={onWheelClose} />,
+    );
+    fireEvent.wheel(document.body);
+    expect(onWheelClose).toHaveBeenCalled();
+    unmount();
+
+    const onTouchClose = vi.fn();
+    render(<DropdownMenu items={makeItems()} position={{ x: 0, y: 0 }} onClose={onTouchClose} />);
+    fireEvent.touchMove(document.body);
+    expect(onTouchClose).toHaveBeenCalled();
+  });
+
+  it("stays open while the user scrolls inside it", () => {
+    const onClose = vi.fn();
+    render(<DropdownMenu items={makeItems()} position={{ x: 0, y: 0 }} onClose={onClose} />);
+    fireEvent.wheel(screen.getByRole("menu"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("names the menu and shows a header in place of the empty note", () => {
     render(
       <DropdownMenu

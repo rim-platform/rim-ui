@@ -112,7 +112,13 @@ describe("the direct space at sign-in", () => {
   it("loads its counts and subscribes while a workspace is open, badges Direct messages and restores on reconnect", async () => {
     renderWithProviders(<SignedInShell />);
     expect(ws.subscriptions.size).toBe(0);
-    expect(requestMock).not.toHaveBeenCalled();
+    // The rail loads the open workspace's menu data; nothing goes out about the direct space.
+    expect(
+      requestMock.mock.calls.filter(
+        ([, variables]: [string, Record<string, unknown> | undefined]) =>
+          variables?.workspaceId === DIRECT_SPACE_ID || variables?.serverId === DIRECT_SPACE_ID,
+      ),
+    ).toEqual([]);
 
     act(() => startRelayWithDirectSpace());
 

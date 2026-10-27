@@ -29,6 +29,8 @@ vi.mock("../../../shell/state/useShellStore", () => {
     focusedSurface: null,
     isThreadOpen: false,
     mainSurface: { kind: "conversation" },
+    activePluginPanel: null,
+    selectedConversationId: null,
   };
   const useShellStore = (selector: (s: typeof state) => unknown) => selector(state);
   useShellStore.getState = () => state;
@@ -78,6 +80,7 @@ import { dispatchCommand } from "./commandDispatcher";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
 
 const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
 
@@ -278,6 +281,29 @@ describe("KeybindProvider with the default profile", () => {
       expect(dispatched()).toEqual(["workspace.close_panel"]);
     } finally {
       shell.mainSurface = { kind: "conversation" };
+    }
+  });
+
+  it("closes the workspace members list on Escape", () => {
+    useMemberDirectoryStore.setState({ open: true });
+    try {
+      renderWith(<div />);
+      press(document.body, "Escape");
+      expect(dispatched()).toEqual(["workspace.close_panel"]);
+    } finally {
+      useMemberDirectoryStore.setState({ open: false });
+    }
+  });
+
+  it("closes a side plugin panel on Escape", () => {
+    const shell = useShellStore.getState() as unknown as { activePluginPanel: unknown };
+    shell.activePluginPanel = { pluginId: "p", panelId: "x", slot: "tool_panel" };
+    try {
+      renderWith(<div />);
+      press(document.body, "Escape");
+      expect(dispatched()).toEqual(["workspace.close_panel"]);
+    } finally {
+      shell.activePluginPanel = null;
     }
   });
 

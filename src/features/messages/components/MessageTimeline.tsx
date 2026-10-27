@@ -165,6 +165,16 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     () => (editingMessageId ? items.findIndex((m) => m.id === editingMessageId) : -1),
     [items, editingMessageId],
   );
+  // The message a held pointer press on the list landed on (`""` for none), or null.
+  const pointerEntryRef = useRef<string | null>(null);
+  // A press ends wherever the pointer is released, inside the list or not.
+  useEffect(() => {
+    const release = () => {
+      pointerEntryRef.current = null;
+    };
+    window.addEventListener("mouseup", release, true);
+    return () => window.removeEventListener("mouseup", release, true);
+  }, []);
   const { virtualizer, scrollContainerRef, topSentinelRef, handleScroll, scrollToIndex } =
     useTimelineScroll({
       listKey: conversationId,
@@ -178,6 +188,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       onScrollPosition,
       isAtBottomRef,
       pinnedIndex: editingIndex,
+      hintBarShown: navigationMode,
+      pointerPressRef: pointerEntryRef,
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
@@ -244,6 +256,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       onOpenActions: openActionsFor,
       firstNewIndex,
       scrollToIndex,
+      pointerEntryRef,
     });
 
   if (!conversationId) {
@@ -300,7 +313,15 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
           aria-activedescendant={selectedMsg ? `message-${selectedMsg.id}` : undefined}
           onScroll={handleScroll}
           onKeyDown={handleMessageListKeyDown}
+          onMouseDown={(e) => {
+            pointerEntryRef.current =
+              (e.target as Element).closest("[data-message-id]")?.getAttribute("data-message-id") ??
+              "";
+          }}
           onFocus={() => useShellStore.getState().setNavigationMode(true)}
+          onBlur={() => {
+            pointerEntryRef.current = null;
+          }}
           className="relative flex-1 overflow-y-auto px-4 outline-none"
         >
           {/* Top sentinel for the infinite-scroll trigger; scrolls with the content. */}

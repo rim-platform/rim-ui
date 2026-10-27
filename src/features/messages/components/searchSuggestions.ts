@@ -40,6 +40,8 @@ export interface Suggestion {
   label: string;
   detail?: string;
   insert: string;
+  /** Another way to type the same value in full, such as a handle without its domain. */
+  alsoTyped?: string;
 }
 
 /**
@@ -154,6 +156,7 @@ export function computeSuggestions(
         label: member.displayName || handle.shown.slice(1),
         detail: handle.shown,
         insert: `from:${handle.copied}`,
+        alsoTyped: `from:${handle.shown}`,
       }));
     }
     case "in": {
@@ -222,6 +225,12 @@ export function useOperatorSuggestions(
 ): { token: ActiveToken | null; suggestions: Suggestion[] } {
   return useMemo(() => {
     const token = findActiveToken(query, caret);
-    return { token, suggestions: token ? computeSuggestions(token, members, directory) : [] };
+    if (!token) return { token, suggestions: [] };
+    // A value typed in full needs no suggestion.
+    const typed = query.slice(token.start, token.end);
+    const suggestions = computeSuggestions(token, members, directory).filter(
+      (suggestion) => suggestion.insert !== typed && suggestion.alsoTyped !== typed,
+    );
+    return { token, suggestions };
   }, [query, caret, members, directory]);
 }

@@ -116,6 +116,21 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   files or log a security warning in the console.
 - Custom emoji show as their images in messages, in the emoji picker and in Settings > Emoji, also
   in the desktop app; before, a message showed `:name:` as text.
+- The NAVIGATE key hints no longer cover the newest message: the timeline makes room for them.
+- At the bottom of a conversation, the timeline stays at the bottom while an image loads or a
+  message gets its first reply, instead of leaving the new content under the composer.
+- Escape and **Close Panel** close a plugin panel beside the conversation, the workspace members
+  list, a conversation's members and the notifications list, and **Inbox** closes the members
+  lists; **Close Panel** says when no panel is open.
+- The first right-click on a message after opening a conversation opens its menu, and clicking
+  into the timeline no longer scrolls it to the newest message.
+- Search's operator suggestions sit between the search box and the results instead of covering
+  the first result, and close once the value is typed in full.
+- A thread opened on a message that arrived while you watched names its author instead of
+  "Unknown user".
+- The open workspace's menu on the rail lists **Join requests…** the first time it opens.
+- A plugin panel's header shows the plugin's name, kind and source in full under the panel's
+  title instead of cutting them off.
 
 ## [0.0.5] - 2026-10-26
 

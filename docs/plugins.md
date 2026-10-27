@@ -214,10 +214,10 @@ Plugins names.
   plugins…**. A panel left open stops showing when its plugin loses that permission. A plugin's
   settings are not in this menu: they open from the places listed under **Settings**. The entry
   stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
-  Pods panel, in place of the conversation. Its header shows the panel's title, the plugin's
-  name, its kind and where it came from, and a close button. The title stays whole; the rest is
-  shortened when the panel is narrow and shows in full on hover. [UI shell](ui-shell.md)
-  describes the menu's keys.
+  Pods panel, in place of the conversation. Its header shows the panel's title and a close
+  button, and under them the plugin's name, its kind and where it came from, in full. A long
+  title is shortened and shows in full on hover. [UI shell](ui-shell.md) describes the menu's
+  keys.
 - **"Open \<panel\>" commands.** Each panel of a running plugin granted Render UI Panels also
   has an "Open \<panel\>" command in the palette, such as "Open Pull requests", which a keybind
   can run too.

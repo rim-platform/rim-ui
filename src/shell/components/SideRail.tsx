@@ -13,6 +13,8 @@ import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
 import { useIsDirectSpace } from "../../features/relay/state/useRelayStore";
 import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { cn } from "../../shared/ui/cn";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -72,6 +74,8 @@ export function SideRail() {
     // Inbox goes back to the conversation.
     if (conversationCovered) closePluginPanel();
     useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().setOpen(false);
   }
 
   return (

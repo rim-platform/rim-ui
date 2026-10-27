@@ -292,6 +292,22 @@ describe("SearchOverlay", () => {
       expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     });
 
+    it("drops a suggestion the token already matches in full", () => {
+      render(<SearchOverlay />);
+      typeInSearch("from:@bob deploy", "from:@bob".length);
+
+      expect(screen.queryByRole("listbox", { name: "Operator suggestions" })).toBeNull();
+    });
+
+    it("shows the suggestions between the search box and the results, not over them", () => {
+      render(<SearchOverlay />);
+      typeInSearch("from:@");
+
+      expect(screen.getByRole("listbox", { name: "Operator suggestions" })).not.toHaveClass(
+        "absolute",
+      );
+    });
+
     it("inserts a clicked suggestion and keeps the input focused", () => {
       render(<SearchOverlay />);
       const input = typeInSearch("in:#gen");
