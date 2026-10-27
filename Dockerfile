@@ -5,7 +5,7 @@
 # =============================================================================
 
 # ---------- Stage 1: Dependencies --------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 # .npmrc sets legacy-peer-deps; without it npm ci fails on ERESOLVE.
@@ -13,7 +13,7 @@ COPY package.json package-lock.json* .npmrc ./
 RUN npm ci --ignore-scripts
 
 # ---------- Stage 2: Builder -------------------------------------------------
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules

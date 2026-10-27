@@ -1,3 +1,4 @@
+import { File as NodeFile } from "node:buffer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 
@@ -35,6 +36,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   useRelayStore.getState().reset();
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
@@ -42,6 +44,13 @@ afterEach(() => {
 
 describe("remote attachments", () => {
   it("uploads multipart bytes to the workspace's host", async () => {
+    // Node's own FormData and File, so the form and Node's Request share one implementation as
+    // they do in a browser: Node's Request cannot read the bytes of a jsdom File.
+    const form = await new Response("", {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    }).formData();
+    vi.stubGlobal("FormData", form.constructor);
+    vi.stubGlobal("File", NodeFile);
     vi.mocked(remoteFetch).mockResolvedValue({
       status: 204,
       body: new Uint8Array(),

@@ -75,7 +75,7 @@ This repository is the client, in two builds from one React 19 and TypeScript co
 
 ## Quickstart
 
-Prerequisites: Node.js 22 and a RIM server. Start one from `rim-server` (its README has the
+Prerequisites: Node.js 24 and a RIM server. Start one from `rim-server` (its README has the
 quickstart); by default the client expects the GraphQL endpoint at `http://localhost:8080/api`.
 
 ```sh
