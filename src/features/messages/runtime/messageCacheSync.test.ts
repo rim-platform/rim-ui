@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import type { MessageChangesInput } from "../../../core/graphql/generated/schema-types";
 import { ConversationChangesStatus } from "../../../core/graphql/generated/schema-types";
+import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
 import type { FeedConversationChanges } from "../api/messageCache";
 import {
   MAX_ROUNDS_PER_RUN,
@@ -81,6 +82,39 @@ describe("runCacheSync", () => {
 
     await expect(runCacheSync(backend, feed, "ws-1")).rejects.toThrow("Failed to fetch");
     expect(backend.apply).not.toHaveBeenCalled();
+  });
+
+  describe("with a conversation hidden because someone blocked started it", () => {
+    beforeEach(() => {
+      useBlockedConversations.getState().reset();
+      useBlockedConversations.getState().setIn("ws-1", { "c-hidden": "rimp1_alice" });
+    });
+
+    it("never asks the feed for a conversation hidden because someone blocked started it", async () => {
+      const backend: CacheSyncBackend = {
+        begin: vi.fn(async () => input("c1", "c-hidden")),
+        apply: vi.fn(async () => null),
+      };
+      const feed = vi.fn(async (req: MessageChangesInput) =>
+        req.conversations.map((c) => answer(c.conversationId, false)),
+      );
+
+      await runCacheSync(backend, feed, "ws-1");
+
+      expect(feed).toHaveBeenCalledTimes(1);
+      expect(feed.mock.calls[0][0].conversations.map((c) => c.conversationId)).toEqual(["c1"]);
+    });
+
+    it("finishes when only hidden conversations are left", async () => {
+      const backend: CacheSyncBackend = {
+        begin: vi.fn(async () => input("c-hidden")),
+        apply: vi.fn(async () => null),
+      };
+      const feed = vi.fn();
+
+      expect(await runCacheSync(backend, feed, "ws-1")).toEqual({ rounds: 0, finished: true });
+      expect(feed).not.toHaveBeenCalled();
+    });
   });
 });
 

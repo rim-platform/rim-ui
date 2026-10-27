@@ -11,7 +11,8 @@
  * follows. A sync runs on startup and on every WebSocket (re)connect for the recently viewed
  * conversations, and for one conversation when a real-time message event for it arrives:
  * events carry no version, so they are only a signal to ask the feed. Requests that arrive
- * while a sync runs are coalesced into the next run.
+ * while a sync runs are coalesced into the next run. Conversations hidden because someone
+ * blocked started them are never asked for; they stay pending and sync once they come back.
  */
 
 import { useEffect } from "react";
@@ -25,6 +26,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { requestArchiveExport } from "../../history-archive/runtime/archiveExport";
 import { mlsInputsFor } from "../../e2ee/runtime/feedInputs";
 import { isWebAccount } from "../../e2ee/web/webAccount";
+import { isBlockedConversation } from "../../relay/state/useBlockedConversations";
 import {
   applyCacheChanges,
   beginCacheSync,
@@ -51,6 +53,16 @@ export interface CacheSyncBackend {
  */
 export const MAX_ROUNDS_PER_RUN = 200;
 
+/** `input` without the conversations hidden because someone blocked started them; `null` when none is left. */
+function withoutBlocked(input: MessageChangesInput | null): MessageChangesInput | null {
+  if (!input) return null;
+  const conversations = input.conversations.filter(
+    (c) => !isBlockedConversation(input.serverId, c.conversationId),
+  );
+  if (conversations.length === input.conversations.length) return input;
+  return conversations.length > 0 ? { ...input, conversations } : null;
+}
+
 /** Run one sync to completion (or to {@link MAX_ROUNDS_PER_RUN}); returns the rounds made. */
 export async function runCacheSync(
   backend: CacheSyncBackend,
@@ -58,12 +70,12 @@ export async function runCacheSync(
   workspaceId: string,
   conversationIds?: string[],
 ): Promise<{ rounds: number; finished: boolean }> {
-  let input = await backend.begin(workspaceId, conversationIds);
+  let input = withoutBlocked(await backend.begin(workspaceId, conversationIds));
   let rounds = 0;
   while (input && rounds < MAX_ROUNDS_PER_RUN) {
     rounds += 1;
     const changes = await feed(input);
-    input = await backend.apply(workspaceId, changes);
+    input = withoutBlocked(await backend.apply(workspaceId, changes));
   }
   return { rounds, finished: input === null };
 }

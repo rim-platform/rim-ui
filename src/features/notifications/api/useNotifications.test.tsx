@@ -12,7 +12,8 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 
 import { useMarkAsRead } from "../../conversations/api/useMarkAsRead";
-import { useMarkNotificationsRead } from "./useNotifications";
+import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
+import { useMarkNotificationsRead, useUnreadNotificationCount } from "./useNotifications";
 
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,5 +63,40 @@ describe("notification cache hygiene", () => {
       ids: null,
       allBefore: "2026-10-05T10:00:00Z",
     });
+  });
+});
+
+describe("the bell with conversations hidden because someone blocked started them", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useBlockedConversations.getState().reset();
+  });
+
+  it("the bell leaves out unread entries of hidden conversations", async () => {
+    useBlockedConversations.getState().setIn("ws-1", { "c-hidden": "rimp1_alice" });
+    requestMock.mockImplementation(async (doc: string) =>
+      String(doc).includes("UnreadNotificationConversations")
+        ? {
+            myNotifications: {
+              items: [
+                { conversationId: "c-hidden" },
+                { conversationId: "c-other" },
+                { conversationId: "c-hidden" },
+              ],
+            },
+          }
+        : { myUnreadNotificationCount: 5 },
+    );
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useUnreadNotificationCount("ws-1"), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe(3));
+  });
+
+  it("the bell asks nothing more in a space that hides nothing", async () => {
+    requestMock.mockResolvedValue({ myUnreadNotificationCount: 5 });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useUnreadNotificationCount("ws-1"), { wrapper });
+    await waitFor(() => expect(result.current.data).toBe(5));
+    expect(requestMock).toHaveBeenCalledTimes(1);
   });
 });

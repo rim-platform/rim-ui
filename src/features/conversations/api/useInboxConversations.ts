@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
+import { withoutBlockedCreators } from "../../relay/inbox/blockedCreators";
 import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
 import type { ConversationSummaryPage } from "../types";
 
@@ -26,7 +27,11 @@ interface InboxConversationsResponse {
   inboxConversations: ConversationSummaryPage;
 }
 
-/** A space's DMs and groups, newest first; the desktop app keeps a copy for offline starts. */
+/**
+ * A space's DMs and groups, newest first, without the conversations of a direct space on
+ * another server that someone this account blocked started; the desktop app keeps a copy for
+ * offline starts.
+ */
 export function fetchInboxConversations(workspaceId: string): Promise<ConversationSummaryPage> {
   return withOfflineSnapshot("inbox", workspaceId, async () => {
     const res = await graphqlClient.request<InboxConversationsResponse>(INBOX_CONVERSATIONS_QUERY, {
@@ -34,7 +39,7 @@ export function fetchInboxConversations(workspaceId: string): Promise<Conversati
       dir: "AFTER",
       limit: 50,
     });
-    return res.inboxConversations;
+    return withoutBlockedCreators(workspaceId, res.inboxConversations);
   });
 }
 

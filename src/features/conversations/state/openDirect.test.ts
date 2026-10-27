@@ -14,6 +14,11 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
+const blockedPrincipalIds = vi.hoisted(() => vi.fn());
+vi.mock("../../relay/inbox/blockedCreators", () => ({ blockedPrincipalIds }));
+const toastInfo = vi.hoisted(() => vi.fn());
+vi.mock("../../../shared/toast", () => ({ toast: { info: toastInfo } }));
+
 import { directDraftKey, openDirectWithMember } from "./openDirect";
 
 function startRelay() {
@@ -28,6 +33,8 @@ function startRelay() {
 
 beforeEach(() => {
   requestMock.mockReset();
+  blockedPrincipalIds.mockReset().mockResolvedValue(new Set<string>());
+  toastInfo.mockReset();
   routeRequests(requestMock, {
     "query InboxConversations": () => emptyInbox,
     "query ServerMembers": () => ({ serverMembers: [] }),
@@ -103,6 +110,27 @@ describe("openDirectWithMember", () => {
       spaceId: "direct-1",
       openedId: null,
     });
+  });
+
+  it("says to unblock first instead of opening or drafting a DM with someone blocked", async () => {
+    startRelay();
+    blockedPrincipalIds.mockResolvedValue(new Set(["rimp1_bob"]));
+    useShellStore.getState().setSelectedConversationId("c-design");
+    await openDirectWithMember("u-bob");
+    expect(useShellStore.getState().draftDirect).toBeNull();
+    expect(useShellStore.getState().selectedConversationId).toBe("c-design");
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(toastInfo).toHaveBeenCalledWith("You blocked Bob.", {
+      description: "Unblock them in Settings → Direct messages to message them.",
+    });
+  });
+
+  it("opens as before when the blocked list cannot be read", async () => {
+    startRelay();
+    blockedPrincipalIds.mockRejectedValue(new Error("offline"));
+    await openDirectWithMember("u-bob");
+    expect(useShellStore.getState().draftDirect).toMatchObject({ spaceId: "direct-1" });
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 
   it("keeps a member without a principal id in the workspace", async () => {

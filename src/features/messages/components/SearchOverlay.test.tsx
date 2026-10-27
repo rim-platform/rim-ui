@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
+import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -116,6 +117,19 @@ describe("SearchOverlay", () => {
       recentSearches: [],
     });
     useShellStore.getState().reset();
+    useBlockedConversations.getState().reset();
+  });
+
+  it("shows no result from a hidden conversation", () => {
+    useBlockedConversations.getState().setIn("ws-1", { "conv-hidden": "rimp1_alice" });
+    mockSearchResult([
+      makeItem({ id: "m1", conversationId: "conv-1", text: "visible one" }),
+      makeItem({ id: "m2", conversationId: "conv-hidden", text: "hidden one", headline: null }),
+    ]);
+    render(<SearchOverlay />);
+
+    expect(screen.getAllByRole("button", { name: /alice/i })).toHaveLength(1);
+    expect(screen.queryByText("hidden one")).not.toBeInTheDocument();
   });
 
   it("renders nothing when closed", () => {

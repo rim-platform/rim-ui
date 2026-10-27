@@ -29,6 +29,7 @@ import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { confirmConversationCommand } from "./conversationActionGate";
 import { openWorkspaceAction } from "../../workspaces/workspaceActions";
+import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -97,6 +98,13 @@ function resultText(message: string): CommandResult {
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
 // every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
 // args, and the handler supplies any args it needs itself.
+/** The space a navigation command's conversation is in: its `serverId`, else the open workspace. */
+function spaceOf(args: Record<string, unknown>): string | null {
+  return typeof args.serverId === "string"
+    ? args.serverId
+    : useWorkspaceStore.getState().workspaceId;
+}
+
 const localHandlers: Record<
   string,
   (args: Record<string, unknown> | undefined) => void | CommandResult
@@ -134,6 +142,7 @@ const localHandlers: Record<
   },
   "workspace.navigate_to_channel": (args) => {
     if (args?.conversationId) {
+      if (refuseBlockedConversation(spaceOf(args), args.conversationId as string)) return;
       useShellStore.getState().setSelectedConversationId(args.conversationId as string);
     } else {
       // No specific channel — open command palette so the user can pick one
@@ -142,6 +151,7 @@ const localHandlers: Record<
   },
   "workspace.navigate_to_dm": (args) => {
     if (args?.conversationId) {
+      if (refuseBlockedConversation(spaceOf(args), args.conversationId as string)) return;
       useShellStore.getState().setSelectedConversationId(args.conversationId as string);
     }
   },

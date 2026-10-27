@@ -60,6 +60,9 @@ vi.mock("../../features/relay/runtime/useDirectSpaceRuntime", () => ({
   useDirectSpaceRuntime: () => {},
   useLocalDirectSpaceId: () => "direct-1",
 }));
+vi.mock("../../features/relay/runtime/useBlockedConversationsRuntime", () => ({
+  useBlockedConversationsRuntime: () => {},
+}));
 vi.mock("../../features/plugins/api/usePluginPrincipalSync", () => ({
   usePluginPrincipalSync: () => {},
 }));

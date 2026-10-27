@@ -7,12 +7,17 @@ import { RETRY_FIRST_MS, RETRY_MAX_MS } from "../../../shared/utils/retryWithBac
 import { createTestQueryClient } from "../../../test/utils";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
+import { useBlockedConversations } from "../state/useBlockedConversations";
 import { useRelayStore } from "../state/useRelayStore";
 
 const fetchRelayInfo = vi.hoisted(() => vi.fn());
 const wsConnected = vi.hoisted(() => new Set<() => void>());
 
-vi.mock("../api/relayApi", () => ({ fetchRelayInfo }));
+vi.mock("../api/relayApi", () => ({
+  fetchRelayInfo,
+  fetchBlockedPrincipals: vi.fn(),
+  unblockPrincipal: vi.fn(),
+}));
 vi.mock("../../../core/graphql/wsClient", () => ({
   onWsConnected: (listener: () => void) => {
     wsConnected.add(listener);
@@ -163,6 +168,69 @@ describe("applyRelayEvent", () => {
     expect(routed.handleRemoteJoinDecided).not.toHaveBeenCalled();
     expect(routed.applyWorkspaceEvent).toHaveBeenCalledTimes(2);
     expect(routed.applyWorkspaceEvent).toHaveBeenCalledWith(decided, qc, "ws-acme");
+  });
+
+  it("drops every event of a conversation hidden because someone blocked started it", () => {
+    const qc = createTestQueryClient();
+    useBlockedConversations.getState().reset();
+    useBlockedConversations.getState().setIn("remote-direct", { "c-hidden": "rimp1_alice" });
+    const events: WorkspaceEvent[] = [
+      {
+        type: "NewMessage",
+        workspace_id: "remote-direct",
+        conversation_id: "c-hidden",
+        message: {} as never,
+      },
+      {
+        type: "NotificationDue",
+        workspace_id: "remote-direct",
+        user_id: "u",
+        notification_id: "n",
+        conversation_id: "c-hidden",
+        message_id: "m",
+        reason: "mention",
+        quiet: false,
+      } as WorkspaceEvent,
+      {
+        type: "MlsCommitAccepted",
+        workspace_id: "remote-direct",
+        conversation_id: "c-hidden",
+        incarnation: 1,
+        epoch: 2,
+      },
+      {
+        type: "TypingStarted",
+        workspace_id: "remote-direct",
+        conversation_id: "c-hidden",
+        user_id: "u-alice",
+      },
+    ];
+    for (const event of events) applyRelayEvent(qc, event, "remote-direct");
+    expect(routed.applyWorkspaceEvent).not.toHaveBeenCalled();
+    useBlockedConversations.getState().reset();
+  });
+
+  it("applies events of other conversations and space-wide ones as before", () => {
+    const qc = createTestQueryClient();
+    useBlockedConversations.getState().reset();
+    useBlockedConversations.getState().setIn("remote-direct", { "c-hidden": "rimp1_alice" });
+    applyRelayEvent(
+      qc,
+      {
+        type: "NewMessage",
+        workspace_id: "remote-direct",
+        conversation_id: "c-other",
+        message: {} as never,
+      },
+      "remote-direct",
+    );
+    applyRelayEvent(
+      qc,
+      { type: "PresenceChanged", workspace_id: "remote-direct", user_id: "u", status: "online" },
+      "remote-direct",
+    );
+    expect(routed.applyWorkspaceEvent).toHaveBeenCalledTimes(2);
+    useBlockedConversations.getState().reset();
   });
 
   describe("a departure", () => {

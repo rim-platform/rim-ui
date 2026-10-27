@@ -1,8 +1,11 @@
+import { asSentence } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 import { useShellStore, type DirectDraft } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { blockedPrincipalIds } from "../../relay/inbox/blockedCreators";
 import { directSpaceIdsOf, supersededConversations } from "../../relay/api/useDirectInbox";
 import type { PredecessorView } from "../../relay/api/relayApi";
 import { useRelayStore } from "../../relay/state/useRelayStore";
@@ -74,9 +77,19 @@ async function spaceDirect(principalId: string): Promise<ConversationSummary | u
  * Opens the direct message with one person: the one this client has loaded, else a draft
  * whose first message creates it (also when the list cannot be read). A draft in a direct
  * space switches to that space first. One in a direct space, opened from a workspace, keeps
- * the way back to it.
+ * the way back to it. Someone this account blocked gets neither: the app says to unblock them
+ * first.
  */
 export async function openDirectWith(target: DirectDraft): Promise<void> {
+  if ("spaceId" in target) {
+    const blocked = await blockedPrincipalIds().catch(() => new Set<string>());
+    if (blocked.has(target.member.principalId)) {
+      toast.info(asSentence(`You blocked ${target.member.name}`), {
+        description: "Unblock them in Settings → Direct messages to message them.",
+      });
+      return;
+    }
+  }
   useShellStore.getState().setActivePanel("inbox");
   if ("spaceId" in target) {
     const existing = await spaceDirect(target.member.principalId).catch(() => undefined);

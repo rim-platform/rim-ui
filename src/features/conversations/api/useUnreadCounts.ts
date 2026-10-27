@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { isBlockedConversation } from "../../relay/state/useBlockedConversations";
 import { useUnreadStore } from "../state/useUnreadStore";
 
 const UNREAD_COUNTS_QUERY = gql`
@@ -19,21 +20,27 @@ interface UnreadCountItem {
   count: number;
 }
 
-/** Fetches one space's unread counts and puts them in the unread store. */
+/**
+ * Fetches one space's unread counts and puts them in the unread store, leaving out
+ * conversations hidden because someone blocked started them.
+ */
 export async function fetchUnreadCounts(workspaceId: string): Promise<UnreadCountItem[]> {
   const res = await graphqlClient.request<{
     unreadCounts: UnreadCountItem[];
   }>(UNREAD_COUNTS_QUERY, { workspaceId });
 
+  const shown = res.unreadCounts.filter(
+    (item) => !isBlockedConversation(workspaceId, item.conversationId),
+  );
   const counts: Record<string, number> = {};
-  for (const item of res.unreadCounts) {
+  for (const item of shown) {
     if (item.count > 0) {
       counts[item.conversationId] = item.count;
     }
   }
   useUnreadStore.getState().setCounts(workspaceId, counts);
 
-  return res.unreadCounts;
+  return shown;
 }
 
 export function useUnreadCounts(workspaceId?: string) {
