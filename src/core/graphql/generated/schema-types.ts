@@ -1325,6 +1325,12 @@ export type Message = {
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
   /**
+   * When the text last changed, the value `MessageChange.editedAt` carries; null for a
+   * never-edited message and for a deleted one. Listed in `serverInfo.capabilities` as
+   * `message_edited_at`.
+   */
+  editedAt?: Maybe<Scalars['DateTime']['output']>;
+  /**
    * The MLS envelope of an encrypted message, whose `text` is always null; null for
    * plaintext messages.
    */
@@ -1620,10 +1626,11 @@ export type Mutation = {
   /** Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each). */
   addContact: Contact;
   /**
-   * Add (invite) workspace members to a channel or group the caller belongs to. In the
-   * server's default workspace a channel takes them from an Owner, a Moderator or a private
-   * channel's creator, a group as a DM with each would be started, and one call names at
-   * most 50.
+   * Add (invite) people to a channel or group the caller belongs to: workspace members by
+   * `userIds`, and in the direct space anyone by principal id in `remoteMembers`, here or on
+   * another server, as `createConversation` names them. In the server's default workspace a
+   * channel takes them from an Owner, a Moderator or a private channel's creator, a group as a
+   * DM with each would be started, and one call names at most 50.
    */
   addConversationMembers: Conversation;
   /** Add a device certified by the current identity key. */
@@ -2200,8 +2207,9 @@ export type MutationAddContactArgs = {
 
 export type MutationAddConversationMembersArgs = {
   conversationId: Scalars['ID']['input'];
+  remoteMembers?: InputMaybe<Array<RemoteMemberInput>>;
   serverId: Scalars['ID']['input'];
-  userIds: Array<Scalars['ID']['input']>;
+  userIds?: Array<Scalars['ID']['input']>;
 };
 
 
@@ -4242,6 +4250,11 @@ export type ServerInfo = {
    * forever.
    */
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
+  /**
+   * API additions this server has that an older server lacks, by name: `message_edited_at`
+   * (`Message.editedAt`). A client ignores names it does not know.
+   */
+  capabilities: Array<Scalars['String']['output']>;
   /**
    * The workspace every new account joins as a Member, so a client can open it after a
    * signup: the one `RIM_DEFAULT_WORKSPACE` names, or the one an owner claimed from the

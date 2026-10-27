@@ -1630,6 +1630,12 @@ type Message {
 	forwardedFrom: Message
 	isDeleted: Boolean!
 	sentAt: DateTime!
+	"""
+	When the text last changed, the value `MessageChange.editedAt` carries; null for a
+	never-edited message and for a deleted one. Listed in `serverInfo.capabilities` as
+	`message_edited_at`.
+	"""
+	editedAt: DateTime
 	author: User
 	reactions: [ReactionGroup!]!
 	isPinned: Boolean!
@@ -1965,12 +1971,13 @@ type Mutation {
 	"""
 	leaveConversation(serverId: ID!, conversationId: ID!): Boolean!
 	"""
-	Add (invite) workspace members to a channel or group the caller belongs to. In the
-	server's default workspace a channel takes them from an Owner, a Moderator or a private
-	channel's creator, a group as a DM with each would be started, and one call names at
-	most 50.
+	Add (invite) people to a channel or group the caller belongs to: workspace members by
+	`userIds`, and in the direct space anyone by principal id in `remoteMembers`, here or on
+	another server, as `createConversation` names them. In the server's default workspace a
+	channel takes them from an Owner, a Moderator or a private channel's creator, a group as a
+	DM with each would be started, and one call names at most 50.
 	"""
-	addConversationMembers(serverId: ID!, conversationId: ID!, userIds: [ID!]!): Conversation!
+	addConversationMembers(serverId: ID!, conversationId: ID!, userIds: [ID!]! = [], remoteMembers: [RemoteMemberInput!]): Conversation!
 	"""
 	Remove a member from a channel or group: Owner/Moderator may remove anyone, others only
 	themselves.
@@ -3978,6 +3985,11 @@ type ServerInfo {
 	`confirmedMinimumAge`.
 	"""
 	minimumAge: Int
+	"""
+	API additions this server has that an older server lacks, by name: `message_edited_at`
+	(`Message.editedAt`). A client ignores names it does not know.
+	"""
+	capabilities: [String!]!
 }
 
 """
