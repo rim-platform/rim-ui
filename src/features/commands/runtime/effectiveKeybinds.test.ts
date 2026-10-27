@@ -10,8 +10,8 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
-import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
-import { PROFILE_FORMAT, type KeybindProfile } from "../profiles/keybindProfile";
+import { BUILT_IN_PROFILES, DEFAULT_BINDINGS } from "../profiles/builtInProfiles";
+import { PROFILE_FORMAT, mergeOverDefaults, type KeybindProfile } from "../profiles/keybindProfile";
 import type { ResolvedKeybind } from "../types";
 import {
   listedKeybinds,
@@ -56,6 +56,25 @@ describe("resolveEffectiveKeybinds", () => {
     expect(commandFor(keybinds, "Ctrl+K")).toBe("workspace.open_command_palette");
     expect(commandFor(keybinds, "Escape")).toBe("workspace.close_panel");
     expect(commandFor(keybinds, "?")).toBe("workspace.show_shortcuts");
+  });
+
+  it("an imported three-binding profile keeps ? and Ctrl+/ through the merge", () => {
+    const three = profile([
+      { keystroke: "Ctrl+K", commandId: "workspace.open_command_palette", context: "GLOBAL" },
+      { keystroke: "Ctrl+J", commandId: "workspace.open_search", context: "GLOBAL" },
+      { keystroke: "Ctrl+R", commandId: null, context: "GLOBAL" },
+    ]);
+    const server = [keybind({ keystroke: "Ctrl+R", commandId: "workspace.cycle_recent_activity" })];
+    const keybinds = resolveEffectiveKeybinds(
+      [],
+      server,
+      mergeOverDefaults(DEFAULT_BINDINGS, three),
+    );
+    expect(commandFor(keybinds, "?")).toBe("workspace.show_shortcuts");
+    expect(commandFor(keybinds, "Ctrl+/")).toBe("workspace.show_shortcuts");
+    expect(commandFor(keybinds, "Ctrl+L")).toBe("workspace.cycle_layout_preset");
+    expect(commandFor(keybinds, "Ctrl+J")).toBe("workspace.open_search");
+    expect(commandFor(keybinds, "Ctrl+R")).toBeNull();
   });
 
   it("ranks device bindings, then the user's, then the profile, then server defaults", () => {

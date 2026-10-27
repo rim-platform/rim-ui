@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const runtime = vi.hoisted(() => ({ platform: "web" as "web" | "desktop" }));
@@ -12,13 +12,19 @@ vi.mock("../../../core/tauri/safeInvoke", () => ({
 }));
 
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
-import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
-import { PROFILE_FORMAT, serializeKeybindProfile } from "../profiles/keybindProfile";
+import { BUILT_IN_PROFILES, DEFAULT_BINDINGS } from "../profiles/builtInProfiles";
+import {
+  PROFILE_FORMAT,
+  mergeOverDefaults,
+  parseKeybindProfile,
+  serializeKeybindProfile,
+  type KeybindProfile,
+} from "../profiles/keybindProfile";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { KeyboardSettings } from "./KeyboardSettings";
 
-const custom = {
+const custom: KeybindProfile = {
   format: PROFILE_FORMAT,
   version: 1,
   name: "Team keys",
@@ -29,6 +35,11 @@ const custom = {
 
 function jsonFile(content: string, name = "team.json"): File {
   return new File([content], name, { type: "application/json" });
+}
+
+/** The box that asks how to import a profile file. */
+async function importBox(): Promise<HTMLElement> {
+  return screen.findByRole("group", { name: "Import profile" });
 }
 
 describe("KeyboardSettings", () => {
@@ -112,14 +123,93 @@ describe("KeyboardSettings", () => {
         screen.getByTestId("keybind-profile-file"),
         jsonFile(JSON.stringify(custom)),
       );
-      await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveTextContent(
-          'Imported "Team keys": 1 binding, Vim mode on.',
-        ),
+      const box = await importBox();
+      expect(box).toHaveTextContent('Import "Team keys"?');
+      expect(box).toHaveTextContent("the profile's 1 binding takes the key it names");
+      expect(within(box).getByRole("button", { name: "Merge" })).toHaveFocus();
+      expect(useKeybindProfileStore.getState().profile).toEqual(BUILT_IN_PROFILES.minimal);
+
+      await user.click(within(box).getByRole("button", { name: "Merge" }));
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        'Imported "Team keys" over the defaults: 1 binding, Vim mode on.',
       );
-      expect(useKeybindProfileStore.getState().profile).toEqual(custom);
+      expect(screen.queryByRole("group", { name: "Import profile" })).not.toBeInTheDocument();
+      expect(useKeybindProfileStore.getState()).toMatchObject({
+        profile: custom,
+        replacesDefaults: false,
+      });
       expect(screen.getByText("Active: Team keys")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "An imported profile over the default shortcuts. Choosing one above replaces it.",
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByRole("radio", { name: /Minimal/ })).not.toBeChecked();
+    });
+
+    it("Replace all imports the profile in place of the defaults", async () => {
+      const user = userEvent.setup();
+      render(<KeyboardSettings />);
+      await user.upload(
+        screen.getByTestId("keybind-profile-file"),
+        jsonFile(JSON.stringify(custom)),
+      );
+      await user.click(within(await importBox()).getByRole("button", { name: "Replace all" }));
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        'Imported "Team keys" in place of the defaults: 1 binding, Vim mode on.',
+      );
+      expect(useKeybindProfileStore.getState()).toMatchObject({
+        profile: custom,
+        replacesDefaults: true,
+      });
+      expect(
+        screen.getByText(
+          "An imported profile in place of the default shortcuts. Choosing one above replaces it.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("Cancel leaves the active profile as it was", async () => {
+      const user = userEvent.setup();
+      render(<KeyboardSettings />);
+      const input = screen.getByTestId("keybind-profile-file");
+      await user.upload(input, jsonFile(JSON.stringify(custom)));
+      await user.click(within(await importBox()).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("group", { name: "Import profile" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(useKeybindProfileStore.getState().profile).toEqual(BUILT_IN_PROFILES.minimal);
+
+      // Escape inside the box cancels too.
+      await user.upload(input, jsonFile(JSON.stringify(custom)));
+      await importBox();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("group", { name: "Import profile" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(useKeybindProfileStore.getState().profile).toEqual(BUILT_IN_PROFILES.minimal);
+      // Focus goes back to the button that started the import.
+      expect(screen.getByRole("button", { name: "Import profile" })).toHaveFocus();
+    });
+
+    it("exports the merged bindings", async () => {
+      const createObjectURL = vi.fn((blob: Blob) => {
+        void blob;
+        return "blob:profile";
+      });
+      Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+      useKeybindProfileStore.getState().setProfile(custom);
+      const user = userEvent.setup();
+      render(<KeyboardSettings />);
+
+      await user.click(screen.getByRole("button", { name: "Export profile" }));
+
+      const saved = parseKeybindProfile(await createObjectURL.mock.calls[0][0].text());
+      if (!saved.ok) throw new Error(saved.errors.join("\n"));
+      expect(saved.profile).toEqual(mergeOverDefaults(DEFAULT_BINDINGS, custom));
+      expect(saved.profile.bindings).toEqual([...DEFAULT_BINDINGS, ...custom.bindings]);
     });
 
     it("refuses an invalid file with clear errors and keeps the active profile", async () => {
@@ -196,7 +286,11 @@ describe("KeyboardSettings", () => {
       render(<KeyboardSettings />);
       await user.click(screen.getByRole("button", { name: "Import profile" }));
       expect(safeInvoke).toHaveBeenCalledWith("keybind_profile_open", {});
+      await user.click(within(await importBox()).getByRole("button", { name: "Merge" }));
       await waitFor(() => expect(useKeybindProfileStore.getState().profile).toEqual(custom));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        'Imported "Team keys" over the defaults: 1 binding, Vim mode on.',
+      );
     });
   });
 });

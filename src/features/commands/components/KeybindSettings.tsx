@@ -26,7 +26,7 @@ import {
   isDeviceKeybind,
   useDeviceKeybindStore,
 } from "../state/useDeviceKeybindStore";
-import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { useActiveKeybindProfile } from "../state/useKeybindProfileStore";
 import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -133,7 +133,7 @@ export function KeybindSettings() {
   const addDeviceKeybind = useDeviceKeybindStore((s) => s.add);
   const updateDeviceKeybind = useDeviceKeybindStore((s) => s.update);
   const removeDeviceKeybind = useDeviceKeybindStore((s) => s.remove);
-  const profile = useKeybindProfileStore((s) => s.profile);
+  const profile = useActiveKeybindProfile();
   const keybinds = useMemo(
     () =>
       listedKeybinds(deviceKeybinds, serverKeybinds, profile).filter((kb) =>

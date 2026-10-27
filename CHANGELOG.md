@@ -44,6 +44,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - <kbd>r</kbd> on a selected message starts a reply instead of opening its thread; <kbd>t</kbd>
   opens the thread. The NAVIGATE bar offers <kbd>r</kbd>, <kbd>t</kbd> and <kbd>p</kbd> only
   where the conversation allows them.
+- Importing a keyboard profile keeps the default shortcuts: the file's bindings take only the
+  keys they name. **Replace all** in the import dialog uses the file alone, as before. A device
+  on a built-in profile now gets shortcuts added in later versions.
 
 ### Fixed
 

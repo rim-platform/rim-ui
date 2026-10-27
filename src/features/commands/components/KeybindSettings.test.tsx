@@ -90,9 +90,11 @@ function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinit
 describe("KeybindSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // A profile with no bindings keeps each test's rows to the ones it gives.
+    // A profile with no bindings, in place of the defaults, keeps each test's rows to the ones
+    // it gives.
     useKeybindProfileStore.setState({
       profile: { ...BUILT_IN_PROFILES.minimal, bindings: [] },
+      replacesDefaults: true,
     });
   });
 
@@ -285,7 +287,10 @@ describe("KeybindSettings", () => {
     });
 
     it("lists the app's own defaults from the active profile", () => {
-      useKeybindProfileStore.setState({ profile: BUILT_IN_PROFILES.minimal });
+      useKeybindProfileStore.setState({
+        profile: BUILT_IN_PROFILES.minimal,
+        replacesDefaults: false,
+      });
       vi.mocked(useResolvedKeybinds).mockReturnValue({
         data: [],
         isLoading: false,

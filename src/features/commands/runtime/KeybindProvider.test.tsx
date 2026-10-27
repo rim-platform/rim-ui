@@ -339,4 +339,22 @@ describe("KeybindProvider with the default profile", () => {
       shell.isThreadOpen = false;
     }
   });
+
+  it("leaves Escape to an inline prompt that answers it, instead of closing the page", () => {
+    const shell = useShellStore.getState() as unknown as { mainSurface: { kind: string } };
+    shell.mainSurface = { kind: "settings" };
+    try {
+      const { getByRole } = renderWith(
+        <div role="group" aria-label="Import profile" data-owns-escape="">
+          <button>Merge</button>
+        </div>,
+      );
+      const button = getByRole("button", { name: "Merge" });
+      button.focus();
+      expect(press(button, "Escape").defaultPrevented).toBe(false);
+      expect(dispatchCommand).not.toHaveBeenCalled();
+    } finally {
+      shell.mainSurface = { kind: "conversation" };
+    }
+  });
 });

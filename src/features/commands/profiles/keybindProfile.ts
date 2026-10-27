@@ -273,6 +273,38 @@ export function profileKeybinds(profile: KeybindProfile): ResolvedKeybind[] {
   }));
 }
 
+/** The context-and-keystroke slot of a binding, with the keystroke in canonical form. */
+function bindingSlot(binding: ProfileBinding): string {
+  const keystroke = canonicalKeystroke(binding.keystroke);
+  return `${binding.context} ${keystroke.ok ? keystroke.value : binding.keystroke}`;
+}
+
+/**
+ * `profile` over `defaults`: each of its bindings takes the place of the default on the same
+ * context and keystroke, or is added after them; every other default stays. A binding with no
+ * command removes the default on its keys and frees them.
+ *
+ * @returns A new profile with the name, description and Vim mode of `profile`.
+ */
+export function mergeOverDefaults(
+  defaults: readonly ProfileBinding[],
+  profile: KeybindProfile,
+): KeybindProfile {
+  const bindings = defaults.map((binding) => ({ ...binding }));
+  const positions = new Map(bindings.map((binding, index) => [bindingSlot(binding), index]));
+  for (const binding of profile.bindings) {
+    const slot = bindingSlot(binding);
+    const at = positions.get(slot);
+    if (at === undefined) {
+      positions.set(slot, bindings.length);
+      bindings.push({ ...binding });
+    } else {
+      bindings[at] = { ...binding };
+    }
+  }
+  return { ...profile, bindings };
+}
+
 /** Whether two profiles bind the same keys and set the same Vim mode, ignoring order. */
 export function sameBindings(a: KeybindProfile, b: KeybindProfile): boolean {
   if (a.vimMode !== b.vimMode || a.bindings.length !== b.bindings.length) return false;

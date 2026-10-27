@@ -5,7 +5,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { profileKeybinds, type KeybindProfile } from "../profiles/keybindProfile";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
-import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { useActiveKeybindProfile } from "../state/useKeybindProfileStore";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 import { normalizeKeystroke } from "./keybindEngine";
 
@@ -91,7 +91,7 @@ export function useEffectiveKeybinds(): ResolvedKeybind[] {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: server } = useResolvedKeybinds(workspaceId ?? undefined);
   const device = useDeviceKeybindStore((s) => s.keybinds);
-  const profile = useKeybindProfileStore((s) => s.profile);
+  const profile = useActiveKeybindProfile();
   return useMemo(
     () =>
       resolveEffectiveKeybinds(device, server, profile).filter((kb) =>
