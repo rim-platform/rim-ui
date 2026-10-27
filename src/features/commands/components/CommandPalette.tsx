@@ -34,6 +34,8 @@ import {
   readablePipeError,
 } from "../runtime/pipeStages";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
+import { offeredForConversation } from "../runtime/conversationActionGate";
+import { useConversation } from "../../conversations/api/useConversation";
 import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
@@ -117,6 +119,13 @@ export function CommandPalette() {
     ];
   }, [commands, pluginCommands, registryItems, runnableHere, argumentContext]);
 
+  const { data: openConversation } = useConversation(workspaceId, argumentContext.conversationId);
+  // Archive Channel and Unarchive Channel only where they would change something.
+  const offeredCommands = useMemo(
+    () => visibleCommands.filter((cmd) => offeredForConversation(cmd.id, openConversation)),
+    [visibleCommands, openConversation],
+  );
+
   // Every command the palette knows, to name pipe stages in messages.
   const knownCommands = useMemo(
     () => [...(commands ?? []), ...LOCAL_COMMANDS, ...pluginCommands],
@@ -134,7 +143,7 @@ export function CommandPalette() {
 
   // When pipe segments exist, searchQuery already contains only the active segment
   // (text after the last `|`) because handleSearchChange resets it on pipe.
-  const listed = pipeSegments.length > 0 ? pipeCommands : visibleCommands;
+  const listed = pipeSegments.length > 0 ? pipeCommands : offeredCommands;
   const search = useMemo(() => createPaletteSearch(listed), [listed]);
   const sortedResults = useMemo(() => search(searchQuery), [search, searchQuery]);
 

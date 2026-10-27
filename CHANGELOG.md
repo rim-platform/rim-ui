@@ -198,6 +198,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   enable, edit or delete buttons for a Member, the default workspace offers creating channels to
   its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
   workspace-scoped state.
+- The command palette offers **Unarchive Channel** only in an archived channel and **Archive
+  Channel** only in one that is not, instead of reporting success for a change that did nothing.
 
 ## [0.0.5] - 2026-10-26
 
