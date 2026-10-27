@@ -45,6 +45,8 @@ export interface ConfirmationSubject {
    * `null` asks for no typed word.
    */
   verb?: string | null;
+  /** The command, or a stage of the run, is marked dangerous. */
+  dangerous?: boolean;
 }
 
 /**
@@ -119,6 +121,7 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
     args: subject.args ?? {},
     sensitivity: subject.sensitivity,
     verb: subject.verb,
+    dangerous: subject.dangerous,
     token: challenge.token,
     argsHash: challenge.argsHash,
     expiresAt: challenge.expiresAt,

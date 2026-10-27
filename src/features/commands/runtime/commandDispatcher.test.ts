@@ -134,7 +134,9 @@ vi.mock("../../../core/query/queryClient", () => ({
 
 vi.mock("../../../core/query/keys", () => ({
   queryKeys: {
-    channels: () => ["channels"],
+    channels: (ws?: string) => ["channels", ws],
+    joinedChannels: (ws?: string) => ["channels", ws, "joined"],
+    conversation: (ws?: string, id?: string) => ["conversation", ws, id],
     conversations: () => ["conversations"],
     server: (serverId: string) => ["server", serverId],
     plugins: () => ["plugins"],
@@ -150,7 +152,12 @@ import { usePluginConfirmStore } from "../../plugins/state/usePluginConfirmStore
 import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
-import { graphqlError } from "../../conversations/__fixtures__/conversations";
+import { graphqlError, makeConversation } from "../../conversations/__fixtures__/conversations";
+import { useConversationActionConfirmStore } from "../../conversations/state/useConversationActionConfirmStore";
+import {
+  archiveConfirmation,
+  leaveConfirmation,
+} from "../../conversations/conversationActionTexts";
 
 function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -290,6 +297,7 @@ describe("backend commands the server holds for confirmation", () => {
       description: "Delete every message in the channel.",
       args: { channel: "general" },
       sensitivity: CommandSensitivity.RESTRICTED,
+      dangerous: true,
       token: "tok-1",
     });
     useConfirmationModalStore.getState().approve();
@@ -673,5 +681,112 @@ describe("plugin commands that require a context", () => {
       expect.objectContaining({ args: { conversation_id: "conv-1" }, initiator: "user" }),
     );
     expect(safeInvokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("conversation actions the app confirms first", () => {
+  const mockExecuteBackend = vi.fn();
+  const done = {
+    executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+  };
+  const context = { commandContext: { workspaceId: "ws-1", conversationId: "c-1" } };
+  const archive = makeCommand({
+    id: "chat.archive_channel",
+    title: "Archive Channel",
+    executionTarget: "BACKEND",
+  });
+  const leave = makeCommand({
+    id: "chat.leave_conversation",
+    title: "Leave Conversation",
+    executionTarget: "BACKEND",
+  });
+
+  /** Serves `channel` from the joined-channels list of `ws-1`, and nothing else. */
+  function serveJoinedChannel(channel: ReturnType<typeof makeConversation>) {
+    getQueryDataMock.mockImplementation(((key: unknown[]) => {
+      if (key[0] === "channels" && key[1] === "ws-1" && key[2] === "joined") {
+        return { items: [channel], pageInfo: { hasNext: false, hasPrev: false } };
+      }
+      return null;
+    }) as () => unknown);
+  }
+
+  async function askedFor() {
+    await vi.waitFor(() =>
+      expect(useConversationActionConfirmStore.getState().request).not.toBeNull(),
+    );
+    return useConversationActionConfirmStore.getState().request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecuteBackend.mockReset();
+    mockExecuteBackend.mockResolvedValue(done);
+    getQueryDataMock.mockReset();
+    getQueryDataMock.mockReturnValue(null);
+    vi.mocked(parsePluginCommandId).mockReturnValue(null);
+    useConversationActionConfirmStore.getState().cancel();
+  });
+
+  it("asks before archiving a channel and sends nothing when cancelled", async () => {
+    serveJoinedChannel(makeConversation({ id: "c-1", title: "random" }));
+
+    const pending = dispatchCommand(archive, mockExecuteBackend, context);
+    expect(await askedFor()).toEqual(archiveConfirmation("#random"));
+    useConversationActionConfirmStore.getState().cancel();
+
+    expect(isCancelledResult(await pending)).toBe(true);
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("archives once confirmed", async () => {
+    serveJoinedChannel(makeConversation({ id: "c-1", title: "random" }));
+
+    const pending = dispatchCommand(archive, mockExecuteBackend, context);
+    await askedFor();
+    useConversationActionConfirmStore.getState().confirm();
+
+    expect((await pending)?.status).toBe("SUCCESS");
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
+    expect(mockExecuteBackend.mock.calls[0][0]).toMatchObject({
+      commandId: "chat.archive_channel",
+    });
+  });
+
+  it("asks before leaving a private channel", async () => {
+    serveJoinedChannel(makeConversation({ id: "c-1", title: "secret", isPrivate: true }));
+
+    const pending = dispatchCommand(leave, mockExecuteBackend, context);
+    expect(await askedFor()).toEqual(leaveConfirmation("#secret"));
+    useConversationActionConfirmStore.getState().cancel();
+
+    expect(isCancelledResult(await pending)).toBe(true);
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("leaves a public channel without asking, as its menu does", async () => {
+    serveJoinedChannel(makeConversation({ id: "c-1", title: "general", isPrivate: false }));
+
+    const result = await dispatchCommand(leave, mockExecuteBackend, context);
+
+    expect(result?.status).toBe("SUCCESS");
+    expect(useConversationActionConfirmStore.getState().request).toBeNull();
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks about an unnamed conversation it cannot find", async () => {
+    const pending = dispatchCommand(leave, mockExecuteBackend, context);
+    expect(await askedFor()).toEqual(leaveConfirmation("this conversation"));
+    useConversationActionConfirmStore.getState().cancel();
+
+    expect(isCancelledResult(await pending)).toBe(true);
+  });
+
+  it("does not ask for a pipe stage", async () => {
+    const result = await dispatchCommand(archive, mockExecuteBackend, { ...context, isPipe: true });
+
+    expect(result?.status).toBe("SUCCESS");
+    expect(useConversationActionConfirmStore.getState().request).toBeNull();
+    expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
   });
 });

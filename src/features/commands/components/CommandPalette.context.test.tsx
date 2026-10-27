@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
-import type { CommandDefinition, CommandResult } from "../types";
+import type { CommandArgumentInfo, CommandDefinition, CommandResult } from "../types";
 
 const mutateAsync = vi.fn();
 
 vi.mock("../api/useCommands", () => ({
-  useCommands: vi.fn(() => ({ data: [MARK_AS_READ], isLoading: false })),
+  useCommands: vi.fn(() => ({ data: [MARK_AS_READ, LIST_STATE], isLoading: false })),
   useExecuteCommandMutation: vi.fn(() => ({ mutateAsync })),
 }));
 
@@ -30,6 +30,8 @@ vi.mock("../runtime/effectiveKeybinds", () => ({
 vi.mock("../runtime/commandDispatcher", () => ({
   dispatchCommand: vi.fn(),
   commandResultOf: (outcome: { result: CommandResult }) => outcome.result,
+  hasLocalHandler: (id: string) => id === "chat.create_channel",
+  argumentPromptName: (id: string) => (id === "chat.search_messages" ? "query" : undefined),
 }));
 
 vi.mock("../runtime/humanConfirmation", () => ({
@@ -50,6 +52,8 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { CommandPalette } from "./CommandPalette";
+import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
+import { toast } from "../../../shared/toast";
 import { useCommands } from "../api/useCommands";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
@@ -58,7 +62,17 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 
-const MARK_AS_READ: CommandDefinition = {
+const SERVER_ID: CommandArgumentInfo = {
+  name: "server_id",
+  argumentType: CommandArgumentType.WORKSPACE_ID,
+  required: true,
+};
+
+function requiredArgument(name: string, argumentType: CommandArgumentType): CommandArgumentInfo {
+  return { name, argumentType, required: true };
+}
+
+const BASE_COMMAND: CommandDefinition = {
   id: "chat.mark_as_read",
   title: "Mark as read",
   description: "Marks the conversation read",
@@ -73,13 +87,55 @@ const MARK_AS_READ: CommandDefinition = {
   dangerous: false,
 };
 
+const MARK_AS_READ: CommandDefinition = {
+  ...BASE_COMMAND,
+  arguments: [SERVER_ID, requiredArgument("conversation_id", CommandArgumentType.CONVERSATION_ID)],
+};
+
+const LIST_STATE: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "state.list",
+  title: "List State",
+  description: "Lists the workspace's state keys",
+  category: "State",
+  arguments: [SERVER_ID],
+};
+
+const KICK: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "admin.kick",
+  title: "Kick Member",
+  description: "Removes a member from the workspace",
+  category: "Admin",
+  dangerous: true,
+  arguments: [SERVER_ID, requiredArgument("user_id", CommandArgumentType.USER_ID)],
+};
+
+const CREATE_CHANNEL: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "chat.create_channel",
+  title: "Create Channel",
+  description: "Creates a channel",
+  category: "Conversation",
+  arguments: [SERVER_ID, requiredArgument("name", CommandArgumentType.STRING)],
+};
+
+const SEARCH: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "chat.search_messages",
+  title: "Search Messages",
+  description: "Searches workspace messages",
+  category: "Chat",
+  arguments: [SERVER_ID, requiredArgument("query", CommandArgumentType.STRING)],
+};
+
 function serverCommand(
   id: string,
   title: string,
   description: string,
   category: string,
 ): CommandDefinition {
-  return { ...MARK_AS_READ, id, title, description, category };
+  return { ...BASE_COMMAND, id, title, description, category };
 }
 
 const SUCCESS: CommandResult = {
@@ -133,7 +189,7 @@ describe("CommandPalette command context", () => {
   it("runs a command with only the workspace when no conversation is open", () => {
     render(<CommandPalette />);
     act(() => useCommandStore.getState().openCommandPalette());
-    fireEvent.click(screen.getByText("Mark as read"));
+    fireEvent.click(screen.getByText("List State"));
 
     expect(vi.mocked(dispatchCommand).mock.calls[0][2]).toEqual({
       commandContext: { workspaceId: "ws-1", focusedSurface: "commandPalette" },
@@ -187,7 +243,7 @@ describe("CommandPalette search", () => {
   afterEach(() => {
     act(() => useCommandStore.getState().closeCommandPalette());
     vi.mocked(useCommands).mockReturnValue({
-      data: [MARK_AS_READ],
+      data: [MARK_AS_READ, LIST_STATE],
       isLoading: false,
     } as ReturnType<typeof useCommands>);
   });
@@ -211,5 +267,148 @@ describe("CommandPalette search", () => {
     expect(screen.getByText("New message")).toBeInTheDocument();
     expect(screen.getByText("Start a direct message or a group conversation.")).toBeInTheDocument();
     expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
+  });
+});
+
+/** Serves the commands the argument filter and pipe tests choose among. */
+function serveFilterCommands() {
+  vi.mocked(useCommands).mockReturnValue({
+    data: [MARK_AS_READ, KICK, CREATE_CHANNEL, SEARCH, LIST_STATE],
+    isLoading: false,
+  } as ReturnType<typeof useCommands>);
+}
+
+function openPalette() {
+  render(<CommandPalette />);
+  act(() => useCommandStore.getState().openCommandPalette());
+}
+
+/** Types `value` into the palette's search input, whatever its placeholder says. */
+function typeInPalette(value: string) {
+  fireEvent.change(screen.getByRole("textbox"), { target: { value } });
+}
+
+describe("CommandPalette argument filter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serveFilterCommands();
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+  });
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    useWorkspaceStore.getState().clearWorkspaceId();
+    useShellStore.getState().reset();
+    vi.mocked(useCommands).mockReturnValue({
+      data: [MARK_AS_READ, LIST_STATE],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  it("leaves out a command whose required argument nothing supplies", () => {
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    openPalette();
+
+    expect(screen.queryByText("Kick Member")).not.toBeInTheDocument();
+  });
+
+  it("lists a conversation's command only while a conversation is open", () => {
+    openPalette();
+    expect(screen.queryByText("Mark as read")).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setSelectedConversationId("conv-9"));
+    expect(screen.getByText("Mark as read")).toBeInTheDocument();
+  });
+
+  it("lists a command the app runs itself, and one whose argument its own prompt asks for", () => {
+    openPalette();
+
+    expect(screen.getByText("Create Channel")).toBeInTheDocument();
+    expect(screen.getByText("Search Messages")).toBeInTheDocument();
+  });
+});
+
+describe("CommandPalette pipes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serveFilterCommands();
+    mutateAsync.mockResolvedValue({ executeCommand: SUCCESS });
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+  });
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    useWorkspaceStore.getState().clearWorkspaceId();
+    useShellStore.getState().reset();
+    queryClient.clear();
+    vi.mocked(useCommands).mockReturnValue({
+      data: [MARK_AS_READ, LIST_STATE],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  it("Enter on an empty search runs the chain built so far", async () => {
+    openPalette();
+    typeInPalette("chat.search_messages query=Lunch|");
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    });
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    expect(mutateAsync.mock.calls[0][0]).toMatchObject({
+      commandId: "chat.search_messages query=Lunch",
+      isPipe: true,
+    });
+  });
+
+  it("Enter with a search adds the highlighted command and runs the chain", async () => {
+    openPalette();
+    typeInPalette("x|");
+    typeInPalette("list st");
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    });
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    expect(mutateAsync.mock.calls[0][0]).toMatchObject({ commandId: "x | state.list" });
+  });
+
+  it("Tab adds the highlighted command and runs the chain", async () => {
+    useShellStore.getState().setSelectedConversationId(null);
+    openPalette();
+    typeInPalette("x|");
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Tab" });
+    });
+
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+    expect(mutateAsync.mock.calls[0][0]).toMatchObject({ commandId: "x | state.list" });
+  });
+
+  it("offers only commands the server runs with this context after a pipe", () => {
+    openPalette();
+    expect(screen.getByText("Toggle Zen mode")).toBeInTheDocument();
+
+    typeInPalette("x|");
+
+    expect(screen.getByText("List State")).toBeInTheDocument();
+    expect(screen.queryByText("Kick Member")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create Channel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Search Messages")).not.toBeInTheDocument();
+    expect(screen.queryByText("Toggle Zen mode")).not.toBeInTheDocument();
+  });
+
+  it("refuses a stage that runs only in the app without sending it", async () => {
+    openPalette();
+    typeInPalette("workspace.toggle_zen_mode|");
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    });
+
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Pipe stage 1: Toggle Zen mode runs only in this app, so it cannot be part of a pipe.",
+    );
   });
 });

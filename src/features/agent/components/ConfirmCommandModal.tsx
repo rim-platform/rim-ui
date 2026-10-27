@@ -241,6 +241,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   }
 
   const sensitivityLabel = severityWireLabel(sensitivity);
+  // A dangerous command without a consequence line of its own is said to be dangerous.
+  const subtitle =
+    request.description ??
+    (request.dangerous ? "This is a dangerous command." : request.nlDescription);
   const titleId = `confirm-cmd-title-${request.token}`;
   const descId = `confirm-cmd-desc-${request.token}`;
 
@@ -263,9 +267,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           aria-labelledby={titleId}
           aria-describedby={descId}
           onKeyDown={onPanelKeyDown}
+          data-dangerous={request.dangerous ? "true" : undefined}
           className={cn(
             "w-full max-w-lg rounded-xl border border-rim-line border-l-4 bg-rim-panel",
-            visuals.borderAccent,
+            request.dangerous ? "border-l-rim-danger" : visuals.borderAccent,
           )}
         >
           {/* Header */}
@@ -304,16 +309,15 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                   for humans and not clamp-prone the way `nlDescription` (model-facing, tuned for
                   the LLM) can be. `nlDescription` remains the fallback for
                   commands without a `description`. */}
-              {(request.description ?? request.nlDescription) && (
-                <p className="mt-1 line-clamp-2 text-sm text-rim-text-muted">
-                  {request.description ?? request.nlDescription}
-                </p>
+              {subtitle && (
+                <p className="mt-1 line-clamp-2 text-sm text-rim-text-muted">{subtitle}</p>
               )}
             </div>
 
             {/* Hidden screen-reader description: severity, initiator, destination,
                 tool-result origin, then the word to type */}
             <span id={descId} className="sr-only">
+              {request.dangerous ? "Dangerous command. " : ""}
               {visuals.srLabel}. {byUser ? "Initiated by you." : "Initiated by AI agent."}
               {crossChannel
                 ? ` Destination differs from active conversation; will post in conversation ${crossChannel.targetId.slice(0, 8)}.`
@@ -434,8 +438,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               disabled={!confirmEnabled}
               className={cn(
                 "inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-medium text-rim-void transition",
-                visuals.confirmBg,
-                visuals.confirmHover,
+                request.dangerous ? "bg-rim-danger hover:bg-rim-danger/90" : visuals.confirmBg,
+                !request.dangerous && visuals.confirmHover,
                 !confirmEnabled && "cursor-not-allowed opacity-50",
               )}
               data-testid="confirm-button"

@@ -43,11 +43,12 @@ run waits for your confirmation:
 
 A command can also be marked dangerous, such as kicking, banning or changing someone's role. It
 always asks first, whoever runs it, and the palette tags it **dangerous**. The confirmation
-dialog reads "Confirm:" and the command's title, lists the arguments, and offers **Cancel** and
-a button that follows the tier: **Run anyway** for a mutating command, **I understand —
-execute** for a restricted one, **Confirm** otherwise. A restricted command first asks you to
-type its verb, as in `Type "delete" to confirm`. A confirmation expires; the app then says
-"Confirmation expired. Run the command again."
+dialog reads "Confirm:" and the command's title, is drawn in red for a dangerous command and says
+so, lists the arguments, and offers **Cancel** and a button that follows the tier: **Run
+anyway** for a mutating command, **I understand — execute** for a restricted one, **Confirm**
+otherwise. A restricted command first asks you to type its verb, as in `Type "delete" to
+confirm`. A confirmation expires; the app then says "Confirmation expired. Run the command
+again."
 
 **Capabilities.** A command declares what it needs, such as `chat.write` or
 `admin.manage_members`, and the server lists only the commands your role in the workspace may
@@ -70,21 +71,31 @@ Workspace plugins, the registry's plugins this device has not installed, as "Ins
 match.
 
 Each row shows where the command comes from (built in, plugin or yours), its category and its
-keybind. Left out are a plugin command that needs arguments, which its plugin's panel runs, a
-plugin command that needs a conversation while none is open, and macros, which run from
-Settings → Macros or `/macro`. Running a command closes the palette at once; a toast gives its
-title on success or "\<title\>: \<message\>" on failure, and a plugin command answers in its words.
+keybind. Left out are a command that needs an argument the palette cannot fill, such as **Kick
+Member** (the member) or **Set State** (the key), and a conversation's command such as **Mark as
+Read** while no conversation is open; a plugin command that needs arguments, which its plugin's
+panel runs, or a conversation while none is open; and macros, which run from Settings → Macros or
+`/macro`. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
+does: "Archive \<channel\>?" always, "Leave \<name\>?" for a group or a private channel; a
+public channel, which you can join again, is left at once. Running a command closes the palette
+at once; a toast gives its title on success or "\<title\>: \<message\>" on failure, and a plugin
+command answers in its words.
 **Search Messages** run from the palette or a keybind without a `query` opens the search box,
 as **Open Search** does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
 the server runs the search.
 
 **Pipes.** Typing <kbd>|</kbd> locks the text before it as a stage: a command id, optionally
-followed by `key=value` arguments with no spaces in the values. Pick the last command from the
-list, or press <kbd>Enter</kbd> on an empty search to run the chain. Each stage's result is
-merged into the next stage's arguments. A chain has at most 10 stages, all of them commands the
-server runs. The palette then shows each stage's result, or "Pipe failed at stage \<n\>: …".
-<kbd>Backspace</kbd> in an empty search reopens the last stage, and <kbd>Esc</kbd> clears the
-chain.
+followed by `key=value` arguments with no spaces in the values. The list then offers only the
+commands that can be the next stage: those the server runs whose arguments come from where you
+are. <kbd>Enter</kbd> on an empty search runs the chain; with a search, <kbd>Enter</kbd> adds the
+highlighted command as the last stage and runs the chain, and <kbd>Tab</kbd> or a click does the
+same. Each stage's result is merged into the next stage's arguments. A chain has at most 10
+stages, all of them commands the server runs. A stage that runs only in the app stops the chain
+before it is sent: "Pipe stage \<n\>: \<title\> runs only in this app, so it cannot be part of a
+pipe." When a stage is dangerous, the confirmation ("Confirm: Run pipe") is drawn in red and
+names it: "Includes a dangerous command: \<title\>." The palette then shows each stage's
+result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd> in an empty search reopens the
+last stage, and <kbd>Esc</kbd> clears the chain.
 
 ## Keybinds
 

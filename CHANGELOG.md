@@ -37,6 +37,18 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   longer uses up a password try.
 - Signing in no longer throws away the keys this device keeps for an account when they do not
   open: the sign-in stops, says the keys could not be opened, and leaves them as they were.
+- In a command palette pipe, <kbd>Enter</kbd> on an empty search runs the chain instead of adding
+  the highlighted command, such as **Ban Member**, as another stage; <kbd>Tab</kbd> or a click
+  adds it. A confirmation is drawn in red and says so when the command, or a stage of the pipe,
+  is dangerous.
+- The command palette no longer lists commands that need an argument it cannot fill, such as
+  **Kick Member**, **Set State** or **Do Not Disturb**, which always failed from there; a
+  conversation's commands are listed while one is open.
+- **Leave Conversation** and **Archive Channel** from the palette or a keybind ask first, with the
+  conversation menu's confirmation.
+- After `|` the palette offers only commands the server can run in a pipe, and a stage that runs
+  only in the app is refused with "Pipe stage <n>: <title> runs only in this app, so it cannot be
+  part of a pipe." instead of a "desktop-local" error.
 
 ## [0.0.5] - 2026-10-26
 

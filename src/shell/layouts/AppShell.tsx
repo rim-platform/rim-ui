@@ -43,6 +43,7 @@ import { useTypingEventHandler } from "../../features/messages/state/useTypingEv
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
+import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
 import { canShowPanels } from "../../features/plugins/pluginPanels";
@@ -477,6 +478,7 @@ function WorkspaceShell() {
           <AgentOverlay />
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
+          <ConversationActionConfirmHost />
           <PluginSettingsDialogHost />
           <RegistryHost />
           <QuickAccessAssigner />

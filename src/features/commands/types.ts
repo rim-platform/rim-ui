@@ -1,4 +1,5 @@
 import type {
+  CommandArgument,
   CommandSensitivity,
   ConfirmationChallenge,
 } from "../../core/graphql/generated/schema-types";
@@ -28,6 +29,9 @@ export type KeybindSource = "DEFAULT" | "USER" | "WORKSPACE";
 
 export type CommandResultStatus = "SUCCESS" | "ERROR" | "CONFIRMATION_REQUIRED";
 
+/** What the client reads of an argument a command declares. */
+export type CommandArgumentInfo = Pick<CommandArgument, "name" | "argumentType" | "required">;
+
 export interface CommandDefinition {
   id: string;
   title: string;
@@ -43,6 +47,8 @@ export interface CommandDefinition {
   dangerous: boolean;
   /** Server classification; a `RESTRICTED` command needs its verb typed to confirm. */
   sensitivity?: CommandSensitivity;
+  /** The arguments the server declares for the command; absent on commands the client defines. */
+  arguments?: CommandArgumentInfo[];
 }
 
 export interface ResolvedKeybind {

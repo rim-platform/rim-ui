@@ -25,6 +25,7 @@ import { reloadCommands } from "../api/useCommands";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { confirmConversationCommand } from "./conversationActionGate";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -286,6 +287,18 @@ const argumentPrompts: Record<string, { argument: string; open: () => void }> = 
   },
 };
 
+/** Whether this app runs `commandId` itself, so it needs none of the server's arguments. */
+export function hasLocalHandler(commandId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(localHandlers, commandId);
+}
+
+/** The argument a client surface asks for when `commandId` runs without it, if any. */
+export function argumentPromptName(commandId: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(argumentPrompts, commandId)
+    ? argumentPrompts[commandId].argument
+    : undefined;
+}
+
 /**
  * Opens the surface that asks for a command's missing argument.
  *
@@ -386,6 +399,18 @@ export async function dispatchCommand(
     };
   }
 
+  if (
+    !context?.isPipe &&
+    !(await confirmConversationCommand(command.id, context?.args, context?.commandContext))
+  ) {
+    return {
+      status: "ERROR",
+      message: "Cancelled",
+      payload: CANCELLED_PAYLOAD,
+      followUpCommands: [],
+    };
+  }
+
   // Backend command: a dangerous one is held until the user confirms it in the dialog.
   const outcome = await runWithHumanConfirmation(
     async (confirmation) => {
@@ -404,6 +429,7 @@ export async function dispatchCommand(
       description: command.description || undefined,
       args: context?.args,
       sensitivity: command.sensitivity,
+      dangerous: command.dangerous,
     },
   );
   return commandResultOf(outcome);
