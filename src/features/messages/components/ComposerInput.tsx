@@ -478,7 +478,7 @@ export function ComposerInput({
           }}
           placeholder={inThread ? "Reply in thread..." : "Write a message..."}
           aria-label={inThread ? "Reply in thread" : undefined}
-          className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+          className="w-0 flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
           style={{ height: "auto" }}
         />
         <button

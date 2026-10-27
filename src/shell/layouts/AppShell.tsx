@@ -367,7 +367,7 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300",
+                    "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300 *:min-w-0",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >
@@ -383,7 +383,7 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-80 shrink-0 transition-opacity duration-300",
+                    "grid w-80 shrink-0 transition-opacity duration-300 *:min-w-0",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >

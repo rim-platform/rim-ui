@@ -67,6 +67,13 @@ describe("EmojiPicker", () => {
     expect(screen.getByTestId("emoji-mart-picker")).toBeInTheDocument();
   });
 
+  it("is a dialog, so Escape closes the picker and not the surface behind it", async () => {
+    await renderPicker(defaultProps);
+    expect(screen.getByRole("dialog", { name: "Emoji picker" })).toContainElement(
+      screen.getByTestId("emoji-mart-picker"),
+    );
+  });
+
   it("forwards dark theme and emoji-mart config", async () => {
     await renderPicker(defaultProps);
     expect(pickerSpy).toHaveBeenCalled();
