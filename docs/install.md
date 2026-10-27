@@ -176,7 +176,7 @@ installer of each new version meets SmartScreen again ([Windows](#windows)).
 
 ## Build from source
 
-Every platform needs Node.js 22, Rust stable (from [rustup](https://rustup.rs/)) and
+Every platform needs Node.js 24, Rust stable (from [rustup](https://rustup.rs/)) and
 [cargo-about](https://github.com/EmbarkStudios/cargo-about), which writes the licence notices a
 release build bundles:
 
