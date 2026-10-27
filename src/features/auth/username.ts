@@ -6,7 +6,9 @@ export const USERNAME_MAX = 32;
 /** What the server lets a username hold: ASCII letters, digits, `_` and `-`. */
 const USERNAME_CHARACTERS = /^[A-Za-z0-9_-]+$/;
 
-/** Why a username is refused, in the server's order, or `null` when the server's rules accept it. */
+/**
+ * Why a username is refused, in the server's order, or `null` when the server's rules accept it.
+ */
 export function usernameProblem(value: string): string | null {
   const name = value.trim();
   if (name.length < USERNAME_MIN || name.length > USERNAME_MAX) {

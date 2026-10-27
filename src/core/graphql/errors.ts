@@ -213,9 +213,10 @@ export function timedOutMessage(until: string): string {
  * The server's human-readable message for a failed request, else `err.message`, else
  * `fallback`. A `TIMED_OUT` error reads "You are timed out until …", a `FEATURE_DISABLED` one
  * "<Feature> is switched off on this server", a `RATE_LIMITED` one "Slow down: try again in
- * N s" (N minutes from a minute up), an `UPSTREAM_UNAVAILABLE` one names no server id, a request that never reached the
- * server says so, and a server fault reads `SERVER_FAULT_MESSAGE`, wherever they surface. Never
- * the serialized response of a `ClientError`: one without GraphQL errors gets `fallback`.
+ * N s" (N minutes from a minute up), an `UPSTREAM_UNAVAILABLE` one names no server id, a request
+ * that never reached the server says so, and a server fault reads `SERVER_FAULT_MESSAGE`,
+ * wherever they surface. Never the serialized response of a `ClientError`: one without GraphQL
+ * errors gets `fallback`.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);
