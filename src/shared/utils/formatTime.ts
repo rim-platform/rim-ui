@@ -4,12 +4,12 @@ export function formatTime(iso: string): string {
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
   return (
     date.toLocaleDateString([], { month: "short", day: "numeric" }) +
     " " +
-    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
   );
 }
 

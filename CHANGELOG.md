@@ -214,6 +214,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - The command palette no longer toasts "Executed locally" after a command that opens something in
   the app, such as **Search Messages** or **Open Settings**; **Mark All as Read** and **Reload
   Commands** say what they did.
+- Times on a 12-hour clock read "9:15 PM" instead of "09:15 PM".
 
 ## [0.0.5] - 2026-10-26
 
