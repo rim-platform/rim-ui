@@ -177,4 +177,54 @@ describe("useEditMessageMutation", () => {
     await waitFor(() => expect(editEncrypted).toHaveBeenCalledTimes(1));
     expect(request).not.toHaveBeenCalled();
   });
+
+  describe("refetching after an edit", () => {
+    const messagesKey = queryKeys.messages("ws-1", "c-1");
+
+    /** Runs an edit of r-1 in thread t-1 and returns the keys invalidated once it settled. */
+    async function settle(qc: QueryClient, outcome: "saved" | "failed") {
+      const invalidated: unknown[] = [];
+      const spy = vi.spyOn(qc, "invalidateQueries").mockImplementation(((filters: {
+        queryKey?: unknown;
+      }) => {
+        invalidated.push(filters?.queryKey);
+        return Promise.resolve();
+      }) as never);
+      request.mockImplementation(() =>
+        outcome === "saved"
+          ? Promise.resolve({ editMessage: { id: "r-1", text: "second" } })
+          : Promise.reject(new Error("refused")),
+      );
+      const { result } = renderHook(() => useEditMessageMutation(), { wrapper: wrapperFor(qc) });
+      await act(async () => {
+        result.current.mutate({
+          serverId: "ws-1",
+          conversationId: "c-1",
+          messageId: "r-1",
+          text: "second",
+          threadId: "t-1",
+        });
+      });
+      await waitFor(() => expect(result.current.isIdle).toBe(false));
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+      spy.mockRestore();
+      return invalidated;
+    }
+
+    it("leaves the refetch of a saved plaintext edit to the server's event", async () => {
+      expect(await settle(clientWithThread(), "saved")).toEqual([]);
+    });
+
+    it("refetches the timeline and the thread after a failed edit", async () => {
+      expect(await settle(clientWithThread(), "failed")).toEqual([messagesKey, threadKey]);
+    });
+
+    it("refetches after an encrypted edit", async () => {
+      editEncrypted.mockResolvedValue(undefined);
+      const qc = clientWithThread(
+        threadReply({ e2ee: { status: "decrypted" } }) as ReturnType<typeof threadReply>,
+      );
+      expect(await settle(qc, "saved")).toEqual([messagesKey, threadKey]);
+    });
+  });
 });

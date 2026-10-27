@@ -139,7 +139,10 @@ export function useEditMessageMutation() {
         );
       }
     },
-    onSettled: (_data, _err, vars) => {
+    // A saved plaintext edit comes back as the server's MessageUpdated event, which updates and
+    // refetches the timeline (and the thread); a failed or encrypted one is refetched here.
+    onSettled: (data, err, vars) => {
+      if (!err && data !== null) return;
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
       if (vars.threadId) {
         qc.invalidateQueries({
