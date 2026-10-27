@@ -204,8 +204,8 @@ menu. The surfaces with a menu:
 - **A message**, in the timeline and in the thread panel: Add reaction (a submenu of quick
   reactions), Copy selection (while part of the message is selected, since the menu takes the
   place of the system's one there), Copy text, Reply (in the timeline, where you can post),
-  Reply in thread (not in the thread panel), Forward…, Pin or Unpin message; Edit message (not
-  in the thread panel) and Delete message… on your own message, Report message… on someone
+  Reply in thread (not in the thread panel), Forward…, Pin or Unpin message; Edit message
+  and Delete message… on your own message, Report message… on someone
   else's; a Moderation section with Delete message… for an Owner or a Moderator; then the
   plugins' message actions.
 - **A pinned message** in the pinned panel and **a search result**: Jump to message and Copy
@@ -224,8 +224,9 @@ menu. The surfaces with a menu:
 - **A section heading** of the sidebar: Browse channels and Create channel (where you may create
   one) on Channels, Expand or Collapse on Archived.
 - **A workspace** on the rail: Mark all as read, Pause notifications, Browse channels, Create
-  channel (where you may), Invite people, a keybind to switch to it and its settings, acting on
-  that workspace without switching to it (except for its settings).
+  channel (where you may), Invite people, Rename workspace (the Owner), a keybind to switch to it,
+  its settings, and Leave workspace (not for the Owner or in the server's default workspace),
+  acting on that workspace without switching to it (except for its settings).
 - **A message request**: Accept, Read first, Ignore, Report and Block.
 
 Items the viewer cannot use are left out rather than shown disabled.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, lazy, Suspense } from "react";
+import { useState, useEffect, useId, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -10,6 +10,8 @@ import { NotificationSettings } from "../../notifications/components/Notificatio
 import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
+import { lazyWithRetry } from "../../../shared/lazy/importWithRetry";
+import { agentAvailable } from "../../agent/agentAvailability";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
@@ -33,80 +35,85 @@ import { joinRequestBadge, useJoinRequestCount } from "../../workspaces/api/publ
 import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 
 // Lazy-load heavier / rarely-used settings panels
-const PluginSettingsPage = lazy(() =>
+const PluginSettingsPage = lazyWithRetry(() =>
   import("../../plugins/components/PluginSettingsPage").then((m) => ({
     default: m.PluginSettingsPage,
   })),
 );
-const PluginAiConsentPanel = lazy(() =>
+const PluginAiConsentPanel = lazyWithRetry(() =>
   import("../../plugins/components/PluginAiConsentPanel").then((m) => ({
     default: m.PluginAiConsentPanel,
   })),
 );
-const AgentSettingsPanel = lazy(() =>
+const AgentSettingsPanel = lazyWithRetry(() =>
   import("../../agent/settings/AgentSettingsPanel").then((m) => ({
     default: m.AgentSettingsPanel,
   })),
 );
-const EmojiManagement = lazy(() =>
+const EmojiManagement = lazyWithRetry(() =>
   import("../../emoji/components/EmojiManagement").then((m) => ({ default: m.EmojiManagement })),
 );
-const WorkspaceStateSettings = lazy(() =>
+const WorkspaceStateSettings = lazyWithRetry(() =>
   import("../../workspace-state/components/WorkspaceStateSettings").then((m) => ({
     default: m.WorkspaceStateSettings,
   })),
 );
-const ModerationSettings = lazy(() =>
+const ModerationSettings = lazyWithRetry(() =>
   import("./ModerationSettings").then((m) => ({
     default: m.ModerationSettings,
   })),
 );
-const WorkspaceInvites = lazy(() =>
+const WorkspaceInvites = lazyWithRetry(() =>
   import("./WorkspaceInvites").then((m) => ({
     default: m.WorkspaceInvites,
   })),
 );
-const PublicLinkSettings = lazy(() =>
+const PublicLinkSettings = lazyWithRetry(() =>
   import("./PublicLinkSettings").then((m) => ({
     default: m.PublicLinkSettings,
   })),
 );
-const WorkspacePluginSettings = lazy(() =>
+const WorkspacePluginSettings = lazyWithRetry(() =>
   import("../../plugins/registry/components/WorkspacePluginSettings").then((m) => ({
     default: m.WorkspacePluginSettings,
   })),
 );
-const HistoryArchiveSettings = lazy(() =>
+const HistoryArchiveSettings = lazyWithRetry(() =>
   import("../../history-archive/components/HistoryArchiveSettings").then((m) => ({
     default: m.HistoryArchiveSettings,
   })),
 );
-const KeyIdentitySettings = lazy(() =>
+const KeyIdentitySettings = lazyWithRetry(() =>
   import("../../key-identity/components/KeyIdentitySettings").then((m) => ({
     default: m.KeyIdentitySettings,
   })),
 );
-const WorkspaceOwnerSettings = lazy(() =>
+const WorkspaceOwnerSettings = lazyWithRetry(() =>
   import("./WorkspaceOwnerSettings").then((m) => ({
     default: m.WorkspaceOwnerSettings,
   })),
 );
-const InstanceModerationSettings = lazy(() =>
+const WorkspaceNameSettings = lazyWithRetry(() =>
+  import("./WorkspaceNameSettings").then((m) => ({
+    default: m.WorkspaceNameSettings,
+  })),
+);
+const InstanceModerationSettings = lazyWithRetry(() =>
   import("../../instance-moderation/components/InstanceModerationSettings").then((m) => ({
     default: m.InstanceModerationSettings,
   })),
 );
-const DmSettings = lazy(() =>
+const DmSettings = lazyWithRetry(() =>
   import("../../dm-policy/components/DmSettings").then((m) => ({
     default: m.DmSettings,
   })),
 );
-const WorkspaceDmPolicySettings = lazy(() =>
+const WorkspaceDmPolicySettings = lazyWithRetry(() =>
   import("../../dm-policy/components/WorkspaceDmPolicySettings").then((m) => ({
     default: m.WorkspaceDmPolicySettings,
   })),
 );
-const ContactsSettings = lazy(() =>
+const ContactsSettings = lazyWithRetry(() =>
   import("../../relay/components/ContactsSettings").then((m) => ({
     default: m.ContactsSettings,
   })),
@@ -240,6 +247,9 @@ type SettingsTab =
   | "moderation"
   | "about";
 
+/** Settings of the AI agent, which runs in the desktop app only. */
+const AGENT_TABS: readonly SettingsTab[] = ["agent", "plugin-ai"];
+
 /** Tabs that edit what only a workspace has: hidden in a direct space. */
 const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
   "pipelines",
@@ -324,6 +334,7 @@ export function SettingsPage() {
       (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
       (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
+      (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
   const shownTab: SettingsTab =
@@ -434,6 +445,7 @@ export function SettingsPage() {
               {shownTab === "history" && <HistoryArchiveSettings />}
               {shownTab === "workspace" && (
                 <div className="space-y-10">
+                  <WorkspaceNameSettings serverId={workspaceId} />
                   <WorkspaceInvites serverId={workspaceId} />
                   <PublicLinkSettings
                     serverId={workspaceId}

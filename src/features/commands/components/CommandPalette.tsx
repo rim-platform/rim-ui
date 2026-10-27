@@ -19,6 +19,7 @@ import {
   commandResultOf,
   dispatchCommand,
   hasLocalHandler,
+  isLocalActionResult,
 } from "../runtime/commandDispatcher";
 import {
   serverRunsWithContext,
@@ -34,6 +35,8 @@ import {
   readablePipeError,
 } from "../runtime/pipeStages";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
+import { offeredForConversation } from "../runtime/conversationActionGate";
+import { useConversation } from "../../conversations/api/useConversation";
 import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
@@ -41,6 +44,7 @@ import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
+import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
@@ -107,7 +111,9 @@ export function CommandPalette() {
         .filter((cmd) => commandOfferedHere(cmd.id))
         .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
-    const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));
+    const local = LOCAL_COMMANDS.filter(
+      (cmd) => !serverIds.has(cmd.id) && workspaceCommandOffered(cmd.id),
+    );
     return [
       ...base,
       ...local,
@@ -115,7 +121,14 @@ export function CommandPalette() {
       ...pluginCommands.filter((cmd) => cmd.visibleInPalette && runnableHere(cmd.requiredContext)),
       ...registryItems,
     ];
-  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext]);
+  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext, workspaceId]);
+
+  const { data: openConversation } = useConversation(workspaceId, argumentContext.conversationId);
+  // Archive Channel and Unarchive Channel only where they would change something.
+  const offeredCommands = useMemo(
+    () => visibleCommands.filter((cmd) => offeredForConversation(cmd.id, openConversation)),
+    [visibleCommands, openConversation],
+  );
 
   // Every command the palette knows, to name pipe stages in messages.
   const knownCommands = useMemo(
@@ -134,7 +147,7 @@ export function CommandPalette() {
 
   // When pipe segments exist, searchQuery already contains only the active segment
   // (text after the last `|`) because handleSearchChange resets it on pipe.
-  const listed = pipeSegments.length > 0 ? pipeCommands : visibleCommands;
+  const listed = pipeSegments.length > 0 ? pipeCommands : offeredCommands;
   const search = useMemo(() => createPaletteSearch(listed), [listed]);
   const sortedResults = useMemo(() => search(searchQuery), [search, searchQuery]);
 
@@ -301,6 +314,8 @@ export function CommandPalette() {
           toastPluginCommandResult(command.title, result);
         } else if (isCancelledResult(result)) {
           // The user declined the confirmation, or was told it expired.
+        } else if (isLocalActionResult(result)) {
+          // The command shows what it did.
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {

@@ -63,6 +63,25 @@ describe("mlsInputsFor", () => {
     ]);
   });
 
+  it("asks nothing for a conversation the feed answered NO_ACCESS", async () => {
+    status.mockResolvedValue([
+      { conversationId: "left", hasGroup: true, incarnation: 1, epoch: 1 },
+      { conversationId: "c1", hasGroup: true, incarnation: 1, epoch: 2 },
+    ]);
+    api.fetchCommits.mockImplementation((_ws: string, conversationId: string) =>
+      conversationId === "left"
+        ? Promise.reject(new Error("permission denied"))
+        : Promise.resolve([]),
+    );
+    const left = { ...page("left", []), status: "NO_ACCESS" } as FeedConversationChanges;
+
+    const inputs = await mlsInputsFor(account, "ws", [left, page("c1", [entry("m1", true)])]);
+
+    expect(api.fetchCommits).toHaveBeenCalledTimes(1);
+    expect(api.fetchCommits).toHaveBeenCalledWith("ws", "c1", 1, 2);
+    expect(inputs.map((i) => i.conversationId)).toEqual(["c1"]);
+  });
+
   it("says when this device is known to be absent from the server's group", async () => {
     status.mockResolvedValue([]);
     noteAbsentFromGroup("c1", 2);

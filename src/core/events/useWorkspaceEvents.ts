@@ -23,12 +23,14 @@ import {
 } from "../../features/messages/api/timelineMessages";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
 import { hostOf } from "../../features/relay/state/useRelayStore";
+import { applyWorkspaceName } from "../../features/workspaces/state/workspaceName";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { cachedMember, memberName } from "../../features/workspaces/api/memberName";
 import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
   handleMemberRemovedFromConversation,
+  handleWorkspaceMemberJoined,
 } from "../../features/conversations/state/membershipEvents";
 import {
   handleMemberLeft,
@@ -102,6 +104,9 @@ export function useWorkspaceEvents(workspaceId: string | null) {
   useEffect(() => {
     // A space on another server reaches this app through the relay's `relayStream` instead.
     if (!workspaceId || hostOf(workspaceId)) return;
+
+    // Names renamed while another workspace was open.
+    void qc.invalidateQueries({ queryKey: queryKeys.myServers() });
 
     logger.debug("[RIM:WS] Subscribing to workspace events for:", workspaceId);
 
@@ -367,6 +372,7 @@ export function applyWorkspaceEvent(
     case "MemberJoined":
       // Invalidate member list
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+      handleWorkspaceMemberJoined(qc, workspaceId);
       // A join through the public link counts in the Owner's link statistics.
       if (event.source === "public_link") {
         qc.invalidateQueries({ queryKey: queryKeys.publicJoinLink(workspaceId) });
@@ -563,6 +569,10 @@ export function applyWorkspaceEvent(
 
     case "WorkspacePluginChanged":
       qc.invalidateQueries({ queryKey: queryKeys.workspacePlugins(workspaceId) });
+      break;
+
+    case "WorkspaceUpdated":
+      applyWorkspaceName(qc, workspaceId, event.name);
       break;
 
     case "PipelineSuspended": {

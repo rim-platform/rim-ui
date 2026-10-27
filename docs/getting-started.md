@@ -137,6 +137,13 @@ Its badge counts unread messages before you open it. The rail shows once a works
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
+**Leave workspace…** in a workspace's menu on the rail (right-click it) or in the command palette
+takes you out of it, after a confirmation: you leave its channels and conversations, and what you
+wrote stays. The Owner hands the workspace over or deletes it instead (Settings → Workspace), and
+nobody leaves the server's default workspace. The Owner renames a workspace with **Rename
+workspace…** in the same menu, the palette or Settings → Workspace → **Name**; everyone sees the
+new name. Both need a server that supports them; on an older one they are not offered.
+
 Every workspace member has one role:
 
 - **Owner**: one per workspace, the person who created it. Can do everything, including inviting
@@ -224,10 +231,12 @@ conversation list of the workspace they came from, or the Direct messages list f
 outside. Each request shows the sender's verified name and fingerprint, with **Accept**, **Read
 first**, **Ignore**, **Block** and **Report**. **Block** asks first; the person is not told.
 Settings > Direct messages lists the people you blocked under **Blocked people**, each with
-**Unblock**. **Read first** opens the conversation without deciding: in place of the composer it
-says who wants to message you, with **Accept**, **Ignore**, **Block** and **Report**. You reply
-once you accept; until then the sender sees nothing from you, not even that you read it. The
-sender sees "Sent as a request; \<name\> has not accepted yet." above their composer. rim-server's
+**Unblock**. Unblocking lets them reach you again: a conversation you blocked them from comes back
+as a new request when they next write in it. **Read first** opens the conversation without deciding:
+in place of the composer it says who wants to message you, with **Accept**, **Ignore**, **Block**
+and **Report**. You reply once you accept; until then the sender sees nothing from you, not even
+that you read it. The sender sees "Sent as a request; \<name\> has not accepted yet." above their
+composer. rim-server's
 [Messaging](../../rim-server/docs/messaging.md#who-may-start-a-dm) has the full rules.
 
 **Reactions.** Hover a message and choose **Add reaction** to pick an emoji. Clicking a reaction

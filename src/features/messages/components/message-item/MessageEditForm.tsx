@@ -60,6 +60,7 @@ export const MessageEditForm = memo(function MessageEditForm({
     <div className="mt-0.5">
       <textarea
         ref={textareaRef}
+        data-owns-escape=""
         className="w-full resize-none rounded border border-rim-line bg-rim-panel px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent"
         value={editText}
         onChange={(e) => setEditText(e.target.value)}

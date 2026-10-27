@@ -93,6 +93,7 @@ describe("BlockedPeople", () => {
     await waitFor(() =>
       expect(useToastStore.getState().toasts[0]?.title).toBe("Unblocked Dave D."),
     );
+    expect(useToastStore.getState().toasts[0]?.description).toBe("They can message you again.");
     await waitFor(() => expect(screen.queryByText("Dave D.")).not.toBeInTheDocument());
     expect(screen.getByText("erin")).toBeInTheDocument();
   });

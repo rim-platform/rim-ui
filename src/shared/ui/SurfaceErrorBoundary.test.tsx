@@ -165,4 +165,29 @@ describe("SurfaceErrorBoundary", () => {
     // resetKeys unchanged — boundary should still show the fallback.
     expect(screen.getByText("Conversation failed to load")).toBeInTheDocument();
   });
+
+  it("offers Reload, not Retry, when a chunk could not be fetched", async () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    try {
+      function ChunkBomb(): never {
+        throw new TypeError(
+          "Failed to fetch dynamically imported module: https://x/assets/native-a.js",
+        );
+      }
+      const user = userEvent.setup();
+      render(
+        <SurfaceErrorBoundary surface="Conversation">
+          <ChunkBomb />
+        </SurfaceErrorBoundary>,
+      );
+      expect(screen.getByText("This part of the app could not load")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Reload" }));
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

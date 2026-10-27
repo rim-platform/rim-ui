@@ -63,6 +63,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Cycle Display Density",
     "Switch between comfortable, compact and ultra compact",
   ),
+  localCommand("workspace.rename", "Rename Workspace…", "Give the open workspace a new name"),
+  localCommand("workspace.leave", "Leave Workspace…", "Leave the open workspace"),
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));
@@ -82,6 +84,18 @@ export const CLIENT_COMMAND_LABELS: Readonly<
   "chat.create_group": {
     title: "New Message",
     description: "Start a direct message or a group conversation.",
+  },
+  "workspace.previous_channel": {
+    title: "Previous Conversation",
+    description: "Go to the conversation above in the sidebar.",
+  },
+  "workspace.next_channel": {
+    title: "Next Conversation",
+    description: "Go to the conversation below in the sidebar.",
+  },
+  "workspace.next_unread_channel": {
+    title: "Next Unread Conversation",
+    description: "Go to the next conversation with unread messages.",
   },
 };
 

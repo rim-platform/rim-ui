@@ -537,6 +537,11 @@ describe("MessageItem layouts and editing", () => {
     expect(onCancelEdit).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps Escape in the edit form from closing a panel", () => {
+    render(<MessageItem view={{ ...props().view, isEditing: true }} handlers={defaultHandlers} />);
+    expect(screen.getByRole("textbox")).toHaveAttribute("data-owns-escape");
+  });
+
   it("calls onNavigateToForwardedSource with the source conversation and message", () => {
     const onNavigateToForwardedSource = vi.fn();
     render(
@@ -615,5 +620,30 @@ describe("MessageItem edited marker", () => {
       "aria-label",
       `Edited ${formatEditedAt(EDITED_AT)}`,
     );
+  });
+
+  const LAYOUTS = [
+    ["comfortable", { displayDensity: "comfortable" }],
+    ["compact", { displayDensity: "compact" }],
+    ["a grouped comfortable row", { isGrouped: true, isFirstInGroup: false }],
+  ] as const;
+
+  it.each(LAYOUTS)("puts the marker after the text of an edited message in %s", (_, view) => {
+    render(
+      <MessageItem
+        {...props({ message: edited })}
+        view={{ ...props({ message: edited }).view, ...view }}
+      />,
+    );
+    const wrapper = screen.getByText("(edited)").closest("[data-edited-text]");
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.querySelector(".prose-rim")).not.toBeNull();
+    expect(wrapper?.className).toContain("[&>.prose-rim>p:last-child]:inline");
+  });
+
+  it.each(LAYOUTS)("renders a message never edited without the edited wrapper in %s", (_, view) => {
+    const { container } = render(<MessageItem {...props()} view={{ ...props().view, ...view }} />);
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
+    expect(container.querySelector("[data-edited-text]")).toBeNull();
   });
 });

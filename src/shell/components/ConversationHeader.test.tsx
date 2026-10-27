@@ -29,6 +29,8 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: () => null,
 }));
 
+import { lockVault } from "../../core/accountVault/accountVault";
+import { unlockTestVault } from "../../test/accountVault";
 import { ConversationHeader } from "./ConversationHeader";
 import {
   emptyInbox,
@@ -118,6 +120,29 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     fireEvent.click(count);
     expect(useMembersPanelStore.getState().open).toBe(true);
     expect(screen.getByRole("button", { name: "Conversation menu" })).toBeInTheDocument();
+  });
+
+  it("names the search after a group without a channel #", async () => {
+    serveConversation(
+      makeConversation({
+        title: "Bob and Carol",
+        conversationType: ConversationTypeEnum.GROUP,
+        isPrivate: true,
+      }),
+    );
+    renderHeader();
+
+    expect(
+      await screen.findByRole("button", { name: "Search in Bob and Carol" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Search in #/ })).not.toBeInTheDocument();
+  });
+
+  it("names the search after a channel with a #", async () => {
+    serveConversation(makeConversation({ title: "general" }));
+    renderHeader();
+
+    expect(await screen.findByRole("button", { name: "Search in #general" })).toBeInTheDocument();
   });
 
   it("says 1 member for a channel of one, in its label too", async () => {
@@ -228,7 +253,9 @@ describe("ConversationHeader — who may change the topic", () => {
 });
 
 describe("ConversationHeader — unencrypted conversation", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The dialog opens by itself only while its dismissal can be kept.
+    await unlockTestVault();
     requestMock.mockReset();
     localStorage.clear();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
@@ -242,6 +269,7 @@ describe("ConversationHeader — unencrypted conversation", () => {
     useShellStore.getState().reset();
     useAuthStore.setState({ session: null });
     useE2eeStore.setState({ webEncryption: "checking", notReady: {} });
+    lockVault();
   });
 
   it("marks a DM that is not encrypted and reopens its dialog from the mark", async () => {

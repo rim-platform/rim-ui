@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { LockOpen } from "lucide-react";
 
+import { useAccountVault } from "../../../core/accountVault/accountVault";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { Button } from "../../../shared/ui/Button";
@@ -41,8 +42,8 @@ function focusComposer() {
 
 /**
  * The "Not encrypted" marker of an unencrypted DM or group, and the dialog that says so: shown
- * by itself the first time the conversation opens on this device for the account, and again
- * from the marker.
+ * by itself the first time the conversation opens on this device for the account, once its
+ * dismissal can be kept (the account is unlocked), and again from the marker.
  */
 export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNoticeProps) {
   const userId = useAuthStore((s) => s.session?.userId);
@@ -52,9 +53,13 @@ export function PlaintextNotice({ workspaceId, conversationId }: PlaintextNotice
   // The conversation whose dialog was closed or reopened while this header showed it.
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const [reopenedFor, setReopenedFor] = useState<string | null>(null);
+  const vaultReady = useAccountVault().account !== null;
   const firstTime = useMemo(
-    () => Boolean(userId && conversationId && !plaintextNoticeSeen(userId, conversationId)),
-    [userId, conversationId],
+    () =>
+      Boolean(
+        vaultReady && userId && conversationId && !plaintextNoticeSeen(userId, conversationId),
+      ),
+    [vaultReady, userId, conversationId],
   );
 
   if (!status || !conversationId) return null;

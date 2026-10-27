@@ -17,7 +17,11 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
-const fixture = vi.hoisted(() => ({ rootText: "the root", editedAt: null as string | null }));
+const fixture = vi.hoisted(() => ({
+  rootText: "the root",
+  rootAuthorId: "u-alice",
+  editedAt: null as string | null,
+}));
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -64,7 +68,7 @@ vi.mock("../api/useThreads", () => ({
       serverId: "ws-1",
       conversationId: "c-1",
       rootMessageId: "root-1",
-      rootAuthorId: "u-alice",
+      rootAuthorId: fixture.rootAuthorId,
       rootText: fixture.rootText,
       createdAt: "2026-10-09T00:00:00Z",
     },
@@ -117,6 +121,14 @@ async function renderPanel() {
   return qc;
 }
 
+/** The textarea of the open edit form, which has the message text as its value. */
+function editBox(): HTMLTextAreaElement | null {
+  const all = Array.from(
+    document.querySelectorAll<HTMLTextAreaElement>("[data-panel='threadPane'] textarea"),
+  );
+  return all.find((el) => el.closest("[data-owns-escape]") !== null) ?? null;
+}
+
 function labels(): string[] {
   return screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
 }
@@ -124,6 +136,7 @@ function labels(): string[] {
 describe("ThreadPanel — message context menu", () => {
   beforeEach(() => {
     fixture.rootText = "the root";
+    fixture.rootAuthorId = "u-alice";
     fixture.editedAt = null;
     requestMock.mockReset();
     useShellStore.getState().reset();
@@ -132,7 +145,7 @@ describe("ThreadPanel — message context menu", () => {
     useAuthStore.setState({ session: { userId: "me" } });
   });
 
-  it("offers the message menu on the viewer's reply, without Reply in thread or Edit", async () => {
+  it("offers Edit message on the viewer's reply, without Reply in thread", async () => {
     serve();
     await renderPanel();
     fireEvent.contextMenu(screen.getByText("my reply"));
@@ -141,8 +154,121 @@ describe("ThreadPanel — message context menu", () => {
       "Copy text",
       "Forward…",
       "Pin message",
+      "Edit message",
       "Delete message…",
     ]);
+  });
+
+  it("edits the viewer's reply in place from its menu", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation EditMessage": () => ({
+        editMessage: { id: "r-own", text: "my reply (fixed)", isDeleted: false, sentAt: "" },
+      }),
+    });
+    await renderPanel();
+    fireEvent.contextMenu(screen.getByText("my reply"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    const box = editBox() as HTMLTextAreaElement;
+    expect(box.value).toBe("my reply");
+    fireEvent.change(box, { target: { value: "my reply (fixed)" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation EditMessage")).toEqual([
+        {
+          input: {
+            serverId: "ws-1",
+            conversationId: "c-1",
+            messageId: "r-own",
+            text: "my reply (fixed)",
+          },
+        },
+      ]),
+    );
+    await waitFor(() => expect(editBox()).toBeNull());
+  });
+
+  it("keeps the form open and says so when the edit fails", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation EditMessage": () => {
+        throw new Error("nope");
+      },
+    });
+    await renderPanel();
+    fireEvent.contextMenu(screen.getByText("my reply"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    const box = editBox() as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "changed" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(await screen.findByText("Failed to save. Try again.")).toBeInTheDocument();
+    expect(editBox()).not.toBeNull();
+  });
+
+  it("edits the root message from the pane without a thread", async () => {
+    fixture.rootAuthorId = "me";
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation EditMessage": () => ({
+        editMessage: { id: "root-1", text: "new root", isDeleted: false, sentAt: "" },
+      }),
+    });
+    await renderPanel();
+    fireEvent.contextMenu(screen.getByText("the root"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    const box = editBox() as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "new root" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation EditMessage")).toEqual([
+        {
+          input: {
+            serverId: "ws-1",
+            conversationId: "c-1",
+            messageId: "root-1",
+            text: "new root",
+          },
+        },
+      ]),
+    );
+  });
+
+  it("e edits the viewer's newest reply when the pane has the focus", async () => {
+    serve();
+    await renderPanel();
+    const pane = document.querySelector('[data-panel="threadPane"]') as HTMLElement;
+    pane.focus();
+    fireEvent.keyDown(pane, { key: "e" });
+    expect((editBox() as HTMLTextAreaElement).value).toBe("my new reply");
+  });
+
+  it("e on someone else's focused reply does nothing", async () => {
+    serve();
+    await renderPanel();
+    const row = screen.getByText("bob's reply").closest("[data-message-id]") as HTMLElement;
+    const button = within(row).getAllByRole("button")[0];
+    button.focus();
+    fireEvent.keyDown(button, { key: "e" });
+    expect(editBox()).toBeNull();
+  });
+
+  it("e in the reply box types the letter", async () => {
+    serve();
+    await renderPanel();
+    const reply = document.querySelector("[data-panel='threadPane'] textarea") as HTMLElement;
+    reply.focus();
+    fireEvent.keyDown(reply, { key: "e" });
+    expect(editBox()).toBeNull();
+  });
+
+  it("Escape in the edit form cancels the edit and keeps the thread open", async () => {
+    useShellStore.setState({ isThreadOpen: true });
+    serve();
+    await renderPanel();
+    fireEvent.contextMenu(screen.getByText("my reply"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    const box = editBox() as HTMLTextAreaElement;
+    expect(box.closest("[data-owns-escape]")).not.toBeNull();
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(editBox()).toBeNull();
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
   });
 
   it("marks an edited reply in the thread pane", async () => {
@@ -151,6 +277,7 @@ describe("ThreadPanel — message context menu", () => {
     await renderPanel();
     const row = screen.getByText("bob's reply").closest("[data-message-id]") as HTMLElement;
     expect(within(row).getByText("(edited)")).toBeInTheDocument();
+    expect(within(row).getByText("(edited)").closest("[data-edited-text]")).not.toBeNull();
     expect(screen.getAllByText("(edited)")).toHaveLength(1);
   });
 
@@ -182,6 +309,7 @@ describe("ThreadPanel — message context menu", () => {
       "Copy text",
       "Forward…",
       "Pin message",
+      "Edit message",
       "Delete message…",
     ]);
     expect(screen.queryByText("Moderation")).toBeNull();
