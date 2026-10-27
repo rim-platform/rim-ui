@@ -46,6 +46,16 @@ const ALLOWED_TAGS = [
   "a",
   "span",
   "img",
+  "del",
+  "s",
+  "hr",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "input",
 ];
 
 const ALLOWED_ATTR = [
@@ -59,7 +69,13 @@ const ALLOWED_ATTR = [
   "src",
   "alt",
   "title",
+  "type",
+  "checked",
+  "disabled",
 ];
+
+/** Attributes kept only on a task-list checkbox. */
+const CHECKBOX_ATTRS = new Set(["type", "checked", "disabled"]);
 
 /** Class names the renderer itself produces; any other class is dropped. */
 const ALLOWED_CLASSES = new Set(
@@ -136,7 +152,7 @@ function markedFor(highlight: Highlighter | null, showInlineMedia: boolean): Mar
   }
   let instance = byMedia.get(showInlineMedia);
   if (!instance) {
-    instance = new Marked({ renderer: createRenderer(highlight, showInlineMedia) });
+    instance = new Marked({ breaks: true, renderer: createRenderer(highlight, showInlineMedia) });
     byMedia.set(showInlineMedia, instance);
   }
   return instance;
@@ -146,12 +162,17 @@ let purifier: Purifier | null = null;
 
 /**
  * A DOMPurify instance of its own: links and images keep only safe URLs, classes only the
- * renderer's own, links open in a new context, images load lazily without a referrer.
+ * renderer's own, links open in a new context, images load lazily without a referrer, and an
+ * `input` survives only as a disabled checkbox.
  */
 function getPurifier(): Purifier {
   if (purifier) return purifier;
   const instance = DOMPurify(window);
-  instance.addHook("uponSanitizeAttribute", (_node, data) => {
+  instance.addHook("uponSanitizeAttribute", (node, data) => {
+    if (CHECKBOX_ATTRS.has(data.attrName)) {
+      if (node.tagName !== "INPUT") data.keepAttr = false;
+      return;
+    }
     if (data.attrName === "href") {
       if (!isSafeLinkUrl(data.attrValue)) data.keepAttr = false;
     } else if (data.attrName === "src") {
@@ -170,6 +191,15 @@ function getPurifier(): Purifier {
       node.setAttribute("loading", "lazy");
       node.setAttribute("decoding", "async");
       node.setAttribute("referrerpolicy", "no-referrer");
+    } else if (node.tagName === "INPUT") {
+      if (node.getAttribute("type")?.toLowerCase() !== "checkbox") {
+        node.remove();
+        return;
+      }
+      for (const name of node.getAttributeNames()) {
+        if (name !== "type" && name !== "checked") node.removeAttribute(name);
+      }
+      node.setAttribute("disabled", "");
     }
   });
   purifier = instance;
@@ -185,7 +215,10 @@ function replaceCustomEmoji(html: string, emojiMap: Map<string, string>): string
   });
 }
 
-/** Markdown to sanitised HTML: mentions, custom emoji, highlighted code, safe links and images. */
+/**
+ * Markdown to sanitised HTML: single newlines as line breaks, GFM tables, strikethrough, rules
+ * and read-only task boxes, mentions, custom emoji, highlighted code, safe links and images.
+ */
 export function renderMarkdown(content: string, options: RenderMarkdownOptions = {}): string {
   const { memberMap, customEmojiMap, highlight = null, showInlineMedia = true } = options;
   let text = content;

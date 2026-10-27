@@ -226,8 +226,10 @@ server's domain, such as `@kuba:rim-platform.org`. People of your own server are
 handle, which names the person on any server. The app learns the handle of someone from another
 server from their messages; until then their card shows no handle, only their name.
 
-**The composer.** "Write a message..." takes Markdown. <kbd>Enter</kbd> sends and
-<kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
+**The composer.** "Write a message..." takes Markdown. A single line break shows as one. Besides
+bold, italics, code, lists, quotes and links, a message can hold ~~strikethrough~~, tables,
+horizontal rules (`---`) and task lists (`- [ ]`, `- [x]`), whose boxes are read-only.
+<kbd>Enter</kbd> sends and <kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
 start of a name suggests emoji. **Insert emoji** and **Attach file** sit beside the field; a
 server can turn attachments off. <kbd>Escape</kbd> moves from the composer to the message list,
 where the arrow keys move between messages and <kbd>e</kbd> edits your own.

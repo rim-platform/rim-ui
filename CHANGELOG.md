@@ -79,6 +79,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   step picker leaves out commands that need arguments a step cannot give, and the form no
   longer says "macro".
 - An imported keyboard profile accepts modifiers in any case, such as `ctrl+j`.
+- A line break typed with Shift+Enter shows in the sent message instead of running the
+  lines together.
+- Strikethrough, tables with their header row, horizontal rules and task-list boxes show in
+  messages instead of disappearing; a wide table scrolls inside the message.
+- A long word or link without spaces wraps inside the message instead of running off its edge.
 
 ## [0.0.5] - 2026-10-26
 

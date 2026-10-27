@@ -209,6 +209,73 @@ describe("renderMarkdown blockquotes and mentions", () => {
   });
 });
 
+describe("renderMarkdown line breaks and GFM", () => {
+  it("renders a single newline as a line break", () => {
+    const html = renderMarkdown("line one\nline two\nline three");
+    const p = dom(html).querySelector("p");
+    expect(p?.querySelectorAll("br")).toHaveLength(2);
+    expect(p?.textContent).toBe("line oneline twoline three");
+  });
+
+  it("keeps a code block's newlines as text, without line breaks", () => {
+    const root = dom(renderMarkdown("```\na\nb\n```"));
+    expect(root.querySelector("br")).toBeNull();
+    expect(root.querySelector("pre > code")?.textContent).toBe("a\nb");
+  });
+
+  it("renders strikethrough", () => {
+    const root = dom(renderMarkdown("~~gone~~ and <s>old</s>"));
+    expect(root.querySelector("del")?.textContent).toBe("gone");
+    expect(root.querySelector("s")?.textContent).toBe("old");
+  });
+
+  it("renders a table with its header row", () => {
+    const root = dom(renderMarkdown("| col a | col b |\n|:---|---:|\n| 1 | 2 |"));
+    const texts = (selector: string) =>
+      Array.from(root.querySelectorAll(selector), (cell) => cell.textContent);
+    expect(texts("thead th")).toEqual(["col a", "col b"]);
+    expect(texts("tbody td")).toEqual(["1", "2"]);
+    expect(root.querySelector("[align]")).toBeNull();
+  });
+
+  it("renders a horizontal rule", () => {
+    expect(dom(renderMarkdown("above\n\n---\n\nbelow")).querySelectorAll("hr")).toHaveLength(1);
+  });
+
+  it("renders task-list items as disabled checkboxes", () => {
+    const boxes = dom(renderMarkdown("- [ ] todo\n- [x] done")).querySelectorAll<HTMLInputElement>(
+      "input[type=checkbox]",
+    );
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0].disabled).toBe(true);
+    expect(boxes[1].disabled).toBe(true);
+    expect(boxes[0].checked).toBe(false);
+    expect(boxes[1].checked).toBe(true);
+    expect(boxes[0].getAttributeNames().sort()).toEqual(["disabled", "type"]);
+    expect(boxes[1].getAttributeNames().sort()).toEqual(["checked", "disabled", "type"]);
+  });
+
+  it("keeps a raw input only as a disabled checkbox", () => {
+    const root = dom(
+      renderMarkdown(
+        '<input type="text" value="x"><input type="checkbox" name="n" class="mention" onclick="alert(1)">',
+      ),
+    );
+    expect(root.querySelector("input[type=text]")).toBeNull();
+    const boxes = root.querySelectorAll("input");
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].getAttributeNames().sort()).toEqual(["disabled", "type"]);
+  });
+
+  it("keeps type, checked and disabled off every other element", () => {
+    const link = dom(
+      renderMarkdown('<a href="https://example.org" type="text/html" disabled>x</a>'),
+    ).querySelector("a");
+    expect(link?.hasAttribute("type")).toBe(false);
+    expect(link?.hasAttribute("disabled")).toBe(false);
+  });
+});
+
 describe("safe URL checks", () => {
   it("accepts web, mail and relative links", () => {
     expect(isSafeLinkUrl("https://example.com")).toBe(true);
