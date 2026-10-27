@@ -203,7 +203,9 @@ hover, to open the pane. The thread's reply box works like the composer: `@` men
 group, then choose **Start conversation** or **Start group** (or press <kbd>Ctrl+Enter</kbd>). A
 DM opens as a draft and is created when you send its first message. A group is named
 after the people in it, as you see them: "Alice and Bob", or "Alice, Bob, Carol and 2 others"
-past three. In Direct messages
+past three. **Add people…** in a group's menu, or **Add people** in its members panel, adds
+someone; in Direct messages it lists your contacts and the people in your workspaces, and an
+encrypted group takes only people with a device set up for encryption. In Direct messages
 the picker lists your contacts instead. Settings > Contacts shows your contact link and adds
 someone from theirs; a workspace's member list has **Add as contact**. A DM or group started
 from a workspace opens in Direct messages; its header then offers **Back to \<workspace\>**

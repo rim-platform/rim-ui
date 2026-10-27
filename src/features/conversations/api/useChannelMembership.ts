@@ -8,6 +8,7 @@ import type {
   MutationLeaveConversationArgs,
   MutationRemoveConversationMemberArgs,
   MutationSetConversationArchivedArgs,
+  RemoteMemberInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
@@ -36,6 +37,23 @@ const ADD_CONVERSATION_MEMBERS = gql`
       serverId: $serverId
       conversationId: $conversationId
       userIds: $userIds
+    ) {
+      ...ConversationFields
+    }
+  }
+  ${CONVERSATION_FIELDS}
+`;
+
+const ADD_DIRECT_CONVERSATION_MEMBERS = gql`
+  mutation AddDirectConversationMembers(
+    $serverId: ID!
+    $conversationId: ID!
+    $remoteMembers: [RemoteMemberInput!]!
+  ) {
+    addConversationMembers(
+      serverId: $serverId
+      conversationId: $conversationId
+      remoteMembers: $remoteMembers
     ) {
       ...ConversationFields
     }
@@ -124,6 +142,20 @@ export function useLeaveConversationMutation() {
   });
 }
 
+/**
+ * Stores the conversation an addition returns, refreshes what it affects, and commits the
+ * server's pending adds to an encrypted conversation's group.
+ */
+function afterMembersAdded(
+  qc: QueryClient,
+  conversation: ConversationSummary,
+  vars: { serverId: string; conversationId: string },
+): void {
+  qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
+  invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+  if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
+}
+
 /** Add (invite) workspace members to a channel or group the viewer belongs to. */
 export function useAddConversationMembersMutation() {
   const qc = useQueryClient();
@@ -135,11 +167,26 @@ export function useAddConversationMembersMutation() {
       );
       return res.addConversationMembers;
     },
-    onSuccess: (conversation, vars) => {
-      qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
+    onSuccess: (conversation, vars) => afterMembersAdded(qc, conversation, vars),
+  });
+}
+
+/** Add people to a group of the direct space, named by principal id and relays. */
+export function useAddDirectConversationMembersMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      serverId: string;
+      conversationId: string;
+      remoteMembers: RemoteMemberInput[];
+    }) => {
+      const res = await graphqlClient.request<{ addConversationMembers: ConversationSummary }>(
+        ADD_DIRECT_CONVERSATION_MEMBERS,
+        vars,
+      );
+      return res.addConversationMembers;
     },
+    onSuccess: (conversation, vars) => afterMembersAdded(qc, conversation, vars),
   });
 }
 

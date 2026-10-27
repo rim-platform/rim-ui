@@ -7,24 +7,34 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useCanModerate, useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { useCanModerate, useMyServerRole } from "../../workspaces/api/useMyServerRole";
+import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
 import { MemberMenuButton } from "../../workspaces/components/MemberMenuButton";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
+import {
+  NotReadyError,
+  notReadyNames,
+  resolveDirectMembers,
+  type ResolvedDirectMember,
+} from "../../relay/conversations/startDirect";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { joinNames } from "../../e2ee/utils/names";
 import { useConversation } from "../api/useConversation";
 import {
   useAddConversationMembersMutation,
+  useAddDirectConversationMembersMutation,
   useRemoveConversationMemberMutation,
 } from "../api/useChannelMembership";
 import { useLeaveConversation } from "../hooks/useLeaveConversation";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import type { ConversationSummary } from "../types";
 import {
-  canInviteToConversation,
+  canInviteTo,
   canLeaveConversation,
   conversationLabel,
   leaveNeedsConfirmation,
@@ -41,11 +51,12 @@ interface ConversationMembersPanelProps {
 }
 
 /**
- * The open conversation's members, shown in the tool panel. Any member but a guest can invite
- * (channels and groups); Owner/Moderator can remove others; the viewer's own row offers Leave.
- * Rows show the workspace role and any timeout, and open the person's menu on a right click,
- * the ContextMenu key, a long press or their actions button. No role badges in the direct
- * space, where everyone is a guest.
+ * The open conversation's members, shown in the tool panel. Members add people to channels and
+ * groups where the server lets them (`canInviteTo`); in the direct space every member of a group,
+ * picking contacts and workspace people by principal id. Owner/Moderator can remove others; the
+ * viewer's own row offers Leave. Rows show the workspace role and any timeout, and open the
+ * person's menu on a right click, the ContextMenu key, a long press or their actions button. No
+ * role badges in the direct space, where everyone is a guest.
  */
 export function ConversationMembersPanel({
   workspaceId,
@@ -108,17 +119,27 @@ function MembersList({
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId);
   const canModerate = useCanModerate(workspaceId);
-  const isGuest = useIsGuest(workspaceId);
+  const role = useMyServerRole(workspaceId);
+  const { info } = useServerInfo();
+  const { data: workspaceMembers } = useServerMembers(workspaceId);
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const [inviteIds, setInviteIds] = useState<string[]>([]);
+  const [invitePeople, setInvitePeople] = useState<PickedContact[]>([]);
+  const [resolving, setResolving] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const addMembers = useAddConversationMembersMutation();
+  const addDirect = useAddDirectConversationMembersMutation();
   const removeMember = useRemoveConversationMemberMutation();
   const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
 
   const isDm = conversation.conversationType === ConversationTypeEnum.DIRECT;
-  const canInvite = canInviteToConversation(conversation) && !isGuest;
+  const canInvite = canInviteTo(conversation, {
+    userId: currentUserId,
+    role,
+    inDirectSpace,
+    defaultWorkspaceId: info?.defaultWorkspace,
+  });
   const canLeave = canLeaveConversation(conversation);
   const canRemoveOthers = canModerate && !isDm;
   const userMenu = useUserContextMenu({
@@ -145,6 +166,22 @@ function MembersList({
     return [...rows(conversation.memberIds, false), ...rows(pendingIds, true)];
   }, [conversation.memberIds, pendingIds, memberLookup, currentUserId]);
 
+  // The principal ids of everyone in the conversation or invited, left out of the contact picker.
+  const memberPrincipalIds = useMemo(() => {
+    const ids = new Set([...conversation.memberIds, ...pendingIds]);
+    return (workspaceMembers ?? []).flatMap((m) =>
+      ids.has(m.userId) && m.principalId ? [m.principalId] : [],
+    );
+  }, [conversation.memberIds, pendingIds, workspaceMembers]);
+
+  const pickedCount = inDirectSpace ? invitePeople.length : inviteIds.length;
+
+  function cancelInvite() {
+    closeInvite();
+    setInviteIds([]);
+    setInvitePeople([]);
+  }
+
   function handleInvite() {
     if (inviteIds.length === 0) return;
     addMembers.mutate(
@@ -162,6 +199,50 @@ function MembersList({
             });
           }
           setInviteIds([]);
+          closeInvite();
+        },
+        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not add members")),
+      },
+    );
+  }
+
+  async function handleAddDirect() {
+    if (invitePeople.length === 0) return;
+    setResolving(true);
+    let resolved: ResolvedDirectMember[];
+    try {
+      resolved = await resolveDirectMembers(
+        invitePeople.map((p) => ({
+          principalId: p.principalId,
+          relayUrls: p.relayUrls,
+          name: p.name,
+        })),
+      );
+    } catch (err) {
+      toast.error(graphqlErrorMessage(err, "Could not add members"));
+      return;
+    } finally {
+      setResolving(false);
+    }
+    const missing = notReadyNames(resolved, true);
+    if (conversation.encryptedAt && missing.length > 0) {
+      toast.error(new NotReadyError(missing).message);
+      return;
+    }
+    const n = resolved.length;
+    addDirect.mutate(
+      {
+        serverId: workspaceId,
+        conversationId: conversation.id,
+        remoteMembers: resolved.map((r) => ({
+          principalId: r.member.principalId,
+          relayUrls: r.relayUrls,
+        })),
+      },
+      {
+        onSuccess: () => {
+          toast.success(n === 1 ? "Member added" : `${n} members added`);
+          setInvitePeople([]);
           closeInvite();
         },
         onError: (err) => toast.error(graphqlErrorMessage(err, "Could not add members")),
@@ -193,44 +274,46 @@ function MembersList({
           onClick={() => openInvite(conversation.id)}
         >
           <UserPlus className="h-3.5 w-3.5" />
-          Invite
+          {conversation.conversationType === ConversationTypeEnum.CHANNEL ? "Invite" : "Add people"}
         </Button>
       )}
 
       {canInvite && inviting && (
         <div className="rounded-lg border border-rim-line bg-rim-void">
-          <MemberPicker
-            workspaceId={workspaceId}
-            selectedUserIds={inviteIds}
-            onChange={setInviteIds}
-            excludeUserIds={[...conversation.memberIds, ...pendingIds]}
-            onConfirm={handleInvite}
-            onEscape={closeInvite}
-            autoFocus
-            placeholder="Find people to invite..."
-            listClassName="max-h-48"
-          />
+          {inDirectSpace ? (
+            <ContactPicker
+              selected={invitePeople}
+              onChange={setInvitePeople}
+              onConfirm={() => void handleAddDirect()}
+              onEscape={cancelInvite}
+              excludePrincipalIds={memberPrincipalIds}
+            />
+          ) : (
+            <MemberPicker
+              workspaceId={workspaceId}
+              selectedUserIds={inviteIds}
+              onChange={setInviteIds}
+              excludeUserIds={[...conversation.memberIds, ...pendingIds]}
+              onConfirm={handleInvite}
+              onEscape={closeInvite}
+              autoFocus
+              placeholder="Find people to invite..."
+              listClassName="max-h-48"
+            />
+          )}
           <div className="flex justify-end gap-2 border-t border-rim-line p-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                closeInvite();
-                setInviteIds([]);
-              }}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={cancelInvite}>
               Cancel
             </Button>
             <Button
               type="button"
               variant="primary"
               size="sm"
-              disabled={inviteIds.length === 0}
-              isLoading={addMembers.isPending}
-              onClick={handleInvite}
+              disabled={pickedCount === 0}
+              isLoading={inDirectSpace ? addDirect.isPending || resolving : addMembers.isPending}
+              onClick={inDirectSpace ? () => void handleAddDirect() : handleInvite}
             >
-              Add{inviteIds.length > 0 ? ` (${inviteIds.length})` : ""}
+              Add{pickedCount > 0 ? ` (${pickedCount})` : ""}
             </Button>
           </div>
         </div>

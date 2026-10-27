@@ -1,5 +1,10 @@
-import { ConversationTypeEnum, PostingPolicy } from "../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  PostingPolicy,
+  type ServerMemberRoleGql,
+} from "../../core/graphql/generated/schema-types";
 import { joinNames } from "../e2ee/utils/names";
+import { canModerate, isGuest } from "../workspaces/role";
 import type { ConversationSummary } from "./types";
 
 type LabelledConversation = Pick<ConversationSummary, "conversationType" | "title">;
@@ -80,6 +85,47 @@ export function canInviteToConversation(
     !conversation.isArchived &&
     conversation.conversationType !== ConversationTypeEnum.DIRECT
   );
+}
+
+/** Who is asking to add people, as {@link canInviteTo} needs them. */
+export interface InviteViewer {
+  userId: string | undefined;
+  /** The viewer's role in the conversation's workspace; undefined while it loads. */
+  role: ServerMemberRoleGql | undefined;
+  /** Whether the conversation lives in a direct space, where everyone is a guest. */
+  inDirectSpace: boolean;
+  /** The server's default workspace, which every account joins; null or undefined when unknown. */
+  defaultWorkspaceId: string | null | undefined;
+}
+
+/**
+ * Whether the viewer may add people to `conversation`, as the server decides: a member of a
+ * channel or group that is not archived. In a direct space any member of a group; elsewhere
+ * never a guest, and in the server's default workspace a channel only for an Owner or Moderator
+ * or the creator of a private channel.
+ */
+export function canInviteTo(
+  conversation: Pick<
+    ConversationSummary,
+    "serverId" | "conversationType" | "isMember" | "isArchived" | "isPrivate" | "createdBy"
+  >,
+  viewer: InviteViewer,
+): boolean {
+  if (!canInviteToConversation(conversation)) return false;
+  if (viewer.inDirectSpace) return conversation.conversationType === ConversationTypeEnum.GROUP;
+  if (isGuest(viewer.role)) return false;
+  if (
+    conversation.conversationType === ConversationTypeEnum.CHANNEL &&
+    conversation.serverId === viewer.defaultWorkspaceId
+  ) {
+    return (
+      canModerate(viewer.role) ||
+      (conversation.isPrivate &&
+        viewer.userId !== undefined &&
+        conversation.createdBy === viewer.userId)
+    );
+  }
+  return true;
 }
 
 /** Leaving is irreversible without an invite for private channels and groups: confirm first. */
