@@ -298,6 +298,32 @@ describe("ConversationMembersPanel", () => {
     expect(screen.getByRole("button", { name: /invite/i })).toBeInTheDocument();
   });
 
+  it("keeps Escape in the invite picker to the picker", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    useMembersPanelStore.getState().openInvite("conv-1");
+    await renderPanel(ServerMemberRoleGql.MEMBER);
+    const input = screen.getByPlaceholderText("Find people to invite...");
+    expect(input.closest("[data-owns-escape]")).not.toBeNull();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(screen.queryByPlaceholderText("Find people to invite...")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Members/ })).toBeInTheDocument();
+    expect(useMembersPanelStore.getState().open).toBe(true);
+  });
+
+  it("puts a row's actions beside the name, not after it", async () => {
+    serve(ServerMemberRoleGql.MODERATOR);
+    await renderPanel(ServerMemberRoleGql.MODERATOR);
+    const row = screen.getByTestId("member-row-me");
+    const actions = row.querySelector("[data-row-actions]") as HTMLElement;
+
+    expect(actions).not.toBeNull();
+    expect(within(actions).getByRole("button", { name: "Leave" })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: /^Actions for / })).toBeInTheDocument();
+    expect(screen.getByText("(you)").closest("[data-row-actions]")).toBeNull();
+  });
+
   it("lists invited members after the members, marked as invited and not counted", async () => {
     serve(ServerMemberRoleGql.MEMBER, { ...encryptedGroup, pendingMemberIds: ["u-bob"] });
     await renderPanel(ServerMemberRoleGql.MEMBER);

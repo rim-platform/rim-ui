@@ -202,6 +202,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Channel** only in one that is not, instead of reporting success for a change that did nothing.
 - When someone joins the workspace, the member count and members of its public channels update right
   away instead of after a reload.
+- In a conversation's members panel, <kbd>Esc</kbd> in the invite picker closes only the picker (a
+  second <kbd>Esc</kbd> closes the panel), and names use the row's width: **Leave**, **Remove** and
+  the row's actions show when you point at or focus the row.
 
 ## [0.0.5] - 2026-10-26
 
