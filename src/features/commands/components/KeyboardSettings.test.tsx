@@ -189,6 +189,8 @@ describe("KeyboardSettings", () => {
       expect(screen.queryByRole("group", { name: "Import profile" })).not.toBeInTheDocument();
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
       expect(useKeybindProfileStore.getState().profile).toEqual(BUILT_IN_PROFILES.minimal);
+      // Focus goes back to the button that started the import.
+      expect(screen.getByRole("button", { name: "Import profile" })).toHaveFocus();
     });
 
     it("exports the merged bindings", async () => {

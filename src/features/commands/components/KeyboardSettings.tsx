@@ -54,6 +54,7 @@ export function KeyboardSettings() {
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mergeButtonRef = useRef<HTMLButtonElement>(null);
+  const importButtonRef = useRef<HTMLButtonElement>(null);
 
   const builtIn = matchingBuiltIn(active);
 
@@ -77,6 +78,7 @@ export function KeyboardSettings() {
     const imported = pendingImport.profile;
     setProfile(imported, replaces);
     setPendingImport(null);
+    importButtonRef.current?.focus();
     setNotice({
       kind: "info",
       text: `Imported "${imported.name}" ${replaces ? "in place of" : "over"} the defaults: ${bindingCount(imported)}, Vim mode ${imported.vimMode ? "on" : "off"}.`,
@@ -85,6 +87,7 @@ export function KeyboardSettings() {
 
   function cancelImport() {
     setPendingImport(null);
+    importButtonRef.current?.focus();
   }
 
   async function handleExport() {
@@ -221,6 +224,7 @@ export function KeyboardSettings() {
             Export profile
           </button>
           <button
+            ref={importButtonRef}
             type="button"
             onClick={handleImport}
             disabled={busy}
