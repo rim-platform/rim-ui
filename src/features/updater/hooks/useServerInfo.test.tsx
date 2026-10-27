@@ -198,7 +198,7 @@ describe("useServerInfo", () => {
       http.post("*/api", async ({ request }) => {
         const body = (await request.json()) as { operationName?: string };
         operations.push(body.operationName);
-        if (body.operationName === "ServerInfo") {
+        if (body.operationName === "ServerInfo" || body.operationName === "ServerInfoWithAccount") {
           return HttpResponse.json({
             errors: [{ message: 'Unknown field "registrationFull" on type "ServerInfo"' }],
           });
@@ -212,7 +212,7 @@ describe("useServerInfo", () => {
     );
     const older = renderHook(() => useServerInfo(), { wrapper: TestProviders });
     await waitFor(() => expect(older.result.current.info).toBeDefined());
-    expect(operations).toEqual(["ServerInfo", "ServerInfoWithDm"]);
+    expect(operations).toEqual(["ServerInfo", "ServerInfoWithAccount", "ServerInfoWithDm"]);
     expect(older.result.current.info?.dmInbound).toBe("ANYONE");
     expect(older.result.current.info?.registrationFull).toBeUndefined();
     expect(older.result.current.info?.minimumAge).toBeUndefined();

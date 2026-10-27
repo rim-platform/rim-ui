@@ -525,6 +525,53 @@ describe("useWorkspaceEvents encrypted conversations", () => {
   });
 });
 
+describe("useWorkspaceEvents message edits", () => {
+  const key = queryKeys.messages("ws-1", "c-1");
+
+  /** A client holding c-1's timeline with m-1, edited at `editedAt` as far as it knows. */
+  function timelineWith(editedAt?: string | null): QueryClient {
+    const qc = new QueryClient();
+    qc.setQueryData(key, {
+      pages: [
+        {
+          items: [{ id: "m-1", text: "hi", isDeleted: false, sentAt: "x", editedAt }],
+          next: null,
+          prev: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      ],
+      pageParams: [null],
+    });
+    return qc;
+  }
+
+  /** The `MessageUpdated` for m-1 with the text "hi again" and `edited_at` when given. */
+  function edited(editedAt?: string | null): WorkspaceEvent {
+    const event = newMessage("c-1");
+    if (event.type !== "NewMessage") throw new Error("not a NewMessage");
+    const message = { ...event.message, text: "hi again" };
+    if (editedAt !== undefined) message.edited_at = editedAt;
+    return { type: "MessageUpdated", workspace_id: "ws-1", conversation_id: "c-1", message };
+  }
+
+  function cached(qc: QueryClient) {
+    return qc.getQueryData<{ pages: { items: Record<string, unknown>[] }[] }>(key)?.pages[0]
+      .items[0];
+  }
+
+  it("MessageUpdated sets editedAt on the cached message", () => {
+    const qc = timelineWith(null);
+    applyWorkspaceEvent(edited("2026-10-27T12:00:00Z"), qc, "ws-1");
+    expect(cached(qc)).toMatchObject({ text: "hi again", editedAt: "2026-10-27T12:00:00Z" });
+  });
+
+  it("keeps the cached editedAt when the event has none", () => {
+    const qc = timelineWith("2026-10-27T11:00:00Z");
+    applyWorkspaceEvent(edited(), qc, "ws-1");
+    expect(cached(qc)).toMatchObject({ text: "hi again", editedAt: "2026-10-27T11:00:00Z" });
+  });
+});
+
 describe("useWorkspaceEvents thread reply counts", () => {
   beforeEach(() => {
     subscribeObserver = null;

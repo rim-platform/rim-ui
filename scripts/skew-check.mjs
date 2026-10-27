@@ -170,7 +170,7 @@ function templateText(mod, template, seen) {
 }
 
 /** Every `gql` document under src/, resolved to the text the client sends. */
-function collectDocuments() {
+export function collectDocuments() {
   const documents = [];
   for (const path of sourceFiles(SOURCE_DIR)) {
     const mod = moduleAt(path);
@@ -227,6 +227,47 @@ function schemaAt(ref) {
   }
 }
 
+/**
+ * The operations among `documents` that `schema` refuses, in document order: each with its
+ * file, line, label and the distinct validation messages; a document that does not parse counts
+ * as one refused operation.
+ */
+export function refusedOperations(schema, documents) {
+  return checkDocuments(schema, documents).refused;
+}
+
+/** How many operations `documents` hold, and the ones `schema` refuses. */
+function checkDocuments(schema, documents) {
+  const refused = [];
+  let operations = 0;
+  for (const document of documents) {
+    let doc;
+    try {
+      doc = parse(document.text);
+    } catch (err) {
+      operations += 1;
+      refused.push({
+        file: document.file,
+        line: document.line,
+        label: "(does not parse)",
+        errors: [err.message],
+      });
+      continue;
+    }
+    if (!doc.definitions.some((d) => d.kind === "OperationDefinition")) continue;
+    operations += 1;
+    const errors = validate(schema, doc);
+    if (errors.length === 0) continue;
+    refused.push({
+      file: document.file,
+      line: document.line,
+      label: operationLabel(doc),
+      errors: [...new Set(errors.map((e) => e.message))],
+    });
+  }
+  return { operations, refused };
+}
+
 function main() {
   const args = process.argv.slice(2).filter((a) => a !== "--");
   let ref = args[0];
@@ -240,57 +281,39 @@ function main() {
   }
 
   const { commit, schema } = schemaAt(ref);
-  const documents = collectDocuments();
-  const failures = new Map();
-  let operations = 0;
-
-  for (const document of documents) {
-    let doc;
-    try {
-      doc = parse(document.text);
-    } catch (err) {
-      operations += 1;
-      const list = failures.get(document.file) ?? [];
-      list.push({ line: document.line, label: "(does not parse)", errors: [err.message] });
-      failures.set(document.file, list);
-      continue;
-    }
-    if (!doc.definitions.some((d) => d.kind === "OperationDefinition")) continue;
-    operations += 1;
-    const errors = validate(schema, doc);
-    if (errors.length === 0) continue;
-    const list = failures.get(document.file) ?? [];
-    list.push({
-      line: document.line,
-      label: operationLabel(doc),
-      errors: [...new Set(errors.map((e) => e.message))],
-    });
-    failures.set(document.file, list);
-  }
+  const { operations, refused } = checkDocuments(schema, collectDocuments());
 
   console.log(`Checked ${operations} operations against schema.graphql at ${ref} (${commit}).`);
-  if (failures.size === 0) {
+  if (refused.length === 0) {
     console.log("A server at that version accepts all of them.");
     return 0;
   }
 
-  let refused = 0;
+  const failures = new Map();
+  for (const failure of refused) {
+    const list = failures.get(failure.file) ?? [];
+    list.push(failure);
+    failures.set(failure.file, list);
+  }
   for (const file of [...failures.keys()].sort()) {
     console.log(`\n${file}`);
     for (const failure of failures.get(file)) {
-      refused += 1;
       console.log(`  ${failure.label} (line ${failure.line})`);
       for (const message of failure.errors) console.log(`    - ${message}`);
     }
   }
-  console.log(`\n${refused} of ${operations} operations would be refused by a server at ${ref}.`);
+  console.log(
+    `\n${refused.length} of ${operations} operations would be refused by a server at ${ref}.`,
+  );
   return 1;
 }
 
-try {
-  process.exitCode = main();
-} catch (err) {
-  if (!(err instanceof CheckError)) throw err;
-  console.error(`skew:check: ${err.message}`);
-  process.exitCode = 2;
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  try {
+    process.exitCode = main();
+  } catch (err) {
+    if (!(err instanceof CheckError)) throw err;
+    console.error(`skew:check: ${err.message}`);
+    process.exitCode = 2;
+  }
 }

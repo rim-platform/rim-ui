@@ -400,6 +400,11 @@ fn edits_apply_and_deletes_become_tombstones() {
 
     let page = store.timeline(WS, "c1", None, 10).unwrap().unwrap();
     assert_eq!(texts(&page), vec!["hello 0", "edited"]);
+    assert_eq!(
+        page.items[0].get("editedAt"),
+        Some(&serde_json::Value::Null)
+    );
+    assert_eq!(page.items[1]["editedAt"], "2026-10-08T12:00:00Z");
     // Upserts keep each row's `seq`, the rowid the FTS5 index points at.
     assert_eq!(seqs(&store, "c1"), seqs_before);
 

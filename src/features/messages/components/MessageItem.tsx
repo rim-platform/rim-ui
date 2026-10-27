@@ -12,6 +12,7 @@ import {
 import { MessageAttachments } from "./message-item/MessageAttachments";
 import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
+import { EditedMark } from "./message-item/EditedMark";
 import { MessageEditForm } from "./message-item/MessageEditForm";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
 import { MessageReactions } from "./message-item/MessageReactions";
@@ -228,6 +229,12 @@ export const MessageItem = memo(function MessageItem({
           <div className="min-w-0 flex-1">
             {replyQuote}
             <MessageText {...textProps("inline")} />
+            {message.editedAt && (
+              <>
+                {" "}
+                <EditedMark editedAt={message.editedAt} />
+              </>
+            )}
             {extras}
             {threadSummary}
           </div>
@@ -243,6 +250,7 @@ export const MessageItem = memo(function MessageItem({
     isDeleted,
     isEditing,
     editError,
+    editedAt: message.editedAt,
     onSaveEdit,
     onCancelEdit,
   };

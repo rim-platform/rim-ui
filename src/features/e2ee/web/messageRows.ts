@@ -192,9 +192,9 @@ export function contentPayload(
   };
 }
 
-/** The stored payload with its text put back, as the UI's `MessageItem`. */
+/** The stored payload with its text and edit time put back, as the UI's `MessageItem`. */
 export function render(row: MessageRow): MessageItem {
-  return { ...row.payload, text: row.text ?? "" } as unknown as MessageItem;
+  return { ...row.payload, text: row.text ?? "", editedAt: row.editedAt } as unknown as MessageItem;
 }
 
 /** A timeline page: the newest `limit` messages older than `before`, oldest first. */

@@ -96,6 +96,11 @@ export interface MessageItem {
   forwardedFrom: ForwardedFrom | null;
   isDeleted: boolean;
   sentAt: string;
+  /**
+   * When the text last changed; null for a never-edited message, absent when the server does not
+   * report it.
+   */
+  editedAt?: string | null;
   reactions: MessageReaction[];
   attachments: MessageAttachment[];
   linkPreviews: MessageLinkPreview[];

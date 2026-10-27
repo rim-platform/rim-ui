@@ -8,6 +8,8 @@ import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 import { editEncrypted } from "../../e2ee/runtime/send";
 import { toPrincipalMentions } from "../../e2ee/utils/content";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
+import { hasCapability, MESSAGE_EDITED_AT } from "../../updater/api/serverCapabilities";
+import type { KnownServerInfo } from "../../updater/api/serverInfoApi";
 import type { MessagesPage } from "./useMessages";
 
 const EDIT_MESSAGE = gql`
@@ -73,6 +75,14 @@ export function useEditMessageMutation() {
       await qc.cancelQueries({ queryKey: messagesKey });
 
       const previousData = qc.getQueryData<InfiniteData<MessagesPage>>(messagesKey);
+      // Marked edited only where the refetch after it brings the server's edit time back.
+      const marksEdits = hasCapability(
+        qc.getQueryData<KnownServerInfo>(queryKeys.serverInfo),
+        MESSAGE_EDITED_AT,
+      );
+      const edit = marksEdits
+        ? { text: vars.text, editedAt: new Date().toISOString() }
+        : { text: vars.text };
 
       // Optimistic update
       qc.setQueryData<InfiniteData<MessagesPage>>(messagesKey, (old) => {
@@ -81,7 +91,7 @@ export function useEditMessageMutation() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            items: page.items.map((m) => (m.id === vars.messageId ? { ...m, text: vars.text } : m)),
+            items: page.items.map((m) => (m.id === vars.messageId ? { ...m, ...edit } : m)),
           })),
         };
       });

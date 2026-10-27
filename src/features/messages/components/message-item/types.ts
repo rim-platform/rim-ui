@@ -30,6 +30,11 @@ export interface MessageItemMessage {
   text?: string | null;
   authorId: string;
   sentAt: string;
+  /**
+   * When the text last changed; null for a never-edited message, absent when the server does not
+   * report it.
+   */
+  editedAt?: string | null;
   threadId?: string | null;
   rootThreadId?: string | null;
   isPinned?: boolean;

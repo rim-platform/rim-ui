@@ -5,7 +5,10 @@ import { ClientError } from "graphql-request";
 import type { ReactNode } from "react";
 
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import type { MessagesPage } from "../../../core/types/messages";
+import { fakeServerInfo } from "../../../test/serverInfo";
 
 const requestMock = vi.fn();
 const readCachedTimelineMock = vi.fn();
@@ -64,6 +67,7 @@ describe("useConversationMessages with the local cache", () => {
     requestCacheSyncMock.mockReset();
     useAuthStore.setState({ session: { userId: "u1" } });
     conversation = undefined;
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo());
   });
 
   it("follows the opened conversation and asks for its sync", async () => {

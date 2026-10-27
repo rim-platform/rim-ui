@@ -35,6 +35,7 @@ cannot be reached. The web app has no cache and behaves as before.
 - `message.text` is its own column, and `message.seq` is an `INTEGER PRIMARY KEY` that upserts
   never change, so the local search index (below) points at rows that survive a `VACUUM`.
   Deleted messages stay as tombstones with no text, attachments, link previews or reactions.
+  A read puts the text and `edited_at` (as `editedAt`) back on the stored payload.
 - The schema is versioned with `PRAGMA user_version` (`SCHEMA_VERSION` in `store.rs`); each
   version is one migration step that commits with its version number.
 

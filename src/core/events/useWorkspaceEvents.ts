@@ -275,6 +275,7 @@ export function applyWorkspaceEvent(
                     text: updated.text,
                     isDeleted: updated.isDeleted,
                     sentAt: updated.sentAt,
+                    editedAt: event.message.edited_at ?? m.editedAt,
                   };
                 }),
               })),

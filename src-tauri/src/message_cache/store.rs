@@ -343,7 +343,7 @@ impl CacheStore {
         let limit = limit.clamp(1, 200);
 
         let mut stmt = self.conn.prepare_cached(
-            "SELECT text, payload FROM message
+            "SELECT text, edited_at, payload FROM message
              WHERE workspace_id = ?1 AND conversation_id = ?2 AND thread_id IS NULL
                AND is_deleted = 0
                AND (sent_at_us, id) < (?3, ?4)
@@ -358,13 +358,19 @@ impl CacheStore {
                 before_id,
                 limit + 1
             ],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )?;
 
         let mut items = Vec::new();
         for row in rows {
-            let (text, payload) = row?;
-            items.push(render(text, &payload)?);
+            let (text, edited_at, payload) = row?;
+            items.push(render(text, edited_at, &payload)?);
         }
         let has_older = items.len() > limit as usize;
         items.truncate(limit as usize);
@@ -390,44 +396,56 @@ impl CacheStore {
             }
         }
         let mut stmt = self.conn.prepare_cached(
-            "SELECT text, payload FROM message
+            "SELECT text, edited_at, payload FROM message
              WHERE workspace_id = ?1 AND conversation_id = ?2 AND thread_id = ?3
                AND is_deleted = 0
              ORDER BY sent_at_us, id
              LIMIT 500",
         )?;
         let rows = stmt.query_map(params![workspace_id, conversation_id, thread_id], |row| {
-            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?;
         for row in rows {
-            let (text, payload) = row?;
-            items.push(render(text, &payload)?);
+            let (text, edited_at, payload) = row?;
+            items.push(render(text, edited_at, &payload)?);
         }
         Ok(items)
     }
 
     /// One cached message, or `None`.
     pub(crate) fn message(&self, id: &str) -> Result<Option<serde_json::Value>, CacheError> {
-        let row: Option<(Option<String>, String)> = self
+        let row: Option<(Option<String>, Option<String>, String)> = self
             .conn
             .query_row(
-                "SELECT text, payload FROM message WHERE id = ?1",
+                "SELECT text, edited_at, payload FROM message WHERE id = ?1",
                 params![id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        row.map(|(text, payload)| render(text, &payload))
+        row.map(|(text, edited_at, payload)| render(text, edited_at, &payload))
             .transpose()
     }
 }
 
-/// The stored payload with its text put back, as the UI's `MessageItem`.
-fn render(text: Option<String>, payload: &str) -> Result<serde_json::Value, CacheError> {
+/// The stored payload with its text and edit time put back, as the UI's `MessageItem`.
+fn render(
+    text: Option<String>,
+    edited_at: Option<String>,
+    payload: &str,
+) -> Result<serde_json::Value, CacheError> {
     let mut value: serde_json::Value = serde_json::from_str(payload)?;
     if let Some(obj) = value.as_object_mut() {
         obj.insert(
             "text".into(),
             serde_json::Value::String(text.unwrap_or_default()),
+        );
+        obj.insert(
+            "editedAt".into(),
+            edited_at.map_or(serde_json::Value::Null, serde_json::Value::String),
         );
     }
     Ok(value)

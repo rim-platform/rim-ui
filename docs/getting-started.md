@@ -251,6 +251,9 @@ written as `:name:` show as their images. **Insert emoji** and **Attach file** s
 field; a server can turn attachments off. <kbd>Escape</kbd> moves from the composer to the message
 list, where the arrow keys move between messages and <kbd>e</kbd> edits your own.
 
+An edited message shows **(edited)** after its text; hover or focus it to see when. A server older
+than edit times shows it only in encrypted conversations.
+
 **Inbox and notifications.** **Inbox** on the side rail shows the conversation list in the tool
 panel, with the number of unread messages in the open workspace. The bell, **Notifications**,
 lists your mentions, DMs, thread replies, reactions and keyword matches in the open workspace,
