@@ -201,6 +201,40 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   enable, edit or delete buttons for a Member, the default workspace offers creating channels to
   its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
   workspace-scoped state.
+- Your replies in a thread can be edited in the thread pane: **Edit message** in a reply's menu,
+  or <kbd>e</kbd> in the pane, edits it in place as in the timeline. <kbd>Esc</kbd> in an edit
+  form cancels the edit without closing the thread.
+- Error toasts show a name the server quotes, such as an argument, as code instead of printing its
+  backticks ("missing string arg text").
+- A reaction with a custom emoji shows the emoji's image instead of its `:name:`; the name shows on
+  hover.
+- **(edited)** follows the message's text in the comfortable and compact layouts too, instead of
+  sitting on its own line.
+- The web app no longer lists Settings → **AI Agent** and **Plugin AI**, which only the desktop
+  app's AI agent uses.
+- When part of the app cannot be downloaded (a dropped connection), the app tries again, and if it
+  still fails says "This part of the app could not load" with **Reload**, instead of a crashed
+  conversation or Settings page whose Retry could not help.
+- The command palette offers **Unarchive Channel** only in an archived channel and **Archive
+  Channel** only in one that is not, instead of reporting success for a change that did nothing.
+- When someone joins the workspace, the member count and members of its public channels update right
+  away instead of after a reload.
+- In a conversation's members panel, <kbd>Esc</kbd> in the invite picker closes only the picker (a
+  second <kbd>Esc</kbd> closes the panel), and names use the row's width: **Leave**, **Remove** and
+  the row's actions show when you point at or focus the row.
+- A group's or DM's search button reads "Search in Bob and Carol" instead of "Search in #Bob and
+  Carol", and the search box calls its scope "This conversation" instead of "Current channel".
+- One <kbd>Esc</kbd> closes message search, as its footer says, instead of first clearing the query.
+- The "This conversation is not encrypted" dialog opens by itself once per conversation on a device
+  instead of in every browser session; while the account is locked it waits, and **Not encrypted**
+  in the header opens it.
+- The command palette no longer toasts "Executed locally" after a command that opens something in
+  the app, such as **Search Messages** or **Open Settings**; **Mark All as Read** and **Reload
+  Commands** say what they did.
+- Times on a 12-hour clock read "9:15 PM" instead of "09:15 PM".
+- The four conversation navigation commands are named alike: **Previous Conversation**, **Next
+  Conversation**, **Previous Unread Conversation** and **Next Unread Conversation**; they go through
+  DMs and groups as well as channels.
 
 ## [0.0.5] - 2026-10-26
 

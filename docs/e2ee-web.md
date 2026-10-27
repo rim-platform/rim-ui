@@ -175,6 +175,9 @@ The desktop's timeline states and notices (`e2ee-desktop.md`, "What the person s
 - in **Set up encryption for this account** and Settings > Security: "Encrypted messages are kept
   only in this browser: your other devices cannot load them from here, and clearing this site's
   data deletes them. For a copy that lasts, use the desktop app with its history archive set up."
+- A DM or group that is not encrypted shows **Not encrypted** in its header. The dialog that
+  explains it opens by itself the first time the conversation opens in this browser, once the
+  account is unlocked so that closing it is kept; the marker opens it again.
 
 The history archive is the desktop's: the web app offers no "Restore from history archive".
 

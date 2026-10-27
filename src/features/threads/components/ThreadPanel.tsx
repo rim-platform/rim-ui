@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { activeBan, useBanExpiry } from "../../messages/hooks/useBanExpiry";
 import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
 import { useConversationMessages } from "../../messages/api/useMessages";
+import { useEditMessageMutation } from "../../messages/api/useEditMessage";
 import { useToggleReactionMutation } from "../../messages/api/useToggleReaction";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -32,9 +33,10 @@ import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useOwnHandleDomain } from "../../workspaces/api/useCurrentUser";
 import { rememberHandles } from "../../workspaces/state/useKnownHandles";
 import { personName, viewHandle } from "../../../shared/utils/handles";
+import { isTextEntry } from "../../../shared/ui/focusNavigation";
 
 /** A message the thread panel shows: the root or a reply. */
-type ThreadPanelMessage = { id: string; authorId: string };
+type ThreadPanelMessage = { id: string; authorId: string; isDeleted?: boolean | null };
 
 /**
  * The message as the report dialog takes it. The replies of an encrypted conversation come
@@ -256,10 +258,43 @@ export function ThreadPanel() {
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
+  const [editing, setEditing] = useState<{
+    rootMessageId: string | null;
+    messageId: string;
+  } | null>(null);
+  // A new thread drops the edit without an effect.
+  const editingMessageId =
+    editing && editing.rootMessageId === rootMessageId ? editing.messageId : null;
+  const editMessage = useEditMessageMutation();
+  const editMessageAsync = editMessage.mutateAsync;
+  const startEdit = useCallback(
+    (messageId: string) => setEditing({ rootMessageId, messageId }),
+    [rootMessageId],
+  );
+  const handleSaveEdit = useCallback(
+    async (messageId: string, text: string) => {
+      if (!workspaceId || !conversationId) return;
+      try {
+        await editMessageAsync({
+          serverId: workspaceId,
+          conversationId,
+          messageId,
+          text,
+          threadId: messageId === rootMessageId ? null : (threadId ?? null),
+        });
+        setEditing(null);
+      } catch {
+        // Keep edit mode open — user can retry or cancel
+      }
+    },
+    [workspaceId, conversationId, rootMessageId, threadId, editMessageAsync],
+  );
+  const handleCancelEdit = useCallback(() => setEditing(null), []);
   const messageMenu = useMessageContextMenu({
     workspaceId,
     conversationId,
     onForward: forward,
+    onEdit: startEdit,
     threadId: threadId ?? null,
   });
   const contextMenu = useContextMenu();
@@ -326,6 +361,8 @@ export function ThreadPanel() {
       bindContextMenu,
       bindUserContextMenu,
       onMentionContextMenu,
+      onSaveEdit: handleSaveEdit,
+      onCancelEdit: handleCancelEdit,
     }),
     [
       openThread,
@@ -335,7 +372,29 @@ export function ThreadPanel() {
       bindContextMenu,
       bindUserContextMenu,
       onMentionContextMenu,
+      handleSaveEdit,
+      handleCancelEdit,
     ],
+  );
+
+  /** `e` edits the viewer's message whose row holds the focus, else their newest reply. */
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== "e" || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.defaultPrevented) return;
+      if (isTextEntry(event.target as Element) || editingMessageId) return;
+      const rowId = (event.target as Element)
+        .closest("[data-message-id]")
+        ?.getAttribute("data-message-id");
+      const own = (m: ThreadPanelMessage) => m.authorId === currentUserId && !m.isDeleted;
+      const target = rowId
+        ? messagesRef.current.find((m) => m.id === rowId)
+        : [...items].reverse().find(own);
+      if (!target || !own(target)) return;
+      event.preventDefault();
+      startEdit(target.id);
+    },
+    [editingMessageId, items, currentUserId, startEdit],
   );
   if (!rootMessageId) return null;
 
@@ -350,6 +409,7 @@ export function ThreadPanel() {
       data-panel="threadPane"
       tabIndex={-1}
       onFocus={() => useShellStore.getState().setFocusedSurface("threadPane")}
+      onKeyDown={handleKeyDown}
       className="flex h-full flex-col rounded-xl border border-rim-line bg-rim-panel outline-none"
     >
       {/* Header */}
@@ -384,6 +444,8 @@ export function ThreadPanel() {
                       currentUserId !== undefined && rootMessage.authorId === currentUserId,
                   },
                   inThreadPane: true,
+                  isEditing: rootMessage.id === editingMessageId,
+                  editError: rootMessage.id === editingMessageId && editMessage.isError,
                 }}
                 handlers={handlers}
                 members={members}
@@ -418,6 +480,8 @@ export function ThreadPanel() {
                     },
                     isCurrentUser: currentUserId !== undefined && msg.authorId === currentUserId,
                   },
+                  isEditing: msg.id === editingMessageId,
+                  editError: msg.id === editingMessageId && editMessage.isError,
                 }}
                 handlers={handlers}
                 members={members}

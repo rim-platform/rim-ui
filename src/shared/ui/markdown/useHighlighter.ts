@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { importWithRetry } from "../../lazy/importWithRetry";
 import { logger } from "../../../core/logger";
 import type { Highlighter } from "./renderMarkdown";
 
@@ -11,10 +12,15 @@ let loading: Promise<Highlighter> | null = null;
 
 /** Loads the highlighter chunk once; later calls share the same promise. */
 export function loadHighlighter(): Promise<Highlighter> {
-  loading ??= import("./codeHighlight").then((module) => {
-    loaded = module.highlightCode;
-    return loaded;
-  });
+  loading ??= importWithRetry(() => import("./codeHighlight"))
+    .then((module) => {
+      loaded = module.highlightCode;
+      return loaded;
+    })
+    .catch((err: unknown) => {
+      loading = null;
+      throw err;
+    });
   return loading;
 }
 

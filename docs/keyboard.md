@@ -109,3 +109,4 @@ field or plugin frame. The status bar shows the mode.
 
 The timeline keeps its own message keys (`r` to reply, `t` for the thread, `e`, `p` to pin, `d`,
 `c`, `f`) in both modes; `r`, `t` and `p` only where the conversation lets you.
+In the thread pane <kbd>e</kbd> edits your reply whose row has the focus, else your newest reply.

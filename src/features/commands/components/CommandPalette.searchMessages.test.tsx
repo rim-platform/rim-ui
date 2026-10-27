@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
@@ -54,6 +56,12 @@ import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStor
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast";
 
+import { queryClient } from "../../../core/query/queryClient";
+
+function Providers({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
 const FOUND: CommandResult = {
   status: "SUCCESS",
   message: "",
@@ -62,7 +70,7 @@ const FOUND: CommandResult = {
 };
 
 function openPalette() {
-  render(<CommandPalette />);
+  render(<CommandPalette />, { wrapper: Providers });
   act(() => useCommandStore.getState().openCommandPalette());
   return screen.getByPlaceholderText("Type a command...");
 }

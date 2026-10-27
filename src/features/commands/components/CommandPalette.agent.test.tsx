@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
@@ -41,9 +43,15 @@ import { CommandPalette } from "./CommandPalette";
 import { useCommandStore } from "../state/useCommandStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
+import { queryClient } from "../../../core/query/queryClient";
+
+function Providers({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
 /** Opens the palette, types `query` into its search and returns the text the palette shows. */
 function searchPalette(query: string): string {
-  const { container } = render(<CommandPalette />);
+  const { container } = render(<CommandPalette />, { wrapper: Providers });
   act(() => useCommandStore.getState().openCommandPalette());
   fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
     target: { value: query },

@@ -6,6 +6,7 @@ import {
   leaveConfirmation,
 } from "../../conversations/conversationActionTexts";
 import { useConversationActionConfirmStore } from "../../conversations/state/useConversationActionConfirmStore";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel, leaveNeedsConfirmation } from "../../conversations/utils";
 
@@ -54,4 +55,28 @@ export async function confirmConversationCommand(
   return useConversationActionConfirmStore
     .getState()
     .ask(kind === "archive" ? archiveConfirmation(label) : leaveConfirmation(label));
+}
+
+/** The archive state a command needs its channel in. */
+const ARCHIVE_STATE: Readonly<Record<string, boolean>> = {
+  "chat.archive_channel": false,
+  "chat.unarchive_channel": true,
+};
+
+/**
+ * Whether the palette offers `commandId` for the open conversation: Archive Channel only on a
+ * channel that is not archived, Unarchive Channel only on an archived one, any other command always.
+ *
+ * @param conversation - The open conversation; `undefined` when none is open or it has not loaded.
+ */
+export function offeredForConversation(
+  commandId: string,
+  conversation: Pick<ConversationSummary, "conversationType" | "isArchived"> | undefined,
+): boolean {
+  const needs = ARCHIVE_STATE[commandId];
+  if (needs === undefined) return true;
+  return (
+    conversation?.conversationType === ConversationTypeEnum.CHANNEL &&
+    conversation.isArchived === needs
+  );
 }
