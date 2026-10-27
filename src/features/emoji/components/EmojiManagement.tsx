@@ -8,6 +8,7 @@ import type { CustomEmoji } from "../api/useCustomEmojis";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { cn } from "../../../shared/ui/cn";
+import { CustomEmojiImage } from "./CustomEmojiImage";
 
 const MAX_FILE_SIZE = 256 * 1024; // 256 KB
 
@@ -228,7 +229,11 @@ export function EmojiManagement({ serverId }: EmojiManagementProps) {
                 key={emoji.id}
                 className="flex items-center gap-3 rounded-lg border border-rim-line bg-rim-panel-soft px-3 py-2"
               >
-                <img src={emoji.imageUrl} alt={emoji.name} className="h-8 w-8 object-contain" />
+                <CustomEmojiImage
+                  url={emoji.imageUrl}
+                  name={emoji.name}
+                  className="h-8 w-8 object-contain"
+                />
                 <span className="flex-1 text-sm text-rim-text">:{emoji.name}:</span>
                 {canDelete(emoji) && (
                   <button

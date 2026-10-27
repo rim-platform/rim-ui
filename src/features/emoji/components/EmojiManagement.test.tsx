@@ -15,6 +15,10 @@ vi.mock("../../workspaces/api/useMyServerRole", () => ({
   useIsOwner: vi.fn(),
 }));
 
+vi.mock("../../../shared/media/serverMedia", () => ({
+  useServerMediaUrl: (url: string) => `blob:${url}`,
+}));
+
 import { useCustomEmojis } from "../api/useCustomEmojis";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useIsOwner } from "../../workspaces/api/useMyServerRole";
@@ -85,5 +89,14 @@ describe("EmojiManagement", () => {
     mockAs("user-carol", false, [uploadedByAlice]);
     renderWithProviders(<EmojiManagement serverId="srv-1" />);
     expect(screen.queryByLabelText("Delete party")).not.toBeInTheDocument();
+  });
+
+  it("shows each emoji through the server media loader", () => {
+    mockAs("user-alice", false, [uploadedByAlice]);
+    renderWithProviders(<EmojiManagement serverId="srv-1" />);
+    expect(screen.getByAltText("party")).toHaveAttribute(
+      "src",
+      "blob:http://example.com/party.png",
+    );
   });
 });

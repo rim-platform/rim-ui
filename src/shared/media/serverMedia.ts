@@ -6,7 +6,7 @@
  * download serves every element showing the same file; its object URL is revoked a while after
  * the last of them unmounts.
  */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { getApiOrigin } from "../../core/graphql/config";
 import { detectPlatform } from "../../core/runtime/runtime";
@@ -183,4 +183,63 @@ export function useServerMedia(url: string | null | undefined, enabled = true): 
  */
 export function useServerMediaUrl(url: string | null | undefined): string | null {
   return useServerMedia(url).src;
+}
+
+/** The URLs a {@link useServerMediaUrls} key joins. */
+function urlsOf(key: string): string[] {
+  return key === "" ? [] : key.split("\n");
+}
+
+/**
+ * The `src` of each server file in `urls` that can be shown now, keyed by the URL as given:
+ * on the web each URL as given; on the desktop the object URL of each download that has
+ * arrived. A pending or failed download has no entry.
+ *
+ * @param urls - The files' URLs as the server names them, relative or absolute.
+ * @returns The `src` of each file that can be shown, by its URL as given.
+ */
+export function useServerMediaUrls(urls: readonly string[]): ReadonlyMap<string, string> {
+  const key = urls.join("\n");
+  const version = useSyncExternalStore(subscribe, currentGeneration, currentGeneration);
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    version: number;
+    srcs: Map<string, string>;
+  }>();
+
+  useEffect(() => {
+    let current = true;
+    const acquired: Entry[] = [];
+    for (const url of urlsOf(key)) {
+      const resolved = resolveServerUrl(url);
+      if (!loadsAsBlob(resolved)) continue;
+      const entry = acquire(resolved);
+      acquired.push(entry);
+      void entry.promise.then((src) => {
+        if (!current || src === null) return;
+        setLoaded((prev) => {
+          const srcs = new Map(prev?.key === key && prev.version === version ? prev.srcs : []);
+          srcs.set(url, src);
+          return { key, version, srcs };
+        });
+      });
+    }
+    return () => {
+      current = false;
+      for (const entry of acquired) release(entry);
+    };
+  }, [key, version]);
+
+  return useMemo(() => {
+    const fresh = loaded?.key === key && loaded.version === version ? loaded.srcs : null;
+    const srcs = new Map<string, string>();
+    for (const url of urlsOf(key)) {
+      const resolved = resolveServerUrl(url);
+      const src = !loadsAsBlob(resolved)
+        ? url
+        : (fresh?.get(url) ?? entries.get(resolved)?.objectUrl ?? null);
+      if (src) srcs.set(url, src);
+    }
+    return srcs;
+  }, [key, version, loaded]);
 }

@@ -237,6 +237,16 @@ body {
   object-fit: contain;
 }
 
+/* The label after an image shown as a link. */
+.prose-rim .rim-md-image-label {
+  margin-left: 0.25rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--color-rim-line);
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--color-rim-text-faint);
+}
+
 .prose-rim strong {
   font-weight: 600;
   color: var(--color-rim-text);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { highlightCode } from "./codeHighlight";
 import { renderMarkdown } from "./renderMarkdown";
@@ -133,6 +133,21 @@ describe("renderMarkdown sanitising", () => {
     expect(root.textContent).toContain("hi");
   });
 
+  it("loads nothing for a raw img that is not a server file", () => {
+    expect(dom(renderMarkdown('<img src=x alt="a">')).querySelector("[src]")).toBeNull();
+  });
+
+  it("strips event handlers from raw HTML before parsing it", () => {
+    const spy = vi.spyOn(DOMParser.prototype, "parseFromString");
+    try {
+      renderMarkdown("<img src=x onerror=alert(1)>");
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls.every(([html]) => !/onerror/i.test(String(html)))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("keeps only the renderer's own classes", () => {
     const html = renderMarkdown(
       '<span class="fixed inset-0 z-50 hljs-keyword mention">x</span><p class="bg-rim-danger">y</p>',
@@ -167,9 +182,10 @@ describe("renderMarkdown sanitising", () => {
 
 describe("renderMarkdown images", () => {
   it("renders an image lazily, bounded and without a referrer", () => {
-    const html = renderMarkdown("![diagram](https://example.com/d.png)");
+    const src = `${window.location.origin}/api/files/ws/a/d.png`;
+    const html = renderMarkdown(`![diagram](${src})`);
     const img = dom(html).querySelector("img");
-    expect(img?.getAttribute("src")).toBe("https://example.com/d.png");
+    expect(img?.getAttribute("src")).toBe(src);
     expect(img?.getAttribute("alt")).toBe("diagram");
     expect(img?.getAttribute("loading")).toBe("lazy");
     expect(img?.getAttribute("referrerpolicy")).toBe("no-referrer");
@@ -185,6 +201,39 @@ describe("renderMarkdown images", () => {
     const link = root.querySelector("a");
     expect(link?.getAttribute("href")).toBe("https://example.com/d.png");
     expect(link?.textContent).toBe("diagram");
+  });
+
+  it("renders an image from another site as a link labelled image", () => {
+    const root = dom(renderMarkdown("![diagram](https://example.com/d.png)"));
+    expect(root.querySelector("img")).toBeNull();
+    expect(root.querySelector('a[href="https://example.com/d.png"]')?.textContent).toBe("diagram");
+    expect(root.querySelector(".rim-md-image-label")?.textContent).toBe("image");
+  });
+
+  it("uses the address as the link text of an image without alt text", () => {
+    const root = dom(renderMarkdown("![](https://example.com/d.png)"));
+    expect(root.querySelector("a")?.textContent).toBe("https://example.com/d.png");
+  });
+
+  it("renders a same-origin image outside the server's files as a link", () => {
+    expect(dom(renderMarkdown("![x](/settings)")).querySelector("img")).toBeNull();
+  });
+
+  it("keeps a custom emoji image from the emoji map wherever it is", () => {
+    const html = renderMarkdown(":party:", {
+      customEmojiMap: new Map([["party", "https://other.example/e.png"]]),
+    });
+    const img = dom(html).querySelector('img[src="https://other.example/e.png"]');
+    expect(img?.classList.contains("object-contain")).toBe(true);
+  });
+
+  it("keeps a custom emoji whose image is an object URL from the emoji map", () => {
+    const html = renderMarkdown(":party:", {
+      customEmojiMap: new Map([["party", "blob:tauri://localhost/1"]]),
+    });
+    expect(dom(html).querySelector('img[src="blob:tauri://localhost/1"]')).not.toBeNull();
+    const raw = renderMarkdown('<img src="blob:tauri://localhost/1">');
+    expect(dom(raw).querySelector("[src]")).toBeNull();
   });
 });
 

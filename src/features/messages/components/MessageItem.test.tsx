@@ -27,6 +27,14 @@ vi.mock("../../../core/graphql/client", () => ({
   },
 }));
 
+/** The custom emoji each message names; none unless a test says otherwise. */
+const messageEmojiMapMock = vi.hoisted(() =>
+  vi.fn((): Map<string, string> | undefined => undefined),
+);
+vi.mock("../../emoji/hooks/useMessageEmojiMap", () => ({
+  useMessageEmojiMap: () => messageEmojiMapMock(),
+}));
+
 import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { MessageItem } from "./MessageItem";
 import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
@@ -71,6 +79,21 @@ describe("MessageItem", () => {
     render(<MessageItem {...props()} />);
     // The text may be rendered via MarkdownRenderer
     expect(screen.getByText("Hello world")).toBeInTheDocument();
+  });
+
+  it("shows a custom emoji the message names as its image", () => {
+    messageEmojiMapMock.mockReturnValue(new Map([["partyblob", "/api/emoji/1"]]));
+    try {
+      const { container } = render(
+        <MessageItem {...props({ message: { ...defaultMessage, text: "nice :partyblob:" } })} />,
+      );
+      expect(container.querySelector('img[alt=":partyblob:"]')).toHaveAttribute(
+        "src",
+        "/api/emoji/1",
+      );
+    } finally {
+      messageEmojiMapMock.mockReturnValue(undefined);
+    }
   });
 
   it("renders formatted time", () => {

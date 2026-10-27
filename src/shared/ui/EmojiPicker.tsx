@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 
+import { useServerMediaUrls } from "../media/serverMedia";
 import { Z } from "./zIndex";
 
 /** Minimal custom emoji shape needed by the picker (avoids importing from features/emoji). */
@@ -53,22 +54,21 @@ const PICKER_HEIGHT = 435;
 export function EmojiPicker({ position, onSelect, onClose, customEmojis }: EmojiPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Convert custom emojis to emoji-mart format
+  const sources = useServerMediaUrls(
+    useMemo(() => customEmojis?.map((e) => e.imageUrl) ?? [], [customEmojis]),
+  );
+
+  // Custom emoji whose image can be shown, in emoji-mart's format
   const custom = useMemo(() => {
-    if (!customEmojis || customEmojis.length === 0) return undefined;
-    return [
-      {
-        id: "custom",
-        name: "Custom",
-        emojis: customEmojis.map((e) => ({
-          id: `custom_${e.id}`,
-          name: e.name,
-          keywords: [e.name],
-          skins: [{ src: e.imageUrl }],
-        })),
-      },
-    ];
-  }, [customEmojis]);
+    const emojis = (customEmojis ?? []).flatMap((e) => {
+      const src = sources.get(e.imageUrl);
+      return src
+        ? [{ id: `custom_${e.id}`, name: e.name, keywords: [e.name], skins: [{ src }] }]
+        : [];
+    });
+    if (emojis.length === 0) return undefined;
+    return [{ id: "custom", name: "Custom", emojis }];
+  }, [customEmojis, sources]);
 
   // Smart positioning: decide whether to render above or below the anchor point
   const style = useMemo((): React.CSSProperties => {
@@ -136,7 +136,9 @@ export function EmojiPicker({ position, onSelect, onClose, customEmojis }: Emoji
       className="rounded-lg shadow-xl"
     >
       <Suspense fallback={null}>
+        {/* emoji-mart builds its custom category once, so a new image re-creates the picker */}
         <LazyPicker
+          key={custom?.[0].emojis.length ?? 0}
           onEmojiSelect={handleEmojiSelect}
           theme="dark"
           custom={custom}

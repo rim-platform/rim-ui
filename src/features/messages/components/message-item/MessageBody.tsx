@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { activeBan } from "../../hooks/useBanExpiry";
 import { MarkdownRenderer } from "../../../../shared/ui/MarkdownRenderer";
+import { useMessageEmojiMap } from "../../../emoji/hooks/useMessageEmojiMap";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
@@ -41,6 +42,8 @@ interface MessageTextProps {
   memberDisplayMap?: Map<string, string>;
   resolveMember?: MemberResolver;
   onMentionContextMenu?: MessageItemHandlers["onMentionContextMenu"];
+  /** The workspace whose custom emoji the text may name. */
+  workspaceId?: string | null;
 }
 
 /**
@@ -54,8 +57,10 @@ export const MessageText = memo(function MessageText({
   memberDisplayMap,
   resolveMember,
   onMentionContextMenu,
+  workspaceId,
 }: MessageTextProps) {
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
+  const customEmojiMap = useMessageEmojiMap(text, workspaceId);
   const [mentionCard, setMentionCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
   const mentionTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -125,6 +130,7 @@ export const MessageText = memo(function MessageText({
           content={text}
           className={styles.markdown}
           memberMap={memberDisplayMap}
+          customEmojiMap={customEmojiMap}
           onMentionClick={handleMentionClick}
           onMentionHover={handleMentionHover}
           onMentionLeave={scheduleMentionClose}

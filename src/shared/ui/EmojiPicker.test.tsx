@@ -41,6 +41,14 @@ vi.mock("@emoji-mart/react", () => ({
 
 vi.mock("@emoji-mart/data", () => ({ default: {} }));
 
+/** Every URL loaded as given, as on the web. */
+const loadedAsGiven = (urls: readonly string[]) => new Map(urls.map((u) => [u, u]));
+const mediaUrlsMock = vi.fn(loadedAsGiven);
+
+vi.mock("../media/serverMedia", () => ({
+  useServerMediaUrls: (urls: readonly string[]) => mediaUrlsMock(urls),
+}));
+
 import { EmojiPicker } from "./EmojiPicker";
 
 // Helper: render EmojiPicker and wait for the React.lazy() Suspense boundary
@@ -60,6 +68,7 @@ describe("EmojiPicker", () => {
 
   beforeEach(() => {
     pickerSpy.mockClear();
+    mediaUrlsMock.mockReset().mockImplementation(loadedAsGiven);
   });
 
   it("renders the emoji-mart picker into a portal", async () => {
@@ -123,6 +132,28 @@ describe("EmojiPicker", () => {
         ],
       },
     ]);
+  });
+
+  it("gives emoji-mart each custom emoji's loaded image", async () => {
+    mediaUrlsMock.mockImplementation(() => new Map([["/api/emoji/1", "blob:x"]]));
+    await renderPicker({
+      ...defaultProps,
+      customEmojis: [{ id: "1", name: "party", imageUrl: "/api/emoji/1" }],
+    });
+    const props = pickerSpy.mock.lastCall![0] as {
+      custom?: Array<{ emojis: Array<{ skins: Array<{ src: string }> }> }>;
+    };
+    expect(props.custom?.[0].emojis[0].skins[0].src).toBe("blob:x");
+  });
+
+  it("leaves out a custom emoji whose image has not arrived", async () => {
+    mediaUrlsMock.mockImplementation(() => new Map());
+    await renderPicker({
+      ...defaultProps,
+      customEmojis: [{ id: "1", name: "party", imageUrl: "/api/emoji/1" }],
+    });
+    const props = pickerSpy.mock.lastCall![0] as { custom?: unknown };
+    expect(props.custom).toBeUndefined();
   });
 
   it("does not forward a custom category when no customEmojis are provided", async () => {
