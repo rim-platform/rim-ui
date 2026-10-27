@@ -164,6 +164,20 @@ describe("NewMessagePicker", () => {
     expect(start.startDirectConversation).not.toHaveBeenCalled();
   });
 
+  it("opens a draft DM with a contact from the Start conversation button", async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    contactBob();
+    const onClose = vi.fn();
+    renderWithProviders(<NewMessagePicker open onClose={onClose} onCreated={vi.fn()} />);
+    await user.click(await screen.findByRole("option", { name: "Bob" }));
+    await user.click(screen.getByRole("button", { name: "Start conversation" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(useShellStore.getState().draftDirect).toEqual({ spaceId: "direct-1", member: bob });
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+    expect(start.startDirectConversation).not.toHaveBeenCalled();
+  });
+
   it("opens the DM with a contact that the direct space already holds", async () => {
     const user = userEvent.setup();
     useWorkspaceStore.setState({ workspaceId: "direct-1" });
@@ -410,5 +424,52 @@ describe("NewMessagePicker in a workspace", () => {
     ]);
     await waitFor(() => expect(groups.createGroup).toHaveBeenCalledWith(device, "ws-1", "g1"));
     expect(useShellStore.getState().draftDirect).toBeNull();
+  });
+
+  it("disables Start conversation until someone is picked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    const button = screen.getByRole("button", { name: "Start conversation" });
+    expect(button).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "pick Bob" }));
+    expect(button).toBeEnabled();
+  });
+
+  it("opens a draft DM with one member from the Start conversation button", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    renderWithProviders(<NewMessagePicker open onClose={onClose} onCreated={onCreated} />);
+    await user.click(screen.getByRole("button", { name: "pick Bob" }));
+    await user.click(screen.getByRole("button", { name: "Start conversation" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(useShellStore.getState().draftDirect).toEqual({
+      workspaceId: "ws-1",
+      otherUserId: "u2",
+    });
+    expect(callsTo(requestMock, "mutation CreateConversation")).toHaveLength(0);
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it("creates a group from the Start group button", async () => {
+    session.e2eeSession.mockResolvedValue(device);
+    const created = makeConversation({
+      id: "g1",
+      conversationType: ConversationTypeEnum.GROUP,
+      encryptedAt: "2026-10-15T00:00:00Z",
+    });
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    serveReads(emptyInbox, {
+      "mutation CreateConversation": () => answered.then(() => ({ createConversation: created })),
+    });
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={onCreated} />);
+    await user.click(screen.getByRole("button", { name: "pick Bob and Carol" }));
+    await user.dblClick(screen.getByRole("button", { name: "Start group" }));
+    answer();
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("g1"));
+    expect(callsTo(requestMock, "mutation CreateConversation")).toHaveLength(1);
   });
 });

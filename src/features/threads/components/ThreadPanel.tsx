@@ -1,16 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Send, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import { activeBan, useBanExpiry } from "../../messages/hooks/useBanExpiry";
 import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
-import { useReplyToMessageMutation } from "../api/useReplyToMessage";
 import { useConversationMessages } from "../../messages/api/useMessages";
 import { useToggleReactionMutation } from "../../messages/api/useToggleReaction";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { replaceShortcodes } from "../../messages/utils/emojiShortcodes";
 import { MessageItem } from "../../messages/components/MessageItem";
+import { ThreadComposer } from "../../messages/components/Composer";
 import type { MessageItemHandlers } from "../../messages/components/MessageItem";
 import { ForwardDialog } from "../../messages/components/ForwardDialog";
 import { useMessageContextMenu } from "../../messages/hooks/useMessageContextMenu";
@@ -20,17 +19,15 @@ import type { MessageItem as MessageItemData } from "../../../core/types/message
 import { usePinnedMessages } from "../../messages/api/usePinnedMessages";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { logger } from "../../../core/logger";
-import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { useMessageMembers } from "../../messages/hooks/useMessageMembers";
-import { useEncryptedHere, usePrincipalNames } from "../../e2ee/hooks/useE2eeConversation";
-import { invalidateTimeline } from "../../e2ee/runtime/groups";
-import { EncryptedSendError, sendEncrypted } from "../../e2ee/runtime/send";
-import { toPrincipalMentions, toUserMentions } from "../../e2ee/utils/content";
+import {
+  useE2eeConversation,
+  useEncryptedHere,
+  usePrincipalNames,
+} from "../../e2ee/hooks/useE2eeConversation";
+import { toUserMentions } from "../../e2ee/utils/content";
 import { withSenderAsAuthor } from "../../e2ee/utils/timeline";
-import { queryKeys } from "../../../core/query/keys";
-import { queryClient } from "../../../core/query/queryClient";
-import { toast } from "../../../shared/toast";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useOwnHandleDomain } from "../../workspaces/api/useCurrentUser";
 import { rememberHandles } from "../../workspaces/state/useKnownHandles";
@@ -65,6 +62,7 @@ export function ThreadPanel() {
 
   const threadId = thread?.id;
   const encrypted = useEncryptedHere(workspaceId, conversationId);
+  const e2ee = useE2eeConversation(workspaceId, conversationId);
   const { userOf } = usePrincipalNames(workspaceId);
 
   const threadMsgs = useThreadMessages(
@@ -447,148 +445,10 @@ export function ThreadPanel() {
         <ThreadComposer
           workspaceId={workspaceId}
           conversationId={conversationId}
-          rootMessageId={rootMessageId}
-          threadId={threadId ?? null}
-          encrypted={encrypted}
+          thread={{ rootMessageId, threadId: threadId ?? null }}
+          encryption={e2ee.encrypted ? e2ee : undefined}
         />
       )}
     </div>
-  );
-}
-
-function ThreadComposer({
-  workspaceId,
-  conversationId,
-  rootMessageId,
-  threadId,
-  encrypted,
-}: {
-  workspaceId: string;
-  conversationId: string;
-  rootMessageId: string;
-  threadId: string | null;
-  encrypted: boolean;
-}) {
-  const [text, setText] = useState("");
-  const [sendingEncrypted, setSendingEncrypted] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const replyToMessage = useReplyToMessageMutation();
-  const { data: serverMembers } = useServerMembers(workspaceId);
-  const currentUserId = useAuthStore((s) => s.session?.userId);
-
-  /** A thread reply in an encrypted conversation: an encrypted message naming its root. */
-  async function replyEncrypted(processed: string) {
-    const members = serverMembers ?? [];
-    const me = members.find((m) => m.userId === currentUserId);
-    const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
-    setSendingEncrypted(true);
-    try {
-      await sendEncrypted(workspaceId, conversationId, {
-        body: toPrincipalMentions(processed, new Map(), principalOf),
-        threadRootId: rootMessageId,
-        threadId,
-        author: {
-          id: currentUserId ?? "",
-          username: me?.username ?? "",
-          displayName: me?.displayName ?? null,
-          avatarUrl: me?.avatarUrl ?? null,
-          principalId: me?.principalId ?? null,
-        },
-      });
-      setText("");
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.threadByRoot(workspaceId, conversationId, rootMessageId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["threadMessages", workspaceId, conversationId],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.threadReplyCount(workspaceId, conversationId, rootMessageId),
-      });
-      invalidateTimeline(workspaceId, conversationId);
-    } catch (err) {
-      toast.error(err instanceof EncryptedSendError ? err.message : "Failed to send the reply");
-    } finally {
-      setSendingEncrypted(false);
-      textareaRef.current?.focus();
-    }
-  }
-
-  // Auto-focus on mount
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    const processed = replaceShortcodes(trimmed);
-    if (encrypted) {
-      void replyEncrypted(processed);
-      return;
-    }
-
-    replyToMessage.mutate(
-      {
-        serverId: workspaceId,
-        conversationId,
-        rootMessageId,
-        text: processed,
-      },
-      {
-        onSuccess: () => {
-          setText("");
-          if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-          }
-          textareaRef.current?.focus();
-        },
-      },
-    );
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  }
-
-  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setText(e.currentTarget.value);
-    // Auto-resize
-    const el = e.currentTarget;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex items-end gap-2 border-t border-rim-line px-4 py-3"
-    >
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        value={text}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onFocus={() => useShellStore.getState().setNavigationMode(false)}
-        placeholder="Reply in thread..."
-        aria-label="Reply in thread"
-        className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
-        style={{ height: "auto" }}
-      />
-      <button
-        type="submit"
-        disabled={replyToMessage.isPending || sendingEncrypted || !text.trim()}
-        className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
-        aria-label="Send reply"
-      >
-        <Send className="h-4 w-4" />
-      </button>
-    </form>
   );
 }

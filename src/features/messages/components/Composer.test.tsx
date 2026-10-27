@@ -51,7 +51,7 @@ vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: markTypingSent }),
 }));
 
-import { Composer } from "./Composer";
+import { Composer, ThreadComposer } from "./Composer";
 
 function serve(
   conversation: ConversationSummary,
@@ -804,5 +804,35 @@ describe("Composer — mentions by handle", () => {
     expect(row).toHaveTextContent("@alice:elsewhere.example");
     fireEvent.click(row);
     expect(textbox).toHaveValue("@alice:elsewhere.example ");
+  });
+});
+
+describe("ThreadComposer", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useDraftStore.setState({ drafts: {} });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("keeps a thread reply's draft apart from the conversation's", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER);
+    const view = render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ThreadComposer
+          workspaceId="ws-1"
+          conversationId="conv-1"
+          thread={{ rootMessageId: "root-1", threadId: "t-1" }}
+        />
+      </QueryClientProvider>,
+    );
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "half a reply" } });
+    view.unmount();
+    expect(useDraftStore.getState().getDraft("thread:conv-1:root-1")).toBe("half a reply");
+    expect(useDraftStore.getState().getDraft("conv-1")).toBe("");
   });
 });

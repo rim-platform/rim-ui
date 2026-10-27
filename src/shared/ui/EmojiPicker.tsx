@@ -128,7 +128,13 @@ export function EmojiPicker({ position, onSelect, onClose, customEmojis }: Emoji
   );
 
   return createPortal(
-    <div ref={containerRef} style={style} className="rounded-lg shadow-xl">
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-label="Emoji picker"
+      style={style}
+      className="rounded-lg shadow-xl"
+    >
       <Suspense fallback={null}>
         <LazyPicker
           onEmojiSelect={handleEmojiSelect}

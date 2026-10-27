@@ -40,3 +40,8 @@ export const useDraftStore = create<DraftState>()(
   ),
 );
 registerSealedStore(useDraftStore);
+
+/** The draft key of a thread's reply box, apart from its conversation's composer. */
+export function threadDraftKey(conversationId: string, rootMessageId: string): string {
+  return `thread:${conversationId}:${rootMessageId}`;
+}

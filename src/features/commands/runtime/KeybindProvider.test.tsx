@@ -289,4 +289,28 @@ describe("KeybindProvider with the default profile", () => {
     expect(press(field, "k", { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(dispatchCommand).not.toHaveBeenCalled();
   });
+
+  it("leaves Escape to a composer whose suggestion list is open", () => {
+    const shell = useShellStore.getState() as unknown as { isThreadOpen: boolean };
+    shell.isThreadOpen = true;
+    try {
+      const { getByRole, rerender } = renderWith(
+        <textarea aria-label="composer" data-suggestions-open="true" />,
+      );
+      getByRole("textbox").focus();
+      press(getByRole("textbox"), "Escape");
+      expect(dispatchCommand).not.toHaveBeenCalled();
+
+      rerender(
+        <KeybindProvider>
+          <textarea aria-label="composer" />
+        </KeybindProvider>,
+      );
+      getByRole("textbox").focus();
+      press(getByRole("textbox"), "Escape");
+      expect(dispatched()).toEqual(["workspace.close_panel"]);
+    } finally {
+      shell.isThreadOpen = false;
+    }
+  });
 });

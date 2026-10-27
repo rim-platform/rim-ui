@@ -32,14 +32,15 @@ vi.mock("../../e2ee/runtime/send", () => ({
   EncryptedUploadError: class extends Error {},
 }));
 
-import { Composer } from "./Composer";
+import { Composer, ThreadComposer } from "./Composer";
 
 const members = workspaceMembers.map((m) => ({
   ...m,
   principalId: m.userId === "u-alice" ? "rimp1_alice" : m.userId === "me" ? "rimp1_me" : null,
 }));
 
-function renderComposer(sendBlock: "unverified" | null) {
+/** Serves the composer's reads in an encrypted conversation. */
+function serveReads() {
   routeRequests(requestMock, {
     ...baseReadHandlers,
     "query ServerMembers": () => ({ serverMembers: members }),
@@ -50,11 +51,20 @@ function renderComposer(sendBlock: "unverified" | null) {
       conversation: makeConversation({ encryptedAt: "2026-10-09T00:00:00Z" }),
     }),
   });
+}
+
+function renderComposer(sendBlock: "unverified" | null) {
+  serveReads();
   render(
     <QueryClientProvider client={createTestQueryClient()}>
       <Composer workspaceId="ws-1" conversationId="conv-1" encryption={{ sendBlock }} />
     </QueryClientProvider>,
   );
+}
+
+/** Whether any GraphQL request so far contains `needle`. */
+function requested(needle: string): boolean {
+  return requestMock.mock.calls.some(([doc]) => String(doc).includes(needle));
 }
 
 describe("Composer in an encrypted conversation", () => {
@@ -78,9 +88,37 @@ describe("Composer in an encrypted conversation", () => {
     expect([ws, conversation]).toEqual(["ws-1", "conv-1"]);
     expect(draft.body).toBe("hi <@rimp1_alice>");
     expect(draft.author).toMatchObject({ id: "me", principalId: "rimp1_me" });
-    expect(
-      requestMock.mock.calls.some(([doc]) => String(doc).includes("mutation SendMessage")),
-    ).toBe(false);
+    expect(draft.threadRootId).toBeUndefined();
+    expect(requested("mutation SendMessage")).toBe(false);
+  });
+
+  it("sends a thread reply through the encrypted path with its root and thread", async () => {
+    serveReads();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ThreadComposer
+          workspaceId="ws-1"
+          conversationId="conv-1"
+          thread={{ rootMessageId: "root-1", threadId: "t-1" }}
+          encryption={{ sendBlock: null }}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(requestMock).toHaveBeenCalled());
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "hi <@u-alice>" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(sendEncrypted).toHaveBeenCalled());
+    const [ws, conversation, draft] = sendEncrypted.mock.calls[0];
+    expect([ws, conversation]).toEqual(["ws-1", "conv-1"]);
+    expect(draft).toMatchObject({
+      threadRootId: "root-1",
+      threadId: "t-1",
+      body: "hi <@rimp1_alice>",
+    });
+    expect(requested("mutation ReplyToMessage")).toBe(false);
+    expect(requested("mutation SendMessage")).toBe(false);
   });
 
   it("does not send while sending is stopped", async () => {

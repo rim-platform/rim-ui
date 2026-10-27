@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
+import { Button } from "../../../shared/ui/Button";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCreateConversationMutation } from "../api/useCreateConversation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -114,20 +115,21 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     // server hands back unencrypted is upgraded only by a desktop, with everyone ready.
     const session = await e2eeSession();
     const base = { serverId: workspaceId, memberIds: selectedUserIds };
-    createMutation.mutate(session ? { ...base, encrypted: true } : base, {
-      onSuccess: (data) => {
-        const conversationId = data.createConversation.id;
-        const upgrade = !data.createConversation.encryptedAt;
-        if (session) {
-          void (async () => {
-            if (upgrade && isWebAccount(session.account)) return;
-            if (upgrade && !(await allMembersReady(session, workspaceId, selectedUserIds))) return;
-            await createGroup(session, workspaceId, conversationId);
-          })().catch((err: unknown) => logger.warn("[RIM:e2ee] creating the group failed:", err));
-        }
-        onCreated(conversationId);
-      },
-    });
+    // A failure shows from `createMutation.error`.
+    const data = await createMutation
+      .mutateAsync(session ? { ...base, encrypted: true } : base)
+      .catch(() => null);
+    if (!data) return;
+    const conversationId = data.createConversation.id;
+    const upgrade = !data.createConversation.encryptedAt;
+    if (session) {
+      void (async () => {
+        if (upgrade && isWebAccount(session.account)) return;
+        if (upgrade && !(await allMembersReady(session, workspaceId, selectedUserIds))) return;
+        await createGroup(session, workspaceId, conversationId);
+      })().catch((err: unknown) => logger.warn("[RIM:e2ee] creating the group failed:", err));
+    }
+    onCreated(conversationId);
   }, [
     workspaceId,
     selectedUserIds,
@@ -139,6 +141,21 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
     startDirect,
     openDirect,
   ]);
+
+  const [confirming, setConfirming] = useState(false);
+  const confirmingRef = useRef(false);
+  /** Runs `handleConfirm` once at a time, for the keys and the footer button alike. */
+  const confirm = useCallback(async () => {
+    if (confirmingRef.current || createMutation.isPending) return;
+    confirmingRef.current = true;
+    setConfirming(true);
+    try {
+      await handleConfirm();
+    } finally {
+      confirmingRef.current = false;
+      setConfirming(false);
+    }
+  }, [handleConfirm, createMutation.isPending]);
 
   if (!open) return null;
 
@@ -160,7 +177,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
           <ContactPicker
             selected={contacts}
             onChange={setContacts}
-            onConfirm={() => void handleConfirm()}
+            onConfirm={() => void confirm()}
             onEscape={onClose}
           />
         ) : (
@@ -168,7 +185,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
             workspaceId={workspaceId ?? undefined}
             selectedUserIds={selectedUserIds}
             onChange={handleSelectionChange}
-            onConfirm={() => void handleConfirm()}
+            onConfirm={() => void confirm()}
             onEscape={onClose}
             autoFocus
           />
@@ -198,13 +215,23 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
         {/* Footer */}
         <NewMessagePickerFooter
           selectedCount={inDirectSpace ? contacts.length : selectedUserIds.length}
+          onConfirm={() => void confirm()}
+          busy={confirming || createMutation.isPending}
         />
       </div>
     </div>
   );
 }
 
-function NewMessagePickerFooter({ selectedCount }: { selectedCount: number }) {
+function NewMessagePickerFooter({
+  selectedCount,
+  onConfirm,
+  busy,
+}: {
+  selectedCount: number;
+  onConfirm: () => void;
+  busy: boolean;
+}) {
   const isMac = detectOs() === "macos";
   const confirmHint = isMac ? "\u2318\u21A9" : "Ctrl+\u21A9";
 
@@ -225,6 +252,15 @@ function NewMessagePickerFooter({ selectedCount }: { selectedCount: number }) {
       <span className="ml-auto">
         <kbd className="font-mono">Esc</kbd> close
       </span>
+      <Button
+        type="button"
+        size="sm"
+        disabled={selectedCount === 0}
+        isLoading={busy}
+        onClick={onConfirm}
+      >
+        {selectedCount >= 2 ? "Start group" : "Start conversation"}
+      </Button>
     </div>
   );
 }

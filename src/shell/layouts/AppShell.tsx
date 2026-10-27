@@ -258,8 +258,8 @@ function WorkspaceShell() {
 
   return (
     <KeybindProvider>
-      <div className="flex min-h-0 flex-1 flex-col bg-rim-void text-rim-text">
-        <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-rim-void text-rim-text">
+        <div className="flex min-h-0 min-w-0 flex-1">
           <div
             onTransitionEnd={handleZenTransitionEnd}
             className={cn(
@@ -367,7 +367,7 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300",
+                    "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300 *:min-w-0",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >
@@ -383,7 +383,7 @@ function WorkspaceShell() {
                 <div
                   onTransitionEnd={handleZenTransitionEnd}
                   className={cn(
-                    "grid w-80 shrink-0 transition-opacity duration-300",
+                    "grid w-80 shrink-0 transition-opacity duration-300 *:min-w-0",
                     zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
                   )}
                 >

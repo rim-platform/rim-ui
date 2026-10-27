@@ -185,11 +185,13 @@ in thread** in its context menu (right-click), or select it and press <kbd>r</kb
 The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
 the thread. A message with a thread shows how many replies it has under it (**3 replies**), or
 **View thread** on a server that does not report the count; choose it, or **Open thread** on
-hover, to open the pane.
+hover, to open the pane. The thread's reply box works like the composer: `@` mentions, `:` emoji,
+**Insert emoji** and **Attach file**. Commands with `/` run from the conversation's composer only.
 
 **DMs and groups.** **New message** (the **+** at the top of the tool panel, or
 <kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a
-group. A DM opens as a draft and is created when you send its first message. A group is named
+group, then choose **Start conversation** or **Start group** (or press <kbd>Ctrl+Enter</kbd>). A
+DM opens as a draft and is created when you send its first message. A group is named
 after the people in it, as you see them: "Alice and Bob", or "Alice, Bob, Carol and 2 others"
 past three. In Direct messages
 the picker lists your contacts instead. Settings > Contacts shows your contact link and adds
@@ -226,8 +228,10 @@ server's domain, such as `@kuba:rim-platform.org`. People of your own server are
 handle, which names the person on any server. The app learns the handle of someone from another
 server from their messages; until then their card shows no handle, only their name.
 
-**The composer.** "Write a message..." takes Markdown. <kbd>Enter</kbd> sends and
-<kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
+**The composer.** "Write a message..." takes Markdown. A single line break shows as one. Besides
+bold, italics, code, lists, quotes and links, a message can hold ~~strikethrough~~, tables,
+horizontal rules (`---`) and task lists (`- [ ]`, `- [x]`), whose boxes are read-only.
+<kbd>Enter</kbd> sends and <kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists commands, and `:` followed by the
 start of a name suggests emoji. **Insert emoji** and **Attach file** sit beside the field; a
 server can turn attachments off. <kbd>Escape</kbd> moves from the composer to the message list,
 where the arrow keys move between messages and <kbd>e</kbd> edits your own.

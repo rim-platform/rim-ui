@@ -67,6 +67,8 @@ interface ComposerInputProps {
   serverMembers: MentionSuggestion[] | undefined;
   /** Opens the file picker; without it the composer shows no attach button. */
   onFilePickerOpen?: () => void;
+  /** Where the box writes: a conversation's composer or a thread's reply box. */
+  variant?: "conversation" | "thread";
 }
 
 export function ComposerInput({
@@ -82,7 +84,9 @@ export function ComposerInput({
   mentionMapRef,
   serverMembers,
   onFilePickerOpen,
+  variant = "conversation",
 }: ComposerInputProps) {
+  const inThread = variant === "thread";
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const commandListRef = useRef<HTMLDivElement>(null);
@@ -169,8 +173,8 @@ export function ComposerInput({
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
 
-    // Slash command detection (takes priority over emoji)
-    if (value.startsWith("/")) {
+    // Slash command detection (takes priority over emoji); a thread's box runs no commands
+    if (!inThread && value.startsWith("/")) {
       const slashPartial = value.split(" ")[0];
       if (!value.includes(" ")) {
         // Build unified list: built-in slash commands first, then registry commands
@@ -391,8 +395,8 @@ export function ComposerInput({
       }
     }
 
-    // Escape with no active suggestions: enter navigation mode
-    if (e.key === "Escape") {
+    // Escape with no active suggestions: enter navigation mode; in a thread it closes the pane
+    if (!inThread && e.key === "Escape") {
       e.preventDefault();
       const { setNavigationMode } = useShellStore.getState();
       setNavigationMode(true);
@@ -461,17 +465,20 @@ export function ComposerInput({
         )}
         <textarea
           ref={textareaRef}
-          data-composer-input
+          data-composer-input={inThread ? undefined : true}
+          data-thread-composer-input={inThread ? true : undefined}
+          data-suggestions-open={hasSuggestions ? true : undefined}
           rows={1}
           value={text}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={() => {
-            useShellStore.getState().setFocusedSurface("composer");
+            if (!inThread) useShellStore.getState().setFocusedSurface("composer");
             useShellStore.getState().setNavigationMode(false);
           }}
-          placeholder="Write a message..."
-          className="flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
+          placeholder={inThread ? "Reply in thread..." : "Write a message..."}
+          aria-label={inThread ? "Reply in thread" : undefined}
+          className="w-0 flex-1 resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
           style={{ height: "auto" }}
         />
         <button
@@ -488,7 +495,7 @@ export function ComposerInput({
           type="submit"
           disabled={isSubmitting || isUploading || !canSubmit}
           className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
-          aria-label="Send message"
+          aria-label={inThread ? "Send reply" : "Send message"}
         >
           {isUploading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

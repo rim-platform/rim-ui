@@ -95,6 +95,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
     // If an overlay/dialog is open, let it handle Escape instead of dispatching close_panel
     if (match.commandId === "workspace.close_panel") {
+      // A composer's open suggestion list takes Escape first.
+      if (event.target instanceof Element && event.target.closest("[data-suggestions-open]"))
+        return;
       const shell = useShellStore.getState();
       const overlayOpen =
         useCommandStore.getState().isCommandPaletteOpen ||
