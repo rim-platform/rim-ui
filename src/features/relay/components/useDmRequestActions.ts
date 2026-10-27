@@ -82,8 +82,8 @@ interface DmRequestActionsOptions {
  * The decisions on one message request, shared by the request inbox and the bar a request's
  * conversation shows instead of its composer: the sender's verified name, and Accept, Read first,
  * Ignore, Block and Report. Block asks first: `askBlock` opens the confirmation
- * (`confirmingBlock`), `block` runs it, leaves a group's conversation and says so in a toast. One runs at a time (`busy`); a
- * failure is a toast.
+ * (`confirmingBlock`), `block` runs it, leaves a group's conversation and says so in a toast. One
+ * runs at a time (`busy`); a failure is a toast.
  */
 export function useDmRequestActions(request: DmRequestView, options: DmRequestActionsOptions = {}) {
   const qc = useQueryClient();

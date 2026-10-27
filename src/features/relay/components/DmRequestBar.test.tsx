@@ -189,7 +189,7 @@ describe("DmRequestBar", () => {
     expect(membership.leaveConversation).not.toHaveBeenCalled();
     const toasts = useToastStore.getState().toasts;
     expect(toasts[0]?.title).toBe("Blocked Alice.");
-    expect(toasts.some((t) => t.kind === "error")).toBe(false);
+    expect(toasts.some((t) => t.variant === "error")).toBe(false);
   });
 
   it("blocks nothing when the confirmation is cancelled", async () => {

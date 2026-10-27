@@ -15,7 +15,8 @@ function blockedName(entry: BlockedPrincipalView): string {
 
 /**
  * Settings → Direct messages → Blocked people: the people this account blocked, newest first,
- * each with when and an Unblock that lifts the block at once and says they can message you again. Nothing while the relay is off.
+ * each with when and an Unblock that lifts the block at once and says they can message you
+ * again. Nothing while the relay is off.
  */
 export function BlockedPeople() {
   const headingId = useId();
