@@ -25,6 +25,7 @@ import { toast } from "../../../shared/toast";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { ConversationSelect } from "./ConversationSelect";
 
 const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
   { value: PipelineTriggerKindGql.NEW_MESSAGE, label: "New Message" },
@@ -296,12 +297,12 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
             </select>
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rim-text-muted" />
           </div>
-          <input
-            type="text"
+          <ConversationSelect
+            serverId={serverId}
             value={triggerConversationId}
-            onChange={(e) => setTriggerConversationId(e.target.value)}
-            placeholder="Scope to conversation ID (optional)"
-            className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none focus:border-rim-accent"
+            onChange={setTriggerConversationId}
+            emptyLabel="Any conversation"
+            ariaLabel="Scope to conversation"
           />
         </div>
       </div>
@@ -369,12 +370,12 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
                   />
                 )}
                 {cond.conditionType === "ConversationIs" && (
-                  <input
-                    type="text"
+                  <ConversationSelect
+                    serverId={serverId}
                     value={cond.conversationId}
-                    onChange={(e) => updateCondition(index, "conversationId", e.target.value)}
-                    placeholder="Conversation ID"
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
+                    onChange={(id) => updateCondition(index, "conversationId", id)}
+                    emptyLabel="Choose a channel"
+                    ariaLabel="Conversation"
                   />
                 )}
               </div>

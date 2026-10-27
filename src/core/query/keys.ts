@@ -55,6 +55,7 @@ export const queryKeys = {
   channels: (workspaceId?: string) => ["channels", workspaceId] as const,
   // Channels the viewer has joined, archived ones included (the sidebar list).
   joinedChannels: (workspaceId?: string) => ["channels", workspaceId, "joined"] as const,
+  archivedChannels: (workspaceId?: string) => ["channels", workspaceId, "archived"] as const,
   // One conversation by id: the open conversation's header, composer gate and members panel.
   conversation: (workspaceId?: string, conversationId?: string) =>
     ["conversation", workspaceId, conversationId] as const,

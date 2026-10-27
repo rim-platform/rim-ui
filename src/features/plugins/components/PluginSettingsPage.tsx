@@ -809,8 +809,10 @@ function PluginRow({
             style={{
               backgroundColor: plugin.enabled ? "var(--color-rim-accent)" : "var(--color-rim-line)",
             }}
+            role="switch"
+            aria-checked={plugin.enabled}
+            aria-label={name}
             title={toggleLabel(plugin, needsDesktop)}
-            aria-label={toggleLabel(plugin, needsDesktop)}
           >
             <span
               className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
@@ -899,7 +901,7 @@ function PluginRow({
  *
  * @param plugin - The plugin the switch belongs to.
  * @param needsDesktop - Whether the plugin runs only in the desktop app.
- * @returns The text for the switch's `title` and `aria-label`.
+ * @returns The text for the switch's `title`.
  */
 function toggleLabel(plugin: PluginInfo, needsDesktop: boolean): string {
   if (needsDesktop) return "Needs the desktop app";

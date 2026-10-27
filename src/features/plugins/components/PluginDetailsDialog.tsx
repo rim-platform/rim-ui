@@ -1,5 +1,6 @@
 import { Dialog } from "../../../shared/ui/Dialog";
 import type { PluginInfo, PluginInstallSource } from "../types";
+import { capabilityLabel } from "./consentText";
 import { kindLabel, trustBadge } from "./pluginTrust";
 
 interface PluginDetailsDialogProps {
@@ -57,7 +58,7 @@ export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProp
             <ul className="space-y-0.5">
               {plugin.capabilities.map((cap) => (
                 <li key={cap} className="flex items-center justify-between gap-3">
-                  <span className="font-mono">{cap}</span>
+                  <span>{capabilityLabel(cap)}</span>
                   <span className={granted.has(cap) ? "text-rim-success" : "text-rim-text-faint"}>
                     {granted.has(cap) ? "Granted" : "Not granted"}
                   </span>

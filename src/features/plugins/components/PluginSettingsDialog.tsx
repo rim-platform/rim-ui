@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { cn } from "../../../shared/ui/cn";
 import {
   usePluginSettingsReset,
   usePluginSettingsSave,
@@ -78,6 +79,8 @@ function SettingsForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
 
+  // In the web app a secret setting cannot be changed, so a form of only those has nothing to save.
+  const editable = fields.some((f) => f.initial.kind !== "none");
   const secretNotice = !state.secrets_available
     ? WEB_SECRET_NOTICE
     : state.secrets_error !== null
@@ -191,23 +194,38 @@ function SettingsForm({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-2 border-t border-rim-line pt-4">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setConfirmingReset(true)}
-          disabled={confirmingReset || save.isPending}
-        >
-          Reset to defaults
-        </Button>
+      <div
+        className={cn(
+          "mt-4 flex items-center gap-2 border-t border-rim-line pt-4",
+          editable ? "justify-between" : "justify-end",
+        )}
+      >
+        {(editable || state.secrets_available) && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmingReset(true)}
+            disabled={confirmingReset || save.isPending}
+          >
+            Reset to defaults
+          </Button>
+        )}
         <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" size="sm" isLoading={save.isPending}>
-            Save
-          </Button>
+          {editable ? (
+            <>
+              <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="sm" isLoading={save.isPending}>
+                Save
+              </Button>
+            </>
+          ) : (
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          )}
         </div>
       </div>
     </form>

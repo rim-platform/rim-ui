@@ -1,5 +1,28 @@
-import type { PluginRuntimeKind } from "../types";
+import type { PluginCapability, PluginRuntimeKind } from "../types";
 import { parseNetworkOrigin, siteOf } from "../../../../sdk/plugin-sdk/src/manifestRules";
+
+/** Each permission's name, as the permission prompt, the details and the activity show it. */
+export const CAPABILITY_LABELS: Record<PluginCapability, string> = {
+  "chat.read": "Read Chat Messages",
+  "chat.write": "Send Chat Messages",
+  "chat.read.encrypted": "Read Encrypted Messages",
+  "chat.write.encrypted": "Send Encrypted Messages",
+  "ui.notify": "Show Notifications",
+  "ui.panel": "Render UI Panels",
+  "network.fetch": "Connect to listed sites",
+};
+
+/**
+ * A permission's name for a person.
+ *
+ * @param capability - The capability id, such as `network.fetch`.
+ * @returns Its label, or the id itself for a capability this app does not know.
+ */
+export function capabilityLabel(capability: string): string {
+  return Object.prototype.hasOwnProperty.call(CAPABILITY_LABELS, capability)
+    ? CAPABILITY_LABELS[capability as PluginCapability]
+    : capability;
+}
 
 /** What kind of plugin this is, in the app's words, above the permissions it asks for. */
 export const KIND_CONSENT_TEXT: Record<PluginRuntimeKind, string> = {

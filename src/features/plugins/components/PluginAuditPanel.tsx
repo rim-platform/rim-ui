@@ -2,7 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useRevokeCapability } from "../api/usePluginCapabilities";
 import { EMPTY_AUDIT } from "../audit";
 import type { PluginInfo } from "../types";
-import { plainCapabilityOf } from "./consentText";
+import { capabilityLabel, plainCapabilityOf } from "./consentText";
 
 /** Grant events the panel lists, newest first. */
 const SHOWN_EVENTS = 20;
@@ -47,13 +47,13 @@ export function PluginAuditPanel({ plugin }: { plugin: PluginInfo }) {
           <ul className="space-y-1">
             {plugin.approved_capabilities.map((capability) => (
               <li key={capability} className="flex items-center justify-between gap-2">
-                <code className="text-rim-text">{capability}</code>
+                <span className="text-rim-text">{capabilityLabel(capability)}</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={revoke.isPending}
                   onClick={() => void revokeAll(capability)}
-                  aria-label={`Revoke ${capability}`}
+                  aria-label={`Revoke ${capabilityLabel(capability)}`}
                 >
                   Revoke
                 </Button>
@@ -92,7 +92,7 @@ export function PluginAuditPanel({ plugin }: { plugin: PluginInfo }) {
           <ul className="space-y-0.5">
             {events.map((event, i) => (
               <li key={`${event.at}-${event.capability}-${i}`} className="text-rim-text-muted">
-                <span className="text-rim-text">{event.capability}</span>{" "}
+                <span className="text-rim-text">{capabilityLabel(event.capability)}</span>{" "}
                 {event.action === "granted" ? "granted" : "revoked"} {when(event.at)}
               </li>
             ))}

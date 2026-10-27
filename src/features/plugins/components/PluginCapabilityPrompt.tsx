@@ -12,22 +12,14 @@ import {
   type PluginCapability,
 } from "../types";
 import {
+  CAPABILITY_LABELS,
+  capabilityLabel,
   CHAT_CONSENT_TEXT,
   KIND_CONSENT_TEXT,
   isChatCapability,
   networkFetchText,
   plainCapabilityOf,
 } from "./consentText";
-
-const capabilityLabels: Record<PluginCapability, string> = {
-  "chat.read": "Read Chat Messages",
-  "chat.write": "Send Chat Messages",
-  "chat.read.encrypted": "Read Encrypted Messages",
-  "chat.write.encrypted": "Send Encrypted Messages",
-  "ui.notify": "Show Notifications",
-  "ui.panel": "Render UI Panels",
-  "network.fetch": "Connect to listed sites",
-};
 
 const capabilityDescriptions: Record<PluginCapability, string> = {
   "chat.read": CHAT_CONSENT_TEXT["chat.read"],
@@ -167,14 +159,14 @@ export function PluginCapabilityPrompt({
                 <ChatConsentLine text={CHAT_CONSENT_TEXT[cap]} />
               ) : cap === "network.fetch" ? (
                 <p className="text-sm text-rim-text">
-                  <span className="font-medium">{capabilityLabels[cap]}:</span>{" "}
+                  <span className="font-medium">{CAPABILITY_LABELS[cap]}:</span>{" "}
                   <span className="text-rim-text-muted">
                     {networkFetchText(plugin.network_origins ?? [])}
                   </span>
                 </p>
               ) : (
                 <div>
-                  <p className="text-sm text-rim-text">{capabilityLabels[cap] ?? cap}</p>
+                  <p className="text-sm text-rim-text">{capabilityLabel(cap)}</p>
                   <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
                 </div>
               )}
