@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { ConversationTypeEnum, PostingPolicy } from "../../core/graphql/generated/schema-types";
+import {
+  ConversationTypeEnum,
+  PostingPolicy,
+  ServerMemberRoleGql,
+} from "../../core/graphql/generated/schema-types";
 import {
   canEditChannelTopic,
+  canInviteTo,
+  type InviteViewer,
   memberCountLabel,
   postingAllows,
   untitledGroupName,
@@ -121,5 +127,67 @@ describe("canEditChannelTopic", () => {
     expect(
       canEditChannelTopic({ ...channel, conversationType: ConversationTypeEnum.GROUP }, moderator),
     ).toBe(false);
+  });
+});
+
+describe("canInviteTo", () => {
+  const conversation = {
+    serverId: "ws-1",
+    conversationType: ConversationTypeEnum.CHANNEL,
+    isMember: true,
+    isArchived: false,
+    isPrivate: false,
+    createdBy: "ana",
+  };
+  const group = { ...conversation, conversationType: ConversationTypeEnum.GROUP };
+  const dm = { ...conversation, conversationType: ConversationTypeEnum.DIRECT };
+  const viewer = (overrides: Partial<InviteViewer> = {}): InviteViewer => ({
+    userId: "me",
+    role: ServerMemberRoleGql.MEMBER,
+    inDirectSpace: false,
+    defaultWorkspaceId: null,
+    ...overrides,
+  });
+  const guest = { role: ServerMemberRoleGql.GUEST };
+  const direct = { role: ServerMemberRoleGql.GUEST, inDirectSpace: true };
+  const inDefault = { defaultWorkspaceId: "ws-1" };
+
+  it.each([
+    ["a workspace member in a channel", conversation, viewer(), true],
+    ["a workspace member in a group", group, viewer(), true],
+    ["a guest", conversation, viewer(guest), false],
+    ["a guest in a group", group, viewer(guest), false],
+    ["a member of an archived channel", { ...conversation, isArchived: true }, viewer(), false],
+    ["a viewer outside the channel", { ...conversation, isMember: false }, viewer(), false],
+    ["a member of a DM", dm, viewer(), false],
+    ["a guest in a group of the direct space", group, viewer(direct), true],
+    ["a guest in a DM of the direct space", dm, viewer(direct), false],
+    [
+      "a member in a public channel of the default workspace",
+      conversation,
+      viewer(inDefault),
+      false,
+    ],
+    [
+      "a moderator in a channel of the default workspace",
+      conversation,
+      viewer({ ...inDefault, role: ServerMemberRoleGql.MODERATOR }),
+      true,
+    ],
+    [
+      "the creator of a private channel of the default workspace",
+      { ...conversation, isPrivate: true, createdBy: "me" },
+      viewer(inDefault),
+      true,
+    ],
+    [
+      "a member in someone else's private channel of the default workspace",
+      { ...conversation, isPrivate: true },
+      viewer(inDefault),
+      false,
+    ],
+    ["a member in a group of the default workspace", group, viewer(inDefault), true],
+  ])("%s", (_name, target, who, expected) => {
+    expect(canInviteTo(target, who)).toBe(expected);
   });
 });

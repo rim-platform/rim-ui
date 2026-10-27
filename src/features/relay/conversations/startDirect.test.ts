@@ -13,7 +13,12 @@ const own = vi.hoisted(() => ({ origin: "http://localhost:8080" }));
 vi.mock("../state/serverOrigin", () => ({ serverOrigin: async () => own.origin }));
 
 import { useRelayStore } from "../state/useRelayStore";
-import { directMemberReady, NotReadyError, startDirectConversation } from "./startDirect";
+import {
+  directMemberReady,
+  NotReadyError,
+  resolveDirectMembers,
+  startDirectConversation,
+} from "./startDirect";
 
 const HERE = "http://localhost:8080";
 
@@ -128,5 +133,25 @@ describe("startDirectConversation", () => {
       hostServerId: "rims1_old",
       conversationId: "old",
     });
+  });
+});
+
+describe("resolveDirectMembers", () => {
+  it("names this server for someone with no relay", async () => {
+    identity.resolveIdentity.mockResolvedValueOnce({
+      identity: { devices: [{ deviceId: "d", mlsActive: true, revocation: null }] },
+      card: null,
+    });
+    identity.resolveIdentity.mockResolvedValueOnce(person(["https://relay-b.example"], false));
+    const ana = { principalId: "rimp1_ana", relayUrls: [], name: "Ana" };
+    const bob = { principalId: "rimp1_bob", relayUrls: ["https://relay-c.example"], name: "Bob" };
+    expect(await resolveDirectMembers([ana, bob])).toEqual([
+      { member: ana, relayUrls: [HERE], ready: true },
+      {
+        member: bob,
+        relayUrls: ["https://relay-b.example", "https://relay-c.example"],
+        ready: false,
+      },
+    ]);
   });
 });

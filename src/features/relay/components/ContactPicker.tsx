@@ -26,11 +26,14 @@ export function ContactPicker({
   onChange,
   onConfirm,
   onEscape,
+  excludePrincipalIds,
 }: {
   selected: PickedContact[];
   onChange: (picked: PickedContact[]) => void;
   onConfirm: () => void;
   onEscape: () => void;
+  /** People who cannot be picked, such as the conversation's members. */
+  excludePrincipalIds?: readonly string[];
 }) {
   const contacts = useContacts();
   const workspace = useWorkspacePeople();
@@ -42,23 +45,24 @@ export function ContactPicker({
   const shown = useMemo(
     () =>
       (contacts.data ?? []).filter((c) => {
-        if (c.principalId === me) return false;
+        if (c.principalId === me || excludePrincipalIds?.includes(c.principalId)) return false;
         const name = aliases[c.principalId] ?? names[c.principalId] ?? "";
         return !needle || name.toLowerCase().includes(needle) || c.principalId.includes(needle);
       }),
-    [contacts.data, me, needle, aliases, names],
+    [contacts.data, me, excludePrincipalIds, needle, aliases, names],
   );
   const shownPeople = useMemo(() => {
     const contactIds = new Set((contacts.data ?? []).map((c) => c.principalId));
     return workspace.people.filter(
       (p) =>
         !contactIds.has(p.principalId) &&
+        !excludePrincipalIds?.includes(p.principalId) &&
         (!needle ||
           p.name.toLowerCase().includes(needle) ||
           p.username.toLowerCase().includes(needle) ||
           p.principalId.includes(needle)),
     );
-  }, [contacts.data, workspace.people, needle]);
+  }, [contacts.data, workspace.people, excludePrincipalIds, needle]);
 
   const rememberName = useCallback((principalId: string, name: string) => {
     setNames((n) => (n[principalId] === name ? n : { ...n, [principalId]: name }));

@@ -20,9 +20,10 @@ import { useDeviceReadyForEncryption } from "../../e2ee/hooks/useE2eeConversatio
 import { useConversationNotificationItems } from "../../notifications/hooks/useConversationNotificationItems";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
-import { useRelayStore } from "../../relay/state/useRelayStore";
+import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
-import { useCanModerate, useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { useCanModerate, useIsGuest, useMyServerRole } from "../../workspaces/api/useMyServerRole";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   useJoinChannelMutation,
@@ -45,7 +46,7 @@ import { useUnreadStore } from "../state/useUnreadStore";
 import type { ConversationSummary } from "../types";
 import {
   canEditChannelTopic,
-  canInviteToConversation,
+  canInviteTo,
   canLeaveConversation,
   conversationLabel,
   directPeerId,
@@ -83,7 +84,8 @@ type PendingDialog = {
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
  *   posting policies, Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
- * - A group: Mark as read, Notifications, Members, Add people…, Assign keybind…, Leave group….
+ * - A group: Mark as read, Notifications, Members, Add people… (also in Direct messages),
+ *   Assign keybind…, Leave group….
  * - A DM: Mark as read, Notifications, Add to contacts or Remove from contacts (while the
  *   relay is on), Assign keybind….
  *
@@ -104,6 +106,8 @@ export function useConversationMenuItems(workspaceId: string | null): {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const canModerate = useCanModerate(workspaceId ?? undefined);
   const isGuest = useIsGuest(workspaceId ?? undefined);
+  const role = useMyServerRole(workspaceId ?? undefined);
+  const { info } = useServerInfo();
   const notificationItems = useConversationNotificationItems(workspaceId);
   const deviceReady = useDeviceReadyForEncryption();
   const { mutate: markAsRead } = useMarkAsRead();
@@ -229,7 +233,15 @@ export function useConversationMenuItems(workspaceId: string | null): {
         });
       }
 
-      if (!archived && canInviteToConversation(conversation) && !isGuest) {
+      if (
+        !archived &&
+        canInviteTo(conversation, {
+          userId: currentUserId,
+          role,
+          inDirectSpace: isDirectSpace(conversation.serverId),
+          defaultWorkspaceId: info?.defaultWorkspace,
+        })
+      ) {
         items.push({
           id: "invite",
           label: isChannel ? "Invite people…" : "Add people…",
@@ -382,6 +394,8 @@ export function useConversationMenuItems(workspaceId: string | null): {
       acceptInvite,
       declineInvite,
       isGuest,
+      role,
+      info,
       canModerate,
       workspaceId,
       join,

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
 import {
   ConversationTypeEnum,
   ServerMemberRoleGql,
@@ -32,6 +33,21 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
+}));
+const direct = vi.hoisted(() => ({ resolveDirectMembers: vi.fn() }));
+const relayApi = vi.hoisted(() => ({ fetchContacts: vi.fn() }));
+const identity = vi.hoisted(() => ({ fetchVerifiedIdentity: vi.fn() }));
+vi.mock("../../relay/conversations/startDirect", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../relay/conversations/startDirect")>()),
+  ...direct,
+}));
+vi.mock("../../relay/api/relayApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../relay/api/relayApi")>()),
+  ...relayApi,
+}));
+vi.mock("../../relay/contacts/identity", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../relay/contacts/identity")>()),
+  ...identity,
 }));
 
 import { useRelayStore } from "../../relay/state/useRelayStore";
@@ -67,7 +83,7 @@ function menuItems() {
 }
 
 async function inviteBob() {
-  fireEvent.click(screen.getByRole("button", { name: /invite/i }));
+  fireEvent.click(screen.getByRole("button", { name: /invite|add people/i }));
   fireEvent.click(await screen.findByRole("option", { name: /Bob/ }));
   fireEvent.click(screen.getByRole("button", { name: "Add (1)" }));
 }
@@ -85,8 +101,9 @@ function serve(role: ServerMemberRoleGql, conversation: ConversationSummary = ch
   });
 }
 
-async function renderPanel(role: ServerMemberRoleGql) {
+async function renderPanel(role: ServerMemberRoleGql, seed?: (qc: QueryClient) => void) {
   const qc = createTestQueryClient();
+  seed?.(qc);
   const onClose = vi.fn();
   render(
     <QueryClientProvider client={qc}>
@@ -102,6 +119,65 @@ async function renderPanel(role: ServerMemberRoleGql) {
   return { qc, onClose };
 }
 
+/** A server whose default workspace, which every account joins, is ws-1. */
+function defaultWorkspaceIsWs1(qc: QueryClient) {
+  qc.setQueryDefaults(queryKeys.serverInfo, { gcTime: Infinity });
+  qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace: "ws-1" }));
+}
+
+const dave = { principalId: "rimp1_dave", relayUrls: ["https://relay-b.example"], name: "Dave" };
+
+/**
+ * A group of the direct space ws-1, where the viewer is a guest: Alice is in it, and the
+ * viewer's contacts are Alice and Dave. `AddDirectConversationMembers` answers with Dave added.
+ */
+function serveDirectGroup(group: ConversationSummary) {
+  useRelayStore.setState({
+    info: { serverId: "relay", roles: [], directSpaceId: "ws-1" },
+    account: { endpoint: "e", userId: "me", principalId: "rimp1_me", deviceId: "d1" },
+  });
+  const contacts = [{ principalId: "rimp1_alice", relayUrls: [], name: "Alice" }, dave];
+  relayApi.fetchContacts.mockResolvedValue(
+    contacts.map((c) => ({ principalId: c.principalId, relayUrls: c.relayUrls, addedAt: "" })),
+  );
+  identity.fetchVerifiedIdentity.mockImplementation((principalId: string) =>
+    Promise.resolve({
+      identity: {},
+      card: {
+        displayName: contacts.find((c) => c.principalId === principalId)?.name ?? "",
+        relays: [],
+        version: 1,
+      },
+    }),
+  );
+  routeRequests(requestMock, {
+    "query Me": () => ({ me: currentUser }),
+    "query ServerMembers": () => ({
+      serverMembers: workspaceMembers.map((m) => ({
+        ...m,
+        memberRole: ServerMemberRoleGql.GUEST,
+        principalId: `rimp1_${m.username}`,
+      })),
+    }),
+    "query MyServers": () => ({ myServers: [] }),
+    "query Server(": () => ({
+      server: { id: "ws-1", name: "Direct", viewerRole: ServerMemberRoleGql.GUEST },
+    }),
+    "query Conversation(": () => ({ conversation: group }),
+    "query InboxConversations": () => emptyInbox,
+    "mutation AddDirectConversationMembers": () => ({
+      addConversationMembers: { ...group, memberIds: [...group.memberIds, "u-dave"] },
+    }),
+  });
+}
+
+const directGroup = makeConversation({
+  conversationType: ConversationTypeEnum.GROUP,
+  title: "crew",
+  memberIds: ["me", "u-alice"],
+  memberCount: 2,
+});
+
 describe("ConversationMembersPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,7 +189,75 @@ describe("ConversationMembersPanel", () => {
 
   afterEach(() => {
     useAuthStore.setState({ session: null });
-    useRelayStore.setState({ info: null });
+    useRelayStore.setState({ info: null, account: null });
+  });
+
+  it("offers Add people to a guest in a group of the direct space", async () => {
+    serveDirectGroup(directGroup);
+    await renderPanel(ServerMemberRoleGql.GUEST);
+    expect(screen.getByRole("button", { name: "Add people" })).toBeInTheDocument();
+  });
+
+  it("adds a contact to a direct-space group by principal", async () => {
+    serveDirectGroup(directGroup);
+    direct.resolveDirectMembers.mockResolvedValue([
+      { member: dave, relayUrls: dave.relayUrls, ready: true },
+    ]);
+    await renderPanel(ServerMemberRoleGql.GUEST);
+    fireEvent.click(screen.getByRole("button", { name: "Add people" }));
+
+    // Alice is offered no more: she is in the group already.
+    const options = await screen.findAllByRole("option");
+    await waitFor(() => expect(options.map((o) => o.textContent)).toEqual(["Dave"]));
+    fireEvent.click(screen.getByRole("option", { name: "Dave" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add (1)" }));
+
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation AddDirectConversationMembers")).toEqual([
+        {
+          serverId: "ws-1",
+          conversationId: "conv-1",
+          remoteMembers: [{ principalId: "rimp1_dave", relayUrls: ["https://relay-b.example"] }],
+        },
+      ]),
+    );
+    expect(direct.resolveDirectMembers).toHaveBeenCalledWith([dave]);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Member added"));
+    expect(useMembersPanelStore.getState().invitingIn).toBeNull();
+  });
+
+  it("names who cannot receive encrypted messages and adds nobody", async () => {
+    serveDirectGroup({ ...directGroup, encryptedAt: "2026-10-15T00:00:00Z" });
+    direct.resolveDirectMembers.mockResolvedValue([
+      { member: dave, relayUrls: dave.relayUrls, ready: false },
+    ]);
+    await renderPanel(ServerMemberRoleGql.GUEST);
+    fireEvent.click(screen.getByRole("button", { name: "Add people" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Dave" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add (1)" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Dave cannot receive encrypted messages yet: they need a device set up for encryption.",
+      ),
+    );
+    expect(callsTo(requestMock, "mutation AddDirectConversationMembers")).toHaveLength(0);
+    expect(useMembersPanelStore.getState().invitingIn).toBe("conv-1");
+  });
+
+  it("offers no Invite to a member in a channel of the default workspace", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderPanel(ServerMemberRoleGql.MEMBER, defaultWorkspaceIsWs1);
+    expect(screen.queryByRole("button", { name: "Invite" })).not.toBeInTheDocument();
+  });
+
+  it("offers Invite to the creator of a private channel there", async () => {
+    serve(
+      ServerMemberRoleGql.MEMBER,
+      makeConversation({ memberIds: ["me", "u-alice"], isPrivate: true, createdBy: "me" }),
+    );
+    await renderPanel(ServerMemberRoleGql.MEMBER, defaultWorkspaceIsWs1);
+    expect(screen.getByRole("button", { name: "Invite" })).toBeInTheDocument();
   });
 
   it("lists the members, the viewer first and marked", async () => {

@@ -35,6 +35,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A DM or group started from a workspace shows **Back to \<workspace\>** in its header, and
   <kbd>Alt+←</kbd> does the same: back to that workspace and the conversation you left. The
   Mouse-friendly profile leaves <kbd>Alt+←</kbd> to the browser.
+- Groups in Direct messages offer **Add people…** in their menu and **Add people** in their
+  members panel, listing your contacts and the people in your workspaces. It needs rim-server
+  with `remoteMembers` on `addConversationMembers`; an older server refuses the addition with
+  its own message.
 
 ### Changed
 
@@ -50,6 +54,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Importing a keyboard profile keeps the default shortcuts: the file's bindings take only the
   keys they name. **Replace all** in the import dialog uses the file alone, as before. A device
   on a built-in profile now gets shortcuts added in later versions.
+- In the server's default workspace, **Invite people…** on a channel is offered only to its Owner
+  and Moderators and to a private channel's creator, the people the server lets add members
+  there.
 
 ### Fixed
 
