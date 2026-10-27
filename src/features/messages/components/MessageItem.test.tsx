@@ -537,6 +537,11 @@ describe("MessageItem layouts and editing", () => {
     expect(onCancelEdit).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps Escape in the edit form from closing a panel", () => {
+    render(<MessageItem view={{ ...props().view, isEditing: true }} handlers={defaultHandlers} />);
+    expect(screen.getByRole("textbox")).toHaveAttribute("data-owns-escape");
+  });
+
   it("calls onNavigateToForwardedSource with the source conversation and message", () => {
     const onNavigateToForwardedSource = vi.fn();
     render(
