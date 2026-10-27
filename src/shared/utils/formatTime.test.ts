@@ -23,6 +23,25 @@ describe("formatTime", () => {
     expect(result).toMatch(/\d{1,2}:\d{2}/);
   });
 
+  it("asks for the hour without a leading zero, today and on an older date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 5, 12, 0));
+    const spy = vi.spyOn(Date.prototype, "toLocaleTimeString");
+    formatTime(new Date(2026, 3, 5, 9, 15).toISOString());
+    formatTime(new Date(2026, 2, 20, 9, 15).toISOString());
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const call of spy.mock.calls) {
+      expect(call[1]).toEqual({ hour: "numeric", minute: "2-digit" });
+    }
+    spy.mockRestore();
+  });
+
+  it("has no leading zero in the morning", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 5, 12, 0));
+    expect(formatTime(new Date(2026, 3, 5, 9, 15).toISOString())).toMatch(/^(9:15\s?AM|0?9:15)$/);
+  });
+
   it("returns a string (not undefined) for valid ISO input", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-05T12:00:00Z"));

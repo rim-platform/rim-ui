@@ -212,6 +212,26 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - When part of the app cannot be downloaded (a dropped connection), the app tries again, and if it
   still fails says "This part of the app could not load" with **Reload**, instead of a crashed
   conversation or Settings page whose Retry could not help.
+- The command palette offers **Unarchive Channel** only in an archived channel and **Archive
+  Channel** only in one that is not, instead of reporting success for a change that did nothing.
+- When someone joins the workspace, the member count and members of its public channels update right
+  away instead of after a reload.
+- In a conversation's members panel, <kbd>Esc</kbd> in the invite picker closes only the picker (a
+  second <kbd>Esc</kbd> closes the panel), and names use the row's width: **Leave**, **Remove** and
+  the row's actions show when you point at or focus the row.
+- A group's or DM's search button reads "Search in Bob and Carol" instead of "Search in #Bob and
+  Carol", and the search box calls its scope "This conversation" instead of "Current channel".
+- One <kbd>Esc</kbd> closes message search, as its footer says, instead of first clearing the query.
+- The "This conversation is not encrypted" dialog opens by itself once per conversation on a device
+  instead of in every browser session; while the account is locked it waits, and **Not encrypted**
+  in the header opens it.
+- The command palette no longer toasts "Executed locally" after a command that opens something in
+  the app, such as **Search Messages** or **Open Settings**; **Mark All as Read** and **Reload
+  Commands** say what they did.
+- Times on a 12-hour clock read "9:15 PM" instead of "09:15 PM".
+- The four conversation navigation commands are named alike: **Previous Conversation**, **Next
+  Conversation**, **Previous Unread Conversation** and **Next Unread Conversation**; they go through
+  DMs and groups as well as channels.
 
 ## [0.0.5] - 2026-10-26
 
