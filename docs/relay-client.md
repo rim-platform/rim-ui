@@ -229,13 +229,16 @@ Report; Ignore and Block close its view) while the request is pending. The serve
 refuses posts, reactions and typing from the recipient there until they accept (rim-server
 `docs/relay.md`, "The request inbox"), and the bar keeps a reply to a request hosted elsewhere
 from being sent at all;
-Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
-relay. Accepting then catches the conversation up: while the request was pending its events never
+Accept, Ignore, Block (which also leaves a group's conversation through its home; a DM cannot be
+left) and Report act on the relay. Accepting then catches the conversation up: while the request was pending its events never
 reached the account, so nothing synced what the sender wrote meanwhile; the app processes any
 Welcome, asks the change feed for the conversation and refreshes its timeline. Block asks first
-(`BlockConfirmDialog`), then blocks on the relay and leaves the conversation through its home.
+(`BlockConfirmDialog`), then blocks on the relay and, when the conversation is a group (asked with
+`conversation` first), leaves it through its home.
 Settings → Direct messages lists `myBlockedPrincipals` under Blocked people
-(`components/BlockedPeople.tsx`), each with Unblock (`unblockPrincipal`), which asks nothing. A
+(`components/BlockedPeople.tsx`), each with Unblock (`unblockPrincipal`), which asks nothing and says they can message you again;
+the relay clears the requests ignored from them, so a conversation blocked from them comes back
+as a new request with their next message (rim-server `docs/relay.md`, "The request inbox"). A
 request from someone on this server invites to one of its own spaces (its direct space or a
 workspace of the account), which is never bound as a remote space: when verifying held items,
 such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is

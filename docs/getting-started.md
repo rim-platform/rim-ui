@@ -224,7 +224,8 @@ conversation list of the workspace they came from, or the Direct messages list f
 outside. Each request shows the sender's verified name and fingerprint, with **Accept**, **Read
 first**, **Ignore**, **Block** and **Report**. **Block** asks first; the person is not told.
 Settings > Direct messages lists the people you blocked under **Blocked people**, each with
-**Unblock**. **Read first** opens the conversation without deciding: in place of the composer it
+**Unblock**. Unblocking lets them reach you again: a conversation you blocked them from comes
+back as a new request when they next write in it. **Read first** opens the conversation without deciding: in place of the composer it
 says who wants to message you, with **Accept**, **Ignore**, **Block** and **Report**. You reply
 once you accept; until then the sender sees nothing from you, not even that you read it. The
 sender sees "Sent as a request; \<name\> has not accepted yet." above their composer. rim-server's

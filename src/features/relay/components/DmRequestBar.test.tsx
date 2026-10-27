@@ -25,6 +25,8 @@ vi.mock("../contacts/identity", () => identity);
 vi.mock("../crypto/relayCrypto", () => ({ relayCrypto: () => crypto }));
 vi.mock("../runtime/relayRuntime", () => ({ relayProcessor: () => processor }));
 vi.mock("../../conversations/api/useChannelMembership", () => membership);
+const conversations = vi.hoisted(() => ({ fetchConversation: vi.fn() }));
+vi.mock("../../conversations/api/useConversation", () => conversations);
 vi.mock("../../e2ee/runtime/session", () => ({ e2eeSession: async () => null }));
 const groups = vi.hoisted(() => ({ processWelcomes: vi.fn() }));
 vi.mock("../../e2ee/runtime/groups", () => groups);
@@ -52,9 +54,11 @@ beforeEach(() => {
     crypto.verifyCard,
     processor.verifyHeld,
     membership.leaveConversation,
+    conversations.fetchConversation,
   ]) {
     fn.mockReset();
   }
+  conversations.fetchConversation.mockResolvedValue({ id: "conv-1", conversationType: "DIRECT" });
   useToastStore.setState({ toasts: [] });
   useRelayStore.getState().reset();
   useRelayStore
@@ -127,8 +131,12 @@ describe("DmRequestBar", () => {
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
   });
 
-  it("asks before blocking, then blocks, leaves through the home, closes the view and says so", async () => {
+  it("asks before blocking, then blocks, leaves a group through the home, closes the view and says so", async () => {
     const user = userEvent.setup();
+    conversations.fetchConversation.mockResolvedValue({
+      id: "conv-1",
+      conversationType: "GROUP",
+    });
     membership.leaveConversation.mockResolvedValue(undefined);
     useShellStore.setState({ selectedConversationId: "conv-1" });
     renderWithProviders(<DmRequestBar request={REQUEST} />);
@@ -143,9 +151,45 @@ describe("DmRequestBar", () => {
     expect(api.blockPrincipal).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Block" }));
     await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
+    expect(conversations.fetchConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      "home-direct",
+      "conv-1",
+    );
     expect(membership.leaveConversation).toHaveBeenCalledWith("home-direct", "conv-1");
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
     expect(useToastStore.getState().toasts[0]?.title).toBe("Blocked Alice.");
+  });
+
+  it("blocks a DM's sender without leaving the DM", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    await user.click(within(dialog).getByRole("button", { name: "Block" }));
+    await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
+    expect(membership.leaveConversation).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts[0]?.title).toBe("Blocked Alice.");
+  });
+
+  it("blocks and leaves nothing when the conversation cannot be looked up", async () => {
+    const user = userEvent.setup();
+    conversations.fetchConversation.mockRejectedValue(new Error("unreachable"));
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    await user.click(within(dialog).getByRole("button", { name: "Block" }));
+    await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
+    expect(membership.leaveConversation).not.toHaveBeenCalled();
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts[0]?.title).toBe("Blocked Alice.");
+    expect(toasts.some((t) => t.kind === "error")).toBe(false);
   });
 
   it("blocks nothing when the confirmation is cancelled", async () => {

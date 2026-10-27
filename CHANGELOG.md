@@ -61,9 +61,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - In the server's default workspace, **Invite people…** on a channel is offered only to its Owner
   and Moderators and to a private channel's creator, the people the server lets add members
   there.
+- **Unblock** in Settings → Direct messages says the person can message you again.
 
 ### Fixed
 
+- **Block** on a message request for a DM no longer tries to leave the DM, which the server
+  refuses; a group's request is still left.
 - **Search Messages** in the command palette opens the search box instead of failing with
   ``missing string arg `query` ``.
 - Search results and notifications show a mention as the person's name and the message as plain
