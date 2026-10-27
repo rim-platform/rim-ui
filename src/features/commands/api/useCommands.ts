@@ -30,6 +30,11 @@ const CommandsDocument = gql`
       keybindCapable
       dangerous
       sensitivity
+      arguments {
+        name
+        argumentType
+        required
+      }
     }
   }
 `;

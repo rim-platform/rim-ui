@@ -13,9 +13,25 @@ import {
   toastPluginCommandResult,
 } from "../../plugins/runtime/pluginCommandInfo";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { commandResultOf, dispatchCommand } from "../runtime/commandDispatcher";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import {
+  argumentPromptName,
+  commandResultOf,
+  dispatchCommand,
+  hasLocalHandler,
+} from "../runtime/commandDispatcher";
+import {
+  serverRunsWithContext,
+  unfilledRequiredArguments,
+  type ArgumentContext,
+} from "../runtime/commandArguments";
 import { currentCommandContext } from "../runtime/commandContext";
-import { runWithHumanConfirmation, strictestSensitivity } from "../runtime/humanConfirmation";
+import { runWithHumanConfirmation } from "../runtime/humanConfirmation";
+import {
+  appOnlyStageError,
+  pipeConfirmationSubject,
+  readablePipeError,
+} from "../runtime/pipeStages";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
 import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import { createPaletteSearch } from "../runtime/paletteSearch";
@@ -38,12 +54,31 @@ function sourceIcon(source: CommandSourceKind) {
   }
 }
 
+/**
+ * Whether the palette can run `command` as picked, with no arguments typed: this app runs it
+ * itself, or every argument it requires comes from the context or from the surface that asks
+ * for it.
+ */
+function runsFromPalette(command: CommandDefinition, context: ArgumentContext): boolean {
+  if (hasLocalHandler(command.id)) return true;
+  const prompted = argumentPromptName(command.id);
+  return unfilledRequiredArguments(command, context).every(
+    (argument) => argument.name === prompted,
+  );
+}
+
 export function CommandPalette() {
   const isOpen = useCommandStore((s) => s.isCommandPaletteOpen);
   const searchQuery = useCommandStore((s) => s.searchQuery);
   const setSearchQuery = useCommandStore((s) => s.setSearchQuery);
   const closeCommandPalette = useCommandStore((s) => s.closeCommandPalette);
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const selectedConversationId = useShellStore((s) => s.selectedConversationId) ?? undefined;
+  const argumentContext = useMemo<ArgumentContext>(
+    () => ({ workspaceId, conversationId: workspaceId ? selectedConversationId : undefined }),
+    [workspaceId, selectedConversationId],
+  );
 
   const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
   const pluginCommands = usePluginCommands();
@@ -64,7 +99,10 @@ export function CommandPalette() {
 
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
-    const base = commands?.filter((cmd) => cmd.visibleInPalette).map(withClientLabel) ?? [];
+    const base =
+      commands
+        ?.filter((cmd) => cmd.visibleInPalette && runsFromPalette(cmd, argumentContext))
+        .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
     const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));
     return [
@@ -74,11 +112,27 @@ export function CommandPalette() {
       ...pluginCommands.filter((cmd) => cmd.visibleInPalette && runnableHere(cmd.requiredContext)),
       ...registryItems,
     ];
-  }, [commands, pluginCommands, registryItems, runnableHere]);
+  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext]);
+
+  // Every command the palette knows, to name pipe stages in messages.
+  const knownCommands = useMemo(
+    () => [...(commands ?? []), ...LOCAL_COMMANDS, ...pluginCommands],
+    [commands, pluginCommands],
+  );
+
+  // After `|`, only the server's commands that it runs with this context can be the next stage.
+  const pipeCommands = useMemo(
+    () =>
+      (commands ?? [])
+        .filter((cmd) => cmd.visibleInPalette && serverRunsWithContext(cmd, argumentContext))
+        .map(withClientLabel),
+    [commands, argumentContext],
+  );
 
   // When pipe segments exist, searchQuery already contains only the active segment
   // (text after the last `|`) because handleSearchChange resets it on pipe.
-  const search = useMemo(() => createPaletteSearch(visibleCommands), [visibleCommands]);
+  const listed = pipeSegments.length > 0 ? pipeCommands : visibleCommands;
+  const search = useMemo(() => createPaletteSearch(listed), [listed]);
   const sortedResults = useMemo(() => search(searchQuery), [search, searchQuery]);
 
   // Compute category header positions
@@ -154,6 +208,11 @@ export function CommandPalette() {
       const allSegments = finalSegment ? [...segments, finalSegment] : segments;
       if (allSegments.length === 0) return;
       const pipeExpression = allSegments.join(" | ");
+      const refusal = appOnlyStageError(allSegments, knownCommands);
+      if (refusal) {
+        toast.error(refusal);
+        return;
+      }
       setPipeSegments([]);
       setPipeExecuting(true);
       const stageCount = allSegments.length;
@@ -172,15 +231,7 @@ export function CommandPalette() {
             });
             return res.executeCommand;
           },
-          {
-            commandId: pipeExpression,
-            title: "Run pipe",
-            args: { pipe: pipeExpression },
-            ...strictestSensitivity(
-              allSegments.map((segment) => segment.trim().split(/\s+/)[0] ?? ""),
-              commands,
-            ),
-          },
+          pipeConfirmationSubject(allSegments, commands),
         );
         const result = commandResultOf(outcome);
         toast.dismiss(toastId);
@@ -206,13 +257,15 @@ export function CommandPalette() {
         }
       } catch (err) {
         toast.dismiss(toastId);
-        toast.error(graphqlErrorMessage(err, "Pipe execution failed"));
+        toast.error(
+          readablePipeError(graphqlErrorMessage(err, "Pipe execution failed"), knownCommands),
+        );
         closeCommandPalette();
       } finally {
         setPipeExecuting(false);
       }
     },
-    [closeCommandPalette, executeCommandMutation, commands],
+    [closeCommandPalette, executeCommandMutation, commands, knownCommands],
   );
 
   const executeSelected = useCallback(
@@ -276,11 +329,18 @@ export function CommandPalette() {
           break;
         case "Enter":
           event.preventDefault();
-          if (sortedResults[selectedIndex]) {
-            executeSelected(sortedResults[selectedIndex].item);
-          } else if (pipeSegments.length > 0 && !searchQuery.trim()) {
-            // Enter with pipe segments but no active query: execute the chain as-is
+          if (pipeSegments.length > 0 && !searchQuery.trim()) {
+            // An empty search in a pipe runs the chain built so far.
             void executePipeChain(pipeSegments);
+          } else if (sortedResults[selectedIndex]) {
+            void executeSelected(sortedResults[selectedIndex].item);
+          }
+          break;
+        case "Tab":
+          // In a pipe, Tab adds the highlighted command as the last stage and runs the chain.
+          if (pipeSegments.length > 0 && sortedResults[selectedIndex]) {
+            event.preventDefault();
+            void executeSelected(sortedResults[selectedIndex].item);
           }
           break;
         case "Backspace":
@@ -360,7 +420,11 @@ export function CommandPalette() {
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder={pipeSegments.length > 0 ? "Next command in pipe..." : "Type a command..."}
+            placeholder={
+              pipeSegments.length > 0
+                ? "Next command, or Enter to run the pipe..."
+                : "Type a command..."
+            }
             className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
           />
         </div>
@@ -454,15 +518,31 @@ export function CommandPalette() {
           <span>
             <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
           </span>
-          <span>
-            <kbd className="font-mono">Enter</kbd> execute
-          </span>
-          <span>
-            <kbd className="font-mono">|</kbd> pipe
-          </span>
-          <span>
-            <kbd className="font-mono">Esc</kbd> close
-          </span>
+          {pipeSegments.length > 0 ? (
+            <>
+              <span>
+                <kbd className="font-mono">Tab</kbd> add command
+              </span>
+              <span>
+                <kbd className="font-mono">Enter</kbd> run pipe
+              </span>
+              <span>
+                <kbd className="font-mono">Esc</kbd> clear pipe
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                <kbd className="font-mono">Enter</kbd> execute
+              </span>
+              <span>
+                <kbd className="font-mono">|</kbd> pipe
+              </span>
+              <span>
+                <kbd className="font-mono">Esc</kbd> close
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>

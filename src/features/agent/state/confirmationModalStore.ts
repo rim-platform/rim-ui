@@ -32,6 +32,8 @@ export interface ConfirmationRequest {
    * `null` asks for no typed word.
    */
   verb?: string | null;
+  /** The command, or a stage of the run, is marked dangerous: the dialog tags it so. */
+  dangerous?: boolean;
 }
 
 export interface ConfirmationDecision {

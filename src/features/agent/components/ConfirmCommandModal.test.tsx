@@ -662,3 +662,27 @@ describe("ConfirmCommandModal — a command the user ran", () => {
     await expect(decision).resolves.toEqual({ approved: true });
   });
 });
+
+describe("ConfirmCommandModal — a dangerous command", () => {
+  it("marks a dangerous command in red and says so", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeRequest({ dangerous: true }));
+    });
+    const panel = screen.getByRole("dialog");
+    expect(panel).toHaveAttribute("data-dangerous", "true");
+    expect(panel).toHaveClass("border-l-rim-danger");
+    expect(screen.getByTestId("confirm-button")).toHaveClass("bg-rim-danger");
+    expect(panel).toHaveTextContent("This is a dangerous command.");
+  });
+
+  it("leaves other commands unmarked", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeRequest());
+    });
+    const panel = screen.getByRole("dialog");
+    expect(panel).not.toHaveAttribute("data-dangerous");
+    expect(panel).not.toHaveTextContent("This is a dangerous command.");
+  });
+});

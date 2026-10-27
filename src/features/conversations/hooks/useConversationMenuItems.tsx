@@ -38,6 +38,7 @@ import { formatSlowModeInterval } from "../api/useSlowMode";
 import { ChannelPostingDialog } from "../components/ChannelPostingDialog";
 import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
 import { SlowModeDialog } from "../components/SlowModeDialog";
+import { archiveConfirmation, leaveConfirmation } from "../conversationActionTexts";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
@@ -392,9 +393,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
     <>
       {pending?.kind === "archive" && (
         <ConfirmActionDialog
-          title={`Archive ${pendingLabel}?`}
-          description="Archived channels are read-only for everyone: no new messages, reactions or pins. They stay readable and searchable, and an owner or moderator can unarchive them later."
-          confirmLabel="Archive"
+          {...archiveConfirmation(pendingLabel)}
           danger
           isPending={setArchived.isPending}
           onConfirm={() => runSetArchived(pending.conversation, true)}
@@ -427,9 +426,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
 
       {pending?.kind === "leave" && (
         <ConfirmActionDialog
-          title={`Leave ${pendingLabel}?`}
-          description="You will need an invite from a member to rejoin."
-          confirmLabel="Leave"
+          {...leaveConfirmation(pendingLabel)}
           danger
           isPending={leavePending}
           onConfirm={() => {
