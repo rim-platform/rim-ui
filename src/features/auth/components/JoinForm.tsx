@@ -33,9 +33,11 @@
  * - `workspaceId` — the invite's workspace, from its preview, when `variant === "WORKSPACE"`.
  * - `invitedBy`, `ownerName` — who invited and who owns the workspace, from its preview.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
+ *
+ * A workspace invite link can pass `signIn`, shown above the signup.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
@@ -85,6 +87,8 @@ interface JoinFormProps {
    * @param serverId - Present only for workspace invite tokens.
    */
   onSuccess: (userId: string, serverId: string | null) => void;
+  /** The way an existing account signs in instead, shown above the signup. */
+  signIn?: ReactNode;
 }
 
 /**
@@ -121,6 +125,7 @@ export function JoinForm({
   ownerName,
   registrationMode,
   onSuccess,
+  signIn,
 }: JoinFormProps) {
   const { capabilities, deviceKeyStore } = useRuntime();
   const { info } = useServerInfo();
@@ -184,10 +189,17 @@ export function JoinForm({
           {variant === InviteTokenType.WORKSPACE && workspaceName && (
             <>
               <InviteByline invitedBy={invitedBy} ownerName={ownerName} />
-              <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>
+              {!signIn && <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>}
             </>
           )}
         </header>
+
+        {signIn}
+        {signIn && (
+          <p className="text-center text-sm text-rim-text-muted">
+            New to RIM? Create your account.
+          </p>
+        )}
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
           {joining ? (

@@ -19,17 +19,33 @@
  *
  * A workspace invite also says when the account already belongs to another workspace of the
  * same name, with that one's owner, so the two can be told apart.
+ *
+ * A workspace invite to a workspace the account is already in says so and opens it; a revoked,
+ * expired or unknown invite shows the dead-link page; other refusals are one sentence.
  */
 
 import { useNavigate } from "react-router-dom";
 
+import {
+  CONFLICT,
+  errorSentence,
+  EXPIRED_TOKEN,
+  FORBIDDEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  INVALID_TOKEN,
+  NOT_FOUND,
+} from "../../../core/graphql/errors";
+import { Button } from "../../../shared/ui/Button";
 import { useJoinServerByInviteMutation } from "../../settings/api/useInviteMutations";
 import { useMyServers } from "../../workspaces/api/useMyServers";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { BANNED_MESSAGE } from "../../workspaces/publicJoinLink";
 import { ownerName as shownOwnerName, sameWorkspaceName } from "../../workspaces/workspaceLabel";
 import { InviteTokenType } from "../types";
 import { InviteByline } from "./InviteByline";
 import { BrandHeading } from "./BrandHeading";
+import { InvalidTokenState } from "./InvalidTokenState";
 
 interface JoinAuthenticatedProps {
   /** Raw invite token from the `:token` URL param. */
@@ -89,6 +105,20 @@ export function JoinAuthenticated({
   const navigate = useNavigate();
   const joinServer = useJoinServerByInviteMutation();
   const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  const { data: servers } = useMyServers();
+  const member = workspaceId !== undefined && (servers?.some((s) => s.id === workspaceId) ?? false);
+  const code = graphqlErrorCode(joinServer.error);
+  const banned = code === FORBIDDEN && graphqlErrorMessage(joinServer.error, "").includes("banned");
+  const dead =
+    code === NOT_FOUND ||
+    code === INVALID_TOKEN ||
+    code === EXPIRED_TOKEN ||
+    (code === FORBIDDEN && !banned);
+
+  function open() {
+    if (workspaceId !== undefined) setWorkspaceId(workspaceId);
+    navigate("/");
+  }
 
   function handleJoin() {
     joinServer.mutate(token, {
@@ -107,10 +137,14 @@ export function JoinAuthenticated({
             <p className="text-sm text-rim-danger">
               You already have a RIM account; instance invites are only for new users.
             </p>
+            <Button type="button" onClick={() => navigate("/")}>
+              Go to RIM
+            </Button>
           </div>
         </div>
       );
     case InviteTokenType.WORKSPACE:
+      if (dead) return <InvalidTokenState code="INVALID_TOKEN" />;
       return (
         <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
           <div className="w-full max-w-lg space-y-6">
@@ -125,27 +159,43 @@ export function JoinAuthenticated({
             </header>
 
             <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-              <div className="space-y-4">
-                <p className="text-sm text-rim-text-muted">
-                  Click below to accept the invitation and join the workspace.
-                </p>
-                {workspaceName && <SameNameNotice name={workspaceName} workspaceId={workspaceId} />}
-                {joinServer.error && (
-                  <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
-                    {joinServer.error instanceof Error
-                      ? joinServer.error.message
-                      : "Failed to join workspace"}
+              {member || code === CONFLICT ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-rim-text-muted">
+                    You&apos;re already a member of {workspaceName ?? "this workspace"}.
                   </p>
-                )}
-                <button
-                  type="button"
-                  onClick={handleJoin}
-                  disabled={joinServer.isPending}
-                  className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
-                >
-                  {joinServer.isPending ? "Joining..." : "Join workspace"}
-                </button>
-              </div>
+                  {workspaceName && (
+                    <SameNameNotice name={workspaceName} workspaceId={workspaceId} />
+                  )}
+                  <Button type="button" className="w-full" onClick={open}>
+                    {workspaceName ? `Open ${workspaceName}` : "Open workspace"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-rim-text-muted">
+                    Click below to accept the invitation and join the workspace.
+                  </p>
+                  {workspaceName && (
+                    <SameNameNotice name={workspaceName} workspaceId={workspaceId} />
+                  )}
+                  {joinServer.error && (
+                    <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
+                      {banned
+                        ? BANNED_MESSAGE
+                        : errorSentence(joinServer.error, "Could not join the workspace.")}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleJoin}
+                    disabled={joinServer.isPending}
+                    className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
+                  >
+                    {joinServer.isPending ? "Joining..." : "Join workspace"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

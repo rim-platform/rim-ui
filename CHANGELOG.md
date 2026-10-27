@@ -49,6 +49,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - After `|` the palette offers only commands the server can run in a pipe, and a stage that runs
   only in the app is refused with "Pipe stage <n>: <title> runs only in this app, so it cannot be
   part of a pipe." instead of a "desktop-local" error.
+- Errors read as one sentence instead of a dump of the server's response: creating a user command
+  whose ID is taken, joining a workspace you are already in and other refusals no longer show the
+  request, its variables or an invite token, and a lost connection says "Couldn't reach the
+  server. Check your connection and try again."
+- An invite link opened while signed out offers **Sign in as \<name\>** for the accounts this
+  browser or computer holds keys for, or a **Sign in** link, and comes back to the invite; opened
+  by a member it says "You're already a member of \<workspace\>." with **Open \<workspace\>**,
+  and a revoked or expired link offers **Go to RIM** instead of a dead end.
+- A reaction or topic change the server refuses says why in a toast, such as the 10 reactions one
+  person can put on a message, instead of failing silently.
+- Command palette success toasts show the command's result, such as "List Channels: 3 channels
+  found.", instead of "— [object Object]"; toasts wrap to three lines with the full text on
+  hover, and sit at the top right, clear of the composer's send button.
 
 ## [0.0.5] - 2026-10-26
 

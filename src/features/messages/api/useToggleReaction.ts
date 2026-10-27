@@ -2,7 +2,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { errorSentence } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 
 const TOGGLE_REACTION = gql`
   mutation ToggleReaction($input: ToggleReactionInput!) {
@@ -36,6 +38,11 @@ export function useToggleReactionMutation() {
       }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
+    },
+    onError: (err) => {
+      toast.error("The reaction could not be changed", {
+        description: errorSentence(err, "Try again."),
+      });
     },
   });
 }

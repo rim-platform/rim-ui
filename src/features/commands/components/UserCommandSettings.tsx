@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Pencil, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 
+import { errorSentence, graphqlErrorMessage } from "../../../core/graphql/errors";
+
 import { useCommands } from "../api/useCommands";
 import {
   useCreateUserCommandMutation,
@@ -210,7 +212,9 @@ function UserCommandEditor({
         </button>
       </div>
       {updateMutation.isError && (
-        <p className="text-[11px] text-rim-danger">{(updateMutation.error as Error).message}</p>
+        <p className="text-[11px] text-rim-danger">
+          {errorSentence(updateMutation.error, "The command could not be saved.")}
+        </p>
       )}
     </div>
   );
@@ -349,7 +353,9 @@ export function UserCommandSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-rim-danger">{(createMutation.error as Error).message}</p>
+            <p className="text-[11px] text-rim-danger">
+              {errorSentence(createMutation.error, "The command could not be created.")}
+            </p>
           )}
         </div>
       )}
@@ -388,7 +394,7 @@ export function UserCommandSettings() {
                   className={`min-w-0 flex-1 ${savedQuery.isError ? "text-rim-danger" : "text-rim-text-muted"}`}
                 >
                   {savedQuery.isError
-                    ? `The saved command could not be loaded: ${(savedQuery.error as Error).message}`
+                    ? `The saved command could not be loaded: ${graphqlErrorMessage(savedQuery.error, "unknown error")}`
                     : "Loading the saved steps..."}
                 </p>
                 <button

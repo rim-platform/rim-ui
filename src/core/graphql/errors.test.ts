@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 
 import { FeatureDisabledError } from "../serverFeatures";
+import { graphqlError } from "../../features/conversations/__fixtures__/conversations";
 import {
   AddressBlockedError,
   ADDRESS_BLOCKED_MESSAGE,
+  asSentence,
   disabledFeatureOf,
+  errorSentence,
   FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
@@ -13,7 +16,9 @@ import {
   graphqlErrorExtension,
   isSchemaRefusal,
   isSessionRefused,
+  NETWORK_ERROR_MESSAGE,
   retryAfterSeconds,
+  SERVER_FAULT_MESSAGE,
   timedOutMessage,
   timedOutUntil,
   UPSTREAM_UNAVAILABLE,
@@ -68,6 +73,46 @@ describe("graphqlErrorMessage", () => {
     expect(graphqlErrorCode(upstream)).toBe(UPSTREAM_UNAVAILABLE);
     expect(graphqlErrorExtension(upstream, "hostServerId")).toBe("rims1_abc");
     expect(graphqlErrorMessage(upstream, "fallback")).toBe(UPSTREAM_UNAVAILABLE_MESSAGE);
+  });
+
+  it("words a request that never reached the server as a connection problem", () => {
+    for (const text of [
+      "Failed to fetch",
+      "fetch failed",
+      "NetworkError when attempting to fetch resource.",
+    ]) {
+      expect(graphqlErrorMessage(new TypeError(text), "fallback")).toBe(NETWORK_ERROR_MESSAGE);
+    }
+    expect(graphqlErrorMessage(new TypeError("x is undefined"), "fallback")).toBe("x is undefined");
+  });
+
+  it("words a server fault without the server's terse text", () => {
+    for (const code of ["INTERNAL", "UNAVAILABLE", "TIMEOUT"]) {
+      expect(graphqlErrorMessage(graphqlError(code, "internal error"), "fallback")).toBe(
+        SERVER_FAULT_MESSAGE,
+      );
+    }
+  });
+
+  it("never returns the serialized message of a ClientError without GraphQL errors", () => {
+    const answer = (status: number) =>
+      Object.assign(new Error('GraphQL Error (Code: 502): {"request":{"query":"mutation"}}'), {
+        response: { status, body: "<html>" },
+      });
+    expect(graphqlErrorMessage(answer(502), "fallback")).toBe(SERVER_FAULT_MESSAGE);
+    expect(graphqlErrorMessage(answer(413), "fallback")).toBe("fallback");
+  });
+});
+
+describe("errorSentence", () => {
+  it("errorSentence capitalises and closes the server's message", () => {
+    expect(
+      errorSentence(
+        graphqlError("FORBIDDEN", "only the owner and moderators change a channel's topic"),
+        "fallback",
+      ),
+    ).toBe("Only the owner and moderators change a channel's topic.");
+    expect(asSentence("Done!")).toBe("Done!");
   });
 });
 

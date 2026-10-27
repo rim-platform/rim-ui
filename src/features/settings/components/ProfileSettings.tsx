@@ -5,7 +5,12 @@ import { Camera, Loader2 } from "lucide-react";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
 import { useUpdateProfileMutation, uploadAvatar } from "../api/useUpdateProfile";
 import { resizeImageToBlob } from "../utils/resizeImage";
-import { FORBIDDEN, graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
+import {
+  errorSentence,
+  FORBIDDEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+} from "../../../core/graphql/errors";
 import { reportFeatureDisabled } from "../../../core/query/queryClient";
 import { useProbationEnd, useProfileLock } from "../../limits/api/useProbation";
 import { probationText } from "../../limits/limits";
@@ -114,7 +119,7 @@ export function ProfileSettings() {
           return;
         }
         refreshLockOnRefusal(err);
-        setAvatarError(err instanceof Error ? err.message : "Avatar upload failed.");
+        setAvatarError(errorSentence(err, "Avatar upload failed."));
       } finally {
         setAvatarUploading(false);
         // Reset input so same file can be selected again

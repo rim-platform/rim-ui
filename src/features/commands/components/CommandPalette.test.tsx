@@ -13,7 +13,7 @@
  *
  * Tested scenarios:
  *  - success (status: "SUCCESS", no payload)   → toast.success with command title
- *  - success with non-null payload             → toast.success with payload preview
+ *  - success with a message and a payload       → toast.success with title + message, no payload
  *  - error result (status: "ERROR")            → toast.error with title + message
  *  - thrown exception                          → toast.error with title + error message
  *  - null result from dispatchCommand          → toast.error with fallback message
@@ -46,6 +46,7 @@ vi.mock("../../../shared/toast", () => ({
 import { useCallback } from "react";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { currentCommandContext } from "../runtime/commandContext";
+import { commandSuccessText } from "../runtime/commandResultText";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { CANCELLED_PAYLOAD, isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
@@ -76,11 +77,7 @@ function useExecuteSelected(
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
-          const payloadPreview =
-            result.payload !== null && result.payload !== undefined
-              ? ` — ${String(result.payload).slice(0, 80)}`
-              : "";
-          toast.success(`${command.title}${payloadPreview}`);
+          toast.success(commandSuccessText(command.title, result));
         }
       } catch (err) {
         toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
@@ -156,9 +153,9 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("appends a short payload preview when the result carries a non-null payload", async () => {
+  it("shows the result's message on success, never an object payload", async () => {
     vi.mocked(dispatchCommand).mockResolvedValue(
-      makeResult({ status: "SUCCESS", payload: "workspace-abc-123" }),
+      makeResult({ status: "SUCCESS", message: "3 channels found", payload: { channels: [] } }),
     );
 
     const { executeSelected } = setup();
@@ -167,28 +164,7 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
       await executeSelected(makeCommand());
     });
 
-    expect(toast.success).toHaveBeenCalledOnce();
-    const [msg] = vi.mocked(toast.success).mock.calls[0];
-    expect(msg).toContain("Run Test Command");
-    expect(msg).toContain("workspace-abc-123");
-  });
-
-  it("truncates the payload preview to 80 characters", async () => {
-    const longPayload = "x".repeat(200);
-    vi.mocked(dispatchCommand).mockResolvedValue(
-      makeResult({ status: "SUCCESS", payload: longPayload }),
-    );
-
-    const { executeSelected } = setup();
-
-    await act(async () => {
-      await executeSelected(makeCommand());
-    });
-
-    const [msg] = vi.mocked(toast.success).mock.calls[0];
-    // The payload section must be capped at 80 chars
-    const afterDash = msg.split(" — ")[1] ?? "";
-    expect(afterDash.length).toBeLessThanOrEqual(80);
+    expect(toast.success).toHaveBeenCalledWith("Run Test Command: 3 channels found.");
   });
 
   it("calls toast.error with command title + message when result.status is ERROR", async () => {

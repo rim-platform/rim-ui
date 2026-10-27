@@ -76,4 +76,16 @@ describe("ToastItem", () => {
     const { container } = render(<ToastItem toast={makeToast({ variant: "warning" })} />);
     expect(container.firstElementChild?.className).toContain("rim-warm");
   });
+
+  it("wraps a long title to three lines and keeps the full text in its title", () => {
+    const long = "x".repeat(300);
+    render(<ToastItem toast={makeToast({ title: long, description: `${long}d` })} />);
+    const title = screen.getByText(long);
+    expect(title).toHaveClass("line-clamp-3");
+    expect(title).not.toHaveClass("truncate");
+    expect(title).toHaveAttribute("title", long);
+    const description = screen.getByText(`${long}d`);
+    expect(description).toHaveClass("line-clamp-3");
+    expect(description).toHaveAttribute("title", `${long}d`);
+  });
 });

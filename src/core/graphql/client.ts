@@ -1,7 +1,8 @@
-import { GraphQLClient } from "graphql-request";
+import { ClientError, GraphQLClient } from "graphql-request";
 
 import { getGraphqlEndpoint } from "./config";
 import { CSRF_HEADER, csrfToken } from "./csrf";
+import { graphqlErrorMessage } from "./errors";
 import { SESSION_SECRET_HEADER, sessionSecret } from "./sessionSecret";
 import { asGraphqlResponse } from "./edgeRefusals";
 
@@ -62,10 +63,22 @@ const routingFetch: typeof fetch = async (input, init) => {
   return asGraphqlResponse(await fetch(input, init));
 };
 
+/**
+ * Gives a failed request's `ClientError` a readable message in place of the one graphql-request
+ * builds, which holds the whole response and the request with its variables. Anything that shows
+ * `err.message` then shows no query, variable or token.
+ */
+export function readableClientError(response: unknown): void {
+  if (response instanceof ClientError) {
+    response.message = graphqlErrorMessage(response, "The server refused the request.");
+  }
+}
+
 export function createGraphqlClient(): GraphQLClient {
   return new GraphQLClient(getGraphqlEndpoint(), {
     credentials: "include",
     fetch: routingFetch,
+    responseMiddleware: readableClientError,
     requestMiddleware: (request) => {
       const csrf = csrfToken();
       const secret = sessionSecret();

@@ -13,6 +13,7 @@ import {
   isSessionRefused,
   RATE_LIMITED,
   retryAfterSeconds,
+  SERVER_FAULT_MESSAGE,
 } from "./errors";
 
 describe("createGraphqlClient", () => {
@@ -127,5 +128,55 @@ describe("edge refusals", () => {
     expect(err).not.toBeInstanceOf(AddressBlockedError);
     expect(isSessionRefused(err)).toBe(true);
     expect(useEdgeStore.getState().blocked).toBe(false);
+  });
+});
+
+describe("readable request errors", () => {
+  const client = createGraphqlClient();
+  const mutation = "mutation Join($t: String!) { joinServerByInvite(inviteToken: $t) { id } }";
+
+  async function failure(variables?: Record<string, unknown>): Promise<Error> {
+    return client.request(mutation, variables).then(
+      () => expect.unreachable("the request should fail"),
+      (err: unknown) => err as Error,
+    );
+  }
+
+  it("a refused request throws the server's message, not the request or its variables", async () => {
+    server.use(
+      http.post("*/api", () =>
+        HttpResponse.json({
+          data: null,
+          errors: [
+            {
+              message: "already a member of this server",
+              extensions: { code: "CONFLICT", request_id: "r1" },
+            },
+          ],
+        }),
+      ),
+    );
+    const err = await failure({ t: "rim_inv_secret" });
+
+    expect(err.message).toBe("already a member of this server");
+    expect(err.message).not.toContain("rim_inv_secret");
+    expect(err.message).not.toContain("mutation");
+    expect(graphqlErrorCode(err)).toBe("CONFLICT");
+  });
+
+  it("a non-GraphQL error answer throws a readable message", async () => {
+    server.use(
+      http.post(
+        "*/api",
+        () =>
+          new HttpResponse("<html>Bad Gateway</html>", {
+            status: 502,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+    const err = await failure({ t: "rim_inv_secret" });
+
+    expect(err.message).toBe(SERVER_FAULT_MESSAGE);
   });
 });

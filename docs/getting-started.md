@@ -98,7 +98,12 @@ Its badge counts unread messages before you open it. The rail shows once a works
 ## Join or create a workspace
 
 - **Join with an invite link.** Opened in a browser while you are signed in, the link says "You
-  have been invited to join \<workspace\>"; **Join workspace** joins it. In the app,
+  have been invited to join \<workspace\>"; **Join workspace** joins it, and when you are already
+  a member it says "You're already a member of \<workspace\>." with **Open \<workspace\>**. Signed
+  out, it offers **Sign in as \<name\>** for each account this browser or computer holds keys
+  for, or else a **Sign in** link that comes back to the invite, above the signup. A revoked,
+  expired or unknown link says "This invite link is no longer valid. Ask the person who sent it
+  for a new one." with **Go to RIM**. In the app,
   **Join with an invite code** on the welcome screen, or **Add workspace** (the **+** at the bottom
   of the workspace rail) and then **Join Existing**, takes the invite code: the whole invite link,
   the part of it that starts with `rim_inv_`, or a whole `rim-invite:1:…` link for a workspace on

@@ -2,7 +2,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { errorSentence } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 
 const UPDATE_CONVERSATION_TOPIC = gql`
   mutation UpdateConversationTopic($input: UpdateConversationTopicInput!) {
@@ -34,6 +36,11 @@ export function useUpdateTopicMutation() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.channels(vars.serverId) });
       qc.invalidateQueries({ queryKey: queryKeys.conversations(vars.serverId) });
+    },
+    onError: (err) => {
+      toast.error("The topic could not be changed", {
+        description: errorSentence(err, "Try again."),
+      });
     },
   });
 }

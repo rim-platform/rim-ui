@@ -37,8 +37,10 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { useCommands } from "../api/useCommands";
+import { useCreateKeybindMutation } from "../api/useKeybindSettings";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
@@ -382,5 +384,33 @@ describe("KeybindSettings", () => {
       fireEvent.click(screen.getByRole("button", { name: "Delete" }));
       expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
     });
+  });
+});
+
+describe("KeybindSettings refusals", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [makeCommand()],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  it("shows a refused new keybind as one sentence, without the request", () => {
+    vi.mocked(useCreateKeybindMutation).mockReturnValue({
+      mutate: createKeybind,
+      isPending: false,
+      isError: true,
+      error: graphqlError("VALIDATION", "keystroke is already bound"),
+    } as unknown as ReturnType<typeof useCreateKeybindMutation>);
+    render(<KeybindSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+
+    expect(screen.getByText("Keystroke is already bound.")).toBeInTheDocument();
+    expect(screen.queryByText(/serialized response/)).not.toBeInTheDocument();
   });
 });

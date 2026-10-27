@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { renderWithServerInfo } from "../../../test/serverInfo";
 
@@ -103,17 +103,39 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceKeys: desktop.value, identityKeys: desktop.value } }),
 }));
 
+// The accounts this device holds keys for, and their sign-in, which has its own tests.
+const deviceAccounts = vi.hoisted(() => ({ data: [] as unknown[], isPending: false }));
+
+vi.mock("../../key-identity/api/useDeviceKeyAccounts", () => ({
+  useDeviceKeyAccounts: () => deviceAccounts,
+}));
+
+vi.mock("../../key-identity/components/DeviceKeySignIn", () => ({
+  DeviceKeySignIn: ({ onSuccess }: { onSuccess: (userId: string) => void }) => (
+    <button type="button" onClick={() => onSuccess("u-bob")}>
+      Sign in as bob
+    </button>
+  ),
+}));
+
 // The key form has its own tests; the stand-in is in `__mocks__`.
 vi.mock("./KeySignupForm");
 
 import { JoinPage } from "./JoinPage";
+import { DEAD_INVITE_MESSAGE } from "./InvalidTokenState";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 
 beforeEach(() => {
   config.mode = "INVITE_ONLY";
   config.isPending = false;
   desktop.value = true;
+  deviceAccounts.data = [];
 });
+
+/** The navigation state the page arrived with, as JSON. */
+function StateProbe() {
+  return <p>{JSON.stringify(useLocation().state)}</p>;
+}
 
 describe("JoinPage — no-referrer meta tag", () => {
   beforeEach(() => {
@@ -173,6 +195,7 @@ describe("JoinPage", () => {
         <Routes>
           <Route path="/join/:token" element={<JoinPage />} />
           <Route path="/join" element={<JoinPage />} />
+          <Route path="/login" element={<StateProbe />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -225,7 +248,7 @@ describe("JoinPage", () => {
     expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
   });
 
-  it("INVALID_TOKEN error: renders matching copy", () => {
+  it("INVALID_TOKEN error: says the link is dead and offers Go to RIM", async () => {
     mockUsePreviewInviteToken.mockReturnValue({
       data: undefined,
       isPending: false,
@@ -236,12 +259,12 @@ describe("JoinPage", () => {
 
     renderAtPath("/join/bad-token");
 
-    expect(
-      screen.getByText("This invite link is no longer valid. Ask your admin for a fresh invite."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(DEAD_INVITE_MESSAGE)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go to RIM" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
-  it("EXPIRED_TOKEN error: renders expiry copy", () => {
+  it("EXPIRED_TOKEN error: says the link is dead and offers Go to RIM", async () => {
     mockUsePreviewInviteToken.mockReturnValue({
       data: undefined,
       isPending: false,
@@ -252,9 +275,44 @@ describe("JoinPage", () => {
 
     renderAtPath("/join/expired-token");
 
+    expect(screen.getByText(DEAD_INVITE_MESSAGE)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Go to RIM" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("signed out with a stored account: offers Sign in as above the signup", async () => {
+    deviceAccounts.data = [{ principalId: "rimp1_bob", username: "bob" }];
+    renderAtPath("/join/ws-token-abc");
+
     expect(
-      screen.getByText("This invite has expired. Ask your admin for a fresh invite."),
+      screen.getByText("Already have an account? Sign in to join Acme Corp."),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Sign in as bob" }));
+    expect(mockSetSession).toHaveBeenCalledWith({ userId: "u-bob" });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("signed out without a stored account: links to sign-in and back to the invite", async () => {
+    renderAtPath("/join/ws-token-abc");
+
+    await userEvent.setup().click(screen.getByRole("link", { name: "Sign in" }));
+    expect(screen.getByText('{"returnTo":"/join/ws-token-abc"}')).toBeInTheDocument();
+  });
+
+  it("an instance invite offers no sign-in", () => {
+    mockUsePreviewInviteToken.mockReturnValue({
+      data: { tokenType: "INSTANCE", expiresAt: null, workspace: null },
+      isPending: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderAtPath("/join/inst-token-abc");
+
+    expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
   });
 
   it("already authenticated with workspace token: renders JoinAuthenticated", () => {
