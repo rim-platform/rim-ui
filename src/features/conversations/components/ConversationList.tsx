@@ -9,7 +9,9 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import { useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { useIsGuest, useMyServerRole } from "../../workspaces/api/useMyServerRole";
+import { useIsDefaultWorkspace } from "../../workspaces/hooks/useIsDefaultWorkspace";
+import { canCreateChannel } from "../../workspaces/role";
 import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { isContextMenuKey, useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
@@ -58,6 +60,9 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const mutedIds = useMutedStore((s) => s.mutedIds);
   // Guests cannot browse, join or create channels; the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
+  // In the server's default workspace only the Owner and Moderators create channels.
+  const role = useMyServerRole(workspaceId ?? undefined);
+  const canCreate = canCreateChannel(role, useIsDefaultWorkspace(workspaceId));
   // Requests for DMs of this workspace, kept out of its conversations until accepted.
   const scopedRequests = usePendingDmRequestsIn(workspaceId ?? undefined);
   const requestCount = workspaceId ? scopedRequests.length : 0;
@@ -255,7 +260,9 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
       ? []
       : [
           { id: "browse-channels", label: "Browse channels…", onSelect: () => setBrowseOpen(true) },
-          { id: "create-channel", label: "Create channel…", onSelect: () => onNewChannel() },
+          ...(canCreate
+            ? [{ id: "create-channel", label: "Create channel…", onSelect: () => onNewChannel() }]
+            : []),
         ];
   const archivedSectionItems = (): DropdownMenuItem[] => [
     {
@@ -301,15 +308,17 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
                 >
                   <Compass className="h-3 w-3" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onNewChannel()}
-                  title="New channel"
-                  aria-label="New channel"
-                  className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
+                {canCreate && (
+                  <button
+                    type="button"
+                    onClick={() => onNewChannel()}
+                    title="New channel"
+                    aria-label="New channel"
+                    className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             )}
           </div>

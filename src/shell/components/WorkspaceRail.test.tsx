@@ -116,9 +116,14 @@ describe("WorkspaceRail", () => {
 });
 
 describe("WorkspaceRail — workspace context menu", () => {
-  function serve(role: ServerMemberRoleGql, dndPaused = false, joinRequests = 0) {
+  function serve(
+    role: ServerMemberRoleGql,
+    dndPaused = false,
+    joinRequests = 0,
+    defaultWorkspace?: string,
+  ) {
     routeRequests(requestMock, {
-      "query ServerInfo": () => ({ serverInfo: fakeServerInfo() }),
+      "query ServerInfo": () => ({ serverInfo: fakeServerInfo({}, { defaultWorkspace }) }),
       "query JoinRequestCount": () => ({
         joinRequests: {
           items: Array.from({ length: joinRequests }, (_, i) => ({ id: `jr-${i}` })),
@@ -294,6 +299,23 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Create channel…",
       "Assign keybind…",
     ]);
+  });
+
+  it("gives a member of the default workspace no Create channel", async () => {
+    serve(ServerMemberRoleGql.MEMBER, false, 0, "ws-2");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <WorkspaceRail />
+      </QueryClientProvider>,
+    );
+    const beta = screen.getByRole("button", { name: /^Beta/ });
+    fireEvent.mouseEnter(beta);
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-2"))).toBeDefined());
+    await waitFor(() => expect(qc.getQueryData(queryKeys.serverInfo)).toBeDefined());
+    await act(async () => {});
+    fireEvent.keyDown(beta, { key: "ContextMenu" });
+    expect(menuLabels()).toEqual(["Pause notifications", "Browse channels…", "Assign keybind…"]);
   });
 
   it("hides browsing and creating channels from a guest", async () => {

@@ -20,6 +20,7 @@ import {
 } from "../__fixtures__/conversations";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
@@ -93,10 +94,12 @@ describe("ConversationActionsMenu — role gating", () => {
     useTopicEditStore.getState().stop();
     useQuickAccessStore.getState().close();
     useUnreadStore.setState({ counts: {}, spaceOf: {} });
+    useAuthStore.setState({ session: { userId: "me" } });
   });
 
   afterEach(() => {
     useShellStore.getState().reset();
+    useAuthStore.setState({ session: null });
   });
 
   it("a guest member of a channel gets no invite and no moderation", async () => {
@@ -105,7 +108,6 @@ describe("ConversationActionsMenu — role gating", () => {
     expect(menuLabels()).toEqual([
       "Notifications: All messages",
       "Members",
-      "Edit topic…",
       "Assign keybind…",
       "Leave channel",
     ]);
@@ -118,10 +120,24 @@ describe("ConversationActionsMenu — role gating", () => {
       "Notifications: All messages",
       "Members",
       "Invite people…",
-      "Edit topic…",
       "Assign keybind…",
       "Leave channel",
     ]);
+  });
+
+  it("offers no Edit topic to a member of a public channel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation({ createdBy: "me" }), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels()).not.toContain("Edit topic…");
+  });
+
+  it("offers Edit topic to the creator of a private channel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(
+      makeConversation({ isPrivate: true, createdBy: "me" }),
+      ServerMemberRoleGql.MEMBER,
+    );
+    expect(menuLabels()).toContain("Edit topic…");
   });
 
   it.each([ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR])(
@@ -161,7 +177,7 @@ describe("ConversationActionsMenu — role gating", () => {
       "mutation JoinChannel": () => ({ joinChannel: makeConversation() }),
     });
     await openMenu(makeConversation({ isMember: false }), ServerMemberRoleGql.MEMBER);
-    expect(menuLabels()).toEqual(["Join channel", "Members", "Edit topic…", "Assign keybind…"]);
+    expect(menuLabels()).toEqual(["Join channel", "Members", "Assign keybind…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Join channel" }));
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
@@ -229,8 +245,8 @@ describe("ConversationActionsMenu — role gating", () => {
   });
 
   it("Edit topic starts the header's topic edit from the current topic", async () => {
-    serve(ServerMemberRoleGql.MEMBER);
-    await openMenu(makeConversation({ topic: "Daily standup" }), ServerMemberRoleGql.MEMBER);
+    serve(ServerMemberRoleGql.MODERATOR);
+    await openMenu(makeConversation({ topic: "Daily standup" }), ServerMemberRoleGql.MODERATOR);
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
     expect(useTopicEditStore.getState()).toMatchObject({
       conversationId: "conv-1",

@@ -24,6 +24,15 @@ export function isGuest(role: MaybeRole): boolean {
 }
 
 /**
+ * Whether `role` may create channels: anyone but a guest, and in the server's default
+ * workspace only an Owner or Moderator. False while the role is unknown.
+ */
+export function canCreateChannel(role: MaybeRole, inDefaultWorkspace: boolean): boolean {
+  if (!role || isGuest(role)) return false;
+  return inDefaultWorkspace ? canModerate(role) : true;
+}
+
+/**
  * Whether `actorRole` may kick, ban or time out a member holding `targetRole`, mirroring the
  * server: only Owner and Moderator act; nobody targets the Owner; a Moderator cannot target
  * another Moderator. Targeting yourself is refused too, but that needs ids: see

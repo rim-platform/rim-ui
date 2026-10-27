@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { PostingPolicy } from "../../core/graphql/generated/schema-types";
-import { memberCountLabel, postingAllows, untitledGroupName, type PostKind } from "./utils";
+import { ConversationTypeEnum, PostingPolicy } from "../../core/graphql/generated/schema-types";
+import {
+  canEditChannelTopic,
+  memberCountLabel,
+  postingAllows,
+  untitledGroupName,
+  type PostKind,
+} from "./utils";
 
 const names: Record<string, string> = {
   me: "Me",
@@ -72,5 +78,48 @@ describe("memberCountLabel", () => {
     expect(memberCountLabel(1)).toBe("1 member");
     expect(memberCountLabel(0)).toBe("0 members");
     expect(memberCountLabel(3)).toBe("3 members");
+  });
+});
+
+describe("canEditChannelTopic", () => {
+  const channel = {
+    conversationType: ConversationTypeEnum.CHANNEL,
+    isArchived: false,
+    isPrivate: false,
+    createdBy: "me",
+  };
+  const member = { userId: "me", canModerate: false };
+  const moderator = { userId: "mod", canModerate: true };
+
+  it("lets a moderator change any channel's topic", () => {
+    expect(canEditChannelTopic({ ...channel, createdBy: "ana" }, moderator)).toBe(true);
+  });
+
+  it("refuses a member of a public channel, even its creator", () => {
+    expect(canEditChannelTopic({ ...channel, createdBy: "ana" }, member)).toBe(false);
+    expect(canEditChannelTopic(channel, member)).toBe(false);
+  });
+
+  it("lets the creator of a private channel change its topic", () => {
+    expect(canEditChannelTopic({ ...channel, isPrivate: true }, member)).toBe(true);
+    expect(canEditChannelTopic({ ...channel, isPrivate: true, createdBy: "ana" }, member)).toBe(
+      false,
+    );
+    expect(
+      canEditChannelTopic(
+        { ...channel, isPrivate: true },
+        { userId: undefined, canModerate: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses everyone while the channel is archived", () => {
+    expect(canEditChannelTopic({ ...channel, isArchived: true }, moderator)).toBe(false);
+  });
+
+  it("refuses anything but a channel", () => {
+    expect(
+      canEditChannelTopic({ ...channel, conversationType: ConversationTypeEnum.GROUP }, moderator),
+    ).toBe(false);
   });
 });

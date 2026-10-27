@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
 import {
   ConversationTypeEnum,
   ServerMemberRoleGql,
@@ -77,9 +78,12 @@ function serve({
   });
 }
 
-async function renderList(role = ServerMemberRoleGql.MEMBER) {
+async function renderList(role = ServerMemberRoleGql.MEMBER, defaultWorkspace?: string) {
   const onNewChannel = vi.fn();
   const qc = createTestQueryClient();
+  if (defaultWorkspace) {
+    qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace }));
+  }
   render(
     <QueryClientProvider client={qc}>
       <ConversationList onNewChannel={onNewChannel} />
@@ -133,7 +137,6 @@ describe("ConversationList — conversation context menus", () => {
       "Notifications: All messages",
       "Members",
       "Invite people…",
-      "Edit topic…",
       "Assign keybind…",
       "Leave channel",
     ]);
@@ -305,6 +308,13 @@ describe("ConversationList — section header menus", () => {
     fireEvent.contextMenu(screen.getByText("Channels"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
     expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
+  });
+
+  it("Channels offers a member of the default workspace Browse channels only", async () => {
+    serve();
+    await renderList(ServerMemberRoleGql.MEMBER, "ws-1");
+    fireEvent.contextMenu(screen.getByText("Channels"));
+    expect(menuLabels()).toEqual(["Browse channels…"]);
   });
 
   it("Channels opens nothing for a guest and leaves the browser's menu alone", async () => {

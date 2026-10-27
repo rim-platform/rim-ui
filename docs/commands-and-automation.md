@@ -264,7 +264,8 @@ its trigger, its number of actions and, to its creator, when it last fired. The 
 enables or disables it, the pencil edits it, and the bin deletes it after a confirmation.
 
 **Who.** Any member of the workspace can create a pipeline, and every member sees the list. Only
-its creator, an Owner or a Moderator can change, toggle or delete it.
+its creator, an Owner or a Moderator can change, toggle or delete it, and only they see the power
+button, the pencil and the bin.
 
 **What runs.** Nobody is there to confirm, so the server skips any action that would need a
 confirmation: every mutating, restricted or dangerous command, which includes posting a message,

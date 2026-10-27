@@ -49,6 +49,28 @@ export function canLeaveConversation(
   return conversation.isMember && conversation.conversationType !== ConversationTypeEnum.DIRECT;
 }
 
+/**
+ * Whether the viewer may change a channel's topic, as the server decides: an Owner or
+ * Moderator, or the creator of a private channel, and never while the channel is archived.
+ * False for anything but a channel.
+ */
+export function canEditChannelTopic(
+  conversation: Pick<
+    ConversationSummary,
+    "conversationType" | "isArchived" | "isPrivate" | "createdBy"
+  >,
+  viewer: { userId: string | undefined; canModerate: boolean },
+): boolean {
+  if (conversation.conversationType !== ConversationTypeEnum.CHANNEL) return false;
+  if (conversation.isArchived) return false;
+  if (viewer.canModerate) return true;
+  return (
+    conversation.isPrivate &&
+    viewer.userId !== undefined &&
+    conversation.createdBy === viewer.userId
+  );
+}
+
 /** Members can be invited to channels and groups (not DMs) by anyone already in them. */
 export function canInviteToConversation(
   conversation: Pick<ConversationSummary, "conversationType" | "isMember" | "isArchived">,

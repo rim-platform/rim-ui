@@ -218,13 +218,14 @@ menu. The surfaces with a menu:
   Unmute conversation, and Open, while its conversation is readable.
 - **A plugin panel's header**: Plugin settings, when the plugin has settings, and Close panel.
 - **A conversation** in the sidebar: the same items as the "…" menu in its header (read state,
-  notifications with timed mutes, members, invite, topic, a keybind to open it, the Owner and
-  Moderator's slow mode and archive, leave), or Accept and Decline for an invitation.
-- **A section heading** of the sidebar: Browse channels and Create channel on Channels, Expand
-  or Collapse on Archived.
+  notifications with timed mutes, members, invite, topic (for whoever may change it), a keybind
+  to open it, the Owner and Moderator's slow mode and archive, leave), or Accept and Decline for
+  an invitation.
+- **A section heading** of the sidebar: Browse channels and Create channel (where you may create
+  one) on Channels, Expand or Collapse on Archived.
 - **A workspace** on the rail: Mark all as read, Pause notifications, Browse channels, Create
-  channel, Invite people, a keybind to switch to it and its settings, acting on that workspace
-  without switching to it (except for its settings).
+  channel (where you may), Invite people, a keybind to switch to it and its settings, acting on
+  that workspace without switching to it (except for its settings).
 - **A message request**: Accept, Read first, Ignore, Report and Block.
 
 Items the viewer cannot use are left out rather than shown disabled.
