@@ -639,6 +639,83 @@ describe("MessageTimeline virtualization", () => {
     expect(messageList().scrollTop).toBe(100);
   });
 
+  it("keeps the visible rows in place when the oldest loaded message drops off while scrolled up", async () => {
+    setMessages(range(0, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 500 }));
+    await settle();
+    const before = rowViewportOffset("m-015");
+    expect(before).not.toBeNull();
+
+    // A refetch of the newest page slides the loaded window by one message.
+    setMessages(range(1, 31));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(rowViewportOffset("m-015")).toBe(before);
+    expect(screen.queryByText("message 30")).not.toBeInTheDocument();
+  });
+
+  it("keeps the visible rows in place when a message above the viewport is deleted", async () => {
+    setMessages(range(0, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 500 }));
+    await settle();
+    const before = rowViewportOffset("m-015");
+    expect(before).not.toBeNull();
+
+    setMessages(range(0, 30).filter((m) => m.id !== "m-005"));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(rowViewportOffset("m-015")).toBe(before);
+  });
+
+  it("does not move the rows when the first visible row itself is gone", async () => {
+    setMessages(range(0, 30));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 500 }));
+    await settle();
+
+    // Rows as tall as the estimate, so measuring the new rows corrects nothing.
+    for (const m of range(40, 60)) rowHeights.set(m.id, 64);
+    setMessages(range(40, 60));
+    rerender(<MessageTimeline />);
+    await settle();
+
+    expect(messageList().scrollTop).toBe(500);
+  });
+
+  it("stays at the end when a refetch drops the oldest message and the newest row grows", async () => {
+    setMessages(range(0, 20));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+
+    act(() => {
+      setMessages(range(1, 20));
+      rowHeights.set("m-019", 300);
+      rerender(<MessageTimeline />);
+      for (const { observer, callback, targets } of observers) {
+        for (const target of targets) {
+          if (!target.isConnected || messageIdOf(target as HTMLElement) !== "m-019") continue;
+          const entry = {
+            target,
+            borderBoxSize: [{ blockSize: 300, inlineSize: 800 }],
+          } as unknown as ResizeObserverEntry;
+          callback([entry], observer as unknown as ResizeObserver);
+        }
+      }
+    });
+    await settle();
+
+    expect(maxScrollTop()).toBe(18 * ROW + 300 + 2 * PADDING - VIEWPORT);
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+  });
+
   it("k from the first visible row scrolls the off-screen row above into view", async () => {
     setMessages(range(0, 30));
     render(<MessageTimeline />);

@@ -198,6 +198,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   enable, edit or delete buttons for a Member, the default workspace offers creating channels to
   its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
   workspace-scoped state.
+- While you read earlier messages, the timeline no longer jumps when a new message or image
+  arrives or a message above is deleted; at the bottom, an arriving image no longer leaves the
+  newest message partly out of view.
 
 ## [0.0.5] - 2026-10-26
 

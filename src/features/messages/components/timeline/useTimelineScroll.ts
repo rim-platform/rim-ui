@@ -24,6 +24,33 @@ function isScrolledToBottom(container: HTMLElement): boolean {
   );
 }
 
+/**
+ * The height of the rows that left the list and lay wholly above `offset` in its previous layout,
+ * or null when the first row visible then has left too (a lens or another list, nothing to keep).
+ *
+ * @param prevIds - The previous rows' ids, in order.
+ * @param present - The ids still in the list.
+ * @param sizeOf - A row's height as the previous layout had it.
+ * @param start - Where the first row started (the list's top padding).
+ * @param offset - The scroll offset before this change.
+ */
+function heightRemovedAbove(
+  prevIds: string[],
+  present: Set<string>,
+  sizeOf: (id: string) => number,
+  start: number,
+  offset: number,
+): number | null {
+  let removed = 0;
+  for (const id of prevIds) {
+    const size = sizeOf(id);
+    if (start + size > offset) return present.has(id) ? removed : null;
+    if (!present.has(id)) removed += size;
+    start += size;
+  }
+  return removed;
+}
+
 interface TimelineScrollItem {
   id: string;
   authorId: string;
@@ -67,7 +94,8 @@ interface UseTimelineScrollOptions {
  * - an appended message scrolls into view when the user was at the bottom or
  *   sent it themselves; otherwise the viewport stays put;
  * - when an older page is prepended the row that was first keeps its screen
- *   position (no jump), then the top sentinel can trigger the next page.
+ *   position (no jump), then the top sentinel can trigger the next page;
+ * - rows that leave the list above the viewport keep the first visible row in place.
  *
  * A fresh list (new `listKey`, or a remounted scroll container after a
  * loading state) is told apart from a prepend or an append by remembering
@@ -142,9 +170,8 @@ export function useTimelineScroll({
     [virtualizer],
   );
 
-  // Previous render's list edges and the container the initial scroll ran in.
-  const prevFirstIdRef = useRef<string | null>(null);
-  const prevLastIdRef = useRef<string | null>(null);
+  // Previous render's row ids and the container the initial scroll ran in.
+  const prevIdsRef = useRef<string[]>([]);
   const initialScrollForRef = useRef<{ container: HTMLDivElement; listKey: string | null } | null>(
     null,
   );
@@ -152,10 +179,10 @@ export function useTimelineScroll({
   // Runs before paint so prepend compensation never shows a jumped frame.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    const prevFirstId = prevFirstIdRef.current;
-    const prevLastId = prevLastIdRef.current;
-    prevFirstIdRef.current = items[0]?.id ?? null;
-    prevLastIdRef.current = items[items.length - 1]?.id ?? null;
+    const prevIds = prevIdsRef.current;
+    prevIdsRef.current = items.map((m) => m.id);
+    const prevFirstId = prevIds[0] ?? null;
+    const prevLastId = prevIds[prevIds.length - 1] ?? null;
     if (!container || items.length === 0) return;
 
     const initialFor = initialScrollForRef.current;
@@ -186,6 +213,22 @@ export function useTimelineScroll({
       }
     }
 
+    // Rows gone from above the viewport (a refetch that slides the loaded window, a deleted
+    // message): the first visible row keeps its place on screen, or the end stays in view.
+    const present = new Set(items.map((m) => m.id));
+    if (prevIds.some((id) => !present.has(id))) {
+      const offset = virtualizer.scrollOffset ?? container.scrollTop;
+      const removed = heightRemovedAbove(
+        prevIds,
+        present,
+        (id) => virtualizer.itemSizeCache.get(id) ?? ESTIMATED_ROW_HEIGHT[displayDensity],
+        LIST_PADDING_Y,
+        offset,
+      );
+      if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
+      else if (removed) container.scrollTop = offset - removed;
+    }
+
     const last = items[items.length - 1];
     if (last.id !== prevLastId) {
       const isOwnMessage = currentUserId !== undefined && last.authorId === currentUserId;
@@ -193,7 +236,16 @@ export function useTimelineScroll({
         virtualizer.scrollToEnd({ behavior: "smooth" });
       }
     }
-  }, [listKey, items, firstNewIndex, currentUserId, virtualizer, isAtBottomRef]);
+  }, [
+    listKey,
+    items,
+    firstNewIndex,
+    currentUserId,
+    displayDensity,
+    virtualizer,
+    isAtBottomRef,
+    pointerPressRef,
+  ]);
 
   // A list at its end stays at its end when room for the hint bar appears or goes, or when its
   // rows grow (an image arrives), but not while a pointer press is held on it: moving the rows
@@ -212,9 +264,11 @@ export function useTimelineScroll({
     const prev = prevSizeRef.current;
     prevSizeRef.current = { totalSize, firstItemId };
     // A prepended page grows the list above the viewport; the prepend logic keeps its place.
-    if (totalSize <= prev.totalSize || firstItemId !== prev.firstItemId) return;
+    const prepended =
+      firstItemId !== prev.firstItemId && items.some((m) => m.id === prev.firstItemId);
+    if (totalSize <= prev.totalSize || prepended) return;
     if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
-  }, [totalSize, firstItemId, isAtBottomRef, pointerPressRef, virtualizer]);
+  }, [totalSize, firstItemId, items, isAtBottomRef, pointerPressRef, virtualizer]);
 
   // Top sentinel visible -> load the next (older) page. Re-observed when the
   // first row changes, which also covers the per-conversation remount.
