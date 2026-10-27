@@ -13,7 +13,7 @@ use rim_opaque::Key;
 use super::{
     AccountLock, AccountLockError, FlowStart, LoginFinish, RegistrationFinish, Rewrap, Unlocked,
 };
-use crate::key_identity::KeyIdentityState;
+use crate::key_identity::{KeyIdentityError, KeyIdentityState};
 use crate::message_cache::MessageCacheState;
 
 async fn blocking<T, F>(state: &State<'_, AccountLock>, f: F) -> Result<T, AccountLockError>
@@ -27,14 +27,20 @@ where
         .map_err(|e| AccountLockError::Crypto(format!("account lock task failed: {e}")))?
 }
 
-/// What an unlock returns, with the server share it opened, if any.
+/// What an unlock returns, with the server share it opened, if any, and whether its data key
+/// is new.
 trait UnlockOutcome {
     fn share(&self) -> Option<&Key>;
+    fn started_empty(&self) -> bool;
 }
 
 impl UnlockOutcome for Unlocked {
     fn share(&self) -> Option<&Key> {
         self.share.as_ref()
+    }
+
+    fn started_empty(&self) -> bool {
+        self.started_empty
     }
 }
 
@@ -42,14 +48,37 @@ impl UnlockOutcome for Option<Unlocked> {
     fn share(&self) -> Option<&Key> {
         self.as_ref().and_then(|unlocked| unlocked.share.as_ref())
     }
+
+    fn started_empty(&self) -> bool {
+        self.as_ref().is_some_and(|unlocked| unlocked.started_empty)
+    }
 }
 
 /// Seals `principal`'s records under the data key an unlock just held, wrapping the device key
 /// under the server `share` when the unlock saw it. A record that cannot be sealed stays as it
-/// was and is sealed at a later unlock.
-pub(crate) fn seal_after_unlock(keys: &KeyIdentityState, principal: &str, share: Option<&Key>) {
-    if let Err(e) = keys.seal_at_rest(principal, share) {
-        log::warn!("[account_lock] could not seal an account's keys at its unlock: {e}");
+/// was and is sealed at a later unlock. `started_empty` says the data key is new, so keys
+/// sealed under an earlier one are dropped.
+///
+/// # Errors
+/// [`AccountLockError::KeysUnopened`] when the record does not open under the data key and the
+/// unlock did not start empty: the account is locked again and the record stays as it was.
+pub(crate) fn seal_after_unlock(
+    lock: &AccountLock,
+    keys: &KeyIdentityState,
+    principal: &str,
+    share: Option<&Key>,
+    started_empty: bool,
+) -> Result<(), AccountLockError> {
+    match keys.seal_at_rest(principal, share, started_empty) {
+        Ok(()) => Ok(()),
+        Err(KeyIdentityError::Unopened) => {
+            lock.lock_account(principal);
+            Err(AccountLockError::KeysUnopened)
+        }
+        Err(e) => {
+            log::warn!("[account_lock] could not seal an account's keys at its unlock: {e}");
+            Ok(())
+        }
     }
 }
 
@@ -66,8 +95,14 @@ where
 {
     let keys = keys.inner().clone();
     blocking(state, move |s| {
-        let unlocked = f(s)?;
-        seal_after_unlock(&keys, &principal, unlocked.share());
+        let unlocked = f(s.clone())?;
+        seal_after_unlock(
+            &s,
+            &keys,
+            &principal,
+            unlocked.share(),
+            unlocked.started_empty(),
+        )?;
         Ok(unlocked)
     })
     .await

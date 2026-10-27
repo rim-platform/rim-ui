@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { lockVault, VaultLockedError } from "../../../core/accountVault/accountVault";
+import { lockVault, unlockVault, VaultLockedError } from "../../../core/accountVault/accountVault";
 import { readWraps } from "../../../core/accountVault/dkWraps";
 import { unlockTestVault } from "../../../test/accountVault";
 import {
@@ -160,5 +160,33 @@ describe("the browser key store", () => {
     // While another account is unlocked, this one's keys stay locked.
     await unlockTestVault({ endpoint: ENDPOINT, principalId: "rimp1_b" });
     expect((await record(ENDPOINT, "rimp1_a"))?.locked).toBeDefined();
+  });
+
+  it("writes a record that does not open back with its sealed keys unchanged", async () => {
+    const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    await unlockTestVault({ endpoint: ENDPOINT, principalId: "rimp1_a" });
+    await insert(await keyRecord("rimp1_a", { deviceKey: pair.privateKey }));
+    const sealed = ((await storedRecord(ENDPOINT, "rimp1_a")) as Record<string, unknown>).data;
+
+    lockVault();
+    await unlockVault({ endpoint: ENDPOINT, principalId: "rimp1_a" }, new Uint8Array(32).fill(9));
+    await update(ENDPOINT, (cur) => ({ put: cur.map((r) => ({ ...r, username: "renamed" })) }));
+    expect((await storedRecord(ENDPOINT, "rimp1_a")) as Record<string, unknown>).toMatchObject({
+      data: sealed,
+      username: "renamed",
+    });
+
+    const unopened = await record(ENDPOINT, "rimp1_a");
+    expect(unopened?.deviceKey).toBeNull();
+    const key = await deviceKey();
+    await expect(
+      update(ENDPOINT, () => ({ put: [{ ...(unopened as BrowserKeyRecord), deviceKey: key }] })),
+    ).rejects.toBeInstanceOf(VaultLockedError);
+    expect(((await storedRecord(ENDPOINT, "rimp1_a")) as Record<string, unknown>).data).toEqual(
+      sealed,
+    );
   });
 });

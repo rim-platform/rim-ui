@@ -21,6 +21,7 @@ import {
   newPasswordProblem,
   signInFailure,
 } from "../../auth/password";
+import { KeysUnopenedError } from "../../auth/runtime/accountUnlock";
 import { resetPassword } from "../../auth/runtime/passwordChanges";
 import {
   accountIdInKit,
@@ -28,6 +29,7 @@ import {
   forgetDeviceKeys,
   forgetKeysTheServerNeverSaw,
   listDeviceKeyAccounts,
+  NoDeviceKeysError,
   recoverDeviceKeys,
   signInWithPassword,
   SignInCancelled,
@@ -66,12 +68,24 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 
   if (!capabilities.deviceKeys || (!accounts.data?.length && !notice)) return null;
 
-  /** The failures this list shows itself: keys the server never saw, and a revoked device. */
+  /**
+   * The failures this list shows itself: keys no longer on this device, keys the server never
+   * saw, and a revoked device.
+   */
   async function failed(account: LocalKeyAccount, err: unknown): Promise<boolean> {
+    if (err instanceof NoDeviceKeysError) {
+      setOpenId(null);
+      setNotice(
+        `The keys of ${accountLabel(account)} are not in ${here}, so it was taken off this list. Recover the account with its recovery kit, or link ${here} from a device that is signed in.`,
+      );
+      await qc.invalidateQueries({ queryKey: queryKeys.deviceKeyAccounts(endpoint) });
+      return true;
+    }
     if (
       !(err instanceof PasswordWaitError) &&
       !(err instanceof PasswordLockedError) &&
       !(err instanceof SignInCancelled) &&
+      !(err instanceof KeysUnopenedError) &&
       (await forgetKeysTheServerNeverSaw(account).catch(() => false))
     ) {
       setOpenId(null);

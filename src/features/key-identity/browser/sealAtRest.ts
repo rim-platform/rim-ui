@@ -15,7 +15,7 @@ import {
 } from "../../../core/accountVault/crypto";
 import { logger } from "../../../core/logger";
 import { concat } from "./bytes";
-import { changeRecord, holdsUnsealedKeys, isSealedRecord, type BrowserKeyRecord } from "./keyStore";
+import { changeRecord, holdsUnsealedKeys, type BrowserKeyRecord } from "./keyStore";
 import { PKCS8_ED25519_PREFIX } from "./recoveryKit";
 
 const SEED_LEN = 32;
@@ -70,30 +70,43 @@ async function rewrapDeviceSeed(record: BrowserKeyRecord, share: Uint8Array): Pr
 /**
  * Seals the account's key record under the data key the vault now holds. With the server
  * `share` this unlock saw, the device key's wrap is written again, and a device key sealed under
- * an earlier data key comes back from it; one whose wrap does not open stays lost. Nothing
- * happens unless the vault holds the account. A record that cannot be sealed stays as it was and
- * is sealed at a later unlock.
+ * an earlier data key comes back from it; one whose wrap does not open stays lost. Keys sealed
+ * under an earlier data key are dropped only when the unlock started empty; otherwise the record
+ * stays as it was. Nothing happens unless the vault holds the account. A record that cannot be
+ * sealed stays as it was and is sealed at a later unlock.
  *
  * @param share - The server share, 32 bytes, when the unlock followed a login or a signup.
+ * @param startedEmpty - The unlock made a new data key: what was sealed under the earlier one is
+ *   gone for good.
+ * @returns `false` when the record's sealed keys did not open and the unlock did not start empty;
+ *   `true` otherwise, also when there is no record or the write failed.
  */
 export async function sealKeysAtUnlock(
   endpoint: string,
   principalId: string,
   share: Uint8Array | null,
-): Promise<void> {
-  if (!vaultHolds(endpoint, principalId)) return;
+  startedEmpty: boolean,
+): Promise<boolean> {
+  if (!vaultHolds(endpoint, principalId)) return true;
+  let refused = false;
   try {
     await changeRecord(endpoint, principalId, async (record, stored) => {
       const plain = holdsUnsealedKeys(record, stored);
       // Sealed under an earlier data key: what it held did not open.
-      const lost = isSealedRecord(stored) && !record.deviceKey;
+      const unopened = record.unopened !== undefined;
+      if (unopened && !startedEmpty) {
+        refused = true;
+        return undefined;
+      }
       const stale = record.confirmed && record.replaced !== undefined;
       const next = { ...record };
+      if (unopened) delete next.unopened;
       if (stale) delete next.replaced;
       const rewrapped = share ? await rewrapDeviceSeed(next, share) : false;
-      return plain || lost || stale || rewrapped ? next : undefined;
+      return plain || unopened || stale || rewrapped ? next : undefined;
     });
   } catch (err) {
     logger.warn("[RIM:keys] could not seal an account's keys at its unlock:", err);
   }
+  return !refused;
 }

@@ -61,6 +61,10 @@ pub(crate) enum AccountLockError {
     /// The account's data key is not in memory: nothing it seals opens until an unlock.
     #[error("this account is locked on this computer; sign in to unlock it")]
     Locked,
+    /// The account's key record does not open under the data key the unlock opened, which is
+    /// not new: the account is locked again and the record stays as it was.
+    #[error("the keys on this computer for that account do not open with its data key")]
+    KeysUnopened,
     #[error("{0}")]
     Invalid(String),
     #[error("key storage: {0}")]
@@ -76,6 +80,7 @@ impl AccountLockError {
             Self::NoHandle => "NO_HANDLE",
             Self::NeedsRecovery => "NEEDS_RECOVERY",
             Self::Locked => "LOCKED",
+            Self::KeysUnopened => "KEYS_UNOPENED",
             Self::Invalid(_) => "INVALID",
             Self::Vault(_) => "VAULT",
             Self::Crypto(_) => "CRYPTO",

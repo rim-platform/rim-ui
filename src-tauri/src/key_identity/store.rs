@@ -150,8 +150,8 @@ pub(crate) struct KeyRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) replaced: Option<Box<KeyRecord>>,
     /// The fields of [`SealedFields`] sealed under the account's data key, as stored: set on a
-    /// record read while the account is locked, whose sealed fields then read as absent, and
-    /// written back unchanged.
+    /// record read while the account is locked or sealed under another data key, whose sealed
+    /// fields then read as absent, and written back unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) sealed: Option<String>,
     /// base64url of the device key's seed wrapped under the server share's device key wrap key
@@ -161,7 +161,8 @@ pub(crate) struct KeyRecord {
 }
 
 impl KeyRecord {
-    /// Whether the record's sealed fields did not open: the account is locked.
+    /// Whether the record's sealed fields did not open: the account is locked, or they are
+    /// sealed under another data key.
     pub(crate) fn is_locked(&self) -> bool {
         self.sealed.is_some()
     }
@@ -326,9 +327,9 @@ impl<'a> Keys<'a> {
         }
     }
 
-    /// The principal's record as far as it opens: while the account is locked, a sealed
-    /// record's keys read as absent and [`KeyRecord::is_locked`] says so. Enough for the
-    /// record's plain fields.
+    /// The principal's record as far as it opens: while the account is locked, or when the
+    /// record is sealed under another data key, its keys read as absent and
+    /// [`KeyRecord::is_locked`] says so. Enough for the record's plain fields.
     pub(crate) fn device_record(
         &self,
         principal_id: &str,
@@ -350,10 +351,9 @@ impl<'a> Keys<'a> {
                 Ok(opened) => opened,
                 Err(AccountLockError::Locked) => return Ok(Some(record)),
                 Err(e) => {
-                    // Sealed under an earlier data key: the account started empty on this device,
-                    // so its keys here are gone, and the next write drops them.
+                    // Sealed under another data key: the keys read as absent and are written
+                    // back unchanged.
                     log::warn!("[key_identity] the sealed keys of an account do not open: {e}");
-                    record.sealed = None;
                     return Ok(Some(record));
                 }
             };
@@ -404,12 +404,18 @@ impl<'a> Keys<'a> {
     /// vault key alone, and its pending device links likewise. Keys a recovery replaced go
     /// once the server confirmed the record. With the server `share` this unlock saw, the
     /// device key's wrap under it is written again, and a device key sealed under an earlier
-    /// data key comes back from the wrap; one whose wrap does not open stays lost. Nothing
-    /// happens while the account is locked.
+    /// data key comes back from the wrap; one whose wrap does not open stays lost. Keys sealed
+    /// under an earlier data key are dropped only when `started_empty` says the data key is new.
+    /// Nothing happens while the account is locked.
+    ///
+    /// # Errors
+    /// [`KeyIdentityError::Unopened`] when the record does not open under the data key and the
+    /// unlock did not start empty; nothing is written. Storage errors as they come.
     pub(crate) fn seal_record(
         &self,
         principal_id: &str,
         share: Option<&Key>,
+        started_empty: bool,
     ) -> Result<(), KeyIdentityError> {
         if !self.lock.is_unlocked(principal_id) {
             return Ok(());
@@ -418,13 +424,18 @@ impl<'a> Keys<'a> {
         let stored = raw
             .as_deref()
             .and_then(|raw| serde_json::from_str::<KeyRecord>(raw).ok());
-        if let Some(mut record) = self.record(principal_id)? {
+        if let Some(mut record) = self.device_record(principal_id)? {
             let plain = stored
                 .as_ref()
                 .is_some_and(|r| !r.is_locked() && r.has_sealed_fields());
-            // Sealed under an earlier data key: what it held did not open.
-            let lost =
-                stored.as_ref().is_some_and(KeyRecord::is_locked) && record.device_seed.is_empty();
+            // Still sealed with the account unlocked: sealed under an earlier data key.
+            let unopened = record.is_locked();
+            if unopened && !started_empty {
+                return Err(KeyIdentityError::Unopened);
+            }
+            if unopened {
+                record.sealed = None;
+            }
             let stale = record.confirmed && record.replaced.is_some();
             if stale {
                 record.replaced = None;
@@ -433,7 +444,7 @@ impl<'a> Keys<'a> {
                 Some(share) => rewrap_device_seed(&mut record, share)?,
                 None => false,
             };
-            if plain || lost || stale || rewrapped {
+            if plain || unopened || stale || rewrapped {
                 self.put_record(&record)?;
             }
         }
@@ -686,6 +697,36 @@ mod tests {
         assert!(loaded.recovery_entropy.is_none());
         assert_eq!(loaded.kit_confirmed, None);
         assert!(loaded.confirmed);
+    }
+
+    #[test]
+    fn a_record_that_does_not_open_is_written_back_unchanged() {
+        let store = MemorySecretStore::default();
+        let lock = AccountLock::in_memory();
+        let keys = Keys::new(&store, &lock);
+        lock.unlock_for_tests("rimp1_a", [3; 32]);
+        keys.put_record(&record("rimp1_a")).unwrap();
+        let sealed = keys.device_record("rimp1_a").unwrap().unwrap();
+        assert_eq!(sealed.device_name, "Laptop");
+        let stored = |store: &MemorySecretStore| -> serde_json::Value {
+            serde_json::from_str(&store.read(&record_name("rimp1_a")).unwrap().unwrap()).unwrap()
+        };
+        let before = stored(&store)["sealed"].clone();
+        assert!(before.is_string());
+
+        lock.lock_account("rimp1_a");
+        lock.unlock_for_tests("rimp1_a", [4; 32]);
+        let mut unopened = keys.device_record("rimp1_a").unwrap().unwrap();
+        assert!(unopened.is_locked() && unopened.device_seed.is_empty());
+        assert!(matches!(
+            keys.record("rimp1_a"),
+            Err(KeyIdentityError::Locked)
+        ));
+        unopened.device_name = "Renamed".into();
+        keys.put_record(&unopened).unwrap();
+        let after = stored(&store);
+        assert_eq!(after["sealed"], before);
+        assert_eq!(after["deviceName"], "Renamed");
     }
 
     #[test]

@@ -88,6 +88,15 @@ export interface SignupUnlock {
   recoveryEntropy: Uint8Array | null;
 }
 
+/** The account's key record did not open under the data key the unlock opened; nothing changed. */
+export const KEYS_UNOPENED = "KEYS_UNOPENED";
+export class KeysUnopenedError extends Error {
+  constructor() {
+    super("the keys this device keeps for the account do not open with its data key");
+    this.name = KEYS_UNOPENED;
+  }
+}
+
 /** An unlocked account. */
 export interface Unlocked {
   /** The data key is new: what this browser kept for the account before no longer opens. */
@@ -103,14 +112,28 @@ function share32(share: Uint8Array): Uint8Array {
   return share;
 }
 
-/** Holds `dataKey` in the vault, then seals the key record; the data key is wiped after. */
-async function hold(account: VaultAccount, dataKey: Uint8Array, share: Uint8Array | null) {
+/**
+ * Holds `dataKey` in the vault, then seals the key record; the data key is wiped after.
+ *
+ * @param startedEmpty - The data key is new, so keys sealed under an earlier one may be dropped.
+ * @throws KeysUnopenedError when the key record does not open under `dataKey` and it is not new;
+ *   the account is locked again.
+ */
+async function hold(
+  account: VaultAccount,
+  dataKey: Uint8Array,
+  share: Uint8Array | null,
+  startedEmpty: boolean,
+) {
   try {
     await unlockVault(account, dataKey);
   } finally {
     dataKey.fill(0);
   }
-  await sealKeysAtUnlock(account.endpoint, account.principalId, share);
+  if (!(await sealKeysAtUnlock(account.endpoint, account.principalId, share, startedEmpty))) {
+    lockAccount();
+    throw new KeysUnopenedError();
+  }
 }
 
 async function unlockKeyOf(
@@ -130,6 +153,8 @@ async function unlockKeyOf(
  * @throws NeedsRecoveryError when nothing opens, this browser holds a recovery wrap and
  *   `startEmpty` is not set: unlock with the recovery phrase and call again, or call again
  *   with `startEmpty`.
+ * @throws KeysUnopenedError when the key record does not open under the data key it opened and
+ *   that key is not new; nothing changes.
  */
 export async function unlockAfterLogin(input: LoginUnlock): Promise<Unlocked> {
   const account = accountOf(input.endpoint, input.principalId);
@@ -151,7 +176,7 @@ export async function unlockAfterLogin(input: LoginUnlock): Promise<Unlocked> {
       input.rewraps,
       { startEmpty: input.startEmpty, held },
     );
-    await hold(account, opened.dataKey, share);
+    await hold(account, opened.dataKey, share, opened.startedEmpty);
     return { startedEmpty: opened.startedEmpty };
   } finally {
     unlockKey.fill(0);
@@ -176,7 +201,7 @@ export async function unlockAfterSignup(input: SignupUnlock): Promise<Unlocked> 
       unlockKey,
       input.recoveryEntropy,
     );
-    await hold(account, dataKey, share);
+    await hold(account, dataKey, share, true);
     return { startedEmpty: true };
   } finally {
     unlockKey.fill(0);
@@ -190,6 +215,8 @@ export async function unlockAfterSignup(input: SignupUnlock): Promise<Unlocked> 
  * @param entropy - The phrase's 16 bytes.
  * @returns Whether it unlocked: `false` when this browser has no recovery wrap for the account
  *   or the phrase does not open it.
+ * @throws KeysUnopenedError when the key record does not open under the data key; nothing
+ *   changes.
  */
 export async function unlockWithRecovery(
   endpoint: string,
@@ -199,7 +226,7 @@ export async function unlockWithRecovery(
   const account = accountOf(endpoint, principalId);
   const dataKey = await openWithRecovery(account.endpoint, principalId, entropy);
   if (!dataKey) return false;
-  await hold(account, dataKey, null);
+  await hold(account, dataKey, null, false);
   return true;
 }
 
@@ -208,6 +235,8 @@ export async function unlockWithRecovery(
  *
  * @returns Whether it unlocked: `false` when the account is not kept in this browser or the key
  *   does not open it.
+ * @throws KeysUnopenedError when the key record does not open under the data key; nothing
+ *   changes.
  */
 export async function unlockKept(
   endpoint: string,
@@ -217,7 +246,7 @@ export async function unlockKept(
   const account = accountOf(endpoint, principalId);
   const dataKey = await openKept(account.endpoint, principalId, keepKey);
   if (!dataKey) return false;
-  await hold(account, dataKey, null);
+  await hold(account, dataKey, null, false);
   return true;
 }
 
@@ -228,7 +257,12 @@ export async function unlockKept(
  * @returns Whether it unlocked: `false` when the account is not kept on this device.
  */
 export async function unlockKeptOnDesktop(endpoint: string, principalId: string) {
-  const unlocked = await accountUnlockKept(principalId);
+  let unlocked: UnlockedAccount | null;
+  try {
+    unlocked = await accountUnlockKept(principalId);
+  } catch (err) {
+    throw desktopFailure(err);
+  }
   if (!unlocked) return false;
   await unlockVaultWithStoreKey(
     accountOf(endpoint, principalId),
@@ -256,6 +290,13 @@ function desktopCode(err: unknown, code: string): boolean {
   );
 }
 
+/** A desktop unlock's failure as the error the browser's unlock throws for it, if any. */
+function desktopFailure(err: unknown): unknown {
+  if (desktopCode(err, "NEEDS_RECOVERY")) return new NeedsRecoveryError();
+  if (desktopCode(err, KEYS_UNOPENED)) return new KeysUnopenedError();
+  return err;
+}
+
 /**
  * Unlocks the account on the desktop after its password login was accepted, as
  * {@link unlockAfterLogin} does in the browser.
@@ -279,8 +320,7 @@ export async function unlockAfterLoginOnDesktop(
       input.startEmpty ?? false,
     );
   } catch (err) {
-    if (desktopCode(err, "NEEDS_RECOVERY")) throw new NeedsRecoveryError();
-    throw err;
+    throw desktopFailure(err);
   }
   return holdDesktop(input.endpoint, input.principalId, unlocked);
 }
@@ -296,13 +336,18 @@ export async function unlockAfterSignupOnDesktop(
   handle: string,
   input: Omit<SignupUnlock, "exportKey"> & { keep: boolean },
 ): Promise<Unlocked> {
-  const unlocked = await accountUnlockAfterSignup(
-    handle,
-    input.principalId,
-    input.serverShare,
-    input.recoveryEntropy ? toB64(input.recoveryEntropy) : null,
-    input.keep,
-  );
+  let unlocked: UnlockedAccount;
+  try {
+    unlocked = await accountUnlockAfterSignup(
+      handle,
+      input.principalId,
+      input.serverShare,
+      input.recoveryEntropy ? toB64(input.recoveryEntropy) : null,
+      input.keep,
+    );
+  } catch (err) {
+    throw desktopFailure(err);
+  }
   return holdDesktop(input.endpoint, input.principalId, unlocked);
 }
 
@@ -317,7 +362,12 @@ export async function unlockWithRecoveryOnDesktop(
   principalId: string,
   entropy: Uint8Array,
 ): Promise<boolean> {
-  const unlocked = await accountUnlockWithRecovery(principalId, toB64(entropy));
+  let unlocked: UnlockedAccount | null;
+  try {
+    unlocked = await accountUnlockWithRecovery(principalId, toB64(entropy));
+  } catch (err) {
+    throw desktopFailure(err);
+  }
   if (!unlocked) return false;
   await holdDesktop(endpoint, principalId, unlocked);
   return true;
