@@ -51,7 +51,10 @@ export function useLeaveWorkspaceMutation() {
     onSuccess: async (_, { serverId }) => {
       const remote = hostOf(serverId);
       leaveWorkspace(qc, serverId);
-      if (remote) await forgetSpace(serverId);
+      if (!remote) return;
+      // The host's MemberLeft names the account by the host's id, so it never clears the mark.
+      forgetDeparture(serverId);
+      await forgetSpace(serverId);
     },
   });
 }
