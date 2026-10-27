@@ -11,6 +11,7 @@ import { logger } from "../logger";
 import { toast } from "../../shared/toast";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { WorkspaceEvent } from "./types";
+import type { Pipeline } from "../../features/pipelines/api/usePipelines";
 import type { MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
@@ -532,11 +533,20 @@ export function applyWorkspaceEvent(
       break;
 
     case "PipelineFired": {
+      // The server runs at most 10 of a pipeline's actions per firing.
+      const pipeline = qc
+        .getQueryData<Pipeline[]>(queryKeys.pipelines(workspaceId))
+        ?.find((p) => p.id === event.pipeline_id);
+      const total = pipeline ? Math.min(pipeline.actions.length, 10) : undefined;
+      const ran = event.actions_executed;
       // Refresh pipeline list so lastFiredAt updates in the UI
       qc.invalidateQueries({ queryKey: queryKeys.pipelines(workspaceId) });
-      toast.success(`Pipeline "${event.pipeline_name}" fired`, {
-        description: `${event.actions_executed} action${event.actions_executed !== 1 ? "s" : ""} executed (trigger: ${event.trigger_event})`,
-      });
+      const description =
+        total !== undefined
+          ? `${ran} of ${total} action${total !== 1 ? "s" : ""} ran (trigger: ${event.trigger_event})`
+          : `${ran} action${ran !== 1 ? "s" : ""} ran (trigger: ${event.trigger_event})`;
+      const show = total !== undefined && ran < total ? toast.warning : toast.success;
+      show(`Pipeline "${event.pipeline_name}" fired`, { description });
       eventBus.emit<PipelineFiredEvent>(BUS_EVENTS.PIPELINE_FIRED, {
         workspaceId,
         pipelineId: event.pipeline_id,

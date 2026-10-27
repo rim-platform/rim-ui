@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
@@ -178,8 +178,31 @@ describe("MacroSettings running a macro", () => {
 
     await clickRun();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Macro failed: needs a proof"));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Macro "Cleanup" failed', {
+        description: "needs a proof",
+      }),
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the server's message under a failed macro", async () => {
+    serve(() => ({
+      executeMacro: {
+        status: "ERROR",
+        message: "Step 1 (Delete Message) failed: message not found",
+      },
+    }));
+    renderSettings();
+
+    await clickRun();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Macro "Cleanup" failed', {
+        description: "Step 1 (Delete Message) failed: message not found",
+      }),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
 
@@ -240,6 +263,7 @@ describe("MacroSettings step picker", () => {
 
   beforeEach(() => {
     requestMock.mockReset();
+    vi.mocked(toast.error).mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     routeRequests(requestMock, {
       "query MyMacros": () => ({ myMacros: [macro] }),
@@ -250,8 +274,8 @@ describe("MacroSettings step picker", () => {
   async function openEditor() {
     renderSettings();
     fireEvent.click(await screen.findByRole("button", { name: /new macro/i }));
-    // The registry loads after the editor opens.
-    await waitFor(() => expect(callsTo(requestMock, "query Commands")).toHaveLength(1));
+    // The palette's and the keybind picker's registries load after the editor opens.
+    await waitFor(() => expect(callsTo(requestMock, "query Commands")).toHaveLength(2));
   }
 
   it("offers server commands as steps and leaves out desktop-local ones", async () => {
@@ -271,5 +295,69 @@ describe("MacroSettings step picker", () => {
     expect(
       await screen.findByText("This command only runs in the app, so it fails as a macro step."),
     ).toBeInTheDocument();
+  });
+
+  it("marks a step typed as a title as an unknown command once the field is left", async () => {
+    await openEditor();
+    const field = screen.getByPlaceholderText("Search commands...");
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "Post Message" } });
+    expect(screen.queryByText("Unknown command: Post Message")).not.toBeInTheDocument();
+
+    fireEvent.blur(field);
+
+    expect(await screen.findByText("Unknown command: Post Message")).toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("does not save a macro with an unknown step", async () => {
+    await openEditor();
+    fireEvent.change(screen.getByPlaceholderText("My macro"), { target: { value: "Standup" } });
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
+      target: { value: "Post Message" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Fix the steps marked in red before saving."),
+    );
+    expect(callsTo(requestMock, "mutation CreateMacro")).toHaveLength(0);
+  });
+
+  it("marks an unknown step of a saved macro when the editor opens", async () => {
+    routeRequests(requestMock, {
+      "query MyMacros": () => ({
+        myMacros: [{ ...macro, steps: [{ commandId: "Toggle Sidebar", args: null }] }],
+      }),
+      "query Commands": () => ({ commands: [deleteCommand, openSettings] }),
+    });
+    renderSettings();
+    fireEvent.click(await screen.findByTitle("Edit macro"));
+
+    expect(await screen.findByText("Unknown command: Toggle Sidebar")).toBeInTheDocument();
+  });
+});
+
+describe("MacroSettings Build with AI", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    serve(() => ({}));
+  });
+
+  afterEach(() => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it("offers Build with AI only in the desktop app", async () => {
+    renderSettings();
+    expect(await screen.findByText("Cleanup")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /build with ai/i })).not.toBeInTheDocument();
+  });
+
+  it("offers Build with AI in the desktop app", async () => {
+    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    renderSettings();
+    expect(await screen.findByRole("button", { name: /build with ai/i })).toBeInTheDocument();
   });
 });

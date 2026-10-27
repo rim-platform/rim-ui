@@ -15,6 +15,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { toast } from "../../../shared/toast";
@@ -184,6 +185,7 @@ export function ComposerInput({
         const query = slashPartial.slice(1).toLowerCase(); // strip leading /
         if (allCommands) {
           const filtered = allCommands
+            .filter((cmd) => commandOfferedHere(cmd.id))
             .filter((cmd) => {
               const titleMatch = cmd.title.toLowerCase().includes(query);
               const idMatch = cmd.id.toLowerCase().includes(query);

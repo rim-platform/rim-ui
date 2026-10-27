@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../agent/state/useAgentStore", () => ({
   useAgentStore: {
@@ -69,6 +69,14 @@ describe("slashCommands (extra coverage)", () => {
   });
 
   describe("getSlashCommandSuggestions", () => {
+    beforeEach(() => {
+      (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    });
+
+    afterEach(() => {
+      delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    });
+
     it("returns all commands for '/' prefix", () => {
       const results = getSlashCommandSuggestions("/");
       expect(results.length).toBe(SLASH_COMMANDS.length);
@@ -216,7 +224,9 @@ describe("slashCommands (extra coverage)", () => {
       macroHandler("broken-macro");
 
       await vi.waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("Macro failed: Step 2 failed");
+        expect(mockToast.error).toHaveBeenCalledWith('Macro "broken-macro" failed', {
+          description: "Step 2 failed",
+        });
       });
     });
 

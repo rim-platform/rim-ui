@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from "react";
 
 import { cn } from "../../../shared/ui/cn";
+import { withClientLabel } from "../runtime/localCommands";
 import type { CommandDefinition } from "../types";
 
 const MAX_SUGGESTIONS = 12;
@@ -11,6 +12,8 @@ interface CommandIdInputProps {
   commands: CommandDefinition[] | undefined;
   placeholder?: string;
   className?: string;
+  /** The error shown under the field once it is left, such as an unknown command id. */
+  error?: string | null;
 }
 
 /**
@@ -23,8 +26,10 @@ export function CommandIdInput({
   commands,
   placeholder = "Search commands...",
   className,
+  error,
 }: CommandIdInputProps) {
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const selectingRef = useRef(false);
 
@@ -40,6 +45,7 @@ export function CommandIdInput({
   }, [commands, value]);
 
   const showList = open && filtered.length > 0;
+  const shownError = focused ? null : error;
 
   return (
     <div className="relative">
@@ -51,11 +57,16 @@ export function CommandIdInput({
           onChange(e.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setFocused(true);
+          setOpen(true);
+        }}
         onBlur={() => {
+          setFocused(false);
           if (!selectingRef.current) setOpen(false);
         }}
         placeholder={placeholder}
+        aria-invalid={shownError ? "true" : undefined}
         className={
           className ??
           "w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text outline-none focus:border-rim-accent"
@@ -83,7 +94,7 @@ export function CommandIdInput({
                   : "text-rim-text hover:bg-rim-void/50",
               )}
             >
-              <span className="flex-1 truncate font-medium">{cmd.title}</span>
+              <span className="flex-1 truncate font-medium">{withClientLabel(cmd).title}</span>
               <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">
                 {cmd.category}
               </span>
@@ -92,6 +103,7 @@ export function CommandIdInput({
           ))}
         </div>
       )}
+      {shownError && <p className="mt-1 text-xs text-rim-danger">{shownError}</p>}
     </div>
   );
 }

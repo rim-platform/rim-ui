@@ -40,6 +40,7 @@ import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
@@ -103,6 +104,7 @@ export function CommandPalette() {
     const base =
       commands
         ?.filter((cmd) => cmd.visibleInPalette && runsFromPalette(cmd, argumentContext))
+        .filter((cmd) => commandOfferedHere(cmd.id))
         .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
     const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));

@@ -12,7 +12,11 @@ import {
 import type { Pipeline, CreatePipelineInput, UpdatePipelineInput } from "../api/usePipelines";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
-import { runsOnServer, skippedUnattended } from "../../commands/runtime/serverRunnable";
+import {
+  runsOnServer,
+  skippedUnattended,
+  unknownCommandError,
+} from "../../commands/runtime/serverRunnable";
 import type { CommandDefinition } from "../../commands/types";
 import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
@@ -108,6 +112,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
   });
 
   const { data: allCommands } = useCommands("PALETTE");
+  const { data: pickerCommands } = useCommands("KEYBIND_PICKER");
   const actionCommands = useMemo(
     () => allCommands?.filter((cmd) => runsOnServer(cmd) && !skippedUnattended(cmd)),
     [allCommands],
@@ -157,6 +162,10 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
     const validActions = actions.filter((a) => a.commandId.trim() !== "");
     if (validActions.length === 0) {
       toast.error("Add at least one action with a command");
+      return;
+    }
+    if (validActions.some((a) => unknownCommandError(a.commandId, allCommands, pickerCommands))) {
+      toast.error("Fix the actions marked in red before saving.");
       return;
     }
 
@@ -232,6 +241,8 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
     cooldownSecs,
     conditions,
     actions,
+    allCommands,
+    pickerCommands,
     initial,
     serverId,
     createPipeline,
@@ -407,6 +418,11 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
                     value={action.commandId}
                     onChange={(v) => updateAction(index, "commandId", v)}
                     commands={actionCommands}
+                    error={
+                      warning
+                        ? null
+                        : unknownCommandError(action.commandId, allCommands, pickerCommands)
+                    }
                   />
                   {warning && <p className="text-xs text-rim-danger">{warning}</p>}
                   <input

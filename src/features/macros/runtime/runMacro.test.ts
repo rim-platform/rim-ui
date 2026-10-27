@@ -129,3 +129,18 @@ describe("runMacro context", () => {
     expect(toast.success).toHaveBeenCalledWith('Macro "Triage" executed');
   });
 });
+
+describe("runMacro failure", () => {
+  it("names the macro and shows the server's reason under it", async () => {
+    requestMock.mockResolvedValue({
+      executeMacro: { status: "ERROR", message: "macro `Triage` failed on a step" },
+    });
+
+    await runMacro(macro, "ws-1", undefined);
+
+    expect(toast.error).toHaveBeenCalledWith('Macro "Triage" failed', {
+      description: "macro `Triage` failed on a step",
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+});

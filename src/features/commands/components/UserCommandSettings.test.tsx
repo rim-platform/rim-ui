@@ -19,6 +19,7 @@ vi.mock("../api/useUserCommands", () => ({
   useUserCommandSteps: vi.fn(),
 }));
 
+import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { useCommands } from "../api/useCommands";
 import {
@@ -261,5 +262,108 @@ describe("UserCommandSettings list", () => {
 
     expect(screen.getByText("User command already exists.")).toBeInTheDocument();
     expect(screen.queryByText(/serialized response/)).not.toBeInTheDocument();
+  });
+});
+
+describe("UserCommandSettings creating a command", () => {
+  const postMessage = makeCommand({
+    id: "chat.post_message",
+    title: "Post Message",
+    arguments: [{ name: "text", argumentType: CommandArgumentType.STRING, required: true }],
+  });
+  const markAsRead = makeCommand({
+    id: "chat.mark_as_read",
+    title: "Mark as Read",
+    arguments: [
+      { name: "server_id", argumentType: CommandArgumentType.WORKSPACE_ID, required: true },
+      {
+        name: "conversation_id",
+        argumentType: CommandArgumentType.CONVERSATION_ID,
+        required: true,
+      },
+    ],
+  });
+  const createGroup = makeCommand({
+    id: "chat.create_group",
+    title: "Create Group",
+    arguments: [{ name: "name", argumentType: CommandArgumentType.STRING, required: false }],
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useCommands).mockReturnValue({
+      data: [postMessage, markAsRead, createGroup],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+    vi.mocked(useUserCommandSteps).mockReturnValue({
+      data: [],
+    } as unknown as ReturnType<typeof useUserCommandSteps>);
+    answerUserCommand({ data: undefined, isError: false });
+  });
+
+  /** Opens the New command form. */
+  function openCreate() {
+    render(<UserCommandSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "New command" }));
+  }
+
+  /** The command titles the first step's picker offers. */
+  function stepOptions(): string[] {
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    const picker = screen.getByRole("combobox", { name: "Step 1 command" });
+    return within(picker)
+      .getAllByRole("option")
+      .map((option) => option.textContent ?? "")
+      .filter((title) => title !== "Select...");
+  }
+
+  it("refuses an id with spaces or capitals", () => {
+    openCreate();
+    const field = screen.getByPlaceholderText("catch_up");
+    fireEvent.change(field, { target: { value: "Bad ID!" } });
+    fireEvent.change(screen.getByPlaceholderText("Catch up"), { target: { value: "Bad" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Step 1 command" }), {
+      target: { value: "chat.mark_as_read" },
+    });
+
+    expect(
+      screen.getByText("Use lowercase letters, numbers, dots, dashes or underscores."),
+    ).toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+  });
+
+  it("accepts lowercase letters, digits, dots, dashes and underscores", () => {
+    openCreate();
+    fireEvent.change(screen.getByPlaceholderText("catch_up"), {
+      target: { value: "catch_up-2.v1" },
+    });
+
+    expect(screen.queryByText(/Use lowercase letters/)).not.toBeInTheDocument();
+  });
+
+  it("leaves commands that need arguments out of the step picker", () => {
+    openCreate();
+    const options = stepOptions();
+
+    expect(options).toContain("Mark as Read");
+    expect(options).not.toContain("Post Message");
+  });
+
+  it("names chat.create_group as New message", () => {
+    openCreate();
+    const options = stepOptions();
+
+    expect(options).toContain("New message");
+    expect(options).not.toContain("Create Group");
+  });
+
+  it("uses command wording in the placeholders", () => {
+    openCreate();
+
+    expect(screen.getByPlaceholderText("catch_up")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Catch up")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("What this command does...")).toBeInTheDocument();
   });
 });

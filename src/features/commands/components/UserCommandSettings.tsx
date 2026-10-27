@@ -12,7 +12,18 @@ import {
   useUserCommandSteps,
   type SavedUserCommand,
 } from "../api/useUserCommands";
+import { serverRunsWithContext, type ArgumentContext } from "../runtime/commandArguments";
+import { withClientLabel } from "../runtime/localCommands";
 import type { CommandDefinition, UserCommandStepInput } from "../types";
+
+/** The characters a user command id may use after `user.`. */
+const USER_COMMAND_KEY_PATTERN = /^[a-z0-9._-]+$/;
+
+/**
+ * The context a user command's steps run in: the palette's, with a workspace and, for a
+ * command run from a conversation, that conversation. Only its presence matters here.
+ */
+const STEP_CONTEXT: ArgumentContext = { workspaceId: "open", conversationId: "open" };
 
 /**
  * The steps of a user command being created or edited: a command picker per step, with
@@ -242,7 +253,13 @@ export function UserCommandSettings() {
   const savedQuery = useUserCommand(editingCommandId);
 
   const userCommands = commands?.filter((cmd) => cmd.sourceKind === "USER") ?? [];
-  const availableCommands = commands?.filter((cmd) => cmd.executionTarget === "BACKEND") ?? [];
+  const availableCommands =
+    commands?.filter((cmd) => serverRunsWithContext(cmd, STEP_CONTEXT)).map(withClientLabel) ?? [];
+  const key = newId.replace(/^user\./, "");
+  const idError =
+    key && !USER_COMMAND_KEY_PATTERN.test(key)
+      ? "Use lowercase letters, numbers, dots, dashes or underscores."
+      : null;
   const chosenSteps = steps.filter((s) => s.commandId);
   const stepCounts = new Map(stepSummaries?.map((c) => [c.id, c.steps.length]));
 
@@ -254,7 +271,7 @@ export function UserCommandSettings() {
   }
 
   function handleCreate() {
-    if (!newId || !newTitle || chosenSteps.length === 0) return;
+    if (!newId || !newTitle || chosenSteps.length === 0 || idError) return;
     const commandId = newId.startsWith("user.") ? newId : `user.${newId}`;
     createMutation.mutate(
       {
@@ -304,12 +321,14 @@ export function UserCommandSettings() {
               <span className="text-[11px] text-rim-text-muted mr-1">user.</span>
               <input
                 type="text"
-                value={newId.replace(/^user\./, "")}
+                value={key}
                 onChange={(e) => setNewId(e.target.value)}
-                placeholder="my_macro"
+                placeholder="catch_up"
+                aria-invalid={idError ? "true" : undefined}
                 className="flex-1 rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
               />
             </div>
+            {idError && <p className="text-[11px] text-rim-danger">{idError}</p>}
           </div>
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Title</label>
@@ -317,7 +336,7 @@ export function UserCommandSettings() {
               type="text"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="My Macro"
+              placeholder="Catch up"
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
             />
           </div>
@@ -327,7 +346,7 @@ export function UserCommandSettings() {
               type="text"
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="What this macro does..."
+              placeholder="What this command does..."
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
             />
           </div>
@@ -337,7 +356,13 @@ export function UserCommandSettings() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleCreate}
-              disabled={!newId || !newTitle || chosenSteps.length === 0 || createMutation.isPending}
+              disabled={
+                !newId ||
+                !newTitle ||
+                chosenSteps.length === 0 ||
+                Boolean(idError) ||
+                createMutation.isPending
+              }
               className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Creating..." : "Create"}

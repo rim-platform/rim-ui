@@ -19,6 +19,7 @@ import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import type { ServerFeatureView } from "../../updater/hooks/useServerFeature";
 import { AI_COMMANDS_OFF_MESSAGE } from "../aiCommandsOff";
+import { AGENT_DESKTOP_ONLY_MESSAGE, agentAvailable } from "../agentAvailability";
 
 // Register tools once per workspace (hardcoded builtins + backend AI surface, the backend
 // winning a name clash). The backend AI surface is per workspace (feature-gated commands
@@ -84,6 +85,7 @@ function toAiMessages(messages: AgentMessage[]): AiMessage[] {
 }
 
 export function AgentOverlay() {
+  const desktop = agentAvailable();
   const isOpen = useAgentStore((s) => s.isOpen);
   const status = useAgentStore((s) => s.status);
   const toolActivity = useAgentStore((s) => s.toolActivity);
@@ -113,7 +115,7 @@ export function AgentOverlay() {
 
   // Focus input on open + check disclaimer
   useEffect(() => {
-    if (isOpen && agentOn) {
+    if (isOpen && agentOn && desktop) {
       ensureToolsRegistered();
 
       if (!disclaimerChecked) {
@@ -125,7 +127,7 @@ export function AgentOverlay() {
 
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [isOpen, disclaimerChecked, agentOn]);
+  }, [isOpen, disclaimerChecked, agentOn, desktop]);
 
   // Global Escape handler
   useEffect(() => {
@@ -249,6 +251,8 @@ export function AgentOverlay() {
   }, [startNewConversation]);
 
   if (!isOpen) return null;
+
+  if (!desktop) return <AgentDesktopOnly onClose={close} />;
 
   if (!agentOn) return <AgentOff view={aiCommands} onClose={close} />;
 
@@ -421,6 +425,17 @@ function AgentOff({ view, onClose }: { view: ServerFeatureView; onClose: () => v
   return (
     <Dialog open onClose={onClose} title="RIM Agent">
       <FeatureOffNotice feature="ai_commands" view={view} message={AI_COMMANDS_OFF_MESSAGE} />
+    </Dialog>
+  );
+}
+
+/** The agent's place in an app without the agent: says where it runs, with no error. */
+function AgentDesktopOnly({ onClose }: { onClose: () => void }) {
+  return (
+    <Dialog open onClose={onClose} title="RIM Agent">
+      <p role="status" className="text-sm text-rim-text-muted">
+        {AGENT_DESKTOP_ONLY_MESSAGE}
+      </p>
     </Dialog>
   );
 }

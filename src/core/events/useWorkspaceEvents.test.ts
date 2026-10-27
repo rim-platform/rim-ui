@@ -80,7 +80,7 @@ import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS, type TypingStartedEvent, type TypingStoppedEvent } from "./busEvents";
-import { useWorkspaceEvents } from "./useWorkspaceEvents";
+import { applyWorkspaceEvent, useWorkspaceEvents } from "./useWorkspaceEvents";
 import { JoinRequestStatus } from "../graphql/generated/schema-types";
 import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
 import { DIRECT_SPACE_ID } from "../../test/directSpace";
@@ -844,5 +844,64 @@ describe("join request events", () => {
           JSON.stringify({ queryKey: queryKeys.publicJoinLink("ws-acme") }),
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("pipeline firings", () => {
+  const fired = (actionsExecuted: number): WorkspaceEvent => ({
+    type: "PipelineFired",
+    workspace_id: "ws-1",
+    pipeline_id: "p-1",
+    pipeline_name: "Deploy failed",
+    trigger_event: "NewMessage",
+    actions_executed: actionsExecuted,
+  });
+
+  /** A query client holding pipeline p-1 of ws-1 with `actionCount` actions. */
+  function withPipeline(actionCount: number): QueryClient {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.pipelines("ws-1"), [
+      {
+        id: "p-1",
+        name: "Deploy failed",
+        actions: Array.from({ length: actionCount }, () => ({
+          actionType: "COMMAND",
+          commandId: "chat.search_messages",
+          args: null,
+        })),
+      },
+    ]);
+    return qc;
+  }
+
+  beforeEach(() => {
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+  });
+
+  it("says how many of the pipeline's actions ran, as a warning when some did not", () => {
+    applyWorkspaceEvent(fired(1), withPipeline(2), "ws-1");
+
+    expect(toast.warning).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
+      description: "1 of 2 actions ran (trigger: NewMessage)",
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("is a success when every action ran", () => {
+    applyWorkspaceEvent(fired(2), withPipeline(2), "ws-1");
+
+    expect(toast.success).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
+      description: "2 of 2 actions ran (trigger: NewMessage)",
+    });
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it("counts only what ran when the pipeline is not cached", () => {
+    applyWorkspaceEvent(fired(1), new QueryClient(), "ws-1");
+
+    expect(toast.success).toHaveBeenCalledWith('Pipeline "Deploy failed" fired', {
+      description: "1 action ran (trigger: NewMessage)",
+    });
   });
 });
