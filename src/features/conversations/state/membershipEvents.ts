@@ -1,12 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { invalidateConversationQueries } from "../api/useChannelMembership";
 import { findCachedConversation } from "../api/useConversation";
-import type { ConversationSummaryPage } from "../types";
+import type { ConversationSummary, ConversationSummaryPage } from "../types";
 import { conversationLabel } from "../utils";
 import { isLeaving } from "./pendingLeaves";
 import { useMembersPanelStore } from "./useMembersPanelStore";
@@ -27,6 +28,23 @@ function dropFromList(qc: QueryClient, key: readonly unknown[], conversationId: 
   qc.setQueryData<ConversationSummaryPage>(key, (old) =>
     old ? { ...old, items: old.items.filter((c) => c.id !== conversationId) } : old,
   );
+}
+
+/**
+ * Someone joined the workspace: the server added them to every public channel, so refresh the
+ * channel lists and each public channel's own query, whose member count and ids changed.
+ */
+export function handleWorkspaceMemberJoined(qc: QueryClient, workspaceId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.channels(workspaceId) });
+  qc.invalidateQueries({
+    queryKey: ["conversation", workspaceId],
+    predicate: (query) => {
+      const conversation = query.state.data as ConversationSummary | undefined;
+      return (
+        conversation?.conversationType === ConversationTypeEnum.CHANNEL && !conversation.isPrivate
+      );
+    },
+  });
 }
 
 /** Someone (possibly the viewer) joined or was invited: refresh the lists and the members. */

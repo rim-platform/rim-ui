@@ -75,7 +75,7 @@ import { makeConversation } from "../../features/conversations/__fixtures__/conv
 import type { ConversationSummaryPage } from "../../features/conversations/types";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
-import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
+import { ConversationTypeEnum, ServerMemberRoleGql } from "../graphql/generated/schema-types";
 import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { eventBus } from "./eventBus";
@@ -377,6 +377,31 @@ describe("useWorkspaceEvents conversation membership and archive", () => {
     });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.conversation("ws-1", "c-general") });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.channels("ws-1") });
+  });
+
+  it("MemberJoined refetches the channel lists and the public channels, not a private channel or a DM", () => {
+    const { qc } = setup();
+    const direct = makeConversation({
+      id: "c-dm",
+      conversationType: ConversationTypeEnum.DIRECT,
+      isPrivate: true,
+    });
+    qc.setQueryData(queryKeys.conversation("ws-1", "c-general"), general);
+    qc.setQueryData(queryKeys.conversation("ws-1", "c-secret"), secret);
+    qc.setQueryData(queryKeys.conversation("ws-1", "c-dm"), direct);
+
+    emitWorkspaceEvent({
+      type: "MemberJoined",
+      workspace_id: "ws-1",
+      user_id: "u-new",
+      username: "new",
+    });
+
+    const invalidated = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
+    expect(invalidated(queryKeys.joinedChannels("ws-1"))).toBe(true);
+    expect(invalidated(queryKeys.conversation("ws-1", "c-general"))).toBe(true);
+    expect(invalidated(queryKeys.conversation("ws-1", "c-secret"))).toBe(false);
+    expect(invalidated(queryKeys.conversation("ws-1", "c-dm"))).toBe(false);
   });
 });
 

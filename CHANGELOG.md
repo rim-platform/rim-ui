@@ -200,6 +200,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   workspace-scoped state.
 - The command palette offers **Unarchive Channel** only in an archived channel and **Archive
   Channel** only in one that is not, instead of reporting success for a change that did nothing.
+- When someone joins the workspace, the member count and members of its public channels update right
+  away instead of after a reload.
 
 ## [0.0.5] - 2026-10-26
 
