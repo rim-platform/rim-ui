@@ -120,6 +120,29 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     expect(screen.getByRole("button", { name: "Conversation menu" })).toBeInTheDocument();
   });
 
+  it("names the search after a group without a channel #", async () => {
+    serveConversation(
+      makeConversation({
+        title: "Bob and Carol",
+        conversationType: ConversationTypeEnum.GROUP,
+        isPrivate: true,
+      }),
+    );
+    renderHeader();
+
+    expect(
+      await screen.findByRole("button", { name: "Search in Bob and Carol" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Search in #/ })).not.toBeInTheDocument();
+  });
+
+  it("names the search after a channel with a #", async () => {
+    serveConversation(makeConversation({ title: "general" }));
+    renderHeader();
+
+    expect(await screen.findByRole("button", { name: "Search in #general" })).toBeInTheDocument();
+  });
+
   it("says 1 member for a channel of one, in its label too", async () => {
     serveConversation(makeConversation({ title: "solo", memberCount: 1 }));
     renderHeader();

@@ -225,6 +225,18 @@ describe("SearchOverlay", () => {
     });
   });
 
+  it("says This conversation for a group's scope", () => {
+    useSearchOverlayStore.setState({
+      query: "",
+      scope: { kind: "conversation", conversationId: "conv-group" },
+    });
+    render(<SearchOverlay />);
+
+    expect(screen.getByText("This conversation")).toBeInTheDocument();
+    expect(screen.getByText("Search messages in this conversation")).toBeInTheDocument();
+    expect(screen.queryByText(/Current channel/)).not.toBeInTheDocument();
+  });
+
   describe("keyboard navigation over the flat list", () => {
     it("ArrowDown/ArrowUp move the selection and Enter jumps to the selected message", () => {
       const setSelectedConversationId = vi.fn();

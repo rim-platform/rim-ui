@@ -340,12 +340,10 @@ export function SearchOverlay() {
   const showEmpty = !hasQuery;
 
   // Scope label for display
+  const scopeName =
+    scope.kind === "conversation" ? channelNameMap.get(scope.conversationId) : undefined;
   const scopeLabel =
-    scope.kind === "conversation"
-      ? channelNameMap.get(scope.conversationId)
-        ? `# ${channelNameMap.get(scope.conversationId)}`
-        : "Current channel"
-      : "All";
+    scope.kind === "conversation" ? (scopeName ? `# ${scopeName}` : "This conversation") : "All";
 
   return (
     <div
@@ -467,7 +465,9 @@ export function SearchOverlay() {
               <Search className="mb-2 h-6 w-6 text-rim-text-faint" />
               <p className="text-sm text-rim-text-muted">
                 {scope.kind === "conversation"
-                  ? `Search messages in ${scopeLabel}`
+                  ? scopeName
+                    ? `Search messages in # ${scopeName}`
+                    : "Search messages in this conversation"
                   : "Search messages across your workspace"}
               </p>
             </div>
