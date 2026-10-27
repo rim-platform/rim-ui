@@ -17,8 +17,8 @@
  * seals it. While the account is locked, a sealed record reads with its keys absent and is
  * written back with its sealed field unchanged. A record that does not open under the unlocked
  * account's data key reads with its keys absent too and is written back unchanged. A pending
- * device link is sealed whole, but for
- * what finds it, and is written only while its account is unlocked.
+ * device link is sealed whole, but for what finds it, and is written only while its account is
+ * unlocked.
  */
 
 import {
