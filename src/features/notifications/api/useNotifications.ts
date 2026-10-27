@@ -10,6 +10,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { blockedConversationIdsIn } from "../../relay/state/useBlockedConversations";
 import { storedText } from "./storedText";
 import {
   PageDir,
@@ -81,6 +82,16 @@ const MY_NOTIFICATIONS = gql`
 const MY_UNREAD_NOTIFICATION_COUNT = gql`
   query MyUnreadNotificationCount($serverId: ID!) {
     myUnreadNotificationCount(serverId: $serverId)
+  }
+`;
+
+const UNREAD_NOTIFICATION_CONVERSATIONS = gql`
+  query UnreadNotificationConversations($serverId: ID!) {
+    myNotifications(serverId: $serverId, unreadOnly: true, limit: 100) {
+      items {
+        conversationId
+      }
+    }
   }
 `;
 
@@ -172,7 +183,24 @@ export function useNotifications(serverId: string | null | undefined, unreadOnly
   });
 }
 
-/** Unread notifications of the viewer in the workspace: the side-rail bell badge. */
+/**
+ * `count` less the unread entries, among the newest 100, of `serverId`'s conversations hidden
+ * because someone blocked started them.
+ */
+async function withoutBlockedEntries(serverId: string, count: number): Promise<number> {
+  const hidden = blockedConversationIdsIn(serverId);
+  if (count === 0 || hidden.size === 0) return count;
+  const res = await graphqlClient.request<{
+    myNotifications: { items: { conversationId: string }[] };
+  }>(UNREAD_NOTIFICATION_CONVERSATIONS, { serverId });
+  const n = res.myNotifications.items.filter((item) => hidden.has(item.conversationId)).length;
+  return Math.max(0, count - n);
+}
+
+/**
+ * Unread notifications of the viewer in the workspace: the side-rail bell badge, without the
+ * entries of conversations hidden because someone blocked started them.
+ */
 export function useUnreadNotificationCount(serverId: string | null | undefined) {
   const ws = serverId ?? undefined;
   return useQuery({
@@ -185,7 +213,7 @@ export function useUnreadNotificationCount(serverId: string | null | undefined) 
         MY_UNREAD_NOTIFICATION_COUNT,
         { serverId: ws! },
       );
-      return res.myUnreadNotificationCount;
+      return withoutBlockedEntries(ws!, res.myUnreadNotificationCount);
     },
   });
 }

@@ -225,7 +225,7 @@ outside. Each request shows the sender's verified name and fingerprint, with **A
 first**, **Ignore**, **Block** and **Report**. **Block** asks first; the person is not told.
 Settings > Direct messages lists the people you blocked under **Blocked people**, each with
 **Unblock**. Unblocking lets them reach you again: a conversation you blocked them from comes back
-as a new request when they next write in it. **Read first** opens the conversation without deciding:
+as a new request when they next write in it. While someone is blocked, the conversations they started, DMs and groups on any server, are hidden and raise no notification; unblocking brings them back with everything written in them. **Read first** opens the conversation without deciding:
 in place of the composer it says who wants to message you, with **Accept**, **Ignore**, **Block**
 and **Report**. You reply once you accept; until then the sender sees nothing from you, not even
 that you read it. The sender sees "Sent as a request; \<name\> has not accepted yet." above their

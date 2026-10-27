@@ -27,6 +27,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
 import { useInboxConversations } from "../../conversations/api/useInboxConversations";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
+import { useBlockedConversationIds } from "../../relay/state/useBlockedConversations";
 import { SearchSnippet } from "./SearchSnippet";
 import { SearchSuggestionsPopover } from "./SearchSuggestionsPopover";
 import {
@@ -91,6 +92,7 @@ export function SearchOverlay() {
   );
   // The conversations the user can see now: titles for local hits, `in:#name` for local
   // search, and the visibility check before a local hit joins the server's results.
+  const blocked = useBlockedConversationIds(workspaceId);
   const directory = useMemo(
     () => buildConversationDirectory([channelsData?.items, joinedData?.items, inboxData?.items]),
     [channelsData, joinedData, inboxData],
@@ -112,8 +114,11 @@ export function SearchOverlay() {
   );
 
   const flatResults = useMemo(
-    () => mergeSearchResults(data?.pages ?? [], hasNextPage, localHits ?? [], directory),
-    [data, hasNextPage, localHits, directory],
+    () =>
+      mergeSearchResults(data?.pages ?? [], hasNextPage, localHits ?? [], directory).filter(
+        (m) => !blocked.has(m.conversationId),
+      ),
+    [data, hasNextPage, localHits, directory, blocked],
   );
   const isOffline = data?.pages.some((page) => page.source === "local") ?? false;
 

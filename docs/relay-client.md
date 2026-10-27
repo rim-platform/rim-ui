@@ -24,6 +24,7 @@ as before.
 | `src/features/relay/stream/` | `relayStream.ts` (the queue on the WebSocket), `sequencer.ts`, `streamRules.ts` |
 | `src/features/relay/contacts/` | Contact links, fingerprints, verified identities, aliases, relays seen in invites |
 | `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx`, `components/BlockedPeople.tsx`, `components/BlockConfirmDialog.tsx` | Message requests |
+| `src/features/relay/inbox/blockedCreators.ts`, `state/useBlockedConversations.ts`, `runtime/useBlockedConversationsRuntime.ts` | Conversations started by someone blocked |
 | `src/features/dm-policy/` | Who may start a DM: the person's settings, a workspace's policy, the operator's settings in About |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
 | `src/features/relay/runtime/relayRuntime.ts` | Start-up and wiring (`useRelayRuntime`, mounted in `AppShell`) |
@@ -238,7 +239,8 @@ group (asked with `conversation` first), leaves it through its home. Settings â†
 lists `myBlockedPrincipals` under Blocked people (`components/BlockedPeople.tsx`), each with Unblock
 (`unblockPrincipal`), which asks nothing and says they can message you again; the relay clears the
 requests ignored from them, so a conversation blocked from them comes back as a new request with
-their next message (rim-server `docs/relay.md`, "The request inbox"). A
+their next message (rim-server `docs/relay.md`, "The request inbox"). Conversations the person
+started are hidden while they are blocked (below). A
 request from someone on this server invites to one of its own spaces (its direct space or a
 workspace of the account), which is never bound as a remote space: when verifying held items,
 such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is
@@ -272,6 +274,28 @@ While the other member has the viewer's DM as a pending request
 (`Conversation.dmRequestPending`, asked on its own so a host without it fails only there), the
 conversation says "Sent as a request; â€¦ has not accepted yet", and after the two messages the
 relay holds beside the invite, that the rest waits; their presence and typing stay hidden.
+
+### Conversations started by someone blocked
+
+A conversation of a direct space on another server is hidden while the person who started it
+is blocked (`myBlockedPrincipals`), DM or group alike: its `createdBy` is mapped to a principal
+id through that space's `serverMembers`. This server hides those of its own direct space
+itself (rim-server `docs/relay.md`, "The request inbox"). `fetchInboxConversations` leaves
+it out of the space's list, before any cache or offline copy holds it, so it is in no list,
+search directory, Forward choice or palette command, and records it. Its relay items are
+acknowledged and applied nowhere: no timeline, unread count, typing, toast or notification.
+The cache sync never asks the change feed for it. Its unread counts are left out, the bell
+leaves out its unread entries among the newest 100, and the notification inbox lists none of
+them. Selecting it any other way (a notification, a search result, a keybind) closes it at
+once and goes to Direct messages, saying so when it was on screen.
+
+The blocked list is read again every two minutes while the app is in front, when the window
+regains focus and when the WebSocket reconnects, so a block or unblock on another device
+applies within that. After an unblock the conversation is listed again and caught up from its
+host: Welcomes processed, the space reconciled (stream heads, lists, change feed), its
+timeline refreshed, so what they wrote meanwhile shows. A creator the member list does not
+name (one who left a group, a deleted account) hides nothing. A server that does not know
+`myBlockedPrincipals` hides nothing.
 
 ## Workspaces on other servers
 

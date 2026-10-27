@@ -46,6 +46,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Conversations started by someone you blocked, including DMs and groups hosted on other
+  servers, stay out of Direct messages, search, notifications and unread counts and are not synced
+  until you unblock them; then they come back with their history.
 - **Block** on a message request asks first, says the person won't be told and where to unblock
   them, and confirms with a toast.
 - Confirmation dialogs no longer show internal tags (MUTATING, DANGEROUS, OWNER, RESTRICTED) or

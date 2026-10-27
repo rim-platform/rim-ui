@@ -38,6 +38,7 @@ import {
   useNotifications,
   type NotificationItem,
 } from "../api/useNotifications";
+import { useBlockedConversationIds } from "../../relay/state/useBlockedConversations";
 import { authorDisplayName, notificationConversationLabel } from "../labels";
 import { jumpToNotification } from "../runtime/jumpToNotification";
 import { ENCRYPTED_MESSAGE_TEXT } from "../api/storedText";
@@ -92,7 +93,13 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   const memberLookup = useMemberLookup(workspaceId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
 
-  const items = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
+  const blocked = useBlockedConversationIds(workspaceId);
+
+  const items = useMemo(
+    () =>
+      data?.pages.flatMap((page) => page.items).filter((i) => !blocked.has(i.conversationId)) ?? [],
+    [data, blocked],
+  );
 
   function handleMarkAllRead() {
     markRead.mutate(

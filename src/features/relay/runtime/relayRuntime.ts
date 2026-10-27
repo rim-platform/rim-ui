@@ -35,6 +35,7 @@ import { useContactStore } from "../contacts/useContactStore";
 import { activeDirect } from "../direct/directConnection";
 import { startDirect } from "../direct/directRuntime";
 import { acceptWorkspaceMembers } from "../inbox/autoAccept";
+import { resetBlockedCreators } from "../inbox/blockedCreators";
 import { pendingRemoteJoinAt } from "../remote/pendingRemoteJoins";
 import { refreshWorkspaceDetails, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { resetRelaySelf } from "../remote/relaySelf";
@@ -42,6 +43,7 @@ import { finishOnNewRelay } from "../remote/relaySwitchLive";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
 import { loadSpaces, localSpaceHost, registerSpace } from "../state/spaces";
+import { isBlockedConversation, useBlockedConversations } from "../state/useBlockedConversations";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
 import { activeProcessor, setActiveProcessor } from "../stream/activeProcessor";
 import { cardRelays, RelayStreamProcessor } from "../stream/relayStream";
@@ -95,7 +97,8 @@ async function refetchSpace(qc: QueryClient, spaceId: string, conversationIds: s
 /**
  * Apply a host event of `spaceId` at `host`. The decision on a join request this account filed
  * at `host` through a public link goes to the request it decides; every other event applies to
- * its space.
+ * its space. Nothing happens for an event of a conversation hidden because someone blocked
+ * started it.
  */
 export function applyRelayEvent(
   qc: QueryClient,
@@ -103,6 +106,8 @@ export function applyRelayEvent(
   spaceId: string,
   host?: string,
 ): void {
+  // A conversation someone blocked started takes nothing: its items are acknowledged, not applied.
+  if ("conversation_id" in event && isBlockedConversation(spaceId, event.conversation_id)) return;
   if (event.type === "DmInvite") {
     rememberRelays(event.from_principal_id, cardRelays(event.from_card));
     void qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
@@ -289,6 +294,8 @@ export function useRelayRuntime() {
       stop?.();
       setSpaceRouter(null);
       useRelayStore.getState().reset();
+      useBlockedConversations.getState().reset();
+      resetBlockedCreators();
       resetPinCache();
       resetRelaySelf();
     };
