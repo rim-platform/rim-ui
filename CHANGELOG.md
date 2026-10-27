@@ -131,6 +131,45 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - The open workspace's menu on the rail lists **Join requests…** the first time it opens.
 - A plugin panel's header shows the plugin's name, kind and source in full under the panel's
   title instead of cutting them off.
+- After a recovery whose sign-in did not finish, the sign-in page offers **Sign in to your
+  recovered account** instead of the raw account id.
+- A request refused for going too fast says how many minutes to wait once the wait is a minute or
+  more, instead of a count of seconds.
+- **Create account** checks the username's rules before sending it, explains a refusal in a plain
+  sentence under the field, shows the lowercase username it will save, and keeps the form as it
+  was after a refusal, without **Discard keys**; while the recovery kit is shown the page says
+  "Account created" and hides the invite code field.
+- Signing up from a workspace invite on a server open to anyone joins the workspace as soon as the
+  account exists, so closing the page at the recovery kit no longer leaves the account outside it.
+- The avatar at the bottom of the side rail shows your profile picture.
+- Your own presence dot shows you online, as others see you.
+- During a new account's waiting period, Settings > Profile no longer says "Click to upload
+  avatar", and a refused upload says when pictures open up instead of a count of minutes.
+- A person banned from a workspace sees "You can't join" on its public link, with **Open RIM**,
+  instead of "You can ask to join".
+- The Invite member dialog says how many people can join with a link the same way before and
+  after the link is generated.
+- Reporting a message you already reported says so and closes, instead of offering **Retry**.
+- The command palette names the app's own commands in Title Case like the rest (**New Message**,
+  **Toggle Zen Mode**), lists each group alphabetically, and is announced as a dialog; the
+  "Pipeline fired" toast says what set it off ("after a new message") instead of
+  `(trigger: NewMessage)`.
+- A group's member list no longer marks everyone, the workspace's Owner included, as Guest; an
+  empty encrypted group says it is end-to-end encrypted.
+- Typing `:` and the start of a name in the composer suggests from every emoji and from the
+  workspace's custom emoji, not a short fixed list.
+- A file over 25 MiB, or of a type the server does not take, is refused when you attach it, not
+  when you send.
+- A pipeline's conversation scope and its **In conversation** filter pick a channel by name
+  instead of asking for its ID.
+- Plugin details and activity name permissions as the permission prompt does (**Connect to
+  listed sites**, not `network.fetch`); each plugin's on/off switch is a switch named after the
+  plugin; in the web app, a plugin whose only settings are secret offers **Close** instead of
+  **Save** and **Reset to defaults** that do nothing.
+- The plugin docs say a GitHub release link installs in the web app too: the RIM server fetches
+  it.
+- Owners and Moderators find archived channels under **Archived** in **Browse channels**, so a
+  channel archived without joining it can be opened and unarchived.
 
 ## [0.0.5] - 2026-10-26
 

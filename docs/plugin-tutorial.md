@@ -276,8 +276,7 @@ git init && git add . && git commit -m "Add the Greeter plugin"
 Push it to a host such as GitHub; others paste its `https://` URL into Settings → Plugins →
 Install from git URL. With only `devDependencies` nothing more runs; with `dependencies` the app
 shows the `npm install --production` it would run and asks first. A release can attach the
-`.rimbundle` of `npm run bundle`, served with `Access-Control-Allow-Origin: *`, for Install from
-link as `https://host/path/dev.example.greeter-0.1.0.rimbundle#sha256=<hash>`. Without `--entry`,
+`.rimbundle` of `npm run bundle` for Install from link as `https://host/path/dev.example.greeter-0.1.0.rimbundle#sha256=<hash>`. Without `--entry`,
 `npx rim-plugin-bundle .` takes the committed `main.mjs` as it is instead of building it; once
 `--check` passes, both give the same `.rimbundle`.
 

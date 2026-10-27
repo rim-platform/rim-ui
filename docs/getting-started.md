@@ -33,7 +33,8 @@ account back if you lose it.
   with **Join with an invite code**.
 - **Username**: 3 to 32 characters, lowercase letters, digits, `_` and `-`, free on this server.
   Capitals are folded to lowercase, so `Kuba` signs up as `kuba`. It cannot start with `r_` or
-  `deleted-`. With the server's domain it makes your handle (below).
+  `deleted-`. The form checks these rules before it sends anything and shows the username it will
+  save, such as "Saved as kuba." With the server's domain it makes your handle (below).
 - **Display name (optional)**: at most 64 characters. Left blank, your username is shown.
 - **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
   browser, a name such as "Firefox on Linux". It names this device in your device list.
@@ -118,7 +119,7 @@ Its badge counts unread messages before you open it. The rail shows once a works
   allow. Signed out, the page offers **Sign in** and **Create an account**: the link never
   creates an account, so that is the server's own signup, and once you are signed in the app
   opens the link again. A member is told "You're already a member" with **Open workspace**, and
-  someone banned there "You are banned from this workspace." A wrong, old or switched-off link
+  someone banned there "You are banned from this workspace.", with **Open RIM**. A wrong, old or switched-off link
   says "This link isn't valid.", the same in every case; after many of those from one network
   the page says how many minutes to wait. Pasted into **Add workspace**, the link opens the same
   page, and **Add workspace** lists your open requests under **Waiting for approval**, each with
@@ -149,6 +150,7 @@ Every workspace member has one role:
 The Owner invites people with **Invite member** in a conversation's header: choose **Member** or
 **Guest** under **Joins as**, how long the link lasts under **Expires after** (1 day, 7 days, the
 default, or 30 days; no invite lasts longer), then **Generate invite link**, and send the link.
+Up to 10 people can join with one link, fewer when the server's operator set a lower cap.
 Settings → Workspace → **Invites** lists every invite of the workspace to its Owner, newest
 first: its role, how many of its uses are taken, when it expires and who created it, marked
 Active, Expired, Used up or Revoked. **Revoke** on an active invite, after its confirmation,
