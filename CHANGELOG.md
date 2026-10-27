@@ -198,6 +198,20 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   enable, edit or delete buttons for a Member, the default workspace offers creating channels to
   its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
   workspace-scoped state.
+- Your replies in a thread can be edited in the thread pane: **Edit message** in a reply's menu,
+  or <kbd>e</kbd> in the pane, edits it in place as in the timeline. <kbd>Esc</kbd> in an edit
+  form cancels the edit without closing the thread.
+- Error toasts show a name the server quotes, such as an argument, as code instead of printing its
+  backticks ("missing string arg text").
+- A reaction with a custom emoji shows the emoji's image instead of its `:name:`; the name shows on
+  hover.
+- **(edited)** follows the message's text in the comfortable and compact layouts too, instead of
+  sitting on its own line.
+- The web app no longer lists Settings → **AI Agent** and **Plugin AI**, which only the desktop
+  app's AI agent uses.
+- When part of the app cannot be downloaded (a dropped connection), the app tries again, and if it
+  still fails says "This part of the app could not load" with **Reload**, instead of a crashed
+  conversation or Settings page whose Retry could not help.
 - The command palette offers **Unarchive Channel** only in an archived channel and **Archive
   Channel** only in one that is not, instead of reporting success for a change that did nothing.
 - When someone joins the workspace, the member count and members of its public channels update right

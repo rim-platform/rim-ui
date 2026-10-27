@@ -150,6 +150,9 @@ interface ThreadMessagesResponse {
   };
 }
 
+/** One read of a thread's replies, as its query caches it. */
+export type ThreadMessagesPage = ThreadMessagesResponse["threadMessages"];
+
 export function useThreadByRootMessage(
   workspaceId?: string,
   conversationId?: string,

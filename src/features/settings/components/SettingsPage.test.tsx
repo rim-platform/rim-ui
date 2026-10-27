@@ -158,6 +158,13 @@ import { ServerFeatureState } from "../../../core/graphql/generated/schema-types
 import { DIRECT_SPACE_ID, startRelayWithDirectSpace } from "../../../test/directSpace";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 
+/** Makes the runtime the desktop app (Tauri) or, with `false`, the web. */
+function inDesktopApp(desktop: boolean) {
+  const w = window as { __TAURI_INTERNALS__?: unknown };
+  if (desktop) w.__TAURI_INTERNALS__ = {};
+  else delete w.__TAURI_INTERNALS__;
+}
+
 function renderSettings(features: FakeFeatures = {}, details: FakeServerDetails = {}) {
   return render(<SettingsPage />, { wrapper: withServerInfo(features, details) });
 }
@@ -182,8 +189,8 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Keybinds")).toBeInTheDocument();
     expect(screen.getByText("Commands")).toBeInTheDocument();
     expect(screen.getByText("Plugins")).toBeInTheDocument();
-    expect(screen.getByText("Plugin AI")).toBeInTheDocument();
-    expect(screen.getByText("AI Agent")).toBeInTheDocument();
+    expect(screen.queryByText("Plugin AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
     expect(screen.queryByText("AI Keys")).not.toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "About" })).toBeInTheDocument();
@@ -207,7 +214,7 @@ describe("SettingsPage", () => {
       within(extensions)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["Plugins", "Plugin AI", "State", "AI Agent"]);
+    ).toEqual(["Plugins", "State"]);
   });
 
   it("reaches every tab and the close button by keyboard and opens Keyboard with Enter", async () => {
@@ -267,11 +274,39 @@ describe("SettingsPage", () => {
   });
 
   it("switches to AI Agent tab", async () => {
-    const user = userEvent.setup();
-    renderSettings();
+    inDesktopApp(true);
+    try {
+      const user = userEvent.setup();
+      renderSettings();
 
-    await user.click(screen.getByText("AI Agent"));
-    expect(await screen.findByTestId("agent-settings")).toBeInTheDocument();
+      await user.click(screen.getByText("AI Agent"));
+      expect(await screen.findByTestId("agent-settings")).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
+  it("lists AI Agent and Plugin AI only in the desktop app", () => {
+    const web = renderSettings();
+    expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plugin AI")).not.toBeInTheDocument();
+    web.unmount();
+    inDesktopApp(true);
+    try {
+      renderSettings();
+      expect(screen.getByText("AI Agent")).toBeInTheDocument();
+      expect(screen.getByText("Plugin AI")).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
+  it.each(["agent", "plugin-ai"])("opens Profile for a link to the %s tab on the web", (tab) => {
+    mockShellState.mainSurface = { kind: "settings", tab };
+    renderSettings();
+    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-settings")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("plugin-ai-settings")).not.toBeInTheDocument();
   });
 
   it("switches to Account tab", async () => {

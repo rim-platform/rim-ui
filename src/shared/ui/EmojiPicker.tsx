@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 
+import { lazyWithRetry } from "../lazy/importWithRetry";
 import { useServerMediaUrls } from "../media/serverMedia";
 import { Z } from "./zIndex";
 
@@ -23,7 +24,7 @@ export type { EmojiPickerProps };
 
 // Dynamically import the heavy emoji-mart bundle (~450 kB data + picker JS)
 // only when the picker is first rendered. Subsequent renders use the cached module.
-const LazyPicker = lazy(async () => {
+const LazyPicker = lazyWithRetry(async () => {
   const [{ default: Picker }, { default: data }] = await Promise.all([
     import("@emoji-mart/react"),
     import("@emoji-mart/data"),

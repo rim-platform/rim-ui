@@ -28,6 +28,34 @@ describe("ToastItem", () => {
     expect(screen.getByText("More details here")).toBeInTheDocument();
   });
 
+  it("shows backtick-quoted names as code in an error toast", () => {
+    const { container } = render(
+      <ToastItem toast={makeToast({ variant: "error", title: "missing string arg `text`" })} />,
+    );
+    const code = container.querySelector("code");
+    expect(code).not.toBeNull();
+    expect(code?.textContent).toBe("text");
+    const paragraph = screen.getByText("missing string arg", { exact: false }).closest("p");
+    expect(paragraph?.textContent).toBe("missing string arg text");
+    expect(paragraph).toHaveAttribute("title", "missing string arg text");
+  });
+
+  it("keeps backticks as written in a success toast", () => {
+    const { container } = render(
+      <ToastItem toast={makeToast({ variant: "success", title: "ran `text`" })} />,
+    );
+    expect(container.querySelector("code")).toBeNull();
+    expect(screen.getByText("ran `text`")).toBeInTheDocument();
+  });
+
+  it("leaves an unpaired backtick as text", () => {
+    const { container } = render(
+      <ToastItem toast={makeToast({ variant: "error", title: "use ` carefully" })} />,
+    );
+    expect(container.querySelector("code")).toBeNull();
+    expect(screen.getByText("use ` carefully")).toBeInTheDocument();
+  });
+
   it("renders dismiss button", () => {
     render(<ToastItem toast={makeToast()} />);
     expect(screen.getByLabelText("Dismiss notification")).toBeInTheDocument();

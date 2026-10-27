@@ -1,5 +1,6 @@
 import type { EmojiMartData } from "@emoji-mart/data";
 
+import { importWithRetry } from "../../../shared/lazy/importWithRetry";
 import { shortcodeEntries } from "./emojiShortcodes";
 
 /** One row of the composer's `:` suggestions. */
@@ -39,15 +40,20 @@ let loadedIndex: EmojiIndexEntry[] | null = null;
  * @returns The index; later calls share the first load.
  */
 export function loadEmojiIndex(): Promise<EmojiIndexEntry[]> {
-  indexPromise ??= import("@emoji-mart/data").then((module) => {
-    const data = module.default as unknown as EmojiMartData;
-    loadedIndex = Object.values(data.emojis ?? {}).map((emoji) => ({
-      id: emoji.id,
-      keywords: emoji.keywords,
-      native: emoji.skins[0].native,
-    }));
-    return loadedIndex;
-  });
+  indexPromise ??= importWithRetry(() => import("@emoji-mart/data"))
+    .then((module) => {
+      const data = module.default as unknown as EmojiMartData;
+      loadedIndex = Object.values(data.emojis ?? {}).map((emoji) => ({
+        id: emoji.id,
+        keywords: emoji.keywords,
+        native: emoji.skins[0].native,
+      }));
+      return loadedIndex;
+    })
+    .catch((err: unknown) => {
+      indexPromise = null;
+      throw err;
+    });
   return indexPromise;
 }
 

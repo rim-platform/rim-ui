@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Check, AlertCircle, AlertTriangle, Info, X } from "lucide-react";
 import { cn } from "../ui/cn";
+import { withoutCodeMarks } from "./codeMarks";
+import { InlineCodeText } from "./inlineCode";
 import { type Toast, type ToastVariant, useToastStore } from "./useToastStore";
 
 const ICON_MAP: Record<ToastVariant, typeof Check> = {
@@ -49,6 +51,7 @@ export function ToastItem({ toast: t }: ToastItemProps) {
   const remainingRef = useRef(t.duration ?? 0);
   const startRef = useRef(Date.now());
 
+  const codeAware = t.variant === "error";
   const style = VARIANT_STYLES[t.variant];
   const Icon = ICON_MAP[t.variant];
 
@@ -118,15 +121,18 @@ export function ToastItem({ toast: t }: ToastItemProps) {
 
         {/* Text area */}
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-3 break-words text-sm font-medium text-rim-text" title={t.title}>
-            {t.title}
+          <p
+            className="line-clamp-3 break-words text-sm font-medium text-rim-text"
+            title={codeAware ? withoutCodeMarks(t.title) : t.title}
+          >
+            {codeAware ? <InlineCodeText text={t.title} /> : t.title}
           </p>
           {t.description && (
             <p
               className="mt-0.5 line-clamp-3 break-words text-xs text-rim-text-muted"
-              title={t.description}
+              title={codeAware ? withoutCodeMarks(t.description) : t.description}
             >
-              {t.description}
+              {codeAware ? <InlineCodeText text={t.description} /> : t.description}
             </p>
           )}
           {t.action && (
