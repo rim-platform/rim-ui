@@ -275,6 +275,37 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
 };
 
 /**
+ * Backend commands a person may run without the argument they need, each with the argument's
+ * name and the client surface that asks for it instead of sending the server an incomplete
+ * command.
+ */
+const argumentPrompts: Record<string, { argument: string; open: () => void }> = {
+  "chat.search_messages": {
+    argument: "query",
+    open: () => useSearchOverlayStore.getState().openWithScope({ kind: "all" }),
+  },
+};
+
+/**
+ * Opens the surface that asks for a command's missing argument.
+ *
+ * @returns `true` when the command has an argument prompt, runs as a single command rather
+ * than a pipe stage and lacks a non-blank value for that argument; the prompt is then open.
+ */
+function openArgumentPrompt(
+  commandId: string,
+  args: Record<string, unknown> | undefined,
+  isPipe: boolean | undefined,
+): boolean {
+  const prompt = argumentPrompts[commandId];
+  if (!prompt || isPipe) return false;
+  const value = args?.[prompt.argument];
+  if (typeof value === "string" && value.trim() !== "") return false;
+  prompt.open();
+  return true;
+}
+
+/**
  * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent. The server refuses
  * to execute desktop-local commands, so agent tool calls for them land here instead of
  * `executeCommand`. Returns `false` when no local handler exists. Only meant for
@@ -307,6 +338,10 @@ export async function dispatchCommand(
   const localHandler = localHandlers[command.id];
   if (localHandler) {
     localHandler(context?.args);
+    return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
+  }
+
+  if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 
