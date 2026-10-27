@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
+import type { KnownServerInfo } from "../../updater/api/serverInfoApi";
 import {
   ConversationTypeEnum,
   PostingPolicy,
@@ -21,6 +23,7 @@ import {
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
@@ -59,8 +62,13 @@ async function openMenu(
   conversation: ConversationSummary,
   role: ServerMemberRoleGql,
   seed?: (qc: QueryClient) => Promise<void>,
+  serverInfo?: KnownServerInfo,
 ) {
   const qc = createTestQueryClient();
+  if (serverInfo) {
+    qc.setQueryDefaults(queryKeys.serverInfo, { gcTime: Infinity });
+    qc.setQueryData(queryKeys.serverInfo, serverInfo);
+  }
   render(
     <QueryClientProvider client={qc}>
       <ConversationActionsMenu workspaceId="ws-1" conversation={conversation} />
@@ -100,6 +108,7 @@ describe("ConversationActionsMenu — role gating", () => {
   afterEach(() => {
     useShellStore.getState().reset();
     useAuthStore.setState({ session: null });
+    useRelayStore.setState({ info: null });
   });
 
   it("a guest member of a channel gets no invite and no moderation", async () => {
@@ -213,6 +222,38 @@ describe("ConversationActionsMenu — role gating", () => {
       "Add people…",
       "Assign keybind…",
       "Leave group…",
+    ]);
+  });
+
+  it("offers Add people for a group in the direct space", async () => {
+    useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "ws-1" } });
+    serve(ServerMemberRoleGql.GUEST);
+    await openMenu(
+      makeConversation({ conversationType: ConversationTypeEnum.GROUP, title: "crew" }),
+      ServerMemberRoleGql.GUEST,
+    );
+    expect(menuLabels()).toEqual([
+      "Notifications: All messages",
+      "Members",
+      "Add people…",
+      "Assign keybind…",
+      "Leave group…",
+    ]);
+  });
+
+  it("offers no Invite people to a member in a default-workspace channel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(
+      makeConversation(),
+      ServerMemberRoleGql.MEMBER,
+      undefined,
+      fakeServerInfo({}, { defaultWorkspace: "ws-1" }),
+    );
+    expect(menuLabels()).toEqual([
+      "Notifications: All messages",
+      "Members",
+      "Assign keybind…",
+      "Leave channel",
     ]);
   });
 

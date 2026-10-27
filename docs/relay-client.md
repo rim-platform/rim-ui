@@ -201,7 +201,10 @@ New DMs and groups start in this relay's direct space whenever every member has 
 from the contact picker there, or from a workspace's member picker when everyone picked has one.
 A group is created when it is picked; a DM opens as a draft and is created when its first
 message is sent, unless the side rail already lists one with that person.
-`createConversation` names them in `remoteMembers` with the relays of their verified card. With
+`createConversation` names them in `remoteMembers` with the relays of their verified card.
+Adding people to a group of the direct space names them the same way, in
+`addConversationMembers`'s `remoteMembers`; for an encrypted group the members panel first checks
+that each can receive encrypted messages and names those who cannot. With
 anyone on another relay the conversation is created end-to-end encrypted, which needs every
 member and this device to be set up for encryption; otherwise nothing is created and the picker
 (for a DM, the composer) says who is not ready. With members of this relay alone, today's rule holds. MLS runs unchanged:

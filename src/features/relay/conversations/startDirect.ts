@@ -42,14 +42,19 @@ export class NotReadyError extends Error {
   }
 }
 
-interface Resolved {
+/**
+ * A picked person as the server is told about them, and whether they can receive encrypted
+ * messages.
+ */
+export interface ResolvedDirectMember {
   member: DirectMember;
-  /** Their card's relays and the member's own; empty when neither names one. */
+  /** Their card's relays and the picked ones, else this server's origin. */
   relayUrls: string[];
   ready: boolean;
 }
 
-async function resolveMember(member: DirectMember): Promise<Resolved> {
+/** One person's verified identity: their card's relays and the picked ones, and readiness. */
+async function resolveMember(member: DirectMember): Promise<ResolvedDirectMember> {
   const { identity, card } = await resolveIdentity(member.principalId, member.relayUrls);
   const relayUrls = [...new Set([...(card?.relays ?? []), ...member.relayUrls])];
   const ready = identity.devices.some((d) => d.mlsActive && !d.revocation);
@@ -57,7 +62,10 @@ async function resolveMember(member: DirectMember): Promise<Resolved> {
 }
 
 /** What the person is asked to wait for: who is not ready, and whether this device is not. */
-export function notReadyNames(resolved: readonly Resolved[], deviceReady: boolean): string[] {
+export function notReadyNames(
+  resolved: readonly ResolvedDirectMember[],
+  deviceReady: boolean,
+): string[] {
   const names = resolved.filter((r) => !r.ready).map((r) => r.member.name);
   return deviceReady ? names : [...names, "this device"];
 }
@@ -65,6 +73,16 @@ export function notReadyNames(resolved: readonly Resolved[], deviceReady: boolea
 /** Whether `member` has a device that can receive encrypted messages. */
 export async function directMemberReady(member: DirectMember): Promise<boolean> {
   return (await resolveMember(member)).ready;
+}
+
+/** Resolves picked people: their verified identity, relays and readiness. */
+export async function resolveDirectMembers(
+  members: readonly DirectMember[],
+): Promise<ResolvedDirectMember[]> {
+  const here = await serverOrigin();
+  return (await Promise.all(members.map(resolveMember))).map((r) =>
+    r.relayUrls.length > 0 ? r : { ...r, relayUrls: [here] },
+  );
 }
 
 /** A conversation started in this relay's direct space. */
@@ -88,9 +106,7 @@ export async function startDirectConversation(
   const info = useRelayStore.getState().info;
   if (!info) throw new Error("This server does not relay messages.");
   const here = await serverOrigin();
-  const resolved = (await Promise.all(members.map(resolveMember))).map((r) =>
-    r.relayUrls.length > 0 ? r : { ...r, relayUrls: [here] },
-  );
+  const resolved = await resolveDirectMembers(members);
   const session = await e2eeSession();
   const elsewhere = resolved.some((r) => !r.relayUrls.includes(here));
   const missing = notReadyNames(resolved, Boolean(session));
