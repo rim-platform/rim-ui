@@ -225,18 +225,6 @@ describe("SearchOverlay", () => {
     });
   });
 
-  it("says This conversation for a group's scope", () => {
-    useSearchOverlayStore.setState({
-      query: "",
-      scope: { kind: "conversation", conversationId: "conv-group" },
-    });
-    render(<SearchOverlay />);
-
-    expect(screen.getByText("This conversation")).toBeInTheDocument();
-    expect(screen.getByText("Search messages in this conversation")).toBeInTheDocument();
-    expect(screen.queryByText(/Current channel/)).not.toBeInTheDocument();
-  });
-
   describe("keyboard navigation over the flat list", () => {
     it("ArrowDown/ArrowUp move the selection and Enter jumps to the selected message", () => {
       const setSelectedConversationId = vi.fn();
@@ -254,7 +242,7 @@ describe("SearchOverlay", () => {
       expect(setSelectedConversationId).toHaveBeenCalledWith("conv-2");
     });
 
-    it("Escape closes the tips popover first, then clears the query, then closes the overlay", () => {
+    it("Escape closes the tips popover first, then the overlay, with a query typed", () => {
       mockSearchResult([]);
       render(<SearchOverlay />);
       const dialog = screen.getByPlaceholderText(/from:@user/).closest("div")!.parentElement!;
@@ -267,10 +255,33 @@ describe("SearchOverlay", () => {
       expect(useSearchOverlayStore.getState().isOpen).toBe(true);
 
       fireEvent.keyDown(dialog, { key: "Escape" });
-      expect(useSearchOverlayStore.getState().query).toBe("");
+      expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+    });
+
+    it("opens empty after Escape closed it with a query", () => {
+      mockSearchResult([]);
+      render(<SearchOverlay />);
+      const dialog = screen.getByPlaceholderText(/from:@user/).closest("div")!.parentElement!;
+      expect(useSearchOverlayStore.getState().query).toBe("deploy");
 
       fireEvent.keyDown(dialog, { key: "Escape" });
       expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+
+      act(() => useSearchOverlayStore.getState().openWithScope({ kind: "all" }));
+      expect(useSearchOverlayStore.getState().query).toBe("");
+      expect((screen.getByPlaceholderText(/from:@user/) as HTMLInputElement).value).toBe("");
+    });
+
+    it("says This conversation for a group's scope", () => {
+      useSearchOverlayStore.setState({
+        query: "",
+        scope: { kind: "conversation", conversationId: "conv-group" },
+      });
+      render(<SearchOverlay />);
+
+      expect(screen.getByText("This conversation")).toBeInTheDocument();
+      expect(screen.getByText("Search messages in this conversation")).toBeInTheDocument();
+      expect(screen.queryByText(/Current channel/)).not.toBeInTheDocument();
     });
   });
 
@@ -339,7 +350,7 @@ describe("SearchOverlay", () => {
       expect(useSearchOverlayStore.getState().query).toBe("has:link ");
     });
 
-    it("Escape closes only the popover; the next Escape goes on to the query", () => {
+    it("Escape closes only the popover; the next Escape closes the overlay", () => {
       render(<SearchOverlay />);
       const input = typeInSearch("from:");
       expect(screen.getByRole("listbox")).toBeInTheDocument();
@@ -349,7 +360,7 @@ describe("SearchOverlay", () => {
       expect(useSearchOverlayStore.getState()).toMatchObject({ isOpen: true, query: "from:" });
 
       fireEvent.keyDown(input, { key: "Escape" });
-      expect(useSearchOverlayStore.getState().query).toBe("");
+      expect(useSearchOverlayStore.getState().isOpen).toBe(false);
     });
   });
 

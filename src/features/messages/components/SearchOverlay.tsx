@@ -298,11 +298,9 @@ export function SearchOverlay() {
           break;
         case "Escape":
           event.preventDefault();
-          // Tips popover closes first, then the query, then the overlay.
+          // The tips popover closes first, then the overlay.
           if (tipsOpen) {
             setTipsOpen(false);
-          } else if (query) {
-            setQuery("");
           } else {
             close();
           }
@@ -324,8 +322,6 @@ export function SearchOverlay() {
       selectedIndex,
       jumpToMessage,
       tipsOpen,
-      query,
-      setQuery,
       close,
     ],
   );

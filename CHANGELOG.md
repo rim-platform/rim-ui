@@ -207,6 +207,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   the row's actions show when you point at or focus the row.
 - A group's or DM's search button reads "Search in Bob and Carol" instead of "Search in #Bob and
   Carol", and the search box calls its scope "This conversation" instead of "Current channel".
+- One <kbd>Esc</kbd> closes message search, as its footer says, instead of first clearing the query.
 
 ## [0.0.5] - 2026-10-26
 
