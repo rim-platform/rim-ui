@@ -242,7 +242,7 @@ describe("CommandPalette workspace commands", () => {
       queryKeys.serverInfo,
       fakeServerInfo({}, { capabilities: [WORKSPACE_LEAVE, WORKSPACE_RENAME] }),
     );
-    render(<CommandPalette />);
+    render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
   }
 
