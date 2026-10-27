@@ -1,15 +1,34 @@
 import { useMemo } from "react";
 
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { profileKeybinds, type KeybindProfile } from "../profiles/keybindProfile";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
-import type { ResolvedKeybind } from "../types";
+import type { KeybindContext, ResolvedKeybind } from "../types";
 import { normalizeKeystroke } from "./keybindEngine";
 
+/** The context-and-keystroke slot a keybind occupies; one binding per slot fires. */
+export function keybindSlot(context: KeybindContext, keystroke: string): string {
+  return `${context} ${normalizeKeystroke(keystroke)}`;
+}
+
 function slot(keybind: ResolvedKeybind): string {
-  return `${keybind.context} ${normalizeKeystroke(keybind.keystroke)}`;
+  return keybindSlot(keybind.context, keybind.keystroke);
+}
+
+/**
+ * The listed keybinds holding `keystroke` in `context`, other than `exceptId`.
+ */
+export function slotHolders(
+  keybinds: readonly ResolvedKeybind[],
+  context: KeybindContext,
+  keystroke: string,
+  exceptId?: string,
+): ResolvedKeybind[] {
+  const wanted = keybindSlot(context, keystroke);
+  return keybinds.filter((kb) => kb.id !== exceptId && slot(kb) === wanted);
 }
 
 /**
@@ -45,14 +64,39 @@ export function resolveEffectiveKeybinds(
   return result;
 }
 
-/** The keybinds in force on this device right now. */
+/**
+ * The keybinds Settings → Keybinds lists: every binding of this device and the user's and
+ * workspace's from the server, each shown even when another holds its keys, then the defaults
+ * in force (the active profile's, then the server's), each once and only where no binding
+ * above holds its keys. A keystroke the profile frees lists nothing.
+ */
+export function listedKeybinds(
+  device: readonly ResolvedKeybind[],
+  server: readonly ResolvedKeybind[] | undefined,
+  profile: KeybindProfile,
+): ResolvedKeybind[] {
+  const serverKeybinds = server ?? [];
+  const own = [...device, ...serverKeybinds.filter((kb) => kb.source !== "DEFAULT")];
+  const taken = new Set(own.map(slot));
+  const defaults = resolveEffectiveKeybinds(
+    [],
+    serverKeybinds.filter((kb) => kb.source === "DEFAULT"),
+    profile,
+  );
+  return [...own, ...defaults.filter((kb) => !taken.has(slot(kb)))];
+}
+
+/** The keybinds in force on this device right now, leaving out commands this app does not offer. */
 export function useEffectiveKeybinds(): ResolvedKeybind[] {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: server } = useResolvedKeybinds(workspaceId ?? undefined);
   const device = useDeviceKeybindStore((s) => s.keybinds);
   const profile = useKeybindProfileStore((s) => s.profile);
   return useMemo(
-    () => resolveEffectiveKeybinds(device, server, profile),
+    () =>
+      resolveEffectiveKeybinds(device, server, profile).filter((kb) =>
+        commandOfferedHere(kb.commandId),
+      ),
     [device, server, profile],
   );
 }

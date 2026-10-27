@@ -1,5 +1,13 @@
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
+/** Attribute marking an element that records a keystroke: keys pressed there reach only it. */
+export const KEYSTROKE_RECORDER_ATTRIBUTE = "data-keystroke-recorder";
+
+/** Whether a key event's target is recording a keystroke, so no keybind acts on the key. */
+export function isKeystrokeRecorder(target: EventTarget | null): boolean {
+  return target instanceof Element && target.hasAttribute(KEYSTROKE_RECORDER_ATTRIBUTE);
+}
+
 const MODIFIER_KEYS = ["Control", "Meta", "Shift", "Alt"];
 
 /**

@@ -136,6 +136,16 @@ describe("Vim normal mode", () => {
     expect(useCommandStore.getState().isCommandPaletteOpen).toBe(true);
   });
 
+  it("leaves keys in a keystroke recorder alone", () => {
+    mount('<kbd role="button" tabindex="0" data-keystroke-recorder="">Ctrl+K</kbd>');
+    const recorder = document.querySelector("kbd") as HTMLElement;
+    recorder.focus();
+
+    expect(press(":", {}, recorder).defaultPrevented).toBe(false);
+    expect(press("j", {}, recorder).defaultPrevented).toBe(false);
+    expect(useCommandStore.getState().isCommandPaletteOpen).toBe(false);
+  });
+
   it("leaves every key alone while the palette is open", () => {
     useCommandStore.setState({ isCommandPaletteOpen: true });
     expect(press("j").defaultPrevented).toBe(false);

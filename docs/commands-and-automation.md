@@ -110,7 +110,7 @@ new device:
 | <kbd>Ctrl+F</kbd> | Search in this conversation |
 | <kbd>Ctrl+Shift+F</kbd> | Search the workspace |
 | <kbd>Ctrl+Shift+X</kbd> | Open the plugin marketplace |
-| <kbd>Ctrl+Shift+A</kbd> | Open the AI agent |
+| <kbd>Ctrl+Shift+A</kbd> | Open the AI agent (desktop app) |
 | <kbd>Ctrl+Shift+C</kbd> | Create a channel |
 | <kbd>Ctrl+Shift+G</kbd> | New message |
 | <kbd>Ctrl+Shift+M</kbd> | Mark everything as read |
@@ -137,13 +137,21 @@ palette. It works where its context has focus; a global one works everywhere. In
 keys that type a character and the editing chords stay with the field, unless a binding is made
 for that very context.
 
-**Settings → Keybinds** lists the server's defaults, your bindings and this device's, grouped
-into Navigation, Chat, Panels, Agent, Plugins and Other, with "Search keybinds..." above them.
+**Settings → Keybinds** lists every default binding (the server's and the active keyboard
+profile's), your bindings and this device's, grouped into Navigation, Chat, Panels, Agent,
+Plugins and Other, with "Search keybinds..." above them. Each row names its context: Global,
+Composer, Message list and so on.
 
 - **Add keybind** opens a form: press the keys in "Press a key combination...", pick the
-  command and the context, then **Save**.
+  command and the context, then **Save**. The field records any keys, even ones already bound,
+  and runs nothing while it has focus; <kbd>Escape</kbd> alone stops recording and keeps the
+  earlier keys. Keys already bound in the chosen context show "Already used by \<command\> —
+  saving will reassign it.", and **Save** moves them to the new command; keys a workspace
+  keybind holds cannot be taken.
 - On a binding of your own, the pencil changes its command or context, clicking the keys records
-  new ones, the switch turns it off, and the bin deletes it after "Delete keybind?".
+  new ones, the switch turns it off, and the bin deletes it after "Delete keybind?". Keys
+  recorded there that another binding holds wait under the row with the same note, **Save** and
+  **Cancel**.
 - The default rows carry the **Default** tag and cannot be edited, turned off or deleted here.
   A binding of yours on the same keys and context takes their place: **Override** opens the add
   form with the default's keys, command and context filled in, ready to change and save. A
@@ -185,11 +193,13 @@ Both run a sequence of commands as one, and both are yours alone: nobody else in
 sees or runs them.
 
 **User commands** appear in the palette and can be bound to keys. Settings → Commands, **New
-command**, asks for a **Command ID** (saved as `user.<id>`), a **Title**, a **Description** and
-the **Steps**: **+ Add step** picks a command the server runs, and the arrows reorder. **Create**
-saves it. Its steps take no arguments here, so each one uses the context. A user command can be
-bound when all its steps can, is dangerous when one step is, and can include other user
-commands, eight levels deep at most. The list shows each one's id and number of steps. The
+command**, asks for a **Command ID** (saved as `user.<id>`, in lowercase letters, numbers, dots,
+dashes and underscores), a **Title**, a **Description** and the **Steps**: **+ Add step** picks
+a command the server runs, and the arrows reorder. **Create** saves it. Its steps take no
+arguments here, so each one uses the context, and **+ Add step** offers only commands the
+context can fill: none that needs other arguments. A user command can be bound when all its
+steps can, is dangerous when one step is, and can include other user commands, eight levels
+deep at most. The list shows each one's id and number of steps. The
 pencil loads the saved command into the form, its title, description and steps in order, with
 a step's arguments shown under it. Changing a step's command drops its arguments; **Save**
 stays off until a step is chosen, and the steps on the form replace the saved ones. A command
@@ -200,9 +210,11 @@ cannot be edited."
 Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
 "Search commands...", and an arguments field that takes JSON, such as
 `{"conversation_id": "…", "text": "…"}`. The search leaves out commands that only run in the app,
-and a step typed as one is marked as failing. **Save** stores it. On the desktop, **Build with
-AI** turns a description into steps with the provider set in Settings → AI Agent: **Generate**,
-check the preview, then **Use these steps** opens them in the editor.
+and a step typed as one is marked as failing. A step whose text is not a command id is marked
+"Unknown command: \<id\>" and the macro is not saved until it is fixed. **Save** stores it. On
+the desktop, **Build with AI** turns a description into steps with the provider set in
+Settings → AI Agent: **Generate**, check the preview, then **Use these steps** opens them in the
+editor.
 
 A macro runs from the play button on its row ("Run macro"), or from the composer: send
 `/macro <name>` ("Run Macro"). It runs on the server, step by step, in the open workspace, the
@@ -216,7 +228,7 @@ open conversation and the thread open beside it, read when the run starts:
   or make irreversible changes." A dangerous step below the restricted tier, such as kicking a
   member, cannot be confirmed inside a macro, and the macro stops there.
 - **A failing step** stops the macro. The steps before it stay done, and the toast says
-  "Macro failed: macro \`\<name\>\` failed on a step". A macro that finishes says
+  `Macro "<name>" failed`, with the server's reason under it. A macro that finishes says
   `Macro "<name>" executed`.
 - **Limits.** A macro cannot contain another macro, and its name has at most 128 characters. You
   can keep 50 macros per workspace, and the page shows the server's own cap when it sets one.
@@ -258,10 +270,12 @@ its creator, an Owner or a Moderator can change, toggle or delete it.
 confirmation: every mutating, restricted or dangerous command, which includes posting a message,
 reacting and writing workspace state. Safe and sensitive server commands run. The editor's
 command search offers only these, and says why above the actions; an action set to a command the
-pipeline would skip, or to one that only runs in the app, is marked. A pipeline reacts
+pipeline would skip, or to one that only runs in the app, is marked, and one whose text is not
+a command id is marked "Unknown command: \<id\>" and not saved. A pipeline reacts
 only to events its creator may see: a message in a private channel its creator is not in fires
 nothing. On every firing, its creator, with the workspace open, sees "Pipeline "\<name\>"
-fired", with the number of actions that ran; skipped actions are not counted.
+fired", with how many of the pipeline's actions ran, such as "1 of 2 actions ran"; skipped
+actions are not counted, and the toast is a warning when some did not run.
 
 **Limits.** The cooldown stops a pipeline from firing again until it has passed. A pipeline that
 fires more than 10 times in 60 seconds is switched off, with "Pipeline "\<name\>" suspended";
@@ -303,7 +317,9 @@ and no user command or macro made in Settings. A call that changes anything wait
 confirmation dialog, headed "Agent wants to:", and the agent runs at most three such actions per
 run. Settings → AI Agent sets its provider and key, and
 [Using a plugin](plugins.md#using-a-plugin) covers approving a plugin's commands for it. A
-server's operator can turn its access off.
+server's operator can turn its access off. In the web app it is not offered: the palette, the
+keybind, the `/agent` suggestion and **Build with AI** are left out, and `/agent` typed in full
+shows "The AI agent is available in the desktop app."
 
 ## Next
 

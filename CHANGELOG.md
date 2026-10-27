@@ -62,6 +62,23 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Command palette success toasts show the command's result, such as "List Channels: 3 channels
   found.", instead of "— [object Object]"; toasts wrap to three lines with the full text on
   hover, and sit at the top right, clear of the composer's send button.
+- The web app no longer offers the AI agent, which needs the desktop app: its palette command,
+  Ctrl+Shift+A, the `/agent` suggestion and **Build with AI** are gone there, and opening it
+  another way says "The AI agent is available in the desktop app." instead of failing
+  silently.
+- Macro steps and pipeline actions whose text is not a command id are marked
+  "Unknown command: <id>" and are not saved; a failed macro shows the server's reason, and a
+  pipeline firing says how many of its actions ran ("1 of 2 actions ran").
+- The keybind recorder in Settings → Keybinds records keys that are already bound instead of
+  running them, Escape cancels the recording instead of closing Settings, and keys in use show
+  "Already used by <command> — saving will reassign it."
+- Settings → Keybinds lists every default binding, including the app's own (Ctrl+D, Ctrl+L,
+  Ctrl+Shift+Z, Ctrl+←/→, Shift+Alt+↑, `?`, Ctrl+/), and names contexts as Global, Composer,
+  Message list and so on.
+- A user command id takes only lowercase letters, numbers, dots, dashes and underscores, the
+  step picker leaves out commands that need arguments a step cannot give, and the form no
+  longer says "macro".
+- An imported keyboard profile accepts modifiers in any case, such as `ctrl+j`.
 
 ## [0.0.5] - 2026-10-26
 

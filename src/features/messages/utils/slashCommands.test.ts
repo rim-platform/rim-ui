@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 
 vi.mock("../../agent/state/useAgentStore", () => ({
   useAgentStore: {
@@ -33,7 +33,19 @@ vi.mock("../../../shared/toast", () => ({
 
 import { getSlashCommandSuggestions, isSlashCommand, SLASH_COMMANDS } from "./slashCommands";
 
+/** Makes the app the desktop app, where the agent runs. */
+function onDesktop() {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+}
+
+function offDesktop() {
+  delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+}
+
 describe("getSlashCommandSuggestions", () => {
+  beforeEach(onDesktop);
+  afterEach(offDesktop);
+
   it("returns all commands for /", () => {
     const suggestions = getSlashCommandSuggestions("/");
     expect(suggestions.length).toBe(SLASH_COMMANDS.length);
@@ -52,6 +64,13 @@ describe("getSlashCommandSuggestions", () => {
   it("returns empty for non-matching prefix", () => {
     const suggestions = getSlashCommandSuggestions("/zzz");
     expect(suggestions).toEqual([]);
+  });
+});
+
+describe("getSlashCommandSuggestions on the web", () => {
+  it("does not suggest /agent on the web but still recognizes it", () => {
+    expect(getSlashCommandSuggestions("/a").some((c) => c.command === "/agent")).toBe(false);
+    expect(isSlashCommand("/agent hi")?.command).toBe("/agent");
   });
 });
 

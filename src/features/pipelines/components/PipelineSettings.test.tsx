@@ -353,6 +353,22 @@ describe("PipelineSettings action picker", () => {
     });
     expect(screen.queryByText(/so this action/)).not.toBeInTheDocument();
   });
+
+  it("marks an unknown action and does not save it", async () => {
+    await openCreate();
+    fireEvent.change(screen.getByPlaceholderText("My pipeline"), { target: { value: "Ping" } });
+    const field = screen.getByPlaceholderText("Search commands...");
+    fireEvent.change(field, { target: { value: "Post Message" } });
+    fireEvent.blur(field);
+    expect(screen.getByText("Unknown command: Post Message")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(toastTitles()).toContain("Fix the actions marked in red before saving."),
+    );
+    expect(callsTo("CreatePipeline")).toHaveLength(0);
+  });
 });
 
 describe("PipelineSettings edit, toggle and delete", () => {

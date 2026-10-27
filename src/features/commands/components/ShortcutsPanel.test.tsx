@@ -53,7 +53,10 @@ describe("ShortcutsPanel", () => {
     render(<ShortcutsPanel />);
     const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     const rows = within(dialog).getAllByRole("definition");
-    expect(rows).toHaveLength(DEFAULT_BINDINGS.length);
+    // The web app leaves out the AI agent's binding.
+    expect(rows).toHaveLength(
+      DEFAULT_BINDINGS.filter((binding) => binding.commandId !== "workspace.open_agent").length,
+    );
     expect(within(rowFor("Open command palette")).getByText("Ctrl+K")).toBeInTheDocument();
     expect(within(rowFor("Close the open panel")).getByText("Escape")).toBeInTheDocument();
   });

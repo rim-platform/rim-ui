@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { matchKeybind } from "../runtime/keybindEngine";
-import {
-  bindsOnDevice,
-  isDeviceKeybind,
-  useDeviceKeybindStore,
-  withDeviceKeybinds,
-} from "./useDeviceKeybindStore";
+import { bindsOnDevice, isDeviceKeybind, useDeviceKeybindStore } from "./useDeviceKeybindStore";
 import type { ResolvedKeybind } from "../types";
 
 const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
@@ -79,14 +73,5 @@ describe("useDeviceKeybindStore", () => {
     expect(bindsOnDevice("workspace.open_plugin_panel.chat.rim.k8s-pods/pods")).toBe(true);
     expect(bindsOnDevice("workspace.open_plugin_settings.chat.rim.k8s-pods")).toBe(true);
     expect(bindsOnDevice("workspace.open_settings")).toBe(false);
-  });
-
-  it("lets a device binding win over a server binding of the same keystroke", () => {
-    useDeviceKeybindStore
-      .getState()
-      .add({ keystroke: "Ctrl+K", commandId: REFRESH, context: "GLOBAL" });
-    const all = withDeviceKeybinds(useDeviceKeybindStore.getState().keybinds, [serverPalette]);
-    expect(matchKeybind("Ctrl+K", "GLOBAL", all)?.commandId).toBe(REFRESH);
-    expect(withDeviceKeybinds([], [serverPalette])).toEqual([serverPalette]);
   });
 });

@@ -31,3 +31,23 @@ export function skippedUnattended(
     command.sensitivity === CommandSensitivity.RESTRICTED
   );
 }
+
+/**
+ * The error to show under a step or action whose command id names no command the caller can
+ * run.
+ *
+ * @param commandId - The id as typed; surrounding spaces are ignored.
+ * @param registries - The command lists to look the id up in; while any is still loading
+ *   (`undefined`) nothing is judged.
+ * @returns `Unknown command: <id>`, or `null` for an empty, known or not yet judged id.
+ */
+export function unknownCommandError(
+  commandId: string,
+  ...registries: (readonly Pick<CommandDefinition, "id">[] | undefined)[]
+): string | null {
+  const id = commandId.trim();
+  if (!id || registries.some((registry) => registry === undefined)) return null;
+  return registries.some((registry) => registry?.some((command) => command.id === id))
+    ? null
+    : `Unknown command: ${id}`;
+}

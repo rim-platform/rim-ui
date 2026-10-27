@@ -67,11 +67,13 @@ export async function runMacro(
         if (outcome.result.status === "SUCCESS") {
           toast.success(`Macro "${macro.name}" executed`);
         } else {
-          toast.error(`Macro failed: ${outcome.result.message || "unknown error"}`);
+          toast.error(`Macro "${macro.name}" failed`, {
+            description: outcome.result.message || "unknown error",
+          });
         }
         return;
       case "unconfirmed":
-        toast.error(`Macro failed: ${outcome.message}`);
+        toast.error(`Macro "${macro.name}" failed`, { description: outcome.message });
         return;
       case "cancelled":
       case "stale":

@@ -3,7 +3,12 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
-import { parseKeystroke, matchKeybind, surfaceToContext } from "./keybindEngine";
+import {
+  isKeystrokeRecorder,
+  parseKeystroke,
+  matchKeybind,
+  surfaceToContext,
+} from "./keybindEngine";
 import { dispatchCommand } from "./commandDispatcher";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
@@ -62,6 +67,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
   const handleKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   handleKeyDownRef.current = (event: KeyboardEvent) => {
+    if (isKeystrokeRecorder(event.target)) return;
     const isTextInput = isTextEntry(event.target as Element);
 
     const keystroke = parseKeystroke(event);

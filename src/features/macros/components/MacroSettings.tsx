@@ -21,7 +21,8 @@ import {
 import type { Macro, MacroStep } from "../api/useMacros";
 import { useCommands } from "../../commands/api/useCommands";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
-import { runsOnServer } from "../../commands/runtime/serverRunnable";
+import { runsOnServer, unknownCommandError } from "../../commands/runtime/serverRunnable";
+import { agentAvailable } from "../../agent/agentAvailability";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -60,6 +61,7 @@ function MacroEditor({
   );
 
   const { data: commands } = useCommands("PALETTE");
+  const { data: pickerCommands } = useCommands("KEYBIND_PICKER");
   // A macro runs on the server, which refuses desktop-local commands as steps.
   const stepCommands = useMemo(() => commands?.filter(runsOnServer), [commands]);
   const appOnlyIds = useMemo(
@@ -105,8 +107,14 @@ function MacroEditor({
   const handleSave = useCallback(async () => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
-    const validSteps = steps.filter((s) => s.commandId.trim() !== "");
+    const validSteps = steps
+      .filter((s) => s.commandId.trim() !== "")
+      .map((s) => ({ ...s, commandId: s.commandId.trim() }));
     if (validSteps.length === 0) return;
+    if (validSteps.some((s) => unknownCommandError(s.commandId, commands, pickerCommands))) {
+      toast.error("Fix the steps marked in red before saving.");
+      return;
+    }
 
     try {
       if (initial) {
@@ -130,7 +138,18 @@ function MacroEditor({
         graphqlErrorMessage(err, initial ? "Failed to update macro" : "Failed to create macro"),
       );
     }
-  }, [name, description, steps, initial, serverId, createMacro, updateMacro, onSave]);
+  }, [
+    name,
+    description,
+    steps,
+    commands,
+    pickerCommands,
+    initial,
+    serverId,
+    createMacro,
+    updateMacro,
+    onSave,
+  ]);
 
   const isSaving = createMacro.isPending || updateMacro.isPending;
 
@@ -186,6 +205,11 @@ function MacroEditor({
                   onChange={(v) => updateStep(index, "commandId", v)}
                   commands={stepCommands}
                   placeholder="Search commands..."
+                  error={
+                    appOnlyIds.has(step.commandId)
+                      ? null
+                      : unknownCommandError(step.commandId, commands, pickerCommands)
+                  }
                 />
                 {appOnlyIds.has(step.commandId) && (
                   <p className="text-xs text-rim-danger">
@@ -277,6 +301,7 @@ export function MacroSettings() {
     "macros per workspace",
   );
 
+  const aiAvailable = agentAvailable();
   const [editing, setEditing] = useState<Macro | "new" | null>(null);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
@@ -350,13 +375,15 @@ export function MacroSettings() {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-rim-text">Macros</h2>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAiBuilderOpen(true)}
-            className="flex items-center gap-1 rounded-lg border border-rim-line px-3 py-1.5 text-sm font-medium text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
-          >
-            <Wand2 className="h-4 w-4" /> Build with AI
-          </button>
+          {aiAvailable && (
+            <button
+              type="button"
+              onClick={() => setAiBuilderOpen(true)}
+              className="flex items-center gap-1 rounded-lg border border-rim-line px-3 py-1.5 text-sm font-medium text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+            >
+              <Wand2 className="h-4 w-4" /> Build with AI
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setEditing("new")}
@@ -369,11 +396,13 @@ export function MacroSettings() {
 
       <LimitNote limit={macroLimit} />
 
-      <AiMacroBuilder
-        open={aiBuilderOpen}
-        onClose={() => setAiBuilderOpen(false)}
-        onStepsGenerated={handleAiStepsGenerated}
-      />
+      {aiAvailable && (
+        <AiMacroBuilder
+          open={aiBuilderOpen}
+          onClose={() => setAiBuilderOpen(false)}
+          onStepsGenerated={handleAiStepsGenerated}
+        />
+      )}
 
       {isLoading && <p className="text-sm text-rim-text-muted">Loading macros...</p>}
 

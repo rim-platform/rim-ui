@@ -1,3 +1,4 @@
+import { agentAvailable } from "../../agent/agentAvailability";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
@@ -61,7 +62,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 
 export function getSlashCommandSuggestions(partial: string): SlashCommand[] {
   const lower = partial.toLowerCase();
-  return SLASH_COMMANDS.filter((cmd) => cmd.command.startsWith(lower));
+  return SLASH_COMMANDS.filter(
+    (cmd) => cmd.command.startsWith(lower) && (cmd.command !== "/agent" || agentAvailable()),
+  );
 }
 
 export function isSlashCommand(text: string): SlashCommand | null {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
@@ -11,12 +11,24 @@ vi.mock("../tools/loader", () => ({ loadAgentTools: vi.fn(() => Promise.resolve(
 import { loadAgentTools } from "../tools/loader";
 import { AgentOverlay } from "./AgentOverlay";
 
+/** Makes the app the desktop app, where the agent runs. */
+function onDesktop() {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+}
+
+function offDesktop() {
+  delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+}
+
 describe("AgentOverlay and the ai_commands switch", () => {
   beforeEach(() => {
     vi.mocked(loadAgentTools).mockClear();
     localStorage.setItem("agent-disclaimer-accepted", "true");
     useAgentStore.setState({ isOpen: true });
+    onDesktop();
   });
+
+  afterEach(offDesktop);
 
   it("opens the agent while the server runs AI commands", () => {
     render(<AgentOverlay />, { wrapper: withServerInfo() });
@@ -56,7 +68,10 @@ describe("AgentOverlay model label", () => {
       settings: { providerId: "anthropic", modelId: "claude-opus-5-5", systemPrompt: "" },
     });
     useLiveModelsStore.setState({ byProvider: {} });
+    onDesktop();
   });
+
+  afterEach(offDesktop);
 
   it("names the model by its display name from the live list", () => {
     useLiveModelsStore.setState({ byProvider: { anthropic: [opus] } });
@@ -68,5 +83,21 @@ describe("AgentOverlay model label", () => {
     useLiveModelsStore.setState({ byProvider: { openai: [{ ...opus, id: "gpt-5.4" }] } });
     render(<AgentOverlay />, { wrapper: withServerInfo() });
     expect(screen.getByText("anthropic / claude-opus-5-5")).toBeInTheDocument();
+  });
+});
+
+describe("AgentOverlay on the web", () => {
+  beforeEach(() => {
+    vi.mocked(loadAgentTools).mockClear();
+    localStorage.setItem("agent-disclaimer-accepted", "true");
+    useAgentStore.setState({ isOpen: true });
+  });
+
+  it("says the agent is in the desktop app and loads no tools", () => {
+    render(<AgentOverlay />, { wrapper: withServerInfo() });
+
+    expect(screen.getByText("The AI agent is available in the desktop app.")).toBeInTheDocument();
+    expect(screen.queryByText(/Ask anything about your workspace/)).not.toBeInTheDocument();
+    expect(loadAgentTools).not.toHaveBeenCalled();
   });
 });
