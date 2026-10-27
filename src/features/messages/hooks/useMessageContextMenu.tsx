@@ -31,6 +31,8 @@ interface UseMessageContextMenuOptions {
   workspaceId: string | null;
   conversationId: string | null;
   onForward?: (messageId: string, messageText: string) => void;
+  /** Starts a timeline reply to a message; absent where the viewer cannot post or in the thread panel. */
+  onReply?: (messageId: string) => void;
   /**
    * The thread the messages are shown in, for the thread panel: its menu has no Reply in
    * thread and no Edit message (the panel edits nothing in place), and the plugins' actions
@@ -59,7 +61,7 @@ function selectedTextIn(messageId: string): string | null {
 
 /**
  * The message context menu of a conversation, in this order: Add reaction, Copy selection
- * (while text of the message is selected) and Copy text, Reply in thread, Forward, Pin or
+ * (while text of the message is selected) and Copy text, Reply, Reply in thread, Forward, Pin or
  * Unpin; then Edit and Delete on the viewer's own message, Report on someone else's; a
  * Moderation section with Delete for an Owner or Moderator; then the plugins' message actions.
  * Add reaction, Reply in thread and Pin or Unpin are left out where the channel's posting policy
@@ -72,6 +74,7 @@ export function useMessageContextMenu({
   workspaceId,
   conversationId,
   onForward,
+  onReply,
   threadId = null,
 }: UseMessageContextMenuOptions): {
   getItems: (target: MessageMenuTarget) => DropdownMenuItem[];
@@ -122,6 +125,10 @@ export function useMessageContextMenu({
         label: "Copy text",
         onSelect: () => copyToClipboard(messageText),
       });
+
+      if (onReply && !threadId) {
+        result.push({ id: "reply", label: "Reply", onSelect: () => onReply(messageId) });
+      }
 
       if (!hasThread && !threadId && rights.thread) {
         result.push({
@@ -219,6 +226,7 @@ export function useMessageContextMenu({
       workspaceId,
       conversationId,
       onForward,
+      onReply,
       threadId,
       canModerate,
       rights.reaction,

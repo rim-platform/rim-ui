@@ -182,9 +182,13 @@ people to add, and **Create** opens the channel. **Browse channels**, the compas
 **Channels.** A public channel is readable by every member of the workspace. The tool panel lists
 the channels you joined; one you have not joined shows **Join channel** above its timeline.
 
+**Replies.** **Reply** in a message's menu, the reply arrow on hover, or <kbd>r</kbd> on a
+selected message quotes it above the composer; what you send next shows that quote, and choosing
+the quote jumps to the original. **Cancel reply** (the ×) or <kbd>Esc</kbd> drops it.
+
 **Threads.** Replies live in threads. Hover a message and choose **Open thread**, choose **Reply
-in thread** in its context menu (right-click), or select it and press <kbd>r</kbd> or <kbd>t</kbd>.
-The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
+in thread** in its context menu (right-click), or select it and press <kbd>t</kbd>. The thread
+opens in a pane on the right; the message stays in the timeline and its replies stay in
 the thread. A message with a thread shows how many replies it has under it (**3 replies**), or
 **View thread** on a server that does not report the count; choose it, or **Open thread** on
 hover, to open the pane. The thread's reply box works like the composer: `@` mentions, `:` emoji,

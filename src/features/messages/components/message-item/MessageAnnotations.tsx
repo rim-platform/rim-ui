@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { MessageSquare } from "lucide-react";
+import { CornerUpLeft, MessageSquare } from "lucide-react";
 
 import { useThreadReplyCount } from "../../../threads/api/useThreadReplyCount";
 import { LinkPreviewCard } from "../LinkPreviewCard";
@@ -17,6 +17,27 @@ export const MessageLinkPreviews = memo(function MessageLinkPreviews({
         <LinkPreviewCard key={preview.id} preview={preview} />
       ))}
     </div>
+  );
+});
+
+/** Hover action that starts a timeline reply to the message. */
+export const MessageReplyButton = memo(function MessageReplyButton({
+  messageId,
+  onReply,
+}: {
+  messageId: string;
+  onReply: (messageId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onReply(messageId)}
+      className="rounded p-1 text-rim-text-faint opacity-0 transition hover:text-rim-accent group-hover:opacity-100"
+      title="Reply"
+      aria-label="Reply"
+    >
+      <CornerUpLeft className="h-4 w-4" />
+    </button>
   );
 });
 

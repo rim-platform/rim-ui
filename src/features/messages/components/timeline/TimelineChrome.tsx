@@ -40,6 +40,12 @@ interface NavigationHintsProps {
   isSelectedOwnMessage: boolean;
   isDeleteConfirming: boolean;
   hasNewMessages: boolean;
+  /** Whether `r` starts a reply here. */
+  canReply: boolean;
+  /** Whether `t` opens the selected message's thread. */
+  canThread: boolean;
+  /** Whether `p` pins here. */
+  canPin: boolean;
 }
 
 /** Action hints bar shown in NAVIGATE mode. */
@@ -48,6 +54,9 @@ export function NavigationHints({
   isSelectedOwnMessage,
   isDeleteConfirming,
   hasNewMessages,
+  canReply,
+  canThread,
+  canPin,
 }: NavigationHintsProps) {
   return (
     <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex justify-center pb-1">
@@ -62,10 +71,10 @@ export function NavigationHints({
         <Hint keys="j/k" label="Navigate" />
         {hasSelection && (
           <>
-            <Hint keys="r" label="Reply" />
+            {canReply && <Hint keys="r" label="Reply" />}
             {isSelectedOwnMessage && <Hint keys="e" label="Edit" />}
-            <Hint keys="t" label="Thread" />
-            <Hint keys="p" label="Pin" />
+            {canThread && <Hint keys="t" label="Thread" />}
+            {canPin && <Hint keys="p" label="Pin" />}
             <Hint keys="c" label="Copy" />
             <Hint keys="f" label="Forward" />
             {isSelectedOwnMessage && (

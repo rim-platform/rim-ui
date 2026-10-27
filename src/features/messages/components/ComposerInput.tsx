@@ -76,6 +76,8 @@ interface ComposerInputProps {
   onFilePickerOpen?: () => void;
   /** Where the box writes: a conversation's composer or a thread's reply box. */
   variant?: "conversation" | "thread";
+  /** Called on Escape with no suggestion list open; returns true when it handled the key. */
+  onEscape?: () => boolean;
 }
 
 export function ComposerInput({
@@ -92,6 +94,7 @@ export function ComposerInput({
   serverMembers,
   onFilePickerOpen,
   variant = "conversation",
+  onEscape,
 }: ComposerInputProps) {
   const inThread = variant === "thread";
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
@@ -409,6 +412,11 @@ export function ComposerInput({
         setShortcodeQuery(null);
         return;
       }
+    }
+
+    if (e.key === "Escape" && onEscape?.()) {
+      e.preventDefault();
+      return;
     }
 
     // Escape with no active suggestions: enter navigation mode; in a thread it closes the pane

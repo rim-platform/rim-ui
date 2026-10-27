@@ -78,16 +78,19 @@ function MessageRow({
   isOwnMessage,
   message,
   threadId,
+  onReply,
 }: {
   isOwnMessage: boolean;
   message?: MessageItem;
   threadId?: string;
+  onReply?: (messageId: string) => void;
 }) {
   const contextMenu = useContextMenu();
   const messageMenu = useMessageContextMenu({
     workspaceId: "ws-1",
     conversationId: "conv-1",
     onForward,
+    onReply,
     threadId,
   });
   const target = {
@@ -121,11 +124,17 @@ async function renderMenu(
   isOwnMessage: boolean,
   message?: MessageItem,
   threadId?: string,
+  onReply?: (messageId: string) => void,
 ) {
   const qc = createTestQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <MessageRow isOwnMessage={isOwnMessage} message={message} threadId={threadId} />
+      <MessageRow
+        isOwnMessage={isOwnMessage}
+        message={message}
+        threadId={threadId}
+        onReply={onReply}
+      />
       <ConfirmCommandModal />
     </QueryClientProvider>,
   );
@@ -577,11 +586,26 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     expect(labels()[0]).toBe("Add reaction");
   });
 
-  it("drops Reply in thread and Edit in the thread panel and gives plugins the thread", async () => {
+  it("offers Reply before Reply in thread when onReply is given", async () => {
+    const onReply = vi.fn();
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, undefined, onReply);
+    expect(labels().slice(1, 4)).toEqual(["Copy text", "Reply", "Reply in thread"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reply" }));
+    expect(onReply).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers no Reply without onReply", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain("Reply");
+  });
+
+  it("drops Reply, Reply in thread and Edit in the thread panel and gives plugins the thread", async () => {
     pluginCommands.list = [{ id: "plugin.translate", title: "Translate" }];
     try {
       serve(ServerMemberRoleGql.MEMBER);
-      await renderMenu(ServerMemberRoleGql.MEMBER, true, undefined, "thread-9");
+      await renderMenu(ServerMemberRoleGql.MEMBER, true, undefined, "thread-9", vi.fn());
       expect(labels()).toEqual([
         "Add reaction",
         "Copy text",

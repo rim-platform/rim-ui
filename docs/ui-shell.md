@@ -203,10 +203,11 @@ menu. The surfaces with a menu:
 
 - **A message**, in the timeline and in the thread panel: Add reaction (a submenu of quick
   reactions), Copy selection (while part of the message is selected, since the menu takes the
-  place of the system's one there), Copy text, Reply in thread (not in the thread panel),
-  Forward…, Pin or Unpin message; Edit message (not in the thread panel) and Delete message… on
-  your own message, Report message… on someone else's; a Moderation section with Delete
-  message… for an Owner or a Moderator; then the plugins' message actions.
+  place of the system's one there), Copy text, Reply (in the timeline, where you can post),
+  Reply in thread (not in the thread panel), Forward…, Pin or Unpin message; Edit message (not
+  in the thread panel) and Delete message… on your own message, Report message… on someone
+  else's; a Moderation section with Delete message… for an Owner or a Moderator; then the
+  plugins' message actions.
 - **A pinned message** in the pinned panel and **a search result**: Jump to message and Copy
   text, and Unpin message in the pinned panel.
 - **An attachment**: Open (an image full size, a file in a new window) and Download once it is

@@ -201,6 +201,8 @@ export function useSendMessageMutation() {
       text: string;
       /** A forward of an encrypted message, re-sent as plaintext. */
       forwardedFromMessageId?: string;
+      /** The timeline message this one replies to. */
+      parentMessageId?: string;
     }) => {
       await refusePlaintextIfPinned(vars.workspaceId, vars.conversationId);
       return graphqlClient.request<SendMessageResponse>(SEND_MESSAGE_MUTATION, {
@@ -211,6 +213,7 @@ export function useSendMessageMutation() {
           ...(vars.forwardedFromMessageId
             ? { forwardedFromMessageId: vars.forwardedFromMessageId }
             : {}),
+          ...(vars.parentMessageId ? { parentMessageId: vars.parentMessageId } : {}),
         },
       });
     },

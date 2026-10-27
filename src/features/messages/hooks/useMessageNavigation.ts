@@ -10,6 +10,7 @@ interface MessageNavItem {
   text?: string | null;
   isPinned?: boolean;
   authorId: string;
+  rootThreadId?: string | null;
 }
 
 interface UseMessageNavigationOptions {
@@ -22,6 +23,12 @@ interface UseMessageNavigationOptions {
   openThread: (messageId: string) => void;
   onDeleteMessage: (msg: { id: string }) => void | Promise<void>;
   onForwardMessage: (msg: { id: string; text: string }) => void;
+  /** Starts a timeline reply to a message; absent where the viewer cannot post. */
+  onReply?: (messageId: string) => void;
+  /** Whether `t` may start a thread on a message without one. Defaults to true. */
+  canStartThread?: boolean;
+  /** Whether `p` may pin or unpin. Defaults to true. */
+  canPin?: boolean;
   /** Open the actions menu of a message, as a right click on it does. */
   onOpenActions?: (messageId: string) => void;
   /** Index of the first new message after the watermark, or -1 if no divider. */
@@ -55,6 +62,9 @@ export function useMessageNavigation({
   openThread,
   onDeleteMessage,
   onForwardMessage,
+  onReply,
+  canStartThread = true,
+  canPin = true,
   onOpenActions,
   firstNewIndex = -1,
   scrollToIndex,
@@ -237,12 +247,15 @@ export function useMessageNavigation({
       }
 
       switch (e.key) {
-        // Both r (reply) and t (thread) open the thread panel. In RIM,
-        // threads ARE the reply mechanism — there is no separate inline
-        // reply context. Two keybinds for discoverability: "r" for users
-        // expecting reply semantics, "t" for those expecting thread.
-        case "r":
+        // r starts a reply quoted above the composer; t opens the message's thread.
+        case "r": {
+          if (!onReply) break;
+          e.preventDefault();
+          onReply(msg.id);
+          break;
+        }
         case "t": {
+          if (!canStartThread && !msg.rootThreadId) break;
           e.preventDefault();
           openThread(msg.id);
           break;
@@ -256,6 +269,7 @@ export function useMessageNavigation({
           break;
         }
         case "p": {
+          if (!canPin) break;
           e.preventDefault();
           if (!workspaceId || !conversationId) break;
           const vars = { serverId: workspaceId, conversationId, messageId: msg.id };
@@ -313,6 +327,9 @@ export function useMessageNavigation({
       openThread,
       onDeleteMessage,
       onForwardMessage,
+      onReply,
+      canStartThread,
+      canPin,
       onOpenActions,
       workspaceId,
       conversationId,

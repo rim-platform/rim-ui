@@ -21,8 +21,10 @@ const dataState: { current: TimelineData } = {
   current: { pages: [], hasNextPage: false, isFetchingNextPage: false },
 };
 const fetchNextPage = vi.fn();
+const sendMutateAsync = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/useMessages", () => ({
+  useSendMessageMutation: () => ({ mutateAsync: sendMutateAsync }),
   useConversationMessages: () => ({
     data: { pages: dataState.current.pages, pageParams: [] },
     isPending: false,
@@ -68,7 +70,21 @@ vi.mock("../../conversations/api/useMarkAsRead", () => ({
   useMarkAsRead: () => markAsRead,
 }));
 
-vi.mock("./Composer", () => ({ Composer: () => <div data-testid="composer" /> }));
+// Every other request the real composer makes stays pending.
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: { request: () => new Promise(() => {}) },
+}));
+
+// A placeholder composer, or the real one when `real` is set.
+const composer = vi.hoisted(() => ({ real: false }));
+vi.mock("./Composer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./Composer")>();
+  return {
+    ...actual,
+    Composer: (props: Parameters<typeof actual.Composer>[0]) =>
+      composer.real ? <actual.Composer {...props} /> : <div data-testid="composer" />,
+  };
+});
 const incoming = vi.hoisted(() => ({ requests: [] as { id: string; conversationId: string }[] }));
 vi.mock("../../relay/api/useDmRequests", () => ({
   usePendingDmRequests: () => ({ data: incoming.requests }),
@@ -100,9 +116,13 @@ vi.mock("../../workspaces/api/useMyServerRole", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../workspaces/api/useMyServerRole")>()),
   useCanModerate: () => true,
 }));
+const allRights = { message: true, thread: true, reaction: true, pin: true };
+const posting = vi.hoisted(() => ({
+  rights: { message: true, thread: true, reaction: true, pin: true },
+}));
 vi.mock("../../conversations/api/useChannelPosting", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../conversations/api/useChannelPosting")>()),
-  usePostingRights: () => ({ message: true, thread: true, reaction: true, pin: true }),
+  usePostingRights: () => posting.rights,
 }));
 vi.mock("../../plugins/api/usePluginCommands", () => ({
   usePluginContextMenuCommands: () => [],
@@ -125,6 +145,8 @@ vi.mock("../../conversations/api/useConversation", async (importOriginal) => ({
 
 const renderCounts = new Map<string, number>();
 const seenHandlers: unknown[] = [];
+// Rows render the real MessageItem when `real` is set.
+const messageItem = vi.hoisted(() => ({ real: false }));
 
 vi.mock("./MessageItem", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./MessageItem")>();
@@ -135,6 +157,7 @@ vi.mock("./MessageItem", async (importOriginal) => {
     const id = props.view.message.id;
     renderCounts.set(id, (renderCounts.get(id) ?? 0) + 1);
     seenHandlers.push(props.handlers);
+    if (messageItem.real) return <actual.MessageItem {...props} />;
     return (
       <div
         data-message-id={id}
@@ -157,6 +180,7 @@ vi.mock("./MessageItem", async (importOriginal) => {
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import { MessageTimeline } from "./MessageTimeline";
+import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { MARK_SEEN_DELAY_MS } from "./timeline/useMarkSeen";
 
 // --- Layout harness -------------------------------------------------------
@@ -413,6 +437,10 @@ afterEach(() => {
   observers.clear();
   vi.clearAllMocks();
   messageMenu.real = false;
+  composer.real = false;
+  messageItem.real = false;
+  posting.rights = allRights;
+  useReplyTargetStore.setState({ targets: {} });
   dmRequest.pending = false;
   dmRequest.conversation = undefined;
 });
@@ -998,5 +1026,90 @@ describe("MessageTimeline — an empty conversation", () => {
     dmRequest.conversation = group(null);
     render(<MessageTimeline />);
     expect(screen.queryByTestId("timeline-empty-encrypted")).toBeNull();
+  });
+});
+
+describe("MessageTimeline — reply", () => {
+  beforeEach(() => {
+    messageMenu.real = true;
+    messageItem.real = true;
+    composer.real = true;
+    dmRequest.conversation = makeConversation();
+  });
+
+  it("Reply from the menu quotes the message above the composer", async () => {
+    const parent = makeMessage(0, { text: "Lunch at noon?" });
+    setMessages([parent]);
+    sendMutateAsync.mockResolvedValue({ sendMessage: { id: "m-new" } });
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+
+    fireEvent.contextMenu(screen.getByText("Lunch at noon?"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reply" }));
+
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    const bar = screen.getByText("Replying to").parentElement!;
+    expect(within(bar).getByText("alice")).toBeInTheDocument();
+    expect(within(bar).getByText("Lunch at noon?")).toBeInTheDocument();
+    const textbox = document.querySelector<HTMLTextAreaElement>("[data-composer-input]")!;
+    expect(textbox).toHaveFocus();
+    expect(useShellStore.getState().navigationMode).toBe(false);
+
+    fireEvent.change(textbox, { target: { value: "agreed" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    await act(async () => {});
+    expect(sendMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-1", parentMessageId: parent.id }),
+    );
+    expect(screen.queryByText("Replying to")).not.toBeInTheDocument();
+
+    setMessages([
+      parent,
+      makeMessage(1, { id: "m-new", authorId: "me", text: "agreed", parentMessageId: parent.id }),
+    ]);
+    rerender(<MessageTimeline />);
+    await settle();
+    expect(
+      document.querySelector(`[data-message-id="m-new"] [data-reply-quote="${parent.id}"]`),
+    ).toHaveTextContent("Lunch at noon?");
+  });
+
+  it("keeps rows memoized when a new message is appended where the viewer can reply", () => {
+    messageItem.real = false;
+    composer.real = false;
+    setMessages([0, 1, 2].map((i) => makeMessage(i)));
+    const { rerender } = render(<MessageTimeline />);
+    resetCounts();
+
+    setMessages([0, 1, 2, 3].map((i) => makeMessage(i)));
+    rerender(<MessageTimeline />);
+
+    expect(renderCounts.get("m-003")).toBe(1);
+    for (const id of ["m-000", "m-001", "m-002"]) {
+      expect(renderCounts.get(id) ?? 0).toBe(0);
+    }
+  });
+
+  it("offers no Reply in a moderators-only channel to a member", async () => {
+    posting.rights = { message: false, thread: false, reaction: false, pin: false };
+    composer.real = false;
+    setMessages([makeMessage(0, { text: "Lunch at noon?" })]);
+    render(<MessageTimeline />);
+    await settle();
+
+    fireEvent.contextMenu(screen.getByText("Lunch at noon?"));
+    expect(screen.queryByRole("menuitem", { name: "Reply" })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "Reply" })).not.toBeInTheDocument();
+
+    const list = messageList();
+    fireEvent.focus(list);
+    const hints = screen.getByText("NAVIGATE").parentElement!;
+    expect(within(hints).getByText("Copy")).toBeInTheDocument();
+    expect(within(hints).queryByText("Reply")).not.toBeInTheDocument();
+    expect(within(hints).queryByText("Pin")).not.toBeInTheDocument();
+    expect(within(hints).queryByText("Thread")).not.toBeInTheDocument();
+    fireEvent.keyDown(list, { key: "r" });
+    expect(useReplyTargetStore.getState().targets).toEqual({});
   });
 });

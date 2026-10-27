@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { activeBan, banLabel, useBanExpiry } from "../hooks/useBanExpiry";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
@@ -46,6 +46,8 @@ import { useTimelineItems } from "./timeline/useTimelineItems";
 import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
 import { replyQuoteFor } from "./message-item/replyQuoteView";
+import { useReplyTargetStore } from "../state/useReplyTargetStore";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import {
   NavigationHints,
@@ -92,6 +94,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const { data: pendingRequests } = usePendingDmRequests();
   const incomingRequest = incomingRequestOf(pendingRequests, conversationId);
+  const { data: conversation } = useConversation(workspaceId, conversationId);
 
   const e2ee = useE2eeConversation(workspaceId, conversationId);
   const principalNames = usePrincipalNames(workspaceId);
@@ -196,7 +199,43 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
-  const messageMenu = useMessageContextMenu({ workspaceId, conversationId, onForward: forward });
+
+  // Reply is offered where the composer, not a bar in its place, is shown.
+  const rights = usePostingRights(workspaceId, conversationId);
+  const canReply =
+    rights.message &&
+    conversation !== undefined &&
+    !conversation.isArchived &&
+    (conversation.conversationType !== ConversationTypeEnum.CHANNEL || conversation.isMember) &&
+    !incomingRequest;
+  // Read through a ref so a new message does not rebuild the rows' shared handlers.
+  const replySourceRef = useRef({ itemsById, mentionNameOf });
+  useLayoutEffect(() => {
+    replySourceRef.current = { itemsById, mentionNameOf };
+  }, [itemsById, mentionNameOf]);
+  const startReply = useCallback(
+    (messageId: string) => {
+      const source = replySourceRef.current;
+      const msg = source.itemsById.get(messageId);
+      if (!conversationId || !msg || msg.isDeleted || msg.e2eeNotice) return;
+      useReplyTargetStore.getState().start(conversationId, {
+        messageId,
+        authorId: msg.authorId,
+        excerpt: replyQuoteFor(messageId, msg, null, source.mentionNameOf).excerpt,
+      });
+      useShellStore.getState().setNavigationMode(false);
+      document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
+    },
+    [conversationId],
+  );
+  const onReply = canReply ? startReply : undefined;
+
+  const messageMenu = useMessageContextMenu({
+    workspaceId,
+    conversationId,
+    onForward: forward,
+    onReply,
+  });
   const getMenuItems = (target: TimelineMenuTarget) =>
     messageMenu.getItems({ ...target, message: itemsById.get(target.messageId) });
 
@@ -222,7 +261,6 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     },
     [openUserMenu],
   );
-  const rights = usePostingRights(workspaceId, conversationId);
   const handlers = useMemo(
     () => ({
       ...rowHandlers,
@@ -230,8 +268,16 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       onMentionContextMenu,
       canAddReaction: rights.reaction,
       canStartThread: rights.thread,
+      onReply,
     }),
-    [rowHandlers, bindUserContextMenu, onMentionContextMenu, rights.reaction, rights.thread],
+    [
+      rowHandlers,
+      bindUserContextMenu,
+      onMentionContextMenu,
+      rights.reaction,
+      rights.thread,
+      onReply,
+    ],
   );
 
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
@@ -254,6 +300,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       openThread,
       onDeleteMessage: handleDeleteMessage,
       onForwardMessage: setForwardMessage,
+      onReply,
+      canStartThread: rights.thread,
+      canPin: rights.pin,
       onOpenActions: openActionsFor,
       firstNewIndex,
       scrollToIndex,
@@ -444,6 +493,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
             }
             isDeleteConfirming={deleteConfirmMessageId !== null}
             hasNewMessages={firstNewIndex >= 0}
+            canReply={canReply}
+            canThread={rights.thread || Boolean(selectedMsg?.rootThreadId)}
+            canPin={rights.pin}
           />
         )}
       </div>

@@ -5,6 +5,7 @@ import { areMessageItemPropsEqual } from "./message-item/areMessageItemPropsEqua
 import { formatShortTime } from "./message-item/formatShortTime";
 import {
   MessageLinkPreviews,
+  MessageReplyButton,
   MessageThreadButton,
   MessageThreadSummary,
 } from "./message-item/MessageAnnotations";
@@ -59,6 +60,7 @@ export const MessageItem = memo(function MessageItem({
     onToggleReaction,
     canAddReaction = true,
     canStartThread = true,
+    onReply,
     onSaveEdit,
     onCancelEdit,
     bindUserContextMenu,
@@ -138,6 +140,10 @@ export const MessageItem = memo(function MessageItem({
   const replyQuote =
     replyTo && !isDeleted ? <ReplyQuote quote={replyTo} onJump={handlers.onJumpToMessage} /> : null;
 
+  const replyButton =
+    onReply && !isDeleted && !inThreadPane && !message.threadId ? (
+      <MessageReplyButton messageId={messageId} onReply={onReply} />
+    ) : null;
   // An existing thread stays openable where the viewer may not reply: the pane says so.
   const threadButton =
     !isDeleted && !message.threadId && !inThreadPane && (message.rootThreadId || canStartThread) ? (
@@ -163,9 +169,10 @@ export const MessageItem = memo(function MessageItem({
       />
     ) : null;
   const hoverActions =
-    addReactionAction || threadButton ? (
+    addReactionAction || replyButton || threadButton ? (
       <div className="flex shrink-0 items-center">
         {addReactionAction}
+        {replyButton}
         {threadButton}
       </div>
     ) : null;
