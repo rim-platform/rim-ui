@@ -94,18 +94,9 @@ export function replaceShortcodes(text: string): string {
   return result;
 }
 
-/**
- * Get shortcode suggestions for partial input.
- * Returns matching shortcodes for autocomplete.
- */
-export function getShortcodeSuggestions(partial: string): Array<{ code: string; emoji: string }> {
-  if (!partial.startsWith(":") || partial.length < 2) return [];
-  const lower = partial.toLowerCase();
+/** The app's own `:name:` shortcodes, each with its name without the colons and its emoji. */
+export function shortcodeEntries(): Array<{ code: string; emoji: string }> {
   return Object.entries(SHORTCODE_MAP)
-    .filter(
-      ([code]) =>
-        code.startsWith(":") && code.endsWith(":") && code.toLowerCase().startsWith(lower),
-    )
-    .map(([code, emoji]) => ({ code, emoji }))
-    .slice(0, 8);
+    .filter(([code]) => code.length > 2 && code.startsWith(":") && code.endsWith(":"))
+    .map(([code, emoji]) => ({ code: code.slice(1, -1), emoji }));
 }

@@ -29,7 +29,7 @@ export function attachmentContentType(file: File): string {
 export function attachmentProblem(file: File, encrypted: boolean): string | null {
   if (file.size === 0) return `${file.name} is empty.`;
   if (file.size + (encrypted ? 16 : 0) > MAX_ATTACHMENT_BYTES)
-    return `${file.name} is larger than 25 MiB.`;
+    return `${file.name} is larger than 25 MiB, the largest file you can attach.`;
   const type = attachmentContentType(file).split(";")[0].trim().toLowerCase();
   const supported =
     ["image/", "text/", "audio/", "video/"].some(

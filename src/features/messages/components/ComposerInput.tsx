@@ -4,7 +4,13 @@ import { Send, SmilePlus, Paperclip, Loader2 } from "lucide-react";
 
 import { EmojiPicker } from "../../../shared/ui/EmojiPicker";
 import { Z } from "../../../shared/ui/zIndex";
-import { getShortcodeSuggestions } from "../utils/emojiShortcodes";
+import {
+  cachedEmojiIndex,
+  loadEmojiIndex,
+  searchEmoji,
+  SHORTCODE_QUERY,
+  type EmojiSuggestion,
+} from "../utils/emojiSearch";
 import { getSlashCommandSuggestions } from "../utils/slashCommands";
 import type { SlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
@@ -14,6 +20,7 @@ import { useResolvedKeybinds } from "../../commands/api/useKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
+import { CustomEmojiImage } from "../../emoji/components/CustomEmojiImage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
@@ -115,18 +122,23 @@ export function ComposerInput({
 
   // Autocomplete state
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ code: string; emoji: string }>>([]);
+  const [shortcodeQuery, setShortcodeQuery] = useState<string | null>(null);
+  const [emojiIndex, setEmojiIndex] = useState(cachedEmojiIndex);
+  const suggestions = useMemo(
+    () => (shortcodeQuery ? searchEmoji(shortcodeQuery, emojiIndex, customEmojis) : []),
+    [shortcodeQuery, emojiIndex, customEmojis],
+  );
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [slashItems, setSlashItems] = useState<SlashItem[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mentionSuggestions, setMentionSuggestions] = useState<MentionSuggestion[]>([]);
   const [selectedMention, setSelectedMention] = useState(0);
 
-  // Extract the current partial shortcode being typed (word touching cursor)
+  // Extract the current `:` emoji query being typed (word touching cursor), without the colon
   const getPartialShortcode = useCallback((value: string, cursorPos: number): string | null => {
     const before = value.slice(0, cursorPos);
-    const match = before.match(/:([a-zA-Z0-9_]*)$/);
-    if (match) return match[0];
+    const match = before.match(SHORTCODE_QUERY);
+    if (match) return match[1];
     return null;
   }, []);
 
@@ -217,7 +229,7 @@ export function ComposerInput({
       } else {
         setSlashItems([]);
       }
-      setSuggestions([]);
+      setShortcodeQuery(null);
     } else {
       setSlashItems([]);
 
@@ -225,33 +237,37 @@ export function ComposerInput({
       const mentionPartial = getPartialMention(value, cursorPos);
       if (mentionPartial !== null) {
         updateMentionSuggestions(mentionPartial);
-        setSuggestions([]);
+        setShortcodeQuery(null);
       } else {
         setMentionSuggestions([]);
 
         // Emoji shortcode detection
-        const partial = getPartialShortcode(value, cursorPos);
-        if (partial && partial.length >= 2) {
-          const results = getShortcodeSuggestions(partial);
-          setSuggestions(results);
+        const query = getPartialShortcode(value, cursorPos);
+        if (query && query.length >= 2) {
+          setShortcodeQuery(query);
           setSelectedSuggestion(0);
+          if (!emojiIndex) void loadEmojiIndex().then(setEmojiIndex);
         } else {
-          setSuggestions([]);
+          setShortcodeQuery(null);
         }
       }
     }
   }
 
-  function applySuggestion(suggestion: { code: string; emoji: string }) {
+  function applySuggestion(suggestion: EmojiSuggestion) {
     const cursorPos = textareaRef.current?.selectionStart ?? text.length;
     const before = text.slice(0, cursorPos);
     const after = text.slice(cursorPos);
-    const match = before.match(/:([a-zA-Z0-9_]*)$/);
+    const match = before.match(SHORTCODE_QUERY);
     if (match) {
-      const newBefore = before.slice(0, before.length - match[0].length) + suggestion.emoji;
+      // A custom emoji is sent as `:name:` text, which needs a space to stand apart.
+      const newBefore =
+        before.slice(0, before.length - match[1].length - 1) +
+        suggestion.insert +
+        (suggestion.imageUrl ? " " : "");
       onTextChange(newBefore + after);
     }
-    setSuggestions([]);
+    setShortcodeQuery(null);
     textareaRef.current?.focus();
   }
 
@@ -390,7 +406,7 @@ export function ComposerInput({
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        setSuggestions([]);
+        setShortcodeQuery(null);
         return;
       }
     }
@@ -589,7 +605,7 @@ export function ComposerInput({
           >
             {suggestions.map((s, i) => (
               <button
-                key={s.code}
+                key={s.insert}
                 type="button"
                 onClick={() => applySuggestion(s)}
                 className={cn(
@@ -599,8 +615,12 @@ export function ComposerInput({
                     : "text-rim-text hover:bg-rim-void/50",
                 )}
               >
-                <span className="text-base">{s.emoji}</span>
-                <span className="text-rim-text-muted">{s.code}</span>
+                {s.imageUrl ? (
+                  <CustomEmojiImage url={s.imageUrl} name="" className="h-4 w-4" />
+                ) : (
+                  <span className="text-base">{s.emoji}</span>
+                )}
+                <span className="text-rim-text-muted">:{s.code}:</span>
               </button>
             ))}
           </div>,
