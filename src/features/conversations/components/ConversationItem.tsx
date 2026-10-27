@@ -178,9 +178,7 @@ export const ConversationItem = memo(function ConversationItem({
         >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
-      ) : (
-        <span className="ml-auto text-xs text-rim-text-faint">{conv.memberCount}</span>
-      )}
+      ) : null}
     </button>
   );
 

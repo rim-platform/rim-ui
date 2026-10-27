@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { asSentence, graphqlErrorMessage } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
@@ -79,7 +79,9 @@ interface DmRequestActionsOptions {
 /**
  * The decisions on one message request, shared by the request inbox and the bar a request's
  * conversation shows instead of its composer: the sender's verified name, and Accept, Read first,
- * Ignore, Block and Report. One runs at a time (`busy`); a failure is a toast.
+ * Ignore, Block and Report. Block asks first: `askBlock` opens the confirmation
+ * (`confirmingBlock`), `block` runs it and says so in a toast. One runs at a time (`busy`); a
+ * failure is a toast.
  */
 export function useDmRequestActions(request: DmRequestView, options: DmRequestActionsOptions = {}) {
   const qc = useQueryClient();
@@ -90,7 +92,9 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
     queryFn: () => verifiedSenderName(request),
   });
   const [busy, setBusy] = useState(false);
+  const [confirmingBlock, setConfirmingBlock] = useState(false);
   const name = sender.data ?? "Unverified sender";
+  const blockName = sender.data ?? "this sender";
 
   async function act(action: () => Promise<void>, failure: string): Promise<boolean> {
     setBusy(true);
@@ -150,6 +154,7 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
 
   async function blockSender() {
     await blockPrincipal(request.fromPrincipalId);
+    await qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals });
     const spaceId = await bindRequestSpace(request).catch(() => null);
     if (spaceId) {
       await leaveConversation(spaceId, request.conversationId).catch((err: unknown) =>
@@ -162,6 +167,10 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
     name,
     senderUnverified: sender.isError,
     busy,
+    blockName,
+    confirmingBlock,
+    askBlock: () => setConfirmingBlock(true),
+    cancelBlock: () => setConfirmingBlock(false),
     accept: async () => {
       if (await act(() => acceptDmRequest(request.id), "Could not accept")) await catchUpAccepted();
     },
@@ -170,7 +179,11 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
       if (await act(() => ignoreDmRequest(request.id), "Could not ignore")) closeView();
     },
     block: async () => {
-      if (await act(blockSender, "Could not block")) closeView();
+      setConfirmingBlock(false);
+      if (await act(blockSender, "Could not block")) {
+        toast.success(asSentence(`Blocked ${blockName}`));
+        closeView();
+      }
     },
     report: (reason: string) =>
       act(async () => {

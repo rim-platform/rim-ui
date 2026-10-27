@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 
 import { renderWithProviders } from "../../../test/utils";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useToastStore } from "../../../shared/toast";
 import { useRelayStore } from "../state/useRelayStore";
 
 const api = vi.hoisted(() => ({
@@ -54,6 +55,7 @@ beforeEach(() => {
   ]) {
     fn.mockReset();
   }
+  useToastStore.setState({ toasts: [] });
   useRelayStore.getState().reset();
   useRelayStore
     .getState()
@@ -125,15 +127,38 @@ describe("DmRequestBar", () => {
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
   });
 
-  it("blocks the sender, leaves through the home and closes the view", async () => {
+  it("asks before blocking, then blocks, leaves through the home, closes the view and says so", async () => {
     const user = userEvent.setup();
     membership.leaveConversation.mockResolvedValue(undefined);
     useShellStore.setState({ selectedConversationId: "conv-1" });
     renderWithProviders(<DmRequestBar request={REQUEST} />);
-    await user.click(await screen.findByRole("button", { name: "Block" }));
+    expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    expect(
+      within(dialog).getByText(
+        "They won't be able to send you direct messages or requests. They won't be told. You can unblock them in Settings → Direct messages.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.blockPrincipal).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Block" }));
     await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
     expect(membership.leaveConversation).toHaveBeenCalledWith("home-direct", "conv-1");
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
+    expect(useToastStore.getState().toasts[0]?.title).toBe("Blocked Alice.");
+  });
+
+  it("blocks nothing when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.blockPrincipal).not.toHaveBeenCalled();
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-1");
   });
 
   it("keeps the view when a decision fails", async () => {

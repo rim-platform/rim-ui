@@ -6,6 +6,7 @@
 
 import { graphqlClient } from "../../../core/graphql/client";
 import type {
+  BlockedPrincipal,
   Contact,
   DmRequestStatus,
   JoinRemoteWorkspaceInput,
@@ -30,6 +31,7 @@ import {
   DM_REQUESTS_QUERY,
   IGNORE_DM_REQUEST_MUTATION,
   JOIN_REMOTE_WORKSPACE_MUTATION,
+  MY_BLOCKED_PRINCIPALS_QUERY,
   RELAY_INFO_QUERY,
   RELAY_ITEMS_QUERY,
   RELAY_ME_QUERY,
@@ -155,6 +157,19 @@ export async function blockPrincipal(principalId: string): Promise<void> {
 
 export async function unblockPrincipal(principalId: string): Promise<void> {
   await graphqlClient.request(UNBLOCK_PRINCIPAL_MUTATION, { principalId });
+}
+
+export type BlockedPrincipalView = Pick<
+  BlockedPrincipal,
+  "principalId" | "userId" | "username" | "displayName" | "blockedAt"
+>;
+
+/** The principals this account blocked, newest first. */
+export async function fetchBlockedPrincipals(): Promise<BlockedPrincipalView[]> {
+  const res = await graphqlClient.request<{ myBlockedPrincipals: BlockedPrincipalView[] }>(
+    MY_BLOCKED_PRINCIPALS_QUERY,
+  );
+  return res.myBlockedPrincipals;
 }
 
 export async function reportDmRequest(id: string, reason: string): Promise<void> {

@@ -254,6 +254,14 @@ describe("ConversationList — channels sidebar", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows no member count on channel rows", async () => {
+    serve();
+    renderList();
+
+    const generalRow = (await screen.findByText("general")).closest("li")!;
+    expect(within(generalRow).queryByText("12")).not.toBeInTheDocument();
+  });
+
   it("omits the archived group when nothing is archived", async () => {
     serve([general]);
     renderList();

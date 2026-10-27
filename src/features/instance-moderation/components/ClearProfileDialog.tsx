@@ -41,7 +41,6 @@ export function ClearProfileDialog({
         </>
       }
       tone="danger"
-      chips={["OPERATOR"]}
       confirmLabel="Clear profile"
       confirmDisabled={trimmed.length === 0 || trimmed.length > MAX_REASON_LENGTH}
       errorFallback="Could not clear the profile"

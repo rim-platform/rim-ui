@@ -22,6 +22,23 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Direct messages lists the people you blocked under **Blocked people**, with
+  **Unblock**. It needs rim-server with `myBlockedPrincipals`; with an older server the section
+  says the server does not list blocked people yet.
+- The audit log names who did each action and, for an action on a member, that member
+  (**Alice → Carol**).
+
+### Changed
+
+- **Block** on a message request asks first, says the person won't be told and where to unblock
+  them, and confirms with a toast.
+- Confirmation dialogs no longer show internal tags (MUTATING, DANGEROUS, OWNER, RESTRICTED) or
+  the person's name in capitals; a dangerous action shows only as its red button.
+- Channel and DM rows in the sidebar no longer show a grey member count, which read as an
+  unread count; the conversation header still shows it.
+
 ### Fixed
 
 - **Search Messages** in the command palette opens the search box instead of failing with
@@ -88,6 +105,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   started with the mouse.
 - The thread reply box offers the @mention list, emoji and **Attach file** like the main composer,
   and a member picked there is mentioned and notified.
+- Confirmation dialogs show the confirm shortcut as Ctrl+↵ on Linux and Windows instead of ⌘↵.
+- The conversation header says "1 member" instead of "1 members", for groups and DMs too.
 
 ## [0.0.5] - 2026-10-26
 

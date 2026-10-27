@@ -159,7 +159,9 @@ describe("MemberModerationDialog", () => {
     serve(MODERATOR);
     const { onClose } = await renderDialog(MODERATOR, { action: "kick", member: alice });
     expect(screen.getByRole("dialog", { name: "Kick Alice?" })).toBeInTheDocument();
-    expect(screen.getByText("DANGEROUS")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Kick Alice?" });
+    expect(within(dialog).queryByText("DANGEROUS")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Alice")).not.toBeInTheDocument();
     expect(callsTo(requestMock, "mutation KickMember")).toHaveLength(0);
     fireEvent.click(confirmButton("Kick"));
 

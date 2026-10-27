@@ -85,23 +85,24 @@ describe("ConfirmCommandModal — subtitle copy source", () => {
 });
 
 describe("ConfirmCommandModal — chips + sensitivity", () => {
-  it("renders the sensitivity wire constant verbatim in the chip", () => {
+  it("shows no sensitivity tag; an agent's command keeps its AGENT chip", () => {
     render(<ConfirmCommandModal />);
     act(() => {
       void useConfirmationModalStore
         .getState()
         .open(makeRequest({ sensitivity: CommandSensitivity.RESTRICTED }));
     });
-    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("RESTRICTED");
+    expect(screen.queryByTestId("sensitivity-chip")).not.toBeInTheDocument();
+    expect(screen.queryByText("RESTRICTED")).not.toBeInTheDocument();
     expect(screen.getByTestId("initiator-chip")).toHaveTextContent("AGENT");
   });
 
-  it("falls back to SAFE styling when sensitivity is missing", () => {
+  it("uses the Safe confirm label when sensitivity is missing", () => {
     render(<ConfirmCommandModal />);
     act(() => {
       void useConfirmationModalStore.getState().open(makeRequest({ sensitivity: undefined }));
     });
-    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("SAFE");
+    expect(screen.getByTestId("confirm-button")).toHaveTextContent("Confirm");
   });
 });
 
@@ -604,7 +605,7 @@ describe("ConfirmCommandModal — a command the user ran", () => {
     });
     expect(screen.queryByTestId("verb-input")).not.toBeInTheDocument();
     expect(screen.getByTestId("confirm-button")).toBeEnabled();
-    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("RESTRICTED");
+    expect(screen.getByTestId("confirm-button")).toHaveTextContent("I understand — execute");
   });
 
   it("asks for no verb when the command's sensitivity is unknown", () => {
@@ -614,7 +615,7 @@ describe("ConfirmCommandModal — a command the user ran", () => {
     });
     expect(screen.queryByTestId("verb-input")).not.toBeInTheDocument();
     expect(screen.getByTestId("confirm-button")).toBeEnabled();
-    expect(screen.getByTestId("sensitivity-chip")).toHaveTextContent("MUTATING");
+    expect(screen.getByTestId("confirm-button")).toHaveTextContent("Run anyway");
   });
 
   it("cancels on Escape and returns focus to where it was", async () => {
@@ -676,6 +677,27 @@ describe("ConfirmCommandModal — a dangerous command", () => {
     expect(panel).toHaveTextContent("This is a dangerous command.");
   });
 
+  it("keeps a dangerous command's red border and button without a tag", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(
+        makeRequest({
+          initiator: "user",
+          dangerous: true,
+          description: undefined,
+          nlDescription: undefined,
+        }),
+      );
+    });
+    const panel = screen.getByRole("dialog");
+    expect(panel).toHaveAttribute("data-dangerous", "true");
+    expect(panel).toHaveTextContent("This is a dangerous command.");
+    expect(screen.queryByTestId("sensitivity-chip")).not.toBeInTheDocument();
+    for (const tag of ["MUTATING", "RESTRICTED", "DANGEROUS"]) {
+      expect(panel).not.toHaveTextContent(tag);
+    }
+  });
+
   it("leaves other commands unmarked", () => {
     render(<ConfirmCommandModal />);
     act(() => {
@@ -684,5 +706,31 @@ describe("ConfirmCommandModal — a dangerous command", () => {
     const panel = screen.getByRole("dialog");
     expect(panel).not.toHaveAttribute("data-dangerous");
     expect(panel).not.toHaveTextContent("This is a dangerous command.");
+  });
+});
+
+describe("ConfirmCommandModal — confirm shortcut", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows the platform's confirm shortcut", () => {
+    const userAgent = vi.spyOn(navigator, "userAgent", "get");
+    userAgent.mockReturnValue("Mozilla/5.0 (X11; Linux x86_64)");
+    const { unmount } = render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeRequest());
+    });
+    expect(screen.getByTestId("confirm-button")).toHaveTextContent("Ctrl+↵");
+    expect(screen.getByTestId("confirm-button")).not.toHaveTextContent("⌘");
+    unmount();
+    resetStores();
+
+    userAgent.mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeRequest());
+    });
+    expect(screen.getByTestId("confirm-button")).toHaveTextContent("⌘↵");
   });
 });

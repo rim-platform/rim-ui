@@ -7,15 +7,12 @@ import { useChannels } from "../api/useChannels";
 import { useJoinChannelMutation } from "../api/useChannelMembership";
 import { useOpenConversation } from "../hooks/useOpenConversation";
 import type { ConversationSummary } from "../types";
+import { memberCountLabel } from "../utils";
 import { ChannelIcon } from "./ChannelIcon";
 
 interface BrowseChannelsDialogProps {
   workspaceId: string;
   onClose: () => void;
-}
-
-function memberCountLabel(count: number): string {
-  return `${count} ${count === 1 ? "member" : "members"}`;
 }
 
 /**

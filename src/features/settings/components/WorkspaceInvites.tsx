@@ -182,7 +182,6 @@ function InvitesSection({ serverId }: { serverId: string }) {
                 : "Nobody has joined with it yet."
           }`}
           tone="danger"
-          chips={["OWNER"]}
           confirmLabel="Revoke invite"
           errorFallback="Could not revoke the invite"
           onConfirm={() => revoke.mutateAsync({ serverId, inviteId: revoking.id })}

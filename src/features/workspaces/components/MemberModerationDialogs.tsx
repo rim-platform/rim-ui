@@ -108,7 +108,6 @@ function ChangeRoleDialog({
         member.role ? `${member.displayName} is currently ${roleLabel(member.role)}.` : undefined
       }
       tone="warm"
-      chips={["MUTATING", member.displayName]}
       confirmLabel="Change role"
       confirmDisabled={!roles.includes(role)}
       errorFallback="Could not change the role"
@@ -222,7 +221,6 @@ function TimeoutDialog({
       title={`Time out ${member.displayName}`}
       description={`${member.displayName} can keep reading but cannot send, react, pin, join or run commands in this workspace until the timeout ends. The server allows at most 30 days.`}
       tone="warm"
-      chips={["MUTATING", member.displayName]}
       confirmLabel="Time out"
       confirmDisabled={preset === CUSTOM_DURATION && !customUntil}
       errorFallback="Could not time the member out"
@@ -270,7 +268,6 @@ function KickDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       title={`Kick ${member.displayName}?`}
       description={`${member.displayName} will be removed from the workspace and from every conversation in it. They can rejoin with a new invite.`}
       tone="danger"
-      chips={["DANGEROUS", member.displayName]}
       confirmLabel="Kick"
       errorFallback="Could not kick the member"
       onConfirm={() =>
@@ -314,7 +311,6 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       title={`Ban ${member.displayName}?`}
       description={`${member.displayName} will be removed from the workspace and cannot rejoin, even with an invite, until the ban ends or is lifted.`}
       tone="danger"
-      chips={["DANGEROUS", member.displayName]}
       confirmLabel="Ban"
       confirmDisabled={expiry === CUSTOM_DURATION && !customExpiry}
       errorFallback="Could not ban the member"

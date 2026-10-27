@@ -167,7 +167,6 @@ export function EncryptedReportView({ serverId, report }: EncryptedReportViewPro
           title="Delete this message?"
           description="You are deleting a reported encrypted message as a moderator. It is removed for every member of the conversation. This cannot be undone, and it is recorded in the audit log."
           tone="danger"
-          chips={["DANGEROUS", "MODERATOR"]}
           confirmLabel="Delete"
           errorFallback="Failed to delete message"
           onConfirm={() =>

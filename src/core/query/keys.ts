@@ -128,9 +128,11 @@ export const queryKeys = {
   notifications: (serverId?: string, unreadOnly?: boolean) =>
     ["notifications", serverId, unreadOnly ?? false] as const,
   unreadNotificationCount: (serverId?: string) => ["unreadNotificationCount", serverId] as const,
-  // The relay: contacts, the DM request inbox (keyed by status filter; the `["dmRequests"]`
-  // prefix covers every list) and a person's identity as their relay serves it.
+  // The relay: contacts, the people the caller blocked, the DM request inbox (keyed by status
+  // filter; the `["dmRequests"]` prefix covers every list) and a person's identity as their relay
+  // serves it.
   relayContacts: ["relayContacts"] as const,
+  myBlockedPrincipals: ["myBlockedPrincipals"] as const,
   dmRequests: (status?: string | null) => ["dmRequests", status ?? null] as const,
   remoteIdentity: (principalId?: string) => ["remoteIdentity", principalId] as const,
   // Who may start a DM: the caller's own choices, a workspace's policy, and whether the other
