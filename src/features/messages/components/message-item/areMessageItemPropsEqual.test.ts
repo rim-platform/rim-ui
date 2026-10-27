@@ -48,6 +48,17 @@ describe("areMessageItemPropsEqual", () => {
     );
   });
 
+  it("re-renders when editedAt changes", () => {
+    const base = makeProps();
+    const edited = makeProps({
+      message: { ...base.view.message, editedAt: "2026-10-27T12:00:00Z" },
+    });
+    expect(areMessageItemPropsEqual(base, edited)).toBe(false);
+    expect(
+      areMessageItemPropsEqual(edited, makeProps({ message: { ...edited.view.message } })),
+    ).toBe(true);
+  });
+
   it("re-renders when inThreadPane changes", () => {
     expect(areMessageItemPropsEqual(makeProps(), makeProps({ inThreadPane: true }))).toBe(false);
   });

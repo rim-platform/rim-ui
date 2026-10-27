@@ -38,3 +38,12 @@ introspection query, which every server answers.
 
 A failure against the current `HEAD` means the client sends something the committed schema does
 not have at all: a bug today, not skew.
+
+## Gating a new field
+
+A field an older server lacks is asked for only when `serverInfo.capabilities` names it.
+`serverHasCapability` (`src/features/updater/api/serverCapabilities.ts`) reads the cached server
+info; the read keeps a second document with the field (`MessagesWithEdits` beside `Messages`),
+built from the same constants, and picks one per request. `scripts/skew-check.test.mjs` checks
+that only the gated documents fail against a schema without the field. `npm run skew:check`
+lists the gated documents; each listed one must be gated or have a fallback.

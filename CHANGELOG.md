@@ -35,6 +35,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A DM or group started from a workspace shows **Back to \<workspace\>** in its header, and
   <kbd>Alt+←</kbd> does the same: back to that workspace and the conversation you left. The
   Mouse-friendly profile leaves <kbd>Alt+←</kbd> to the browser.
+- An edited message shows **(edited)** after its text, in the timeline and the thread pane;
+  hovering it shows when it was edited. With a server that reports edit times
+  (`serverInfo.capabilities` lists `message_edited_at`) for every message; with an older server in
+  encrypted conversations only.
 - Groups in Direct messages offer **Add people…** in their menu and **Add people** in their
   members panel, listing your contacts and the people in your workspaces. It needs rim-server
   with `remoteMembers` on `addConversationMembers`; an older server refuses the addition with

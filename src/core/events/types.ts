@@ -11,6 +11,8 @@ export interface MessageEventData {
   forwarded_from_message_id: string | null;
   is_deleted: boolean;
   sent_at: string;
+  /** When the text last changed; absent from an older server. */
+  edited_at?: string | null;
   reactions: ReactionGroupData[];
   /** Set on an encrypted message, whose `text` is null. Binary values are base64url. */
   encryption?: {

@@ -316,6 +316,7 @@ describe("the web backend against a simulated server", () => {
     const { s, alice, bob } = await aliceAndBob();
     const id = await send(s, alice, "first");
     await bob.sync(s);
+    expect(await bob.row(id)).toMatchObject({ text: "first", editedAt: null });
     const edit = await commands.encryptMessage(alice.account, WS, CONVERSATION, {
       editOf: id,
       body: "second",
@@ -325,7 +326,12 @@ describe("the web backend against a simulated server", () => {
     expect(edit.messageId).toBe(id);
     s.deliver(alice, edit);
     await bob.sync(s);
-    expect(await bob.row(id)).toMatchObject({ text: "second", e2ee: { rev: 1 } });
+    expect(await bob.row(id)).toMatchObject({
+      text: "second",
+      e2ee: { rev: 1 },
+      editedAt: s.editedAt(id),
+    });
+    expect(s.editedAt(id)).toEqual(expect.any(String));
   });
 
   it("re-adds a device that lost its state; what was sent meanwhile stays unreadable there", async () => {

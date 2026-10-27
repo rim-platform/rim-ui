@@ -6,6 +6,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { encryptedStoreAccount, readCachedThread } from "../../messages/api/messageCache";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { MESSAGE_EDITED_AT, serverHasCapability } from "../../updater/api/serverCapabilities";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
   query ThreadByRootMessage($serverId: ID!, $conversationId: ID!, $rootMessageId: ID!) {
@@ -26,30 +27,55 @@ const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
   }
 `;
 
-const THREAD_MESSAGES_QUERY = gql`
-  query ThreadMessages(
+/** The variables of a thread's replies read. */
+const THREAD_MESSAGES_VARIABLES = `
     $serverId: ID!
     $conversationId: ID!
     $threadId: ID!
     $dir: PageDir!
     $limit: Int!
     $includeDeleted: Boolean!
-  ) {
-    threadMessages(
+`;
+
+/** The arguments of `threadMessages` in a thread's replies read. */
+const THREAD_MESSAGES_ARGUMENTS = `
       serverId: $serverId
       conversationId: $conversationId
       threadId: $threadId
       dir: $dir
       limit: $limit
       includeDeleted: $includeDeleted
-    ) {
-      items {
-        ...MessageWithReactions
-      }
+`;
+
+/** The page info of a thread's replies. */
+const THREAD_MESSAGES_PAGE_INFO = `
       pageInfo {
         hasNext
         hasPrev
       }
+`;
+
+const THREAD_MESSAGES_QUERY = gql`
+  query ThreadMessages(${THREAD_MESSAGES_VARIABLES}) {
+    threadMessages(${THREAD_MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+      }
+      ${THREAD_MESSAGES_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** The same with `Message.editedAt`, for a server that lists `message_edited_at`. */
+const THREAD_MESSAGES_WITH_EDITS_QUERY = gql`
+  query ThreadMessagesWithEdits(${THREAD_MESSAGES_VARIABLES}) {
+    threadMessages(${THREAD_MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+        editedAt
+      }
+      ${THREAD_MESSAGES_PAGE_INFO}
     }
   }
   ${MESSAGE_WITH_REACTIONS}
@@ -104,6 +130,11 @@ interface ThreadMessageItem {
   parentMessageId: string | null;
   isDeleted: boolean;
   sentAt: string;
+  /**
+   * When the text last changed; null for a never-edited message, absent when the server does not
+   * report it.
+   */
+  editedAt?: string | null;
   reactions: ThreadMessageReaction[];
   linkPreviews: ThreadMessageLinkPreview[];
 }
@@ -168,7 +199,10 @@ export function useThreadMessages(
           pageInfo: { hasNext: false, hasPrev: false },
         };
       }
-      const res = await graphqlClient.request<ThreadMessagesResponse>(THREAD_MESSAGES_QUERY, {
+      const document = (await serverHasCapability(MESSAGE_EDITED_AT))
+        ? THREAD_MESSAGES_WITH_EDITS_QUERY
+        : THREAD_MESSAGES_QUERY;
+      const res = await graphqlClient.request<ThreadMessagesResponse>(document, {
         serverId: workspaceId!,
         conversationId: conversationId!,
         threadId: threadId!,

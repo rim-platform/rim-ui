@@ -251,6 +251,8 @@ export class TestDevice {
 interface FeedRow {
   version: number;
   message: Record<string, unknown>;
+  /** When the envelope was last replaced; absent for a message never edited. */
+  editedAt?: string;
 }
 
 /** The server's side of one conversation: sequencing, Welcomes, the feed. */
@@ -335,8 +337,17 @@ export class TestServer {
       },
     };
     this.version += 1;
-    this.rows.set(id, { version: this.version, message });
+    this.rows.set(id, {
+      version: this.version,
+      message,
+      editedAt: existing ? new Date(this.sentAt).toISOString() : undefined,
+    });
     return message;
+  }
+
+  /** When the server last replaced message `id`'s envelope; null for a message never edited. */
+  editedAt(id: string): string | null {
+    return this.rows.get(id)?.editedAt ?? null;
   }
 
   /** A plaintext message from before the conversation was encrypted. */
@@ -397,7 +408,7 @@ export class TestServer {
         .map((r) => ({
           kind: "CREATED" as FeedConversationChanges["changes"][number]["kind"],
           version: String(r.version),
-          editedAt: null,
+          editedAt: r.editedAt ?? null,
           message: r.message as unknown as FeedConversationChanges["changes"][number]["message"],
         }));
       return {

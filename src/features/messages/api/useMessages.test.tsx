@@ -5,6 +5,9 @@ import type { ReactNode } from "react";
 
 import { applyWorkspaceEvent } from "../../../core/events/useWorkspaceEvents";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
+import { fakeServerInfo } from "../../../test/serverInfo";
+import { routeRequests } from "../../conversations/__fixtures__/conversations";
 import type { MessagesPage } from "../../../core/types/messages";
 import type { SentMessage } from "./timelineMessages";
 
@@ -41,6 +44,8 @@ function page(hasNext: boolean) {
 describe("useConversationMessages", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    queryClient.clear();
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo());
   });
 
   it("opens with no cursor and loads older history with AFTER + next", async () => {
@@ -72,6 +77,36 @@ describe("useConversationMessages", () => {
       cursor: oldestCursor,
     });
     await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+  });
+
+  it("asks for editedAt only when the server lists message_edited_at", async () => {
+    for (const capabilities of [["message_edited_at"], []]) {
+      queryClient.clear();
+      requestMock.mockReset();
+      routeRequests(requestMock, {
+        "query ServerInfo {": () => ({
+          serverInfo: { ...fakeServerInfo(), capabilities },
+        }),
+        "query MessagesWithEdits(": () => page(false),
+        "query Messages(": () => page(false),
+      });
+
+      const { result, unmount } = renderHook(() => useConversationMessages("ws-1", "conv-1"), {
+        wrapper,
+      });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      const operations = requestMock.mock.calls.map(
+        ([document]) => /query (\w+)/.exec(String(document))?.[1],
+      );
+      expect(operations).toEqual([
+        "ServerInfo",
+        capabilities.length > 0 ? "MessagesWithEdits" : "Messages",
+      ]);
+      const sent = String(requestMock.mock.calls[1][0]);
+      expect(sent.includes("editedAt")).toBe(capabilities.length > 0);
+      unmount();
+    }
   });
 });
 

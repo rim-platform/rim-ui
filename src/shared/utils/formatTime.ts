@@ -28,3 +28,10 @@ export function formatRelativeTime(sentAt: string): string {
   if (diffDay < 30) return `${diffDay}d ago`;
   return new Date(sentAt).toLocaleDateString();
 }
+
+/** A full date and time for a tooltip, e.g. "Oct 27, 2026, 2:05 PM"; "—" when unreadable. */
+export function formatEditedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}

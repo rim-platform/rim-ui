@@ -26,6 +26,7 @@ export function messageFromEvent(msg: MessageEventData): MessageItem {
     forwardedFrom: null,
     isDeleted: msg.is_deleted,
     sentAt: msg.sent_at,
+    editedAt: msg.edited_at ?? null,
     reactions: [],
     attachments: [],
     linkPreviews: [],

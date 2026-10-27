@@ -6,6 +6,7 @@ import { useMessageEmojiMap } from "../../../emoji/hooks/useMessageEmojiMap";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
+import { EditedMark } from "./EditedMark";
 import { MessageEditForm } from "./MessageEditForm";
 import type { MemberResolver, MessageItemHandlers } from "./types";
 
@@ -158,16 +159,19 @@ interface MessageContentProps extends MessageTextProps {
   isDeleted: boolean;
   isEditing: boolean;
   editError?: boolean;
+  /** When the text last changed; marks the rendered text as edited. */
+  editedAt?: string | null;
   onSaveEdit?: (messageId: string, newText: string) => void;
   onCancelEdit?: () => void;
 }
 
-/** Deleted placeholder, edit form, or rendered text, whichever applies. */
+/** Deleted placeholder, edit form, or rendered text (marked when edited), whichever applies. */
 export function MessageContent({
   messageId,
   isDeleted,
   isEditing,
   editError,
+  editedAt,
   onSaveEdit,
   onCancelEdit,
   ...textProps
@@ -184,5 +188,10 @@ export function MessageContent({
       />
     );
   }
-  return <MessageText {...textProps} />;
+  return (
+    <>
+      <MessageText {...textProps} />
+      {editedAt && <EditedMark editedAt={editedAt} />}
+    </>
+  );
 }

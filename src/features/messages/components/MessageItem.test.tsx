@@ -36,6 +36,7 @@ vi.mock("../../emoji/hooks/useMessageEmojiMap", () => ({
 }));
 
 import { graphqlError } from "../../conversations/__fixtures__/conversations";
+import { formatEditedAt } from "../../../shared/utils/formatTime";
 import { MessageItem } from "./MessageItem";
 import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
 
@@ -557,5 +558,62 @@ describe("MessageItem layouts and editing", () => {
     );
     fireEvent.click(screen.getByText(/Forwarded from Bob/));
     expect(onNavigateToForwardedSource).toHaveBeenCalledWith("conv-9", "orig-msg");
+  });
+});
+
+describe("MessageItem edited marker", () => {
+  const EDITED_AT = "2026-10-27T13:05:00Z";
+  const edited = { ...defaultMessage, editedAt: EDITED_AT };
+
+  it("marks an edited message and says when on hover and focus", async () => {
+    render(<MessageItem {...props({ message: edited })} />);
+    const mark = screen.getByText("(edited)");
+    const label = `Edited ${formatEditedAt(EDITED_AT)}`;
+    expect(mark).toHaveAttribute("aria-label", label);
+    expect(mark).toHaveAttribute("tabindex", "0");
+
+    fireEvent.mouseEnter(mark);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(label);
+    fireEvent.mouseLeave(mark);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+
+    fireEvent.focus(mark);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(label);
+  });
+
+  it("shows no marker on a message never edited, a deleted one, or one being edited", () => {
+    const { unmount } = render(
+      <MessageItem {...props({ message: { ...defaultMessage, editedAt: null } })} />,
+    );
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+    unmount();
+
+    const deleted = render(<MessageItem {...props({ message: { ...edited, isDeleted: true } })} />);
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+    deleted.unmount();
+
+    render(
+      <MessageItem
+        {...props({ message: edited })}
+        view={{ ...props({ message: edited }).view, isEditing: true }}
+      />,
+    );
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+  });
+
+  it("marks an edited message in the ultra-compact layout", () => {
+    render(
+      <MessageItem
+        {...props({ message: edited })}
+        view={{ ...props({ message: edited }).view, displayDensity: "ultra-compact" }}
+      />,
+    );
+    expect(screen.getByText("Alice:")).toBeInTheDocument();
+    expect(screen.getByText("(edited)")).toHaveAttribute(
+      "aria-label",
+      `Edited ${formatEditedAt(EDITED_AT)}`,
+    );
   });
 });

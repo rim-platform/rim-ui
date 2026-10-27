@@ -1630,6 +1630,12 @@ type Message {
 	forwardedFrom: Message
 	isDeleted: Boolean!
 	sentAt: DateTime!
+	"""
+	When the text last changed, the value `MessageChange.editedAt` carries; null for a
+	never-edited message and for a deleted one. Listed in `serverInfo.capabilities` as
+	`message_edited_at`.
+	"""
+	editedAt: DateTime
 	author: User
 	reactions: [ReactionGroup!]!
 	isPinned: Boolean!
@@ -3979,6 +3985,11 @@ type ServerInfo {
 	`confirmedMinimumAge`.
 	"""
 	minimumAge: Int
+	"""
+	API additions this server has that an older server lacks, by name: `message_edited_at`
+	(`Message.editedAt`). A client ignores names it does not know.
+	"""
+	capabilities: [String!]!
 }
 
 """

@@ -17,7 +17,7 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
-const fixture = vi.hoisted(() => ({ rootText: "the root" }));
+const fixture = vi.hoisted(() => ({ rootText: "the root", editedAt: null as string | null }));
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
@@ -75,7 +75,7 @@ vi.mock("../api/useThreads", () => ({
     data: {
       items: [
         reply("r-own", "me", "my reply"),
-        reply("r-other", "u-bob", "bob's reply"),
+        { ...reply("r-other", "u-bob", "bob's reply"), editedAt: fixture.editedAt },
         // An own reply as the `NewMessage` event stores it, without an author object.
         { ...reply("r-own-event", "me", "my new reply"), author: null },
         reply("r-mention", "u-alice", "thanks <@u-bob>"),
@@ -124,6 +124,7 @@ function labels(): string[] {
 describe("ThreadPanel — message context menu", () => {
   beforeEach(() => {
     fixture.rootText = "the root";
+    fixture.editedAt = null;
     requestMock.mockReset();
     useShellStore.getState().reset();
     useShellStore.setState({ selectedConversationId: "c-1", selectedRootMessageId: "root-1" });
@@ -142,6 +143,15 @@ describe("ThreadPanel — message context menu", () => {
       "Pin message",
       "Delete message…",
     ]);
+  });
+
+  it("marks an edited reply in the thread pane", async () => {
+    fixture.editedAt = "2026-10-09T01:00:00Z";
+    serve();
+    await renderPanel();
+    const row = screen.getByText("bob's reply").closest("[data-message-id]") as HTMLElement;
+    expect(within(row).getByText("(edited)")).toBeInTheDocument();
+    expect(screen.getAllByText("(edited)")).toHaveLength(1);
   });
 
   it("offers Report on someone else's reply and knows it is pinned", async () => {

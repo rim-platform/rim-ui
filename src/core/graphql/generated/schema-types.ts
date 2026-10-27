@@ -1325,6 +1325,12 @@ export type Message = {
   authorId: Scalars['ID']['output'];
   conversationId: Scalars['ID']['output'];
   /**
+   * When the text last changed, the value `MessageChange.editedAt` carries; null for a
+   * never-edited message and for a deleted one. Listed in `serverInfo.capabilities` as
+   * `message_edited_at`.
+   */
+  editedAt?: Maybe<Scalars['DateTime']['output']>;
+  /**
    * The MLS envelope of an encrypted message, whose `text` is always null; null for
    * plaintext messages.
    */
@@ -4244,6 +4250,11 @@ export type ServerInfo = {
    * forever.
    */
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
+  /**
+   * API additions this server has that an older server lacks, by name: `message_edited_at`
+   * (`Message.editedAt`). A client ignores names it does not know.
+   */
+  capabilities: Array<Scalars['String']['output']>;
   /**
    * The workspace every new account joins as a Member, so a client can open it after a
    * signup: the one `RIM_DEFAULT_WORKSPACE` names, or the one an owner claimed from the

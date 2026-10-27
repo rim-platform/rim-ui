@@ -3,7 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { graphqlClient } from "../graphql/client";
 import { queryKeys } from "../query/keys";
-import { MESSAGES_QUERY } from "../graphql/queries";
+import { MESSAGES_QUERY, MESSAGES_WITH_EDITS_QUERY } from "../graphql/queries";
+import {
+  MESSAGE_EDITED_AT,
+  serverHasCapability,
+} from "../../features/updater/api/serverCapabilities";
 
 interface MessagesResponse {
   messages: {
@@ -30,7 +34,10 @@ export function usePrefetchMessages(workspaceId: string | null, conversationIds:
       qc.prefetchInfiniteQuery({
         queryKey,
         queryFn: async () => {
-          const res = await graphqlClient.request<MessagesResponse>(MESSAGES_QUERY, {
+          const document = (await serverHasCapability(MESSAGE_EDITED_AT))
+            ? MESSAGES_WITH_EDITS_QUERY
+            : MESSAGES_QUERY;
+          const res = await graphqlClient.request<MessagesResponse>(document, {
             serverId: workspaceId,
             conversationId: convId,
             // Must match useConversationMessages: AFTER is "older" on this DESC endpoint.
