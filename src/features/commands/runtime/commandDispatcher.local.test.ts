@@ -13,6 +13,7 @@ import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { dispatchCommand, runDesktopLocalCommand } from "./commandDispatcher";
 import { LOCAL_COMMANDS } from "./localCommands";
 import type { CommandDefinition } from "../types";
@@ -229,5 +230,71 @@ describe("plugin settings commands", () => {
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
     usePluginSettingsDialogStore.getState().close();
     expect(executeBackend).not.toHaveBeenCalled();
+  });
+});
+
+describe("Search Messages", () => {
+  const command: CommandDefinition = {
+    id: "chat.search_messages",
+    title: "Search Messages",
+    description: "Search workspace messages by text content.",
+    category: "Chat",
+    sourceKind: "BUILT_IN",
+    executionTarget: "BACKEND",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+  };
+  const found = { status: "SUCCESS", message: "1 result", payload: null, followUpCommands: [] };
+  const executeBackend = vi.fn();
+
+  beforeEach(() => {
+    executeBackend.mockReset();
+    executeBackend.mockResolvedValue({ executeCommand: found });
+  });
+
+  afterEach(() => useSearchOverlayStore.getState().close());
+
+  it("opens the search overlay for Search Messages without a query", async () => {
+    useSearchOverlayStore.setState({ scope: { kind: "conversation", conversationId: "conv-1" } });
+    const result = await dispatchCommand(command, executeBackend, {
+      commandContext: { workspaceId: "ws-1" },
+    });
+    expect(result?.status).toBe("SUCCESS");
+    expect(useSearchOverlayStore.getState()).toMatchObject({
+      isOpen: true,
+      query: "",
+      scope: { kind: "all" },
+    });
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("opens the search overlay for a blank query", async () => {
+    await dispatchCommand(command, executeBackend, { args: { query: "  " } });
+    expect(useSearchOverlayStore.getState().isOpen).toBe(true);
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("runs the server search when a query is given", async () => {
+    const result = await dispatchCommand(command, executeBackend, { args: { query: "canary" } });
+    expect(result).toEqual(found);
+    expect(executeBackend).toHaveBeenCalledWith({
+      commandId: "chat.search_messages",
+      args: { query: "canary" },
+    });
+    expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+  });
+
+  it("runs the server search as a piped stage", async () => {
+    const result = await dispatchCommand(command, executeBackend, { isPipe: true });
+    expect(result).toEqual(found);
+    expect(executeBackend).toHaveBeenCalledWith({
+      commandId: "chat.search_messages",
+      isPipe: true,
+    });
+    expect(useSearchOverlayStore.getState().isOpen).toBe(false);
   });
 });
