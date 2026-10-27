@@ -207,6 +207,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   hover.
 - **(edited)** follows the message's text in the comfortable and compact layouts too, instead of
   sitting on its own line.
+- The web app no longer lists Settings → **AI Agent** and **Plugin AI**, which only the desktop
+  app's AI agent uses.
 
 ## [0.0.5] - 2026-10-26
 

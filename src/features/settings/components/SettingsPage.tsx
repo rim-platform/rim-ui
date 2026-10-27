@@ -10,6 +10,7 @@ import { NotificationSettings } from "../../notifications/components/Notificatio
 import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
+import { agentAvailable } from "../../agent/agentAvailability";
 import { ProfileSettings } from "./ProfileSettings";
 import { AccountSettings } from "./AccountSettings";
 import { cn } from "../../../shared/ui/cn";
@@ -240,6 +241,9 @@ type SettingsTab =
   | "moderation"
   | "about";
 
+/** Settings of the AI agent, which runs in the desktop app only. */
+const AGENT_TABS: readonly SettingsTab[] = ["agent", "plugin-ai"];
+
 /** Tabs that edit what only a workspace has: hidden in a direct space. */
 const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
   "pipelines",
@@ -324,6 +328,7 @@ export function SettingsPage() {
       (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
       (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
+      (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
   const shownTab: SettingsTab =
