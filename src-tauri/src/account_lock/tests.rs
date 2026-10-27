@@ -615,7 +615,14 @@ mod device_key {
             .unwrap()
             .get("share")
             .is_none());
-        seal_after_unlock(&keys, PRINCIPAL, signed_up.share.as_ref());
+        seal_after_unlock(
+            &device,
+            &keys,
+            PRINCIPAL,
+            signed_up.share.as_ref(),
+            signed_up.started_empty,
+        )
+        .unwrap();
         let after_signup = stored(&store);
         assert!(after_signup.get("deviceSeed").is_none());
         assert!(after_signup.get("sealed").is_some());
@@ -627,7 +634,14 @@ mod device_key {
         let unlocked = device
             .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, false)
             .unwrap();
-        seal_after_unlock(&keys, PRINCIPAL, unlocked.share.as_ref());
+        seal_after_unlock(
+            &device,
+            &keys,
+            PRINCIPAL,
+            unlocked.share.as_ref(),
+            unlocked.started_empty,
+        )
+        .unwrap();
         let refreshed = device_wrap(&store);
         assert_ne!(refreshed, first_wrap);
         let wrap_key = rim_opaque::device_key_wrap_key(&server.share, PRINCIPAL);
@@ -648,7 +662,14 @@ mod device_key {
             .unlock_after_login(&handle, PRINCIPAL, &sealed, &[], false, true)
             .unwrap();
         assert!(unlocked.started_empty);
-        seal_after_unlock(&keys, PRINCIPAL, unlocked.share.as_ref());
+        seal_after_unlock(
+            &device,
+            &keys,
+            PRINCIPAL,
+            unlocked.share.as_ref(),
+            unlocked.started_empty,
+        )
+        .unwrap();
 
         assert_eq!(keys.device(PRINCIPAL).unwrap().1, seed.public_key());
         keys.sign_login(ENDPOINT, PRINCIPAL, &challenge()).unwrap();
@@ -666,11 +687,26 @@ mod device_key {
         let (device, _) = device();
         let (keys, store, _) = key_identity(&device);
         let signed_up = signup(&mut server, &device, "password", false);
-        seal_after_unlock(&keys, PRINCIPAL, signed_up.share.as_ref());
+        seal_after_unlock(
+            &device,
+            &keys,
+            PRINCIPAL,
+            signed_up.share.as_ref(),
+            signed_up.started_empty,
+        )
+        .unwrap();
 
-        // A new data key, and another share: the wrap does not open.
+        // A new data key, as an unlock that started empty makes, and another share: the wrap
+        // does not open.
         device.unlock_for_tests(PRINCIPAL, [9; 32]);
-        seal_after_unlock(&keys, PRINCIPAL, Some(&Zeroizing::new([8; 32])));
+        seal_after_unlock(
+            &device,
+            &keys,
+            PRINCIPAL,
+            Some(&Zeroizing::new([8; 32])),
+            true,
+        )
+        .unwrap();
         assert!(matches!(
             keys.sign_login(ENDPOINT, PRINCIPAL, &challenge()),
             Err(KeyIdentityError::NoKeys)
@@ -678,6 +714,25 @@ mod device_key {
         // The dead keys are dropped, the wrap is kept.
         assert!(stored(&store).get("sealed").is_none());
         assert!(stored(&store).get("deviceWrap").is_some());
+    }
+
+    #[test]
+    fn keys_that_do_not_open_fail_the_unlock_and_stay_stored() {
+        let mut server = Server::new();
+        let (device, _) = device();
+        let (keys, store, _) = key_identity(&device);
+        let signed_up = signup(&mut server, &device, "password", false);
+        seal_after_unlock(&device, &keys, PRINCIPAL, signed_up.share.as_ref(), true).unwrap();
+        let before = stored(&store);
+
+        // Another data key that is not new: the record does not open under it.
+        device.unlock_for_tests(PRINCIPAL, [9; 32]);
+        assert!(matches!(
+            seal_after_unlock(&device, &keys, PRINCIPAL, signed_up.share.as_ref(), false),
+            Err(AccountLockError::KeysUnopened)
+        ));
+        assert_eq!(stored(&store), before);
+        assert!(!device.is_unlocked(PRINCIPAL));
     }
 }
 

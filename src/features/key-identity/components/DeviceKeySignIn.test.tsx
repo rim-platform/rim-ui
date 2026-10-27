@@ -44,8 +44,9 @@ import {
   PasswordWaitError,
   WrongPasswordError,
 } from "../../auth/api/passwordApi";
-import { START_EMPTY_EXPLANATION } from "../../auth/password";
-import type { PasswordSignInOptions } from "../api/keyIdentity";
+import { keysUnopenedMessage, START_EMPTY_EXPLANATION } from "../../auth/password";
+import { KeysUnopenedError } from "../../auth/runtime/accountUnlock";
+import { NoDeviceKeysError, type PasswordSignInOptions } from "../api/keyIdentity";
 import { DeviceKeySignIn, RecoverAccount } from "./DeviceKeySignIn";
 
 const PASSWORD = "correct horse battery";
@@ -273,6 +274,38 @@ describe("DeviceKeySignIn", () => {
       expect(screen.queryByRole("button", { name: /sign in as ada/i })).toBeNull(),
     );
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("takes an account whose keys are gone off the list and says how to get it back", async () => {
+    web.value = true;
+    api.signInWithPassword.mockImplementation(async () => {
+      api.listDeviceKeyAccounts.mockResolvedValue([]);
+      throw new NoDeviceKeysError();
+    });
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    await signInAsAlice();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The keys of alice are not in this browser, so it was taken off this list. Recover the account with its recovery kit, or link this browser from a device that is signed in.",
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /sign in as alice/i })).toBeNull(),
+    );
+    expect(api.listDeviceKeyAccounts).toHaveBeenCalledTimes(2);
+    expect(api.forgetKeysTheServerNeverSaw).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says keys that do not open could not be opened, and never removes them", async () => {
+    web.value = true;
+    api.signInWithPassword.mockRejectedValue(new KeysUnopenedError());
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    await signInAsAlice();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(keysUnopenedMessage(false));
+    expect(api.forgetKeysTheServerNeverSaw).not.toHaveBeenCalled();
   });
 
   it("renders nothing without device keys", () => {

@@ -20,7 +20,11 @@ import {
 } from "../../../core/accountVault/accountVault";
 import { seal, toB64 } from "../../../core/accountVault/crypto";
 import { sessionSecret } from "../../../core/graphql/sessionSecret";
-import { NeedsRecoveryError, readWraps } from "../../../core/accountVault/dkWraps";
+import {
+  NeedsRecoveryError,
+  readWraps,
+  wrapsAfterSignup,
+} from "../../../core/accountVault/dkWraps";
 import {
   insert,
   record,
@@ -33,6 +37,7 @@ import {
   commitPasswordChange,
   holdSession,
   keepUnlocked,
+  KeysUnopenedError,
   lockAccount,
   passwordChangeRewrap,
   unlockAfterLogin,
@@ -200,6 +205,33 @@ describe("unlocking an account in the web app", () => {
     expect(fresh?.identity).toBeUndefined();
     expect(fresh?.recoveryEntropy).toBeUndefined();
     expect((await readWraps(ENDPOINT, PRINCIPAL))?.recoveryWrap).toBeUndefined();
+  });
+
+  it("a key record that does not open under the data key fails the unlock and stays as stored", async () => {
+    const exportKey = random(64);
+    await signUp(exportKey);
+    const before = await storedRecord(ENDPOINT, PRINCIPAL);
+
+    // The wraps now hold another data key, which the record was not sealed under.
+    lockAccount();
+    (
+      await wrapsAfterSignup(
+        ENDPOINT,
+        PRINCIPAL,
+        opaque.unlockKey(exportKey, SHARE, PRINCIPAL),
+        ENTROPY,
+      )
+    ).fill(0);
+
+    await expect(login(exportKey)).rejects.toBeInstanceOf(KeysUnopenedError);
+    expect(await storedRecord(ENDPOINT, PRINCIPAL)).toEqual(before);
+    expect(isVaultUnlocked()).toBe(false);
+
+    await expect(unlockWithRecovery(ENDPOINT, PRINCIPAL, ENTROPY)).rejects.toBeInstanceOf(
+      KeysUnopenedError,
+    );
+    expect(await storedRecord(ENDPOINT, PRINCIPAL)).toEqual(before);
+    expect(isVaultUnlocked()).toBe(false);
   });
 
   it("opens a kept account with its session's keep key, until sign-out drops the keep wrap", async () => {

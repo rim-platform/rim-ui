@@ -370,6 +370,14 @@ export class SignInCancelled extends Error {
   }
 }
 
+/** This device holds no keys for the account, so nothing was sent or changed. */
+export class NoDeviceKeysError extends Error {
+  constructor() {
+    super("This device holds no keys for that account.");
+    this.name = "NoDeviceKeysError";
+  }
+}
+
 /** The 16 bytes of a recovery phrase given as its words. */
 export function phraseEntropy(words: string[]): Promise<Uint8Array> {
   return parseRecoveryPhrase(words.join(" "));
@@ -491,6 +499,7 @@ async function loginWithDeviceKey(
  * Signs in with the account password and this device's key, in that order, so the keys sealed
  * under the account's data key open before the device key signs:
  *
+ * 0. this device holds keys for the account; otherwise nothing is sent;
  * 1. the OPAQUE login: `passwordLoginStart` (a try), the password checked on this device, then
  *    `passwordLoginFinish`, which answers a sign-in ticket, the sealed server share and the
  *    rewraps;
@@ -500,6 +509,8 @@ async function loginWithDeviceKey(
  * @throws PasswordLockedError after 10 wrong tries, PasswordWaitError while a wait runs,
  *   WrongPasswordError for a wrong password, SignInCancelled when the person gave up at the
  *   recovery phrase, and the server's `FORBIDDEN` for a revoked device.
+ * @throws NoDeviceKeysError when this device holds no keys for the account, before anything is
+ *   sent or written.
  */
 export async function signInWithPassword(
   principalId: string,
@@ -507,6 +518,8 @@ export async function signInWithPassword(
   options: PasswordSignInOptions = {},
 ): Promise<PasswordSignInResult> {
   const endpoint = getGraphqlEndpoint();
+  const held = await keyBackend().accounts(endpoint);
+  if (!held.some((a) => a.principalId === principalId)) throw new NoDeviceKeysError();
   const login = await startLogin(entry.password);
   try {
     const started = await passwordLoginStart(principalId, login.request);

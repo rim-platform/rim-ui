@@ -31,6 +31,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A message without reactions no longer reserves an empty line under its text for the hover
   **Add reaction** button, which now sits beside **Open thread**; a thread's root shows its reply
   count right under the text.
+- After **Sign out and remove from this device**, the sign-in page no longer offers **Sign in as …**
+  for the removed account. Signing in to an account whose keys are not on this device says so and
+  points to the recovery kit, instead of "this browser has no keys for that account", and no
+  longer uses up a password try.
+- Signing in no longer throws away the keys this device keeps for an account when they do not
+  open: the sign-in stops, says the keys could not be opened, and leaves them as they were.
 
 ## [0.0.5] - 2026-10-26
 

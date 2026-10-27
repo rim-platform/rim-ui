@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { SignInCancelled } from "../key-identity/api/keyIdentity";
+const desktop = vi.hoisted(() => ({ value: false }));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  isTauri: () => desktop.value,
+}));
+
+import { NoDeviceKeysError, SignInCancelled } from "../key-identity/api/keyIdentity";
 import { PasswordLockedError, PasswordWaitError, WrongPasswordError } from "./api/passwordApi";
+import { KeysUnopenedError } from "./runtime/accountUnlock";
 import {
   keepSignedInByDefault,
   newPasswordProblem,
@@ -53,6 +60,15 @@ describe("the words of a failed sign-in", () => {
       "Too many wrong tries. Use your recovery phrase to set a new password.",
     );
     expect(signInFailure(new SignInCancelled())).toBeNull();
+  });
+
+  it("says keys missing from this browser, or not opening in it, and how to get them back", () => {
+    expect(signInFailure(new NoDeviceKeysError())).toBe(
+      "The keys of this account are not in this browser. Recover the account with its recovery kit, or link this browser from a device that is signed in.",
+    );
+    expect(signInFailure(new KeysUnopenedError())).toBe(
+      "The keys this browser keeps for this account could not be opened, so nothing was changed. Recover the account with its recovery kit to use it here.",
+    );
   });
 });
 

@@ -4,10 +4,13 @@
  * password screens say when a sign-in fails or needs the recovery phrase.
  */
 
+import { isTauri } from "@tauri-apps/api/core";
+
 import { graphqlErrorMessage } from "../../core/graphql/errors";
-import { SignInCancelled } from "../key-identity/api/keyIdentity";
+import { NoDeviceKeysError, SignInCancelled } from "../key-identity/api/keyIdentity";
 import { parseRecoveryPhrase } from "../key-identity/browser/recoveryKit";
 import { PasswordLockedError, PasswordWaitError, WrongPasswordError } from "./api/passwordApi";
+import { KeysUnopenedError } from "./runtime/accountUnlock";
 
 /** Which kind of password the person chose. */
 export type PasswordKind = "pin" | "passphrase";
@@ -84,5 +87,19 @@ export function signInFailure(err: unknown): string | null {
   if (err instanceof SignInCancelled) return null;
   if (err instanceof WrongPasswordError) return "Wrong password";
   if (err instanceof PasswordWaitError || err instanceof PasswordLockedError) return err.message;
+  if (err instanceof NoDeviceKeysError) return noDeviceKeysMessage(isTauri());
+  if (err instanceof KeysUnopenedError) return keysUnopenedMessage(isTauri());
   return graphqlErrorMessage(err, "Signing in failed.");
+}
+
+/** What a sign-in says when this device holds no keys for the account. */
+export function noDeviceKeysMessage(desktop: boolean): string {
+  const here = desktop ? "this computer" : "this browser";
+  return `The keys of this account are not in ${here}. Recover the account with its recovery kit, or link ${here} from a device that is signed in.`;
+}
+
+/** What a sign-in says when the keys this device keeps for the account do not open. */
+export function keysUnopenedMessage(desktop: boolean): string {
+  const here = desktop ? "this computer" : "this browser";
+  return `The keys ${here} keeps for this account could not be opened, so nothing was changed. Recover the account with its recovery kit to use it here.`;
 }

@@ -907,7 +907,7 @@ fn old_device() -> OldDevice {
     state
         .account_lock()
         .unlock_for_tests(&draft.principal_id, [3; 32]);
-    state.seal_at_rest(&draft.principal_id, None).unwrap();
+    state.seal_at_rest(&draft.principal_id, None, true).unwrap();
     let started = state
         .begin_link(&draft.principal_id, ENDPOINT, LINK_ID)
         .unwrap();
@@ -1414,7 +1414,7 @@ fn an_unlock_seals_the_keys_and_a_locked_account_answers_locked() {
     state.sign_login(ENDPOINT, principal, &challenge()).unwrap();
 
     state.account_lock().unlock_for_tests(principal, [3; 32]);
-    state.seal_at_rest(principal, None).unwrap();
+    state.seal_at_rest(principal, None, true).unwrap();
     let stored = stored_record(&store, principal);
     let raw = serde_json::to_string(&stored).unwrap();
     let opened = state.record(principal).unwrap();
@@ -1513,13 +1513,27 @@ fn keys_sealed_under_an_earlier_data_key_are_gone() {
     let (draft, _) = enrolled(&state);
     let principal = draft.principal_id.as_str();
     state.account_lock().unlock_for_tests(principal, [3; 32]);
-    state.seal_at_rest(principal, None).unwrap();
+    state.seal_at_rest(principal, None, true).unwrap();
 
-    // The account started empty here: a new data key.
+    // Another data key: the record does not open, and stays as it was unless the unlock
+    // started empty.
     let restarted = KeyIdentityState::new(store.clone());
     restarted
         .account_lock()
         .unlock_for_tests(principal, [4; 32]);
+    let before = stored_record(&store, principal);
+    assert!(matches!(
+        restarted.seal_at_rest(principal, None, false),
+        Err(KeyIdentityError::Unopened)
+    ));
+    assert!(matches!(
+        restarted.sign_login(ENDPOINT, principal, &challenge()),
+        Err(KeyIdentityError::Locked)
+    ));
+    assert_eq!(stored_record(&store, principal), before);
+
+    // The account started empty here: the keys sealed under the earlier data key are gone.
+    restarted.seal_at_rest(principal, None, true).unwrap();
     let record = restarted.record(principal).unwrap();
     assert!(record.device_seed.is_empty() && record.identity_seed.is_none());
     assert!(record.confirmed);

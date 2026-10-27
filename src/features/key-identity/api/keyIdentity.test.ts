@@ -57,6 +57,7 @@ import {
   discardKeySignup,
   forgetKeysTheServerNeverSaw,
   KeyChallengeFailed,
+  NoDeviceKeysError,
   profileCardIsStale,
   proofOfWorkRefused,
   profileCardRelays,
@@ -94,8 +95,9 @@ function serverError(code: string) {
  * Answer server operations and Tauri commands by name. A function answer is called with the
  * variables or args; an Error answer is thrown.
  */
-function backend(server: Record<string, unknown>, tauri: Record<string, unknown> = {}) {
+function backend(server: Record<string, unknown>, desktop: Record<string, unknown> = {}) {
   const answers: Record<string, unknown> = { ...PASSWORD_ANSWERS, ...server };
+  const tauri: Record<string, unknown> = { ...DESKTOP_ANSWERS, ...desktop };
   requestMock.mockImplementation(async (doc: unknown, vars: unknown) => {
     const name = operation([doc]);
     if (!(name in answers)) throw new Error(`unexpected request ${name}`);
@@ -117,6 +119,21 @@ function backend(server: Record<string, unknown>, tauri: Record<string, unknown>
     return { ok: true, value };
   });
 }
+
+/** The desktop's side, unless a test says otherwise: it holds keys for {@link PRINCIPAL}. */
+const DESKTOP_ANSWERS = {
+  key_identity_accounts: [
+    {
+      principalId: PRINCIPAL,
+      userId: "user-1",
+      username: "ada",
+      deviceId: "d",
+      deviceName: "Laptop",
+      hasIdentityKey: true,
+      confirmed: true,
+    },
+  ],
+};
 
 /** The server's side of a password registration and login, unless a test says otherwise. */
 const PASSWORD_ANSWERS = {
@@ -254,6 +271,14 @@ describe("signInWithPassword", () => {
     });
     expect(login.close).toHaveBeenCalled();
     expect(unlocks.lockAccount).not.toHaveBeenCalled();
+  });
+
+  it("refuses a sign-in for an account this device holds no keys for, before any request", async () => {
+    backend(signedIn, { key_identity_accounts: [] });
+
+    await expect(signInWithPassword(PRINCIPAL, PASSWORD)).rejects.toBeInstanceOf(NoDeviceKeysError);
+    expect(requestMock).not.toHaveBeenCalled();
+    expect(flows.startLogin).not.toHaveBeenCalled();
   });
 
   it("wraps the data key under a kept session's keep key, once the account is unlocked", async () => {
@@ -564,6 +589,7 @@ describe("signupWithKey", () => {
       "key_identity_confirm_recovery_kit",
       "key_identity_sign_signup",
       "key_identity_restore_draft_keys",
+      "key_identity_accounts",
       "key_identity_sign_login",
       "key_identity_settle",
       "key_identity_sign_profile_card",
@@ -636,6 +662,7 @@ describe("signupWithKey", () => {
     });
     expect(commands()).toEqual([
       "key_identity_restore_draft_keys",
+      "key_identity_accounts",
       "key_identity_sign_login",
       "key_identity_settle",
     ]);

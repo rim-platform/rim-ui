@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { onWsSessionEnded } from "../../../core/graphql/wsClient";
+import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -43,7 +44,8 @@ export function signOutLocally(
  * The person signs out: the session ends on the server, then {@link signOutLocally}. A logout
  * the server refuses or never hears still signs out here. Without `remove` the account stays on
  * this device, its keys and cached data ready for the next sign-in; with it, everything the
- * account left here is deleted once signed out ({@link removeAccountData}).
+ * account left here is deleted once signed out ({@link removeAccountData}), and the sign-in list
+ * is read again once the account's keys are gone.
  *
  * @param queryClient - The app's query cache, emptied on the way out.
  */
@@ -58,7 +60,12 @@ export async function signOut(
     // An expired session or an unreachable server: signed out here all the same.
   }
   signOutLocally(queryClient);
-  if (account) await removeAccountData(account);
+  if (account) {
+    await removeAccountData(account);
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.deviceKeyAccounts(account.endpoint),
+    });
+  }
 }
 
 /** While mounted, a WebSocket the server closed because the session ended signs out. */

@@ -15,7 +15,9 @@
  * A record written before the account's first unlock in this browser (a signup, a recovery, a
  * newly linked device) keeps its keys unsealed, as extractable `CryptoKey`s, until that unlock
  * seals it. While the account is locked, a sealed record reads with its keys absent and is
- * written back with its sealed field unchanged. A pending device link is sealed whole, but for
+ * written back with its sealed field unchanged. A record that does not open under the unlocked
+ * account's data key reads with its keys absent too and is written back unchanged. A pending
+ * device link is sealed whole, but for
  * what finds it, and is written only while its account is unlocked.
  */
 
@@ -89,6 +91,11 @@ export interface BrowserKeyRecord {
    * absent, and the record is written back with these unchanged.
    */
   locked?: SealedValue;
+  /**
+   * The sealed keys of a record that did not open under the unlocked account's data key: they
+   * read as absent, and the record is written back with them unchanged.
+   */
+  unopened?: SealedValue;
   /** base64url of the device key's seed wrapped under the server share's device key wrap key. */
   deviceWrap?: string;
   /** Its keys were opened from a sealed record: they are written back only sealed. */
@@ -307,8 +314,8 @@ function unsealed(stored: StoredRecord): BrowserKeyRecord {
 
 /**
  * A stored record as the key backend reads it: sealed keys opened while the vault holds its
- * account, absent (with `locked` set) while it does not, and lost when sealed under another data
- * key; unsealed keys as they are.
+ * account, absent (with `locked` set) while it does not, and absent (with `unopened` set) when
+ * sealed under another data key; unsealed keys as they are.
  */
 async function fromStored(raw: unknown): Promise<BrowserKeyRecord> {
   const stored = raw as StoredRecord;
@@ -322,7 +329,7 @@ async function fromStored(raw: unknown): Promise<BrowserKeyRecord> {
     const secret = await openValue<SecretFields>(stored.data, aad);
     record = secret
       ? await withSecrets(plainOf(stored), secret, aad)
-      : { ...plainOf(stored), deviceKey: null };
+      : { ...plainOf(stored), deviceKey: null, unopened: stored.data };
   }
   if (stored.deviceWrap) record.deviceWrap = stored.deviceWrap;
   return record;
@@ -344,14 +351,18 @@ function openedFromSealed(r: BrowserKeyRecord): boolean {
 
 /**
  * A record as `deviceKeys` stores it: sealed while the vault holds its account, its sealed field
- * unchanged when it was read locked, its keys as they are before the first unlock.
+ * unchanged when it was read locked or did not open, its keys as they are before the first
+ * unlock.
  *
- * @throws VaultLockedError for a record read locked that was given keys, or keys opened from a
- *   sealed record once the vault no longer holds their account.
+ * @throws VaultLockedError for a record read locked or unopened that was given keys, or keys
+ *   opened from a sealed record once the vault no longer holds their account.
  */
 async function toStored(r: BrowserKeyRecord): Promise<StoredRecord> {
   let stored: StoredRecord;
-  if (r.locked) {
+  if (r.unopened) {
+    if (hasSecrets(r)) throw new VaultLockedError();
+    stored = { ...plainOf(r), data: r.unopened };
+  } else if (r.locked) {
     if (hasSecrets(r)) throw new VaultLockedError();
     stored = { ...plainOf(r), data: r.locked };
   } else if (hasSecrets(r) && vaultHolds(r.endpoint, r.principalId)) {
@@ -492,11 +503,6 @@ export function changeRecord(
 /** Whether a record holds keys outside a sealed field. */
 export function holdsUnsealedKeys(r: BrowserKeyRecord, stored: unknown): boolean {
   return !isSealed((stored as StoredRecord).data) && hasSecrets(r);
-}
-
-/** Whether a stored record is sealed. */
-export function isSealedRecord(stored: unknown): boolean {
-  return isSealed((stored as StoredRecord).data);
 }
 
 /** Every record of `principalId`, on any endpoint. */

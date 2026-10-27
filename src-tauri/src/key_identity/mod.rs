@@ -61,6 +61,10 @@ pub(crate) enum KeyIdentityError {
     /// The account is locked on this computer, and what was asked needs its sealed keys.
     #[error("this account is locked on this computer; sign in to unlock it")]
     Locked,
+    /// The account's record does not open under the data key an unlock opened, which is not
+    /// new: it stays as it was.
+    #[error("the keys on this computer for that account do not open with its data key")]
+    Unopened,
 }
 
 impl KeyIdentityError {
@@ -74,6 +78,7 @@ impl KeyIdentityError {
             Self::NoDraft => "NO_DRAFT",
             Self::NoLink => "NO_LINK",
             Self::Locked => "LOCKED",
+            Self::Unopened => "KEYS_UNOPENED",
         }
     }
 }
@@ -447,14 +452,20 @@ impl KeyIdentityState {
     /// account is unlocked: what a signup, recovery or device link wrote before the unlock,
     /// and records from before the data key existed. With the server `share` the unlock saw,
     /// the device key's wrap under it is refreshed, and a device key a new data key lost
-    /// comes back from it.
+    /// comes back from it. `started_empty` says the data key is new, so keys sealed under an
+    /// earlier one are dropped.
+    ///
+    /// # Errors
+    /// [`KeyIdentityError::Unopened`] when the record does not open under the data key and the
+    /// unlock did not start empty; nothing is written.
     pub(crate) fn seal_at_rest(
         &self,
         principal_id: &str,
         share: Option<&rim_opaque::Key>,
+        started_empty: bool,
     ) -> Result<()> {
         let _guard = self.guard()?;
-        self.keys().seal_record(principal_id, share)
+        self.keys().seal_record(principal_id, share, started_empty)
     }
 
     /// The principal the account `user_id` on `endpoint` signs in with on this device, as far

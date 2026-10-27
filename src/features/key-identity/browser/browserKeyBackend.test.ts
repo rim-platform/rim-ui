@@ -318,7 +318,7 @@ describe("the web app as a linked device", () => {
     expect(signingKey(saved).type).toBe("private");
     expect(signingKey(saved).extractable).toBe(true);
     await unlockTestVault({ endpoint: ENDPOINT, principalId: PRINCIPAL });
-    await sealKeysAtUnlock(ENDPOINT, PRINCIPAL, null);
+    await sealKeysAtUnlock(ENDPOINT, PRINCIPAL, null, true);
     const sealed = signingKey((await stored()) as BrowserKeyRecord);
     expect(sealed.extractable).toBe(false);
     expect(sealed.algorithm.name).toBe("Ed25519");
@@ -623,7 +623,7 @@ async function holder(): Promise<{
   await browserKeyBackend.settle(ACCOUNT, draft.principalId);
   // The holder's account is unlocked here, as it is while its app runs.
   await unlockTestVault({ endpoint: ENDPOINT, principalId: draft.principalId });
-  await sealKeysAtUnlock(ENDPOINT, draft.principalId, null);
+  await sealKeysAtUnlock(ENDPOINT, draft.principalId, null, true);
   return {
     draft,
     principalId: draft.principalId,

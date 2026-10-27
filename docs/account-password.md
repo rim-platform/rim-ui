@@ -58,6 +58,10 @@ Every unlock returns `{webStoreKey, startedEmpty}`: the key that seals the webvi
 records of the account, and whether the data key is new. A handle lasts two minutes and serves
 one unlock.
 
+When the account's key record does not open under the data key an unlock opened, and the data
+key is not new, the unlock locks the account again and answers `KEYS_UNOPENED`. The record stays
+as it was; only an unlock that starts empty drops keys sealed under an earlier data key.
+
 After each unlock command, the account's key identity record and pending device links are
 sealed under the data key if they were not yet (below). An unlock after a login or a signup also
 wraps the device key under the server share it opened (below, "The device key's wrap").
@@ -91,7 +95,8 @@ answers `LOCKED`.
   so the device still signs in; the identity key, the backup key and the recovery kit's entropy
   stay lost. When that wrap does not open either (missing, or the server share changed), the
   device key is lost too, sign-in answers `NO_KEYS`, and this device signs in again only after
-  recovery or a new device link.
+  recovery or a new device link. Otherwise a record that does not open fails the unlock with
+  `KEYS_UNOPENED` and is left as it was.
 - The key identity index, the history archive keys, the AI provider keys and the offline session
   record are the app's and stay under the vault key alone.
 
@@ -126,10 +131,10 @@ keyed `[endpoint, principalId]`: `{passwordWrap, recoveryWrap?, keepWrap?}`, eac
 
 | Function (`accountUnlock.ts`) | What it does |
 |---|---|
-| `unlockAfterLogin({endpoint, principalId, exportKey, sessionKey, serverShare, rewraps, startEmpty?})` | As `account_unlock_after_login`, with the same rule: when nothing opens and the browser holds a recovery wrap, it throws `NeedsRecoveryError` (`NEEDS_RECOVERY`) and changes nothing. The keep wrap goes; a kept session writes a new one |
+| `unlockAfterLogin({endpoint, principalId, exportKey, sessionKey, serverShare, rewraps, startEmpty?})` | As `account_unlock_after_login`, with the same rule: when nothing opens and the browser holds a recovery wrap, it throws `NeedsRecoveryError` (`NEEDS_RECOVERY`) and changes nothing. The keep wrap goes; a kept session writes a new one. A key record that does not open under the data key it opened, when that key is not new, throws `KeysUnopenedError` (`KEYS_UNOPENED`) and changes nothing |
 | `unlockAfterSignup({endpoint, principalId, exportKey, serverShare, recoveryEntropy})` | As `account_unlock_after_signup`, with the share in the clear |
-| `unlockWithRecovery(endpoint, principalId, entropy)` | Opens the recovery wrap; `false` when there is none or the phrase does not open it |
-| `keepUnlocked(keepKey)`, `unlockKept(endpoint, principalId, keepKey)` | "Keep me signed in": the server holds the keep key with the session, and the browser keeps the keep wrap |
+| `unlockWithRecovery(endpoint, principalId, entropy)` | Opens the recovery wrap; `false` when there is none or the phrase does not open it; `KeysUnopenedError` when the key record does not open under the data key |
+| `keepUnlocked(keepKey)`, `unlockKept(endpoint, principalId, keepKey)` | "Keep me signed in": the server holds the keep key with the session, and the browser keeps the keep wrap; `unlockKept` throws `KeysUnopenedError` when the key record does not open under the data key |
 | `unlockKeptOnDesktop(endpoint, principalId)` | `account_unlock_kept`; the webview gets the store key alone |
 | `lockAccount()` | Sign-out: the keys leave memory, the encrypted store closes, the sealed stores go back to their initial state, and the keep wrap goes. On the desktop it also runs `account_lock` |
 | `unlockAfterLoginOnDesktop`, `unlockAfterSignupOnDesktop`, `unlockWithRecoveryOnDesktop` | The desktop's commands of the same unlocks, with the store key they hand over put in the vault |
@@ -169,8 +174,9 @@ Each unlock puts the data key in the account vault, which derives the "web store
 AES-GCM key. A sealed field is `{v: 1, iv, ct}`: AES-256-GCM under that key with a random 12-byte
 nonce, authenticating `"<db>/<store>/<record key as JSON>"`, so a record moved under another key
 does not open. The fields a store looks records up by stay plain; every other field is sealed in
-one `data` field. A record that does not open under the unlocked account reads as absent, and
-reading or writing a sealed store while locked throws `VaultLockedError` (`VAULT_LOCKED`).
+one `data` field. A record that does not open under the unlocked account reads with its sealed
+fields absent and is written back with them unchanged. Reading or writing a sealed store while
+locked throws `VaultLockedError` (`VAULT_LOCKED`).
 
 | Database | Store | Plain |
 |---|---|---|
@@ -216,6 +222,7 @@ changing the password, switching relays) is labelled "Password or PIN" and takes
 `signInWithPassword(principalId, {password, keep}, options)` checks the password before the
 device key signs, so the keys sealed under the data key are open when it does:
 
+0. the device holds keys for the account; otherwise `NoDeviceKeysError`, and nothing is sent;
 1. `passwordLoginStart` (the server counts a try: `RATE_LIMITED` with `retryAfterSeconds` reads as
    `PasswordWaitError`, "Try again in N minutes", and `PASSWORD_LOCKED` as `PasswordLockedError`);
 2. the OPAQUE finish on this device, where a wrong password stops (`WrongPasswordError`);
@@ -227,6 +234,9 @@ device key signs, so the keys sealed under the data key are open when it does:
    device keeps signing in through its device key wrap);
 5. `keyLoginChallenge`, the device proof and `loginWithKey` with the ticket. A failure here locks
    the account again.
+
+After "Sign out and remove from this device" the sign-in list is read again once the account's
+keys are gone.
 
 When the OPAQUE finish fails, the sign-in says "Wrong password" and nothing is signed or sent
 after `passwordLoginStart`: every account of this server needs the ticket. With
