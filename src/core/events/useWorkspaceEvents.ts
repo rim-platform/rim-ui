@@ -12,6 +12,7 @@ import { toast } from "../../shared/toast";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { WorkspaceEvent } from "./types";
 import type { Pipeline } from "../../features/pipelines/api/usePipelines";
+import { pipelineTriggerPhrase } from "../../features/pipelines/pipelineFired";
 import type { MessagesPage } from "../types/messages";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS } from "./busEvents";
@@ -541,10 +542,12 @@ export function applyWorkspaceEvent(
       const ran = event.actions_executed;
       // Refresh pipeline list so lastFiredAt updates in the UI
       qc.invalidateQueries({ queryKey: queryKeys.pipelines(workspaceId) });
+      const phrase = pipelineTriggerPhrase(event.trigger_event);
+      const trigger = phrase ? ` ${phrase}` : "";
       const description =
         total !== undefined
-          ? `${ran} of ${total} action${total !== 1 ? "s" : ""} ran (trigger: ${event.trigger_event})`
-          : `${ran} action${ran !== 1 ? "s" : ""} ran (trigger: ${event.trigger_event})`;
+          ? `${ran} of ${total} action${total !== 1 ? "s" : ""} ran${trigger}`
+          : `${ran} action${ran !== 1 ? "s" : ""} ran${trigger}`;
       const show = total !== undefined && ran < total ? toast.warning : toast.success;
       show(`Pipeline "${event.pipeline_name}" fired`, { description });
       eventBus.emit<PipelineFiredEvent>(BUS_EVENTS.PIPELINE_FIRED, {

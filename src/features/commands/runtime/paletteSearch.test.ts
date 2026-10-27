@@ -69,6 +69,24 @@ describe("createPaletteSearch", () => {
     expect(results[2].descriptionRanges).toEqual([[9, 11]]);
   });
 
+  it("orders titles alphabetically inside a category for an empty query", () => {
+    const search = createPaletteSearch([
+      item("Create Channel", "Create a channel", "Chat"),
+      item("Toggle Zen Mode", "Hide everything but the timeline", "Workspace"),
+      item("New Message", "Start a conversation", "Chat"),
+      item("Cycle Layout Preset", "Switch to the next saved layout", "Workspace"),
+      item("Get Recent Messages", "Read the latest messages", "Chat"),
+    ]);
+
+    expect(titles(search(""))).toEqual([
+      "Create Channel",
+      "Get Recent Messages",
+      "New Message",
+      "Cycle Layout Preset",
+      "Toggle Zen Mode",
+    ]);
+  });
+
   it("groups everything alphabetically by category for an empty query", () => {
     const search = createPaletteSearch([
       item("Search Messages", "Search workspace messages", "Chat"),

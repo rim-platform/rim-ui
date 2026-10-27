@@ -82,7 +82,7 @@ describe("ShortcutsPanel", () => {
     } as ReturnType<typeof useCommands>);
     render(<ShortcutsPanel />);
 
-    expect(within(rowFor("New message")).getByText("Ctrl+Shift+G")).toBeInTheDocument();
+    expect(within(rowFor("New Message")).getByText("Ctrl+Shift+G")).toBeInTheDocument();
     expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
   });
 

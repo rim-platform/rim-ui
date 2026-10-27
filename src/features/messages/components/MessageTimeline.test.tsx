@@ -973,3 +973,30 @@ describe("MessageTimeline — a request the viewer received", () => {
     expect(screen.queryByTestId("request-bar")).not.toBeInTheDocument();
   });
 });
+
+describe("MessageTimeline — an empty conversation", () => {
+  function group(encryptedAt: string | null) {
+    return makeConversation({
+      id: "conv-1",
+      title: null,
+      conversationType: ConversationTypeEnum.GROUP,
+      memberIds: ["me", "u-alice", "u-bob"],
+      memberCount: 3,
+      encryptedAt,
+    });
+  }
+
+  it("says an empty encrypted conversation is end-to-end encrypted", () => {
+    dmRequest.conversation = group("2026-10-15T00:00:00Z");
+    const { unmount } = render(<MessageTimeline />);
+    expect(screen.getByText("No messages yet. Start the conversation below.")).toBeInTheDocument();
+    expect(screen.getByTestId("timeline-empty-encrypted")).toHaveTextContent(
+      "This conversation is end-to-end encrypted.",
+    );
+    unmount();
+
+    dmRequest.conversation = group(null);
+    render(<MessageTimeline />);
+    expect(screen.queryByTestId("timeline-empty-encrypted")).toBeNull();
+  });
+});

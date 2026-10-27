@@ -202,11 +202,11 @@ describe("KeybindSettings", () => {
     } as ReturnType<typeof useCommands>);
 
     render(<KeybindSettings />);
-    expect(screen.getByText("New message")).toBeInTheDocument();
+    expect(screen.getByText("New Message")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
     const commandSelect = screen.getAllByRole("combobox")[0];
-    expect(within(commandSelect).getByText("New message")).toBeInTheDocument();
+    expect(within(commandSelect).getByText("New Message")).toBeInTheDocument();
     expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
   });
 
@@ -293,9 +293,9 @@ describe("KeybindSettings", () => {
       render(<KeybindSettings />);
 
       for (const [keystroke, title] of [
-        ["Ctrl+D", "Cycle display density"],
-        ["?", "Show keyboard shortcuts"],
-        ["Ctrl+/", "Show keyboard shortcuts"],
+        ["Ctrl+D", "Cycle Display Density"],
+        ["?", "Show Keyboard Shortcuts"],
+        ["Ctrl+/", "Show Keyboard Shortcuts"],
       ]) {
         const row = screen.getByText(keystroke).closest("div") as HTMLElement;
         expect(within(row).getByText(title)).toBeInTheDocument();
@@ -435,7 +435,7 @@ describe("KeybindSettings", () => {
       record("j");
       pick("workspace.open_search");
       expect(
-        screen.getByText("Already used by Toggle Zen mode — saving will reassign it."),
+        screen.getByText("Already used by Toggle Zen Mode — saving will reassign it."),
       ).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

@@ -52,7 +52,7 @@ function compareMatches<T extends Searchable>(a: PaletteMatch<T>, b: PaletteMatc
  * match; in a description or category only a match that starts at a word counts, since nearly
  * any few letters turn up somewhere in a sentence. Commands stay grouped by category, the groups
  * in the order of their best match. An empty query lists everything grouped alphabetically by
- * category.
+ * category, alphabetically by title inside a group.
  */
 export function createPaletteSearch<T extends Searchable>(
   list: T[],
@@ -69,7 +69,7 @@ export function createPaletteSearch<T extends Searchable>(
   return (query) => {
     if (!query.trim()) {
       return [...list]
-        .sort((a, b) => a.category.localeCompare(b.category))
+        .sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title))
         .map((item) => ({
           item,
           tier: 0,
