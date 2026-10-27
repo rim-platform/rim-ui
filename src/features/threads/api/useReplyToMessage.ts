@@ -3,8 +3,10 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { logger } from "../../../core/logger";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { invalidateTimeline } from "../../e2ee/runtime/groups";
 import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
 
 export const REPLY_TO_MESSAGE_MUTATION = gql`
@@ -99,4 +101,23 @@ export function useReplyToMessageMutation() {
       }
     },
   });
+}
+
+/**
+ * Refetches what an encrypted thread reply changes: the thread, its replies, the root's reply
+ * count and the timeline.
+ */
+export function refreshThreadAfterReply(
+  workspaceId: string,
+  conversationId: string,
+  rootMessageId: string,
+): void {
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.threadByRoot(workspaceId, conversationId, rootMessageId),
+  });
+  void queryClient.invalidateQueries({ queryKey: ["threadMessages", workspaceId, conversationId] });
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.threadReplyCount(workspaceId, conversationId, rootMessageId),
+  });
+  invalidateTimeline(workspaceId, conversationId);
 }

@@ -2,6 +2,10 @@ import { useState, useRef, useEffect, useMemo } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useSendMessageMutation } from "../api/useMessages";
+import {
+  refreshThreadAfterReply,
+  useReplyToMessageMutation,
+} from "../../threads/api/useReplyToMessage";
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
@@ -11,7 +15,7 @@ import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { toast } from "../../../shared/toast/useToastStore";
-import { useDraftStore } from "../state/useDraftStore";
+import { threadDraftKey, useDraftStore } from "../state/useDraftStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useTypingIndicator } from "../hooks/useTypingIndicator";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
@@ -76,13 +80,20 @@ export interface ComposerDraft {
   encrypted: boolean;
 }
 
+/** The thread a reply composer answers in. */
+export interface ComposerThread {
+  rootMessageId: string;
+  /** The thread's id once it exists; null before its first reply. */
+  threadId: string | null;
+}
+
 type ComposerProps = {
   workspaceId: string;
   /** Set in an end-to-end encrypted conversation: messages go through the encrypted path. */
   encryption?: { sendBlock: SendBlock };
 } & (
-  | { conversationId: string; draft?: undefined }
-  | { conversationId?: undefined; draft: ComposerDraft }
+  | { conversationId: string; draft?: undefined; thread?: ComposerThread }
+  | { conversationId?: undefined; draft: ComposerDraft; thread?: undefined }
 );
 
 /**
@@ -126,10 +137,27 @@ export function Composer(props: ComposerProps) {
   );
 }
 
+/**
+ * The thread pane's reply box: the message composer with mentions, emoji and attachments,
+ * sending each message as a reply in `thread`. The pane decides whether it is shown.
+ */
+export function ThreadComposer(props: {
+  workspaceId: string;
+  conversationId: string;
+  thread: ComposerThread;
+  encryption?: { sendBlock: SendBlock };
+}) {
+  return <MessageComposer {...props} />;
+}
+
 function MessageComposer(props: ComposerProps) {
-  const { workspaceId, conversationId, encryption, draft } = props;
-  // Where the unsent text is kept: the conversation, or a key of the draft's own.
-  const textKey = props.draft ? directDraftKey(props.draft.target) : props.conversationId;
+  const { workspaceId, conversationId, encryption, draft, thread } = props;
+  // Where the unsent text is kept: the conversation, the thread, or a key of the draft's own.
+  const textKey = props.draft
+    ? directDraftKey(props.draft.target)
+    : thread
+      ? threadDraftKey(props.conversationId, thread.rootMessageId)
+      : props.conversationId;
   const [text, setText] = useState("");
   const textKeyRef = useRef(textKey);
   textKeyRef.current = textKey;
@@ -149,12 +177,17 @@ function MessageComposer(props: ComposerProps) {
   const mentionMapRef = useRef<Map<string, string>>(new Map());
   const qc = useQueryClient();
   const send = useSendMessageMutation();
+  const reply = useReplyToMessageMutation();
   const uploads = useAttachmentUploads(workspaceId, conversationId);
   // `draftStore` is a module-level Zustand store reference — it is stable across
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const executeCommand = useExecuteCommandMutation();
-  const { handleKeystroke, markSent } = useTypingIndicator(workspaceId, conversationId);
+  // A thread reply does not announce typing in the conversation.
+  const { handleKeystroke, markSent } = useTypingIndicator(
+    workspaceId,
+    thread ? undefined : conversationId,
+  );
   const { data: serverMembers } = useServerMembers(workspaceId);
   const memberLookup = useMemberLookup(workspaceId);
   // Members as the mention list offers them: by the handle that reads, never an `r_…` name.
@@ -218,6 +251,12 @@ function MessageComposer(props: ComposerProps) {
     };
     // draftStore is a stable module-level reference and does not need to be a dependency.
   }, [textKey]);
+
+  // The thread's reply box takes focus when the thread opens
+  const threadRoot = thread?.rootMessageId;
+  useEffect(() => {
+    if (threadRoot) textareaRef.current?.focus();
+  }, [threadRoot]);
 
   // Debounced draft save
   const saveDraftDebounced = useMemo(
@@ -305,7 +344,7 @@ function MessageComposer(props: ComposerProps) {
     if (!trimmed && pendingFiles.length === 0) return;
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
-    if (trimmed.startsWith("/") && trimmed.includes("|")) {
+    if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {
       const pipeExpression = trimmed.slice(1).trim(); // strip leading `/`
       const segmentCount = pipeExpression.split("|").filter((s) => s.trim()).length;
       setText("");
@@ -327,7 +366,7 @@ function MessageComposer(props: ComposerProps) {
     }
 
     // Detect slash commands
-    if (trimmed) {
+    if (!thread && trimmed) {
       const matchedCommand = isSlashCommand(trimmed);
       if (matchedCommand?.handler) {
         const args = trimmed.slice(matchedCommand.command.length).trim();
@@ -425,7 +464,7 @@ function MessageComposer(props: ComposerProps) {
       draftStore.getState().clearDraft(textKey);
       textareaRef.current.style.height = "auto";
     }
-    if (conversationId) useUnreadStore.getState().clearWatermark(conversationId);
+    if (conversationId && !thread) useUnreadStore.getState().clearWatermark(conversationId);
   }
 
   /** Sends plaintext once; file failures retain an upload retry for the delivered message. */
@@ -436,12 +475,17 @@ function MessageComposer(props: ComposerProps) {
     const selected = pendingFiles;
     let messageId: string;
     try {
-      const result = await send.mutateAsync({
-        workspaceId,
-        conversationId: target,
-        text: processed,
-      });
-      messageId = result.sendMessage.id;
+      messageId = thread
+        ? (
+            await reply.mutateAsync({
+              serverId: workspaceId,
+              conversationId: target,
+              rootMessageId: thread.rootMessageId,
+              text: processed,
+            })
+          ).replyToMessage.id
+        : (await send.mutateAsync({ workspaceId, conversationId: target, text: processed }))
+            .sendMessage.id;
     } catch (err) {
       handleSendError(err, "Failed to send message");
       return false;
@@ -492,14 +536,17 @@ function MessageComposer(props: ComposerProps) {
           avatarUrl: me?.avatarUrl ?? null,
           principalId: me?.principalId ?? null,
         },
+        ...(thread && { threadRootId: thread.rootMessageId, threadId: thread.threadId }),
       });
       clearSent(unsentText, selected);
       noteSent();
+      if (thread) refreshThreadAfterReply(workspaceId, target, thread.rootMessageId);
       return true;
     } catch (err) {
       if (err instanceof EncryptedUploadError) {
         clearSent(unsentText, selected);
         noteSent();
+        if (thread) refreshThreadAfterReply(workspaceId, target, thread.rootMessageId);
         uploads.remember(err.batch);
         if (!reportFeatureDisabled(err.cause, qc)) toast.error(err.message);
         return true;
@@ -617,6 +664,7 @@ function MessageComposer(props: ComposerProps) {
           mentionMapRef={mentionMapRef}
           serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
+          variant={thread ? "thread" : "conversation"}
         />
       </fieldset>
       <MessageBytesCounter bytes={textBytes} cap={byteCap} />

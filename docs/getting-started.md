@@ -185,7 +185,8 @@ in thread** in its context menu (right-click), or select it and press <kbd>r</kb
 The thread opens in a pane on the right; the message stays in the timeline and its replies stay in
 the thread. A message with a thread shows how many replies it has under it (**3 replies**), or
 **View thread** on a server that does not report the count; choose it, or **Open thread** on
-hover, to open the pane.
+hover, to open the pane. The thread's reply box works like the composer: `@` mentions, `:` emoji,
+**Insert emoji** and **Attach file**. Commands with `/` run from the conversation's composer only.
 
 **DMs and groups.** **New message** (the **+** at the top of the tool panel, or
 <kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a

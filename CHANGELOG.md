@@ -86,6 +86,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A long word or link without spaces wraps inside the message instead of running off its edge.
 - **New message** has a **Start conversation** or **Start group** button, so a DM or a group can be
   started with the mouse.
+- The thread reply box offers the @mention list, emoji and **Attach file** like the main composer,
+  and a member picked there is mentioned and notified.
 
 ## [0.0.5] - 2026-10-26
 

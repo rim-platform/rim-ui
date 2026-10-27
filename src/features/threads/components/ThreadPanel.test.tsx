@@ -1,7 +1,9 @@
+import { http, HttpResponse } from "msw";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
+import { server } from "../../../test/mocks/server";
 import { createTestQueryClient } from "../../../test/utils";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
@@ -28,6 +30,7 @@ vi.mock("../../plugins/api/usePluginCommands", () => ({
 }));
 vi.mock("../../e2ee/hooks/useE2eeConversation", () => ({
   useEncryptedHere: () => false,
+  useE2eeConversation: () => ({ encrypted: false, sendBlock: null }),
   usePrincipalNames: () => ({ userOf: () => undefined }),
 }));
 vi.mock("../../messages/api/useMessages", async (importOriginal) => ({
@@ -85,7 +88,10 @@ vi.mock("../api/useThreads", () => ({
 
 import { ThreadPanel } from "./ThreadPanel";
 
-function serve(viewerRole: ServerMemberRoleGql = ServerMemberRoleGql.MEMBER) {
+function serve(
+  viewerRole: ServerMemberRoleGql = ServerMemberRoleGql.MEMBER,
+  extra: Record<string, (vars: Record<string, unknown>) => unknown> = {},
+) {
   routeRequests(requestMock, {
     ...baseReadHandlers,
     "query Server(": () => ({
@@ -93,6 +99,7 @@ function serve(viewerRole: ServerMemberRoleGql = ServerMemberRoleGql.MEMBER) {
     }),
     "query PinnedMessages": () => ({ pinnedMessages: [{ id: "r-other" }] }),
     "mutation UnpinMessage": () => ({ unpinMessage: true }),
+    ...extra,
   });
 }
 
@@ -263,5 +270,102 @@ describe("ThreadPanel — mode", () => {
     act(() => useShellStore.getState().setNavigationMode(true));
     fireEvent.focus(screen.getByLabelText("Reply in thread"));
     expect(useShellStore.getState().navigationMode).toBe(false);
+  });
+});
+
+describe("ThreadPanel — reply box", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useShellStore.setState({
+      selectedConversationId: "c-1",
+      selectedRootMessageId: "root-1",
+      navigationMode: true,
+    });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  /** Serves the panel's reads and answers a reply with `r-new`, plus `extra` handlers. */
+  function serveReplies(extra: Record<string, (vars: Record<string, unknown>) => unknown> = {}) {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ReplyToMessage": () => ({ replyToMessage: reply("r-new", "me", "x") }),
+      ...extra,
+    });
+  }
+
+  function box(): HTMLTextAreaElement {
+    return screen.getByLabelText("Reply in thread");
+  }
+
+  function replyInputs(): Record<string, unknown>[] {
+    return callsTo(requestMock, "mutation ReplyToMessage").map(
+      (vars) => vars.input as Record<string, unknown>,
+    );
+  }
+
+  it("offers the mention list and sends a picked member as a mention", async () => {
+    serveReplies();
+    await renderPanel();
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query ServerMembers").length).toBeGreaterThan(0),
+    );
+    fireEvent.change(box(), { target: { value: "cc @ali", selectionStart: 7 } });
+    fireEvent.click(await screen.findByRole("button", { name: /Alice/ }));
+    fireEvent.submit(box().closest("form")!);
+    await waitFor(() => expect(replyInputs()).toHaveLength(1));
+    expect(replyInputs()[0]).toEqual({
+      serverId: "ws-1",
+      conversationId: "c-1",
+      rootMessageId: "root-1",
+      text: "cc <@u-alice>",
+    });
+  });
+
+  it("offers Insert emoji and Attach file", async () => {
+    serveReplies();
+    await renderPanel();
+    expect(screen.getByRole("button", { name: "Insert emoji" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attach file" })).toBeInTheDocument();
+  });
+
+  it("attaches a dropped file to the reply it sends", async () => {
+    serveReplies({
+      "mutation CreateAttachment": () => ({
+        createAttachment: { attachmentId: "att-1", uploadToken: "token" },
+      }),
+      "mutation FinalizeAttachment": () => ({
+        finalizeAttachment: { id: "att-1", status: "READY" },
+      }),
+    });
+    server.use(http.post("*/api/files/upload", () => new HttpResponse(null, { status: 204 })));
+    await renderPanel();
+    const form = box().closest("form")!;
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["x"], "notes.txt")] } });
+    expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+    fireEvent.change(box(), { target: { value: "file for you" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(callsTo(requestMock, "mutation CreateAttachment")).toHaveLength(1));
+    const input = callsTo(requestMock, "mutation CreateAttachment")[0].input as {
+      messageId: string;
+    };
+    expect(input.messageId).toBe("r-new");
+  });
+
+  it("sends / text as a reply and offers no command list", async () => {
+    serveReplies();
+    await renderPanel();
+    fireEvent.change(box(), { target: { value: "/hello", selectionStart: 6 } });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.submit(box().closest("form")!);
+    await waitFor(() => expect(replyInputs()).toHaveLength(1));
+    expect(replyInputs()[0].text).toBe("/hello");
+  });
+
+  it("keeps the conversation composer's marker off the reply box", async () => {
+    serveReplies();
+    await renderPanel();
+    expect(document.querySelector("[data-composer-input]")).toBeNull();
+    expect(document.querySelector("[data-thread-composer-input]")).not.toBeNull();
   });
 });

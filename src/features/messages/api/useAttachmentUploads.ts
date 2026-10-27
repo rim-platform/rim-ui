@@ -67,6 +67,9 @@ export function useAttachmentUploads(workspaceId: string, conversationId: string
         void qc.invalidateQueries({
           queryKey: queryKeys.messages(batch.workspaceId, batch.conversationId),
         });
+        void qc.invalidateQueries({
+          queryKey: ["threadMessages", batch.workspaceId, batch.conversationId],
+        });
         requestCacheSync(batch.workspaceId, [batch.conversationId]);
       }
     }
