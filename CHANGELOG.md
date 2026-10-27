@@ -205,6 +205,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   backticks ("missing string arg text").
 - A reaction with a custom emoji shows the emoji's image instead of its `:name:`; the name shows on
   hover.
+- **(edited)** follows the message's text in the comfortable and compact layouts too, instead of
+  sitting on its own line.
 
 ## [0.0.5] - 2026-10-26
 

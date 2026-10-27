@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { activeBan } from "../../hooks/useBanExpiry";
+import { cn } from "../../../../shared/ui/cn";
 import { MarkdownRenderer } from "../../../../shared/ui/MarkdownRenderer";
 import { useMessageEmojiMap } from "../../../emoji/hooks/useMessageEmojiMap";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
@@ -188,10 +189,18 @@ export function MessageContent({
       />
     );
   }
+  if (!editedAt) return <MessageText {...textProps} />;
+  // An edited message's last paragraph flows inline, so the marker follows its text; the root goes
+  // inline for that, so this wrapper keeps its top margin.
   return (
-    <>
-      <MessageText {...textProps} />
-      {editedAt && <EditedMark editedAt={editedAt} />}
-    </>
+    <div
+      data-edited-text=""
+      className={cn(
+        "[&>.prose-rim]:inline [&>.prose-rim>p:last-child]:inline",
+        textProps.variant !== "compact" && "mt-0.5",
+      )}
+    >
+      <MessageText {...textProps} /> <EditedMark editedAt={editedAt} />
+    </div>
   );
 }

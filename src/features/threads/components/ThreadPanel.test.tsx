@@ -277,6 +277,7 @@ describe("ThreadPanel — message context menu", () => {
     await renderPanel();
     const row = screen.getByText("bob's reply").closest("[data-message-id]") as HTMLElement;
     expect(within(row).getByText("(edited)")).toBeInTheDocument();
+    expect(within(row).getByText("(edited)").closest("[data-edited-text]")).not.toBeNull();
     expect(screen.getAllByText("(edited)")).toHaveLength(1);
   });
 
