@@ -14,6 +14,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { CacheAccount, MlsSyncNote } from "../../messages/api/messageCache";
 import { requestCacheSync, setE2eeNoteHandler } from "../../messages/runtime/messageCacheSync";
+import { plainMessagePreview } from "../../messages/utils/snippetText";
 import { fetchNotificationSettings } from "../../notifications/api/useNotificationSettings";
 import { showBrowserNotification } from "../../notifications/runtime/browserNotification";
 import { showMessageNotification } from "../../notifications/runtime/desktopNotification";
@@ -24,6 +25,7 @@ import {
 } from "../../notifications/state/useNotificationSettingsStore";
 import { fetchCommits, fetchConversationGroup } from "../api/e2eeApi";
 import { untitledGroupName } from "../../conversations/utils";
+import { mentionedMemberName } from "../../workspaces/api/memberName";
 import { useE2eeStore } from "../state/useE2eeStore";
 import { matchingKeyword, mentionedPrincipals } from "../utils/content";
 import { isWebAccount } from "../web/webAccount";
@@ -148,7 +150,9 @@ async function notifyKeywords(session: E2eeSession, workspaceId: string, note: M
     const content = {
       channelName: groupName,
       authorName: nameOf(message.authorId),
-      messageText: message.body,
+      messageText: plainMessagePreview(message.body, (id) =>
+        mentionedMemberName(queryClient, workspaceId, id),
+      ),
       encrypted: true,
     };
     const style = notificationStyle(device);

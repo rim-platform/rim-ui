@@ -26,6 +26,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 - **Search Messages** in the command palette opens the search box instead of failing with
   ``missing string arg `query` ``.
+- Search results and notifications show a mention as the person's name and the message as plain
+  text, instead of a raw `<@…>` token or Markdown markers.
 - A message without reactions no longer reserves an empty line under its text for the hover
   **Add reaction** button, which now sits beside **Open thread**; a thread's root shows its reply
   count right under the text.

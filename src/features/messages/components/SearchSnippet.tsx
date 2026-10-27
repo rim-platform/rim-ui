@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify";
 import type { ReactNode } from "react";
 
-import { HIGHLIGHT_END, HIGHLIGHT_START, plainSnippet } from "../utils/snippetText";
+import { HIGHLIGHT_END, HIGHLIGHT_START, plainMessagePreview } from "../utils/snippetText";
 
 export interface SearchSnippetProps {
   /**
@@ -13,6 +13,8 @@ export interface SearchSnippetProps {
   headline: string | null;
   /** Plain message text, used as the fallback when `headline` is `null`. */
   text: string;
+  /** A workspace member's display name by the id a mention token carries, if known. */
+  nameOf: (id: string) => string | undefined;
 }
 
 const SENTINELS = new RegExp(`[${HIGHLIGHT_START}${HIGHLIGHT_END}]`, "g");
@@ -42,17 +44,19 @@ function markedText(fragment: DocumentFragment): string {
  * allowing only `<mark>` and no attributes, parses it into a DOM fragment; only the fragment's
  * text is read, with each mark's extent kept as private-use sentinels, so no user markup ever
  * reaches the page and HTML entities decode the same way for both sources. The text then loses
- * its Markdown syntax ({@link plainSnippet}) and renders as React text and `<mark>` nodes.
+ * its mention tokens and Markdown syntax ({@link plainMessagePreview}): a mention reads as the
+ * member's `@name`, a highlight inside a mention's id is dropped, and what the server's cut left
+ * of a token at either end is named or dropped. It renders as React text and `<mark>` nodes.
  *
  * Does **not** re-implement client-side substring highlighting: the headline is the source of
  * truth for match highlighting. When `headline` is `null`, renders the plain `text` with its
- * Markdown removed and no highlight.
+ * mentions named, its Markdown removed and no highlight.
  */
-export function SearchSnippet({ headline, text }: SearchSnippetProps) {
+export function SearchSnippet({ headline, text, nameOf }: SearchSnippetProps) {
   if (headline === null) {
     return (
       <p className="text-xs leading-relaxed text-rim-text-muted line-clamp-2">
-        {plainSnippet(text)}
+        {plainMessagePreview(text, nameOf)}
       </p>
     );
   }
@@ -62,7 +66,7 @@ export function SearchSnippet({ headline, text }: SearchSnippetProps) {
     ALLOWED_ATTR: [],
     RETURN_DOM_FRAGMENT: true,
   });
-  const parts = plainSnippet(markedText(fragment)).split(MARKED);
+  const parts = plainMessagePreview(markedText(fragment), nameOf, { excerpt: true }).split(MARKED);
   const nodes: ReactNode[] = [];
   parts.forEach((part, i) => {
     const clean = part.replace(SENTINELS, "");

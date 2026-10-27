@@ -72,11 +72,19 @@ syntax (code fences, emphasis, links). `SearchSnippet`
 2. **Flatten.** Only the fragment's text is read. Each `<mark>`'s text is wrapped in two
    private-use characters (U+E000 and U+E001) and any such characters in the message text
    itself are dropped, so the highlights survive as plain text.
-3. **Strip Markdown.** `plainSnippet` (`src/features/messages/utils/snippetText.ts`) removes
-   code fences with their info string, backticks, `**`, `__`, `~~`, single `*` and `_` at word
-   edges (so `snake_case` stays), heading, quote and list markers at the start of a line, and
-   link and image syntax (keeping their text), then collapses whitespace to single spaces.
-4. **Render.** The text splits on the highlight characters into React text and `<mark>` nodes;
+3. **Name mentions.** `plainMessagePreview` (`src/features/messages/utils/snippetText.ts`) turns
+   each mention token `<@id>` into `@` and the member's display name from the workspace member
+   lookup the overlay already holds (`@member` for an id that names no member; the id of an
+   encrypted message's mention is a principal id, which the overlay maps to the member). A
+   highlight inside a token's id is dropped, one around the whole token stays. A snippet is cut
+   at both ends, so what the cut left of a token there (its id and `>` without the `<@` at the
+   start, `<`, `<@` or `<@` and part of an id at the end) becomes the member's name when the id
+   is whole and known, and is dropped otherwise.
+4. **Strip Markdown.** `plainSnippet` (same file) removes code fences with their info string,
+   backticks, `**`, `__`, `~~`, single `*` and `_` at word edges (so `snake_case` stays),
+   heading, quote and list markers at the start of a line, and link and image syntax (keeping
+   their text), then collapses whitespace to single spaces.
+5. **Render.** The text splits on the highlight characters into React text and `<mark>` nodes;
    an empty mark is dropped. No HTML from the snippet ever reaches the page and there is no
    `dangerouslySetInnerHTML`.
 
@@ -87,8 +95,8 @@ for message bodies.
 There is **no client-side substring highlighting** — the snippet is the single source of
 truth for match highlighting. When `headline` is `null` (a purely operator-based query with no
 free-text component, e.g. `from:@alice`), `SearchSnippet` falls back to the message `text` with
-its Markdown removed the same way, rendered as ordinary React children (auto-escaped, no
-highlight — there's nothing to highlight).
+its mentions named and its Markdown removed the same way, rendered as ordinary React children
+(auto-escaped, no highlight — there's nothing to highlight).
 
 ## Local search (desktop app)
 

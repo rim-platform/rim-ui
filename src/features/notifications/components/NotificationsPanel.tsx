@@ -29,7 +29,9 @@ import {
   useUnmuteConversationMutation,
 } from "../../conversations/api/useMuteConversation";
 import { isMuteActive, useMutedConversations } from "../../conversations/api/useMutedConversations";
+import { plainMessagePreview } from "../../messages/utils/snippetText";
 import { DmRequestInbox } from "../../relay/components/DmRequestInbox";
+import { principalUserId } from "../../workspaces/api/memberName";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import {
   useMarkNotificationsRead,
@@ -53,12 +55,18 @@ const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> =
 
 const SNIPPET_LENGTH = 140;
 
-function snippet(item: NotificationItem): string {
+/**
+ * The preview of an entry's message: plain text with its mentions named, cut to
+ * {@link SNIPPET_LENGTH} characters, or what stands in for a deleted, encrypted or text-less one.
+ *
+ * @param mentionName - the name of the member a mention token's id names, if known
+ */
+function snippet(item: NotificationItem, mentionName: (id: string) => string | undefined): string {
   const message = item.message;
   if (!message) return "";
   if (message.isDeleted) return "Message deleted";
   if (message.encryption && message.text === null) return ENCRYPTED_MESSAGE_TEXT;
-  const text = (message.text ?? "").replace(/\s+/g, " ").trim();
+  const text = plainMessagePreview(message.text ?? "", mentionName);
   if (!text) return "Attachment";
   return text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
 }
@@ -110,6 +118,9 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   }
 
   const resolveName = (userId: string) => memberLookup.resolve(userId).displayName;
+  /** The name of the member a mention names, by user id or, in an encrypted message, principal id. */
+  const mentionName = (id: string) =>
+    resolveName(principalUserId(qc, workspaceId, id) ?? id) || undefined;
 
   const contextMenu = useContextMenu();
   const mute = useMuteConversationMutation();
@@ -252,6 +263,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
                 key={item.id}
                 item={item}
                 resolveName={resolveName}
+                mentionName={mentionName}
                 currentUserId={currentUserId}
                 onOpen={() => handleOpen(item)}
                 contextMenu={contextMenu.bind(() => menuItems(item), {
@@ -281,12 +293,14 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
 function NotificationRow({
   item,
   resolveName,
+  mentionName,
   currentUserId,
   onOpen,
   contextMenu,
 }: {
   item: NotificationItem;
   resolveName: (userId: string) => string;
+  mentionName: (id: string) => string | undefined;
   currentUserId: string | undefined;
   onOpen: () => void;
   contextMenu: ContextMenuBindings;
@@ -339,7 +353,7 @@ function NotificationRow({
               <span>{author}</span>
               <span className="text-rim-text-faint">: </span>
               <span className={unread ? "text-rim-text-muted" : "text-rim-text-faint"}>
-                {snippet(item)}
+                {snippet(item, mentionName)}
               </span>
             </span>
           )}

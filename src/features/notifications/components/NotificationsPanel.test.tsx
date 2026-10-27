@@ -14,6 +14,7 @@ import {
   baseReadHandlers,
   callsTo,
   routeRequests,
+  workspaceMembers,
 } from "../../conversations/__fixtures__/conversations";
 import type { NotificationItem, NotificationPage } from "../api/useNotifications";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
@@ -197,6 +198,47 @@ describe("NotificationsPanel", () => {
     expect(screen.getAllByText("Encrypted message")).toHaveLength(2);
     expect(screen.queryByText("Attachment")).not.toBeInTheDocument();
     expect(readCachedMessageMock).toHaveBeenCalledWith(account, "m-read");
+  });
+
+  it("shows the preview as plain text with mentions named", async () => {
+    storeAccountMock.mockReturnValue({ endpoint: "http://localhost:8080/api", userId: "me" });
+    readCachedMessageMock.mockResolvedValue({
+      id: "m-e2ee",
+      text: "_ping_ <@rimp1_bob>",
+      e2ee: { status: "decrypted" },
+    });
+    const reaction = notification({
+      reason: NotificationReason.REACTION,
+      message: {
+        ...notification().message!,
+        text: "**Release 2.1** is out, <@u-bob> please check with <@u-gone>",
+      },
+    });
+    const encrypted = notification({
+      id: "n-e2ee",
+      messageId: "m-e2ee",
+      reason: NotificationReason.DIRECT,
+      message: {
+        ...notification().message!,
+        id: "m-e2ee",
+        text: null,
+        encryption: { sentAtUs: "1792957000000000" },
+      },
+    });
+    serve(() => page([reaction, encrypted]), {
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "u-bob" ? { ...m, principalId: "rimp1_bob" } : m,
+        ),
+      }),
+    });
+    renderPanel();
+
+    expect(
+      await screen.findByText("Release 2.1 is out, @Bob please check with @member"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("ping @Bob")).toBeInTheDocument();
+    expect(screen.queryByText(/<@/)).not.toBeInTheDocument();
   });
 
   it("the Unread only filter asks the server for unread entries", async () => {

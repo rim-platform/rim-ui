@@ -37,3 +37,26 @@ export function memberName(
   );
   return me && me.id === userId ? me.displayName || me.username : undefined;
 }
+
+/** The user id of the cached member of `workspaceId` whose principal id is `principalId`. */
+export function principalUserId(
+  qc: QueryClient,
+  workspaceId: string,
+  principalId: string,
+): string | undefined {
+  return qc
+    .getQueryData<CachedMember[]>(queryKeys.serverMembers(workspaceId))
+    ?.find((m) => m.principalId === principalId)?.userId;
+}
+
+/**
+ * The name of the member a mention token names, from the caches: the token's id is a user id,
+ * or in an encrypted message the member's principal id. Undefined when the caches know neither.
+ */
+export function mentionedMemberName(
+  qc: QueryClient,
+  workspaceId: string,
+  id: string,
+): string | undefined {
+  return memberName(qc, workspaceId, principalUserId(qc, workspaceId, id) ?? id);
+}

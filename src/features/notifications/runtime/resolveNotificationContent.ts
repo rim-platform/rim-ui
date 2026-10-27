@@ -7,7 +7,8 @@ import { queryKeys } from "../../../core/query/keys";
 import type { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { findCachedConversation } from "../../conversations/api/useConversation";
-import { memberName } from "../../workspaces/api/memberName";
+import { plainMessagePreview } from "../../messages/utils/snippetText";
+import { memberName, mentionedMemberName } from "../../workspaces/api/memberName";
 import { ENCRYPTED_MESSAGE_TEXT, storedTextSoon } from "../api/storedText";
 import {
   authorDisplayName,
@@ -115,8 +116,9 @@ export function findCachedMessage(
 }
 
 /**
- * Title (the conversation label) and body parts (author, text) for a `NotificationDue`. Reads the
- * caches first; only what they lack is fetched, in one request.
+ * Title (the conversation label) and body parts (author, text) for a `NotificationDue`, the text
+ * as plain text with its mentions named. Reads the caches first; only what they lack is fetched,
+ * in one request.
  */
 export async function resolveNotificationContent(
   qc: QueryClient,
@@ -165,7 +167,7 @@ export async function resolveNotificationContent(
       ? notificationConversationLabel(conversation, resolveName, currentUserId)
       : "New message",
     authorName,
-    text,
+    text: plainMessagePreview(text, (id) => mentionedMemberName(qc, workspaceId, id)),
     encrypted: Boolean(message?.encryption || message?.e2ee),
   };
 }
