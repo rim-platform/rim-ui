@@ -33,6 +33,39 @@ describe("plainSnippet", () => {
       `the ${marked} failed and ${marked}`,
     );
   });
+
+  it("drops HTML tags, and scripts and styles with their content", () => {
+    expect(
+      plainSnippet("<b>raw html</b> <script>alert(1)</script> <img src=x onerror=alert(2)>"),
+    ).toBe("raw html");
+  });
+
+  it("keeps an autolink's address", () => {
+    expect(plainSnippet("see <https://example.com>")).toBe("see https://example.com");
+  });
+
+  it("keeps HTML inside code", () => {
+    expect(plainSnippet("use `<br>` here")).toBe("use <br> here");
+  });
+
+  it("keeps comparisons and a lone pipe in prose", () => {
+    expect(plainSnippet("a < b and c > d | e")).toBe("a < b and c > d | e");
+  });
+
+  it("reads a table as its cells", () => {
+    expect(plainSnippet("| col a | col b |\n|---|---|\n| 1 | 2 |")).toBe("col a col b 1 2");
+  });
+
+  it("drops task boxes and thematic breaks", () => {
+    expect(plainSnippet("- [ ] todo\n- [x] done")).toBe("todo done");
+    expect(plainSnippet("above\n\n---\n\nbelow")).toBe("above below");
+  });
+
+  it("keeps highlight sentinels found inside a dropped tag", () => {
+    expect(plainSnippet(`<a title="${HIGHLIGHT_START}x${HIGHLIGHT_END}">y</a>`)).toBe(
+      `${HIGHLIGHT_START}${HIGHLIGHT_END}y`,
+    );
+  });
 });
 
 describe("plainMessagePreview", () => {

@@ -100,6 +100,7 @@ export const MessageItem = memo(function MessageItem({
     memberDisplayMap: members?.displayMap,
     resolveMember: members?.resolve,
     onMentionContextMenu,
+    workspaceId: message.serverId,
   });
 
   const extras = (

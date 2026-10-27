@@ -336,9 +336,12 @@ function NotificationRow({
         />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-[11px] text-rim-text-faint">
-            <span>{reason.label}</span>
+            <span className="shrink-0 whitespace-nowrap">{reason.label}</span>
             <span aria-hidden>·</span>
-            <span className={cn("truncate", available ? "text-rim-text-muted" : "italic")}>
+            <span
+              className={cn("min-w-0 truncate", available ? "text-rim-text-muted" : "italic")}
+              title={conversation}
+            >
               {conversation}
             </span>
             <span className="ml-auto shrink-0">{formatRelativeTime(item.createdAt)}</span>

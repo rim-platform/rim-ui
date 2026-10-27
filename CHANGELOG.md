@@ -107,6 +107,15 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   and a member picked there is mentioned and notified.
 - Confirmation dialogs show the confirm shortcut as Ctrl+↵ on Linux and Windows instead of ⌘↵.
 - The conversation header says "1 member" instead of "1 members", for groups and DMs too.
+- Notification previews show a message's text without HTML tags, table pipes, task boxes or
+  rules, and a notification's reason stays on one line.
+- Under **Email digest**, the notice no longer repeats the server's reason that email is not set
+  up.
+- An image in a message from another site shows as a link marked "image" instead of a broken
+  image, and raw HTML in a message no longer makes the app load anything but the server's own
+  files or log a security warning in the console.
+- Custom emoji show as their images in messages, in the emoji picker and in Settings > Emoji, also
+  in the desktop app; before, a message showed `:name:` as text.
 
 ## [0.0.5] - 2026-10-26
 

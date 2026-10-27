@@ -61,12 +61,11 @@ describe("SearchSnippet", () => {
     expect(mark?.getAttribute("class")).toBeNull();
   });
 
-  it("falls back to escaped plain text when headline is null", () => {
+  it("falls back to plain text without markup when headline is null", () => {
     render(
       <SearchSnippet nameOf={noNames} headline={null} text="<script>alert(1)</script>plain text" />,
     );
-    // React auto-escapes text content — the literal string is shown, not executed.
-    expect(screen.getByText("<script>alert(1)</script>plain text")).toBeInTheDocument();
+    expect(screen.getByText("plain text")).toBeInTheDocument();
     expect(document.querySelector("script")).toBeNull();
   });
 
@@ -98,11 +97,11 @@ describe("SearchSnippet", () => {
     const { container } = render(
       <SearchSnippet
         nameOf={noNames}
-        headline={"a &lt;b&gt; <mark>deploy</mark>"}
-        text="a <b> deploy"
+        headline={"a &lt;b&gt; &amp; c &lt; d <mark>deploy</mark>"}
+        text="a <b> & c < d deploy"
       />,
     );
-    expect(container.textContent).toBe("a <b> deploy");
+    expect(container.textContent).toBe("a & c < d deploy");
     expect(container.querySelector("b")).toBeNull();
     expect(container.querySelector("mark")?.textContent).toBe("deploy");
   });

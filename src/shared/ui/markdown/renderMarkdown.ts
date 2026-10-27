@@ -8,7 +8,7 @@ import {
   postprocessMentions,
   preprocessMentions,
 } from "../../utils/mentionRenderer";
-import { isSafeLinkUrl, isSafeMediaUrl } from "./safeUrl";
+import { isInlineImageUrl, isSafeLinkUrl, isSafeMediaUrl } from "./safeUrl";
 
 /** Highlights code in a language; null when the language is not known. */
 export type Highlighter = (code: string, language: string) => string | null;
@@ -27,6 +27,7 @@ export interface RenderMarkdownOptions {
 const LINK_CLASS = "text-rim-accent hover:underline";
 const EMOJI_CLASS = "inline-block h-5 w-5 align-text-bottom object-contain";
 const IMAGE_CLASS = "rim-md-image";
+const IMAGE_LABEL_CLASS = "rim-md-image-label";
 
 const ALLOWED_TAGS = [
   "p",
@@ -79,7 +80,9 @@ const CHECKBOX_ATTRS = new Set(["type", "checked", "disabled"]);
 
 /** Class names the renderer itself produces; any other class is dropped. */
 const ALLOWED_CLASSES = new Set(
-  [LINK_CLASS, EMOJI_CLASS, MENTION_CLASS, IMAGE_CLASS, "hljs"].flatMap((c) => c.split(" ")),
+  [LINK_CLASS, EMOJI_CLASS, MENTION_CLASS, IMAGE_CLASS, IMAGE_LABEL_CLASS, "hljs"].flatMap((c) =>
+    c.split(" "),
+  ),
 );
 /** highlight.js scopes (`hljs-title`, `class_`) and fenced-code languages (`language-ts`). */
 const ALLOWED_CLASS_PATTERNS = [/^hljs-[a-z0-9_-]+$/, /^[a-z]+_+$/, /^language-[a-z0-9_+#.-]+$/];
@@ -108,6 +111,16 @@ function linkHtml(href: string, inner: string, title?: string | null): string {
   return `<a href="${escapeHtml(href)}"${titleAttr} class="${LINK_CLASS}">${inner}</a>`;
 }
 
+/** An image shown as a link: its alt text (or address) and an "image" label. */
+function imageLinkHtml(href: string, text: string, title?: string | null): string {
+  return `${linkHtml(href, escapeHtml(text || href), title)} <span class="${IMAGE_LABEL_CLASS}">image</span>`;
+}
+
+/** An opening HTML tag. */
+const OPEN_TAG = /<[a-zA-Z][^<>]*>/g;
+/** An event-handler attribute such as `onerror=…`. */
+const EVENT_HANDLER_ATTR = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi;
+
 function createRenderer(
   highlight: Highlighter | null,
   showInlineMedia: boolean,
@@ -126,14 +139,16 @@ function createRenderer(
       return isSafeLinkUrl(href) ? linkHtml(href, inner, title) : inner;
     },
     image({ href, title, text }: Tokens.Image) {
-      if (!showInlineMedia) {
-        return isSafeLinkUrl(href)
-          ? linkHtml(href, escapeHtml(text || href), title)
-          : escapeHtml(text);
+      if (showInlineMedia && isInlineImageUrl(href)) {
+        const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+        return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr} class="${IMAGE_CLASS}">`;
       }
-      if (!isSafeMediaUrl(href)) return escapeHtml(text);
-      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
-      return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${titleAttr} class="${IMAGE_CLASS}">`;
+      return isSafeLinkUrl(href) ? imageLinkHtml(href, text, title) : escapeHtml(text);
+    },
+    // Strips event handlers from raw HTML so the parser never sees one; DOMPurify still
+    // sanitizes the rest.
+    html({ text }: Tokens.HTML | Tokens.Tag) {
+      return text.replace(OPEN_TAG, (tag) => tag.replace(EVENT_HANDLER_ATTR, ""));
     },
   };
 }
@@ -160,10 +175,14 @@ function markedFor(highlight: Highlighter | null, showInlineMedia: boolean): Mar
 
 let purifier: Purifier | null = null;
 
+/** The custom emoji image URLs of the render in progress, which the sanitizer keeps. */
+let emojiSources: ReadonlySet<string> = new Set();
+
 /**
- * A DOMPurify instance of its own: links and images keep only safe URLs, classes only the
- * renderer's own, links open in a new context, images load lazily without a referrer, and an
- * `input` survives only as a disabled checkbox.
+ * A DOMPurify instance of its own: links keep only safe URLs, images only the server's own
+ * files and the custom emoji of the render in progress, classes only the renderer's own, links
+ * open in a new context, images load lazily without a referrer, and an `input` survives only as
+ * a disabled checkbox.
  */
 function getPurifier(): Purifier {
   if (purifier) return purifier;
@@ -176,7 +195,10 @@ function getPurifier(): Purifier {
     if (data.attrName === "href") {
       if (!isSafeLinkUrl(data.attrValue)) data.keepAttr = false;
     } else if (data.attrName === "src") {
-      if (!isSafeMediaUrl(data.attrValue)) data.keepAttr = false;
+      if (emojiSources.has(data.attrValue)) data.forceKeepAttr = true;
+      else if (!isSafeMediaUrl(data.attrValue) || !isInlineImageUrl(data.attrValue)) {
+        data.keepAttr = false;
+      }
     } else if (data.attrName === "class") {
       const kept = data.attrValue.split(/\s+/).filter(isAllowedClass).join(" ");
       if (kept) data.attrValue = kept;
@@ -233,9 +255,14 @@ export function renderMarkdown(content: string, options: RenderMarkdownOptions =
   if (mentions.length > 0) html = postprocessMentions(html, mentions);
   if (customEmojiMap && customEmojiMap.size > 0) html = replaceCustomEmoji(html, customEmojiMap);
 
-  return getPurifier().sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-  });
+  emojiSources = new Set(customEmojiMap?.values() ?? []);
+  try {
+    return getPurifier().sanitize(html, {
+      ALLOWED_TAGS,
+      ALLOWED_ATTR,
+      ALLOW_DATA_ATTR: false,
+    });
+  } finally {
+    emojiSources = new Set();
+  }
 }

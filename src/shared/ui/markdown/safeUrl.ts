@@ -26,6 +26,24 @@ export function isSafeMediaUrl(url: string): boolean {
   return allowed(url, MEDIA_SCHEMES);
 }
 
+/**
+ * True when an image in rendered Markdown may load inline from `url`: a file the server serves
+ * under `/api/files/` or `/api/emoji/` on the page's own origin, the only images the app's
+ * content security policy lets it show.
+ */
+export function isInlineImageUrl(url: string): boolean {
+  if (!isSafeMediaUrl(url)) return false;
+  try {
+    const u = new URL(url, window.location.href);
+    return (
+      u.origin === window.location.origin &&
+      (u.pathname.startsWith("/api/files/") || u.pathname.startsWith("/api/emoji/"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** True for an absolute http(s) URL, the only kind a server-supplied preview may use. */
 export function isHttpUrl(url: string): boolean {
   const scheme = schemeOf(url);

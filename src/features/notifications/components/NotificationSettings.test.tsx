@@ -107,7 +107,7 @@ describe("NotificationSettings", () => {
 
     expect(screen.queryByLabelText("Email digest")).not.toBeInTheDocument();
     expect(screen.getByText("Email is not set up on this server.")).toBeInTheDocument();
-    expect(screen.getByText("SMTP is not configured")).toBeInTheDocument();
+    expect(screen.queryByText("SMTP is not configured")).toBeNull();
   });
 
   it("saves the rules with the server's variables", async () => {

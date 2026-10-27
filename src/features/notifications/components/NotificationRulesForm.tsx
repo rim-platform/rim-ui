@@ -261,7 +261,7 @@ export function NotificationRulesForm({ serverId, settings }: NotificationRulesF
       {!email.enabled ? (
         <div className="space-y-1.5">
           <span className="block text-sm font-medium text-rim-text">Email digest</span>
-          <FeatureOffNotice feature="email" view={email} />
+          <FeatureOffNotice feature="email" view={email} hideReason />
         </div>
       ) : (
         <label className="flex items-center justify-between gap-4">

@@ -13,6 +13,7 @@ import {
   resolveServerUrl,
   useServerMedia,
   useServerMediaUrl,
+  useServerMediaUrls,
 } from "./serverMedia";
 
 /**
@@ -163,6 +164,59 @@ describe("useServerMedia", () => {
     act(() => refreshServerMedia(url));
     await waitFor(() => expect(result.current).toBe("blob:tauri://localhost/2"));
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useServerMediaUrls", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let created: number;
+  let revoked: string[];
+
+  beforeEach(() => {
+    created = 0;
+    revoked = [];
+    fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    URL.createObjectURL = vi.fn(() => `blob:tauri://localhost/list-${++created}`);
+    URL.revokeObjectURL = vi.fn((url: string) => {
+      revoked.push(url);
+    });
+  });
+
+  afterEach(() => {
+    setDesktop(false);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("returns every URL as given on the web without downloading", () => {
+    setDesktop(false);
+    const { result } = renderHook(() => useServerMediaUrls(["/api/emoji/a", "/api/emoji/b"]));
+    expect(result.current.get("/api/emoji/a")).toBe("/api/emoji/a");
+    expect(result.current.get("/api/emoji/b")).toBe("/api/emoji/b");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("gives each downloaded file's object URL on the desktop, and leaves out a failed one", async () => {
+    setDesktop(true);
+    fetchMock.mockImplementation(async (url: string) =>
+      url.endsWith("/fail") ? ({ ok: false } as Response) : okResponse(),
+    );
+    const { result } = renderHook(() => useServerMediaUrls(["/api/emoji/ok", "/api/emoji/fail"]));
+    await waitFor(() => expect(result.current.get("/api/emoji/ok")).toMatch(/^blob:/));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.has("/api/emoji/fail")).toBe(false);
+  });
+
+  it("releases the downloads when it unmounts", async () => {
+    setDesktop(true);
+    const { result, unmount } = renderHook(() => useServerMediaUrls(["/api/emoji/gc"]));
+    await waitFor(() => expect(result.current.get("/api/emoji/gc")).toMatch(/^blob:/));
+    vi.useFakeTimers();
+    unmount();
+    expect(revoked).toEqual([]);
+    vi.advanceTimersByTime(30_000);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(result.current.get("/api/emoji/gc"));
   });
 });
 
