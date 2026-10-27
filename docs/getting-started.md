@@ -189,7 +189,8 @@ hover, to open the pane.
 
 **DMs and groups.** **New message** (the **+** at the top of the tool panel, or
 <kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a
-group. A DM opens as a draft and is created when you send its first message. A group is named
+group, then choose **Start conversation** or **Start group** (or press <kbd>Ctrl+Enter</kbd>). A
+DM opens as a draft and is created when you send its first message. A group is named
 after the people in it, as you see them: "Alice and Bob", or "Alice, Bob, Carol and 2 others"
 past three. In Direct messages
 the picker lists your contacts instead. Settings > Contacts shows your contact link and adds

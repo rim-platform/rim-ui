@@ -84,6 +84,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Strikethrough, tables with their header row, horizontal rules and task-list boxes show in
   messages instead of disappearing; a wide table scrolls inside the message.
 - A long word or link without spaces wraps inside the message instead of running off its edge.
+- **New message** has a **Start conversation** or **Start group** button, so a DM or a group can be
+  started with the mouse.
 
 ## [0.0.5] - 2026-10-26
 
