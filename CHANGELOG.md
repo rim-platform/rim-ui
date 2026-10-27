@@ -65,6 +65,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- After leaving an encrypted group, or blocking the sender of a group request, the app keeps
+  syncing: before, every later sync failed on the group left, so encrypted conversations showed
+  "[empty message]" or no messages, and new messages stopped arriving until the browser's data
+  was cleared.
 - **Block** on a message request for a DM no longer tries to leave the DM, which the server
   refuses; a group's request is still left.
 - **Search Messages** in the command palette opens the search box instead of failing with
