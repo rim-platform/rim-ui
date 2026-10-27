@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../test/utils";
 import { expectReachableByKeyboard } from "../../test/keyboard";
 import { queryKeys } from "../../core/query/keys";
+import { queryClient } from "../../core/query/queryClient";
 import {
   ConversationTypeEnum,
   ServerMemberRoleGql,
@@ -432,6 +433,88 @@ describe("ConversationHeader — draft DM", () => {
     expect(await screen.findByText("Acme")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Invite member" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Search in/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationHeader — way back from a DM", () => {
+  const servers = [
+    { id: "direct-1", name: "Direct", owner: null },
+    { id: "ws-1", name: "Acme Team", owner: null },
+  ];
+  const origin = {
+    workspaceId: "ws-1",
+    conversationId: "c-design",
+    spaceId: "direct-1",
+    openedId: "dm-carol",
+  };
+
+  function renderWithServers() {
+    const qc = createTestQueryClient();
+    qc.setQueryData(queryKeys.myServers(), servers);
+    render(
+      <QueryClientProvider client={qc}>
+        <ConversationHeader />
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Conversation(")) {
+        return Promise.resolve({
+          conversation: makeConversation({
+            id: "dm-carol",
+            serverId: "direct-1",
+            title: "Carol",
+            conversationType: ConversationTypeEnum.DIRECT,
+            memberIds: ["me", "u-carol"],
+          }),
+        });
+      }
+      return new Promise(() => {});
+    });
+    queryClient.setQueryData(queryKeys.myServers(), servers);
+    useWorkspaceStore.setState({ workspaceId: "direct-1" });
+    useShellStore.getState().setSelectedConversationId("dm-carol");
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("shows Back to the workspace on the DM opened from it, and returns there", async () => {
+    useShellStore.getState().setDirectOrigin(origin);
+    renderWithServers();
+    const back = await screen.findByRole("button", { name: "Back to Acme Team" });
+    expect(back).toHaveTextContent("Back to Acme Team");
+    fireEvent.click(back);
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(useShellStore.getState().selectedConversationId).toBe("c-design");
+    expect(useShellStore.getState().directOrigin).toBeNull();
+  });
+
+  it("shows Back on the draft the origin opened", async () => {
+    useShellStore.getState().openDraftDirect({
+      spaceId: "direct-1",
+      member: { principalId: "rimp1_carol", relayUrls: [], name: "Carol" },
+    });
+    useShellStore.getState().setDirectOrigin({ ...origin, openedId: null });
+    renderWithServers();
+    expect(await screen.findByRole("button", { name: "Back to Acme Team" })).toBeInTheDocument();
+  });
+
+  it("shows no Back on another DM, and none without an origin", async () => {
+    useShellStore.getState().setDirectOrigin({ ...origin, openedId: "dm-dave" });
+    renderWithServers();
+    expect(screen.queryByRole("button", { name: /^Back to/ })).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setDirectOrigin(origin));
+    expect(screen.getByRole("button", { name: "Back to Acme Team" })).toBeInTheDocument();
+    act(() => useShellStore.getState().setDirectOrigin(null));
+    expect(screen.queryByRole("button", { name: /^Back to/ })).not.toBeInTheDocument();
   });
 });
 

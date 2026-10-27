@@ -205,7 +205,9 @@ DM opens as a draft and is created when you send its first message. A group is n
 after the people in it, as you see them: "Alice and Bob", or "Alice, Bob, Carol and 2 others"
 past three. In Direct messages
 the picker lists your contacts instead. Settings > Contacts shows your contact link and adds
-someone from theirs; a workspace's member list has **Add as contact**.
+someone from theirs; a workspace's member list has **Add as contact**. A DM or group started
+from a workspace opens in Direct messages; its header then offers **Back to \<workspace\>**
+(<kbd>Alt+←</kbd>), which returns to the workspace and the conversation you were in.
 
 **DM requests.** A first DM from someone can arrive as a request, which you see before the
 conversation joins your list. Settings > Direct messages decides who reaches you how:

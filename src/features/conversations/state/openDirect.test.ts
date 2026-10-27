@@ -4,9 +4,10 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { emptyInbox, routeRequests } from "../__fixtures__/conversations";
+import { emptyInbox, makeConversation, routeRequests } from "../__fixtures__/conversations";
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../../core/graphql/client", () => ({
@@ -59,6 +60,48 @@ describe("openDirectWithMember", () => {
     expect(useShellStore.getState().draftDirect).toEqual({
       spaceId: "direct-1",
       member: { principalId: "rimp1_bob", relayUrls: [], name: "Bob" },
+    });
+  });
+
+  it("opening an existing DM in the direct space from a workspace records the way back", async () => {
+    startRelay();
+    useShellStore.getState().setSelectedConversationId("c-design");
+    queryClient.setQueryData(queryKeys.conversations("direct-1"), {
+      items: [
+        makeConversation({
+          id: "dm-bob",
+          serverId: "direct-1",
+          title: null,
+          conversationType: ConversationTypeEnum.DIRECT,
+          memberIds: ["me", "d-bob"],
+        }),
+      ],
+      pageInfo: { hasNext: false, hasPrev: false },
+    });
+    queryClient.setQueryData(queryKeys.serverMembers("direct-1"), [
+      { userId: "d-bob", username: "bob", displayName: "Bob", principalId: "rimp1_bob" },
+    ]);
+    await openDirectWithMember("u-bob");
+    expect(useWorkspaceStore.getState().workspaceId).toBe("direct-1");
+    expect(useShellStore.getState().selectedConversationId).toBe("dm-bob");
+    expect(useShellStore.getState().directOrigin).toEqual({
+      workspaceId: "ws-1",
+      conversationId: "c-design",
+      spaceId: "direct-1",
+      openedId: "dm-bob",
+    });
+  });
+
+  it("a draft from a workspace records the way back with no opened conversation", async () => {
+    startRelay();
+    useShellStore.getState().setSelectedConversationId("c-design");
+    await openDirectWithMember("u-bob");
+    expect(useShellStore.getState().draftDirect).toMatchObject({ spaceId: "direct-1" });
+    expect(useShellStore.getState().directOrigin).toEqual({
+      workspaceId: "ws-1",
+      conversationId: "c-design",
+      spaceId: "direct-1",
+      openedId: null,
     });
   });
 

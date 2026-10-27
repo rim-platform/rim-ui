@@ -258,6 +258,35 @@ describe("KeybindProvider with the default profile", () => {
     ]);
   });
 
+  it("Alt+ArrowLeft goes back from a DM opened in a workspace", () => {
+    const { getByRole } = renderWith(<textarea aria-label="composer" />);
+    press(document.body, "ArrowLeft", { altKey: true });
+    const field = getByRole("textbox");
+    field.focus();
+    expect(press(field, "ArrowLeft", { altKey: true }).defaultPrevented).toBe(true);
+    expect(dispatched()).toEqual(["workspace.back_to_workspace", "workspace.back_to_workspace"]);
+  });
+
+  it("on macOS Alt+ArrowLeft in a text field stays with the field", () => {
+    const userAgent = vi
+      .spyOn(navigator, "userAgent", "get")
+      .mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15");
+    try {
+      const { getByRole } = renderWith(<textarea aria-label="composer" />);
+      const field = getByRole("textbox");
+      field.focus();
+      expect(press(field, "ArrowLeft", { altKey: true }).defaultPrevented).toBe(false);
+      expect(press(field, "ArrowRight", { altKey: true, shiftKey: true }).defaultPrevented).toBe(
+        false,
+      );
+      expect(dispatchCommand).not.toHaveBeenCalled();
+      press(document.body, "ArrowLeft", { altKey: true });
+      expect(dispatched()).toEqual(["workspace.back_to_workspace"]);
+    } finally {
+      userAgent.mockRestore();
+    }
+  });
+
   it("matches a two-modifier default however the modifiers were written", () => {
     renderWith(<div />);
     press(document.body, "ArrowDown", { altKey: true, shiftKey: true });

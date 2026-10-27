@@ -233,6 +233,32 @@ describe("NewMessagePicker", () => {
     expect(start.startDirectConversation).not.toHaveBeenCalled();
   });
 
+  it("a group started from a workspace records the way back", async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.getState().setSelectedConversationId("c-design");
+    queryClient.setQueryData(queryKeys.serverMembers("ws-1"), [
+      { userId: "u2", username: "bob", displayName: "Bob", principalId: "rimp1_bob" },
+      { userId: "u3", username: "carol", displayName: "Carol", principalId: "rimp1_carol" },
+    ]);
+    start.startDirectConversation.mockResolvedValue({
+      spaceId: "direct-1",
+      conversationId: "g-1",
+    });
+    renderWithProviders(<NewMessagePicker open onClose={vi.fn()} onCreated={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "pick Bob and Carol" }));
+    await user.click(screen.getByRole("button", { name: "confirm" }));
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("g-1"));
+    expect(useWorkspaceStore.getState().workspaceId).toBe("direct-1");
+    expect(useShellStore.getState().directOrigin).toEqual({
+      workspaceId: "ws-1",
+      conversationId: "c-design",
+      spaceId: "direct-1",
+      openedId: "g-1",
+    });
+    useShellStore.getState().setDirectOrigin(null);
+  });
+
   it("starts a group with contacts and shows why it was not started", async () => {
     const user = userEvent.setup();
     useWorkspaceStore.setState({ workspaceId: "direct-1" });

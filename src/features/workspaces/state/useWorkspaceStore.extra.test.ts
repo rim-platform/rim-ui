@@ -5,6 +5,8 @@ vi.mock("../../../shell/state/useShellStore", () => {
   return {
     useShellStore: Object.assign(vi.fn(), {
       getState: () => ({
+        directOrigin: null,
+        setDirectOrigin: vi.fn(),
         setSelectedConversationId: mockSetSelectedConversationId,
       }),
       setState: vi.fn(),

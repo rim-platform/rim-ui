@@ -15,6 +15,7 @@ import { isWebAccount } from "../../e2ee/web/webAccount";
 import { ContactPicker, type PickedContact } from "../../relay/components/ContactPicker";
 import { startDirectConversation, type DirectMember } from "../../relay/conversations/startDirect";
 import { useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
+import { rememberDirectOrigin } from "../state/directOrigin";
 import { selectDirectConversation } from "../state/directSelection";
 import { openDirectWith, principalsOf } from "../state/openDirect";
 import { useProbationEnd } from "../../limits/api/useProbation";
@@ -85,6 +86,7 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
       setStartError(null);
       try {
         const { spaceId, conversationId } = await startDirectConversation(members);
+        rememberDirectOrigin(spaceId, conversationId);
         selectDirectConversation(spaceId, conversationId);
         onClose();
       } catch (err) {

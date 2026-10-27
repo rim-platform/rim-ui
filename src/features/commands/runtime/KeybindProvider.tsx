@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { detectOs } from "../../../core/runtime/runtime";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
@@ -51,6 +52,14 @@ const TEXT_EDITING_KEYSTROKES = new Set([
   "Ctrl+Y",
 ]);
 
+/** Option+Arrow word jumps on macOS, kept by a text field there. */
+const MAC_TEXT_EDITING_KEYSTROKES = new Set([
+  "Alt+ArrowLeft",
+  "Alt+ArrowRight",
+  "Shift+Alt+ArrowLeft",
+  "Shift+Alt+ArrowRight",
+]);
+
 /** Whether a dialog or menu of the host is open; Escape then belongs to it. */
 function hostOverlayOpen(): boolean {
   return document.querySelector('[role="dialog"], [aria-modal="true"], [role="menu"]') !== null;
@@ -81,7 +90,11 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     // context's bindings and the global ones.
     const typesCharacter =
       event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
-    const keepInField = isTextInput && (typesCharacter || TEXT_EDITING_KEYSTROKES.has(keystroke));
+    const keepInField =
+      isTextInput &&
+      (typesCharacter ||
+        TEXT_EDITING_KEYSTROKES.has(keystroke) ||
+        (MAC_TEXT_EDITING_KEYSTROKES.has(keystroke) && detectOs() === "macos"));
     const match = keepInField
       ? context === "GLOBAL"
         ? null

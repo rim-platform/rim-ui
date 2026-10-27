@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
-import { Hash, Pin, Search, UserPlus } from "lucide-react";
+import { ArrowLeft, Hash, Pin, Search, UserPlus } from "lucide-react";
 
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
@@ -35,6 +35,13 @@ import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types"
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { useCanModerate, useIsOwner } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
+import {
+  returnFromDirect,
+  useApplicableDirectOrigin,
+  workspaceNameOf,
+} from "../../features/conversations/state/directOrigin";
+import { useMyServers } from "../../features/workspaces/api/useMyServers";
+import { useRelayStore } from "../../features/relay/state/useRelayStore";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
 export function ConversationHeader() {
@@ -49,6 +56,7 @@ function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
   return (
     <div className="flex h-10 items-center border-b border-rim-line px-4">
       <div className="flex min-w-0 items-center gap-3">
+        <BackToWorkspaceButton />
         <Avatar
           url={peer.avatarUrl}
           name={peer.name || "?"}
@@ -164,6 +172,7 @@ function SelectedConversationHeader() {
   return (
     <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
       <div className="flex min-w-0 items-center gap-3">
+        <BackToWorkspaceButton />
         {dmOtherUserId ? (
           <Avatar
             url={dmAvatarUrl}
@@ -254,6 +263,44 @@ function SelectedConversationHeader() {
       )}
       <InviteDialog open={inviteOpen && canInvite} onClose={() => setInviteOpen(false)} />
     </div>
+  );
+}
+
+/**
+ * Returns to the workspace and conversation the shown DM was opened from; renders nothing when
+ * it was not opened from one, or that workspace is no longer the viewer's.
+ */
+function BackToWorkspaceButton() {
+  const origin = useApplicableDirectOrigin();
+  const { data: servers } = useMyServers();
+  const spaces = useRelayStore((s) => s.spaces);
+  const forked = useRelayStore((s) => s.forked);
+  const keybind = useKeybindLabel("workspace.back_to_workspace");
+  const name = origin ? workspaceNameOf(origin.workspaceId, servers, spaces, forked) : null;
+  if (!name) return null;
+  return (
+    <HoverTooltip
+      content={
+        <span className="text-xs text-rim-text whitespace-nowrap">
+          Back to {name}
+          {keybind && (
+            <kbd className="ml-1.5 rounded border border-rim-line bg-rim-void px-1 py-0.5 text-[10px] font-mono text-rim-text-muted">
+              {keybind}
+            </kbd>
+          )}
+        </span>
+      }
+    >
+      <button
+        type="button"
+        onClick={() => returnFromDirect()}
+        aria-label={`Back to ${name}`}
+        className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        <span className="max-w-[180px] truncate">Back to {name}</span>
+      </button>
+    </HoverTooltip>
   );
 }
 
