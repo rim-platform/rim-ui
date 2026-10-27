@@ -4,16 +4,17 @@
  * `useBlockedConversations`, as this server does for its own direct space.
  */
 
-import { isSchemaRefusal } from "../../../core/graphql/errors";
+import { asSentence, isSchemaRefusal } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
+import { toast } from "../../../shared/toast";
 import type { ConversationSummary, ConversationSummaryPage } from "../../conversations/types";
 import { shortPrincipal } from "../../plugins/registry/model";
 import { fetchServerMembers, type ServerMember } from "../../workspaces/api/useServerMembers";
 import { blockedPrincipalsQuery } from "../api/useBlockedPrincipals";
 import { useContactStore } from "../contacts/useContactStore";
-import { useBlockedConversations } from "../state/useBlockedConversations";
+import { blockedPrincipalOf, useBlockedConversations } from "../state/useBlockedConversations";
 import { useRelayStore } from "../state/useRelayStore";
 
 /** The server refused `myBlockedPrincipals` as unknown. */
@@ -152,4 +153,21 @@ export function blockedPersonName(spaceId: string | null, principalId: string): 
     )
     ?.find((b) => b.principalId === principalId);
   return account?.displayName || account?.username || shortPrincipal(principalId);
+}
+
+/**
+ * Says to unblock first when `conversationId` of `spaceId` is hidden because someone this
+ * account blocked started it.
+ * @returns whether it is hidden, so the caller opens nothing
+ */
+export function refuseBlockedConversation(
+  spaceId: string | null | undefined,
+  conversationId: string,
+): boolean {
+  const principalId = blockedPrincipalOf(spaceId, conversationId);
+  if (!principalId) return false;
+  toast.info(asSentence(`You blocked ${blockedPersonName(spaceId ?? null, principalId)}`), {
+    description: "Unblock them in Settings → Direct messages to message them.",
+  });
+  return true;
 }
