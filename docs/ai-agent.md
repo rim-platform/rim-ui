@@ -11,7 +11,9 @@ commands and their sensitivity, and rim-server's
 - **It runs commands, nothing else.** Every read and every change is a command that the server
   checks against your role in the workspace, as if you ran it. The agent cannot do more than you.
 - **It is in the desktop app only.** The web app has no agent; its Settings → AI Agent says "Key
-  storage is only available in the desktop app."
+  storage is only available in the desktop app." It does not offer the agent's command, its
+  keybind, the `/agent` suggestion or **Build with AI**, and shows "The AI agent is available in
+  the desktop app." if the agent is opened another way.
 - **You bring the model and the key.** It talks to Anthropic or OpenAI with your own API key, and
   the provider bills you for what it uses. RIM ships neither a model nor a key.
 - **It never acts on its own.** It runs only when you send it a prompt, and stops when it has

@@ -5,7 +5,8 @@ resolved, the keybind profile file, and the opt-in Vim layer.
 
 ## Where a key goes
 
-A keydown passes through, in order:
+A key pressed in a keystroke recorder (Settings → Keybinds) goes to the recorder only. Any
+other keydown passes through, in order:
 
 1. **The Vim layer** (only while Vim mode is on). It takes unmodified keys outside text fields
    and `Ctrl+[`. Keys in a text field, a select or a plugin frame pass through untouched.
@@ -58,9 +59,9 @@ Settings, Keyboard exports the active profile and imports one. The file:
 }
 ```
 
-- `keystroke`: modifiers `Ctrl`, `Shift`, `Alt` (or `Meta`, read as `Ctrl`) joined by `+`, then
-  a key name as the browser reports it (`K`, `ArrowDown`, `Escape`, `?`). Import puts it in
-  canonical form.
+- `keystroke`: modifiers `Ctrl`, `Shift`, `Alt` (or `Meta` or `Cmd`, read as `Ctrl`), in any
+  case, joined by `+`, then a key name as the browser reports it (`K`, `ArrowDown`, `Escape`,
+  `?`). Import puts it in canonical form.
 - `commandId`: any command id, or `null` to free the keystroke so no lower layer binds it.
 - `context`: `GLOBAL` (the default), `COMPOSER`, `MESSAGE_LIST`, `THREAD_VIEW`,
   `CONVERSATION_VIEW`, `PANEL` or `COMMAND_PALETTE`.
