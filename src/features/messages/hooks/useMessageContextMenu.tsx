@@ -34,9 +34,13 @@ interface UseMessageContextMenuOptions {
   /** Starts a timeline reply to a message; absent where the viewer cannot post or in the thread panel. */
   onReply?: (messageId: string) => void;
   /**
-   * The thread the messages are shown in, for the thread panel: its menu has no Reply in
-   * thread and no Edit message (the panel edits nothing in place), and the plugins' actions
-   * get the thread.
+   * Starts editing a message in place; the timeline's edit state when absent. In the thread
+   * panel Edit is offered only with it.
+   */
+  onEdit?: (messageId: string) => void;
+  /**
+   * The thread the messages are shown in, for the thread panel: its menu has no Reply and no
+   * Reply in thread, and the plugins' actions get the thread.
    */
   threadId?: string | null;
 }
@@ -75,6 +79,7 @@ export function useMessageContextMenu({
   conversationId,
   onForward,
   onReply,
+  onEdit,
   threadId = null,
 }: UseMessageContextMenuOptions): {
   getItems: (target: MessageMenuTarget) => DropdownMenuItem[];
@@ -162,12 +167,15 @@ export function useMessageContextMenu({
       }
 
       if (isOwnMessage) {
-        if (!threadId) {
+        const edit =
+          onEdit ??
+          (threadId ? undefined : (id: string) => useShellStore.getState().setEditingMessageId(id));
+        if (edit) {
           result.push({
             id: "edit-message",
             label: "Edit message",
             separatorBefore: true,
-            onSelect: () => useShellStore.getState().setEditingMessageId(messageId),
+            onSelect: () => edit(messageId),
           });
         }
 
@@ -176,7 +184,7 @@ export function useMessageContextMenu({
           id: "delete-message",
           label: "Delete message…",
           danger: true,
-          separatorBefore: Boolean(threadId),
+          separatorBefore: !edit,
           onSelect: () => void deleteMessageFn(messageId),
         });
       } else {
@@ -227,6 +235,7 @@ export function useMessageContextMenu({
       conversationId,
       onForward,
       onReply,
+      onEdit,
       threadId,
       canModerate,
       rights.reaction,

@@ -298,11 +298,9 @@ export function SearchOverlay() {
           break;
         case "Escape":
           event.preventDefault();
-          // Tips popover closes first, then the query, then the overlay.
+          // The tips popover closes first, then the overlay.
           if (tipsOpen) {
             setTipsOpen(false);
-          } else if (query) {
-            setQuery("");
           } else {
             close();
           }
@@ -324,8 +322,6 @@ export function SearchOverlay() {
       selectedIndex,
       jumpToMessage,
       tipsOpen,
-      query,
-      setQuery,
       close,
     ],
   );
@@ -340,12 +336,10 @@ export function SearchOverlay() {
   const showEmpty = !hasQuery;
 
   // Scope label for display
+  const scopeName =
+    scope.kind === "conversation" ? channelNameMap.get(scope.conversationId) : undefined;
   const scopeLabel =
-    scope.kind === "conversation"
-      ? channelNameMap.get(scope.conversationId)
-        ? `# ${channelNameMap.get(scope.conversationId)}`
-        : "Current channel"
-      : "All";
+    scope.kind === "conversation" ? (scopeName ? `# ${scopeName}` : "This conversation") : "All";
 
   return (
     <div
@@ -467,7 +461,9 @@ export function SearchOverlay() {
               <Search className="mb-2 h-6 w-6 text-rim-text-faint" />
               <p className="text-sm text-rim-text-muted">
                 {scope.kind === "conversation"
-                  ? `Search messages in ${scopeLabel}`
+                  ? scopeName
+                    ? `Search messages in # ${scopeName}`
+                    : "Search messages in this conversation"
                   : "Search messages across your workspace"}
               </p>
             </div>

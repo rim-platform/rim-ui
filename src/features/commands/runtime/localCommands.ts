@@ -85,6 +85,18 @@ export const CLIENT_COMMAND_LABELS: Readonly<
     title: "New Message",
     description: "Start a direct message or a group conversation.",
   },
+  "workspace.previous_channel": {
+    title: "Previous Conversation",
+    description: "Go to the conversation above in the sidebar.",
+  },
+  "workspace.next_channel": {
+    title: "Next Conversation",
+    description: "Go to the conversation below in the sidebar.",
+  },
+  "workspace.next_unread_channel": {
+    title: "Next Unread Conversation",
+    description: "Go to the next conversation with unread messages.",
+  },
 };
 
 /** `cmd` with the title and description this app shows for it, when it has its own. */

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -38,6 +38,7 @@ import { useConfirmationModalStore } from "../../agent/state/confirmationModalSt
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
+import { useShellStore } from "../../../shell/state/useShellStore";
 
 const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
 const deleteContext = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
@@ -79,11 +80,13 @@ function MessageRow({
   message,
   threadId,
   onReply,
+  onEdit,
 }: {
   isOwnMessage: boolean;
   message?: MessageItem;
   threadId?: string;
   onReply?: (messageId: string) => void;
+  onEdit?: (messageId: string) => void;
 }) {
   const contextMenu = useContextMenu();
   const messageMenu = useMessageContextMenu({
@@ -91,6 +94,7 @@ function MessageRow({
     conversationId: "conv-1",
     onForward,
     onReply,
+    onEdit,
     threadId,
   });
   const target = {
@@ -125,6 +129,7 @@ async function renderMenu(
   message?: MessageItem,
   threadId?: string,
   onReply?: (messageId: string) => void,
+  onEdit?: (messageId: string) => void,
 ) {
   const qc = createTestQueryClient();
   render(
@@ -134,6 +139,7 @@ async function renderMenu(
         message={message}
         threadId={threadId}
         onReply={onReply}
+        onEdit={onEdit}
       />
       <ConfirmCommandModal />
     </QueryClientProvider>,
@@ -601,7 +607,7 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     expect(labels()).not.toContain("Reply");
   });
 
-  it("drops Reply, Reply in thread and Edit in the thread panel and gives plugins the thread", async () => {
+  it("drops Reply and Reply in thread in the thread panel, offers Edit there only with onEdit, and gives plugins the thread", async () => {
     pluginCommands.list = [{ id: "plugin.translate", title: "Translate" }];
     try {
       serve(ServerMemberRoleGql.MEMBER);
@@ -611,6 +617,17 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
         "Copy text",
         "Forward…",
         "Pin message",
+        "Delete message…",
+        "Translate",
+      ]);
+      cleanup();
+      await renderMenu(ServerMemberRoleGql.MEMBER, true, undefined, "thread-9", vi.fn(), vi.fn());
+      expect(labels()).toEqual([
+        "Add reaction",
+        "Copy text",
+        "Forward…",
+        "Pin message",
+        "Edit message",
         "Delete message…",
         "Translate",
       ]);
@@ -627,5 +644,14 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     } finally {
       pluginCommands.list = [];
     }
+  });
+
+  it("Edit message in the thread panel calls onEdit and leaves the timeline's edit state alone", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    const onEdit = vi.fn();
+    await renderMenu(ServerMemberRoleGql.MEMBER, true, undefined, "thread-9", undefined, onEdit);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    expect(onEdit).toHaveBeenCalledWith("msg-1");
+    expect(useShellStore.getState().editingMessageId).toBeNull();
   });
 });

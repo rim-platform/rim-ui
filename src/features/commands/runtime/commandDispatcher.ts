@@ -81,6 +81,19 @@ type ExecuteBackendCommand = (input: {
   confirmation?: ConfirmationProof;
 }) => Promise<{ executeCommand: CommandResult }>;
 
+/** Payload of the result of a command this app ran itself, which shows what it did. */
+export const LOCAL_ACTION_PAYLOAD = Object.freeze({ local: true });
+
+/** True for the result of a command this app ran itself without a result of its own. */
+export function isLocalActionResult(result: { payload: unknown } | null | undefined): boolean {
+  return result?.payload === LOCAL_ACTION_PAYLOAD;
+}
+
+/** The result of a local command that has something to say. */
+function resultText(message: string): CommandResult {
+  return { status: "SUCCESS", message, payload: null, followUpCommands: [] };
+}
+
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
 // every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
 // args, and the handler supplies any args it needs itself.
@@ -245,10 +258,13 @@ const localHandlers: Record<
   },
   "chat.mark_all_as_read": () => {
     const workspaceId = useWorkspaceStore.getState().workspaceId;
-    if (workspaceId) markWorkspaceRead(workspaceId);
+    if (!workspaceId) return;
+    markWorkspaceRead(workspaceId);
+    return resultText("All conversations marked as read");
   },
   "workspace.reload_commands": () => {
     reloadCommands();
+    return resultText("Commands reloaded");
   },
   "admin.invite_member": () => {
     useShellStore.getState().setShowInviteDialog(true);
@@ -353,11 +369,21 @@ export async function dispatchCommand(
   if (localHandler) {
     const result = localHandler(context?.args);
     if (result) return result;
-    return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
+    return {
+      status: "SUCCESS",
+      message: "",
+      payload: LOCAL_ACTION_PAYLOAD,
+      followUpCommands: [],
+    };
   }
 
   if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
-    return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
+    return {
+      status: "SUCCESS",
+      message: "",
+      payload: LOCAL_ACTION_PAYLOAD,
+      followUpCommands: [],
+    };
   }
 
   if (isOpenPluginPanelCommand(command.id)) {

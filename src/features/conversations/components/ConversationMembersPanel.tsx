@@ -279,7 +279,7 @@ function MembersList({
       )}
 
       {canInvite && inviting && (
-        <div className="rounded-lg border border-rim-line bg-rim-void">
+        <div data-owns-escape="" className="rounded-lg border border-rim-line bg-rim-void">
           {inDirectSpace ? (
             <ContactPicker
               selected={invitePeople}
@@ -295,7 +295,7 @@ function MembersList({
               onChange={setInviteIds}
               excludeUserIds={[...conversation.memberIds, ...pendingIds]}
               onConfirm={handleInvite}
-              onEscape={closeInvite}
+              onEscape={cancelInvite}
               autoFocus
               placeholder="Find people to invite..."
               listClassName="max-h-48"
@@ -328,7 +328,7 @@ function MembersList({
               key={member.userId}
               data-testid={`member-row-${member.userId}`}
               {...userMenu.bind(target)}
-              className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
+              className="group relative flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
             >
               <MemberRowAvatar
                 userId={member.userId}
@@ -338,7 +338,7 @@ function MembersList({
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-1">
                   <span className="truncate text-sm text-rim-text">{member.displayName}</span>
-                  {isSelf && <span className="text-xs text-rim-text-faint">(you)</span>}
+                  {isSelf && <span className="shrink-0 text-xs text-rim-text-faint">(you)</span>}
                   <RoleBadge role={inDirectSpace ? null : member.role} />
                   {member.pending && (
                     <span className="shrink-0 rounded border border-rim-accent/40 px-1 text-[10px] uppercase tracking-wider text-rim-accent">
@@ -353,40 +353,43 @@ function MembersList({
                   </span>
                 )}
               </span>
-              {isSelf && canLeave && !member.pending && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    leaveNeedsConfirmation(conversation)
-                      ? setConfirmLeave(true)
-                      : leave(conversation)
-                  }
-                  aria-label="Leave"
-                >
-                  Leave
-                </Button>
-              )}
-              {!isSelf && canRemoveOthers && confirmRemoveId !== member.userId && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  onClick={() => setConfirmRemoveId(member.userId)}
-                  aria-label={`Remove ${member.displayName}`}
-                >
-                  Remove
-                </Button>
-              )}
-              {confirmRemoveId !== member.userId && (
-                <MemberMenuButton
-                  name={member.displayName}
-                  onOpen={(button) => userMenu.openUnder(button, target)}
-                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                />
-              )}
+              <span
+                data-row-actions
+                className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-rim-panel pl-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+              >
+                {isSelf && canLeave && !member.pending && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      leaveNeedsConfirmation(conversation)
+                        ? setConfirmLeave(true)
+                        : leave(conversation)
+                    }
+                    aria-label="Leave"
+                  >
+                    Leave
+                  </Button>
+                )}
+                {!isSelf && canRemoveOthers && confirmRemoveId !== member.userId && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmRemoveId(member.userId)}
+                    aria-label={`Remove ${member.displayName}`}
+                  >
+                    Remove
+                  </Button>
+                )}
+                {confirmRemoveId !== member.userId && (
+                  <MemberMenuButton
+                    name={member.displayName}
+                    onOpen={(button) => userMenu.openUnder(button, target)}
+                  />
+                )}
+              </span>
               {!isSelf && confirmRemoveId === member.userId && (
                 <span className="flex shrink-0 gap-1">
                   <Button

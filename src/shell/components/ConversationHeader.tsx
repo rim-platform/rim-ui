@@ -250,9 +250,10 @@ function SelectedConversationHeader() {
           )}
           {isChannel && <PinnedMessagesButton />}
           {!viewerInvited && (
-            <ChannelSearchButton
+            <ConversationSearchButton
               conversationId={conversationId}
               displayTitle={displayTitle}
+              isChannel={isChannel}
               openSearch={openSearch}
             />
           )}
@@ -351,17 +352,23 @@ function PinnedMessagesButton() {
   );
 }
 
-function ChannelSearchButton({
+function ConversationSearchButton({
   conversationId,
   displayTitle,
+  isChannel,
   openSearch,
 }: {
   conversationId: string;
   displayTitle: string | undefined;
+  isChannel: boolean;
   openSearch: (scope: { kind: "conversation"; conversationId: string }) => void;
 }) {
   const keystroke = useKeybindLabel("workspace.search_in_channel");
-  const label = keystroke ? `Search in channel (${keystroke})` : "Search in channel";
+  const noun = isChannel ? "channel" : "conversation";
+  const label = keystroke ? `Search in ${noun} (${keystroke})` : `Search in ${noun}`;
+  const accessibleName = displayTitle
+    ? `Search in ${isChannel ? `#${displayTitle}` : displayTitle}`
+    : `Search in ${isChannel ? "channel" : "this conversation"}`;
 
   return (
     <HoverTooltip
@@ -370,7 +377,7 @@ function ChannelSearchButton({
       <button
         type="button"
         onClick={() => openSearch({ kind: "conversation", conversationId })}
-        aria-label={`Search in ${displayTitle ? `#${displayTitle}` : "channel"}`}
+        aria-label={accessibleName}
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
         <Search className="h-4 w-4" />

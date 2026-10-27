@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import type { CommandArgumentInfo, CommandDefinition, CommandResult } from "../types";
 
@@ -52,7 +54,10 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { CommandPalette } from "./CommandPalette";
-import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
+import {
+  CommandArgumentType,
+  ConversationTypeEnum,
+} from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { useCommands } from "../api/useCommands";
 import { dispatchCommand } from "../runtime/commandDispatcher";
@@ -64,6 +69,10 @@ import { queryKeys } from "../../../core/query/keys";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../../updater/api/serverCapabilities";
+
+function Providers({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 const SERVER_ID: CommandArgumentInfo = {
   name: "server_id",
@@ -155,7 +164,7 @@ function openPaletteInThread() {
   queryClient.setQueryData(queryKeys.threadByRoot("ws-1", "conv-9", "msg-root-1"), {
     id: "thread-1",
   });
-  render(<CommandPalette />);
+  render(<CommandPalette />, { wrapper: Providers });
   act(() => useCommandStore.getState().openCommandPalette());
 }
 
@@ -190,7 +199,7 @@ describe("CommandPalette command context", () => {
   });
 
   it("runs a command with only the workspace when no conversation is open", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
     fireEvent.click(screen.getByText("List State"));
 
@@ -287,7 +296,7 @@ describe("CommandPalette search", () => {
   });
 
   it("puts the best match first, under its group's header", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
     fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
       target: { value: "sea" },
@@ -299,7 +308,7 @@ describe("CommandPalette search", () => {
   });
 
   it("is a modal dialog named Command palette", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
 
     expect(screen.getByRole("dialog", { name: "Command palette" })).toHaveAttribute(
@@ -309,7 +318,7 @@ describe("CommandPalette search", () => {
   });
 
   it("lists chat.create_group as New Message", () => {
-    render(<CommandPalette />);
+    render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
 
     expect(screen.getByText("New Message")).toBeInTheDocument();
@@ -327,7 +336,7 @@ function serveFilterCommands() {
 }
 
 function openPalette() {
-  render(<CommandPalette />);
+  render(<CommandPalette />, { wrapper: Providers });
   act(() => useCommandStore.getState().openCommandPalette());
 }
 
@@ -458,5 +467,76 @@ describe("CommandPalette pipes", () => {
     expect(toast.error).toHaveBeenCalledWith(
       "Pipe stage 1: Toggle Zen Mode runs only in this app, so it cannot be part of a pipe.",
     );
+  });
+});
+
+describe("CommandPalette archive commands", () => {
+  const ARCHIVE = serverCommand(
+    "chat.archive_channel",
+    "Archive Channel",
+    "Archives the channel",
+    "Conversation",
+  );
+  const UNARCHIVE = serverCommand(
+    "chat.unarchive_channel",
+    "Unarchive Channel",
+    "Unarchives the channel",
+    "Conversation",
+  );
+  const WITH_CONVERSATION = [
+    SERVER_ID,
+    requiredArgument("conversation_id", CommandArgumentType.CONVERSATION_ID),
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("c-1");
+    vi.mocked(useCommands).mockReturnValue({
+      data: [
+        { ...ARCHIVE, arguments: WITH_CONVERSATION },
+        { ...UNARCHIVE, arguments: WITH_CONVERSATION },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    useWorkspaceStore.getState().clearWorkspaceId();
+    useShellStore.getState().reset();
+    queryClient.clear();
+    vi.mocked(useCommands).mockReturnValue({
+      data: [MARK_AS_READ, LIST_STATE],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  function openWith(conversationType: ConversationTypeEnum, isArchived: boolean) {
+    queryClient.setQueryData(queryKeys.conversation("ws-1", "c-1"), {
+      id: "c-1",
+      conversationType,
+      isArchived,
+    });
+    render(<CommandPalette />, { wrapper: Providers });
+    act(() => useCommandStore.getState().openCommandPalette());
+  }
+
+  it("offers Unarchive Channel only in an archived channel and Archive Channel only in one that is not", () => {
+    openWith(ConversationTypeEnum.CHANNEL, false);
+    expect(screen.getByText("Archive Channel")).toBeInTheDocument();
+    expect(screen.queryByText("Unarchive Channel")).not.toBeInTheDocument();
+    cleanup();
+    act(() => useCommandStore.getState().closeCommandPalette());
+
+    openWith(ConversationTypeEnum.CHANNEL, true);
+    expect(screen.getByText("Unarchive Channel")).toBeInTheDocument();
+    expect(screen.queryByText("Archive Channel")).not.toBeInTheDocument();
+  });
+
+  it("offers neither in a direct message", () => {
+    openWith(ConversationTypeEnum.DIRECT, false);
+    expect(screen.queryByText("Archive Channel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unarchive Channel")).not.toBeInTheDocument();
   });
 });
