@@ -249,7 +249,8 @@ export function ComposerInput({
         if (query && query.length >= 2) {
           setShortcodeQuery(query);
           setSelectedSuggestion(0);
-          // Without the index the suggestions list custom emoji only; the next shortcode tries again.
+          // Without the index the suggestions list custom emoji only; the next shortcode tries
+          // again.
           if (!emojiIndex) void loadEmojiIndex().then(setEmojiIndex, () => {});
         } else {
           setShortcodeQuery(null);

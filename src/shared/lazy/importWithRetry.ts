@@ -3,7 +3,10 @@ import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 const CHUNK_LOAD_MESSAGE =
   /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i;
 
-/** Whether `error` is a chunk of this app that could not be fetched (a dropped connection, a redeploy). */
+/**
+ * Whether `error` is a chunk of this app that could not be fetched (a dropped connection, a
+ * redeploy).
+ */
 export function isChunkLoadError(error: unknown): boolean {
   return error instanceof Error && CHUNK_LOAD_MESSAGE.test(error.message);
 }
