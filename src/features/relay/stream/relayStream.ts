@@ -49,7 +49,8 @@ export interface RelayStreamDeps {
   streamHeads(spaceId: string, streams: string[]): Promise<Map<string, number>>;
   /** Refetch what the space shows through host-signed answers after a gap. */
   refetchSpace(spaceId: string, conversationIds: string[]): Promise<void>;
-  apply(event: WorkspaceEvent, spaceId: string, host: string): void;
+  /** Apply `event` of `spaceId` at `host`; `stream` is the host stream it came on. */
+  apply(event: WorkspaceEvent, spaceId: string, host: string, stream: string): void;
   ack(upTo: string): Promise<void>;
   onMissing(spaceId: string, host: string): void;
   onReconciled(spaceId: string): void;
@@ -64,6 +65,7 @@ interface Applicable {
   event: WorkspaceEvent;
   spaceId: string;
   host: string;
+  stream: string;
   itemId: string | null;
 }
 
@@ -313,6 +315,7 @@ export class RelayStreamProcessor {
       event: event.event as unknown as WorkspaceEvent,
       spaceId: item.workspaceId,
       host: item.hostServerId,
+      stream: event.stream,
       itemId: item.id,
     };
     if (
@@ -351,7 +354,7 @@ export class RelayStreamProcessor {
   private applyAll(items: Applicable[]): void {
     for (const item of items) {
       try {
-        this.deps.apply(item.event, item.spaceId, item.host);
+        this.deps.apply(item.event, item.spaceId, item.host, item.stream);
       } catch (err) {
         logger.warn("[RIM:relay] applying a host event failed:", err);
       }

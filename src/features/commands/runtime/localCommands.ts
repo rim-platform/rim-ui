@@ -63,6 +63,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Cycle Display Density",
     "Switch between comfortable, compact and ultra compact",
   ),
+  localCommand("workspace.rename", "Rename Workspace…", "Give the open workspace a new name"),
+  localCommand("workspace.leave", "Leave Workspace…", "Leave the open workspace"),
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));

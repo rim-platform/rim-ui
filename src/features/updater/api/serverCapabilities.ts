@@ -5,6 +5,12 @@ import { fetchServerInfo, type KnownServerInfo } from "./serverInfoApi";
 /** The capability of a server with `Message.editedAt`. */
 export const MESSAGE_EDITED_AT = "message_edited_at";
 
+/** The capability of a server with `leaveWorkspace`. */
+export const WORKSPACE_LEAVE = "workspace_leave";
+
+/** The capability of a server with `renameWorkspace`. */
+export const WORKSPACE_RENAME = "workspace_rename";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

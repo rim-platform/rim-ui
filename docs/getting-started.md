@@ -137,6 +137,13 @@ Its badge counts unread messages before you open it. The rail shows once a works
 - **Create one.** **+ Create workspace** on the welcome screen, or **Add workspace**, then **Create
   New**, asks for a name. **Create** opens the new workspace with you as its Owner.
 
+**Leave workspace…** in a workspace's menu on the rail (right-click it) or in the command palette
+takes you out of it, after a confirmation: you leave its channels and conversations, and what you
+wrote stays. The Owner hands the workspace over or deletes it instead (Settings → Workspace), and
+nobody leaves the server's default workspace. The Owner renames a workspace with **Rename
+workspace…** in the same menu, the palette or Settings → Workspace → **Name**; everyone sees the
+new name. Both need a server that supports them; on an older one they are not offered.
+
 Every workspace member has one role:
 
 - **Owner**: one per workspace, the person who created it. Can do everything, including inviting

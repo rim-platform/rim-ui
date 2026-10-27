@@ -91,6 +91,11 @@ const WorkspaceOwnerSettings = lazy(() =>
     default: m.WorkspaceOwnerSettings,
   })),
 );
+const WorkspaceNameSettings = lazy(() =>
+  import("./WorkspaceNameSettings").then((m) => ({
+    default: m.WorkspaceNameSettings,
+  })),
+);
 const InstanceModerationSettings = lazy(() =>
   import("../../instance-moderation/components/InstanceModerationSettings").then((m) => ({
     default: m.InstanceModerationSettings,
@@ -434,6 +439,7 @@ export function SettingsPage() {
               {shownTab === "history" && <HistoryArchiveSettings />}
               {shownTab === "workspace" && (
                 <div className="space-y-10">
+                  <WorkspaceNameSettings serverId={workspaceId} />
                   <WorkspaceInvites serverId={workspaceId} />
                   <PublicLinkSettings
                     serverId={workspaceId}

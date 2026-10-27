@@ -41,6 +41,7 @@ import { PipelineResultView } from "./PipelineResultView";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
+import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
@@ -107,7 +108,9 @@ export function CommandPalette() {
         .filter((cmd) => commandOfferedHere(cmd.id))
         .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
-    const local = LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id));
+    const local = LOCAL_COMMANDS.filter(
+      (cmd) => !serverIds.has(cmd.id) && workspaceCommandOffered(cmd.id),
+    );
     return [
       ...base,
       ...local,
@@ -115,7 +118,7 @@ export function CommandPalette() {
       ...pluginCommands.filter((cmd) => cmd.visibleInPalette && runnableHere(cmd.requiredContext)),
       ...registryItems,
     ];
-  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext]);
+  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext, workspaceId]);
 
   // Every command the palette knows, to name pipe stages in messages.
   const knownCommands = useMemo(

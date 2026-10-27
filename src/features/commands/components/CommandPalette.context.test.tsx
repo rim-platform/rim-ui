@@ -61,6 +61,9 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
+import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { fakeServerInfo } from "../../../test/serverInfo";
+import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../../updater/api/serverCapabilities";
 
 const SERVER_ID: CommandArgumentInfo = {
   name: "server_id",
@@ -215,6 +218,41 @@ describe("CommandPalette command context", () => {
         threadId: "thread-1",
       },
     });
+  });
+});
+
+describe("CommandPalette workspace commands", () => {
+  function openAs(role: ServerMemberRoleGql) {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    queryClient.setQueryData(queryKeys.server("ws-1"), {
+      id: "ws-1",
+      name: "Acme",
+      viewerRole: role,
+    });
+    queryClient.setQueryData(
+      queryKeys.serverInfo,
+      fakeServerInfo({}, { capabilities: [WORKSPACE_LEAVE, WORKSPACE_RENAME] }),
+    );
+    render(<CommandPalette />);
+    act(() => useCommandStore.getState().openCommandPalette());
+  }
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    useWorkspaceStore.getState().clearWorkspaceId();
+    queryClient.clear();
+  });
+
+  it("offers Leave Workspace… only where the viewer may leave", () => {
+    openAs(ServerMemberRoleGql.MEMBER);
+    expect(screen.getByText("Leave Workspace…")).toBeInTheDocument();
+    expect(screen.queryByText("Rename Workspace…")).not.toBeInTheDocument();
+  });
+
+  it("offers the owner Rename Workspace… and no Leave Workspace…", () => {
+    openAs(ServerMemberRoleGql.OWNER);
+    expect(screen.getByText("Rename Workspace…")).toBeInTheDocument();
+    expect(screen.queryByText("Leave Workspace…")).not.toBeInTheDocument();
   });
 });
 

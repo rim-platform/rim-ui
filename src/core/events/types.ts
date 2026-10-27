@@ -105,8 +105,10 @@ export type WorkspaceEvent =
       outcome: JoinRequestOutcome;
     }
   /**
-   * A member was kicked or banned. Delivered to the workspace (a guest only hears about
-   * themselves), including the removed user, whose subscription then ends.
+   * A member left, was kicked or banned, or the workspace or their account was deleted
+   * (`cause`: `left`, `kick`, `ban`, `workspace_deleted`, `account_deleted`). Delivered to the
+   * workspace (a guest only hears about themselves), including the removed user, whose
+   * subscription then ends.
    */
   | {
       type: "MemberLeft";
@@ -256,6 +258,8 @@ export type WorkspaceEvent =
       plugin_id: string;
       change: "added" | "updated" | "removed";
     }
+  /** The workspace was renamed. Visible to every member, guests included. */
+  | { type: "WorkspaceUpdated"; workspace_id: string; name: string }
   /** A Commit of an encrypted conversation's group was accepted; `epoch` is the Commit's. */
   | {
       type: "MlsCommitAccepted";

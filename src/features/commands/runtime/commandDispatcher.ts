@@ -28,6 +28,7 @@ import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { confirmConversationCommand } from "./conversationActionGate";
+import { openWorkspaceAction } from "../../workspaces/workspaceActions";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -139,6 +140,8 @@ const localHandlers: Record<
   "workspace.back_to_workspace": () => {
     returnFromDirect();
   },
+  "workspace.leave": () => openWorkspaceAction("leave"),
+  "workspace.rename": () => openWorkspaceAction("rename"),
   "workspace.previous_channel": () => {
     const ids = getCachedConversationIds();
     if (ids.length === 0) return;

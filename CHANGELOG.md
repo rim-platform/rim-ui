@@ -43,6 +43,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   members panel, listing your contacts and the people in your workspaces. It needs rim-server
   with `remoteMembers` on `addConversationMembers`; an older server refuses the addition with
   its own message.
+- **Leave workspace…** in a workspace's menu on the rail and in the command palette, after a
+  confirmation, for everyone but the Owner and not in the server's default workspace; and
+  **Rename workspace…** for the Owner, there and in Settings → Workspace → **Name**. Every member
+  sees a new name at once. Both need rim-server with `workspace_leave` and `workspace_rename` in
+  `serverInfo.capabilities`; an older server does not show them.
 
 ### Changed
 
@@ -61,6 +66,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - In the server's default workspace, **Invite people…** on a channel is offered only to its Owner
   and Moderators and to a private channel's creator, the people the server lets add members
   there.
+- Settings → Security → Spaces through this relay no longer lists a workspace you left.
 
 ### Fixed
 
@@ -198,6 +204,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   enable, edit or delete buttons for a Member, the default workspace offers creating channels to
   its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
   workspace-scoped state.
+- A workspace on another server you were removed from, that was deleted, or that you left on
+  another device, now leaves the rail.
 
 ## [0.0.5] - 2026-10-26
 

@@ -58,6 +58,8 @@ interface RelayState {
   markForked: (serverId: string) => void;
   setMissing: (notice: MissingNotice) => void;
   clearMissing: (spaceId: string) => void;
+  /** Drops a space, with its missing notice and renewal refusal. */
+  removeSpace: (spaceId: string) => void;
   setOrigin: (serverId: string, origin: string) => void;
   noteRenewals: (answers: RenewalAnswer[]) => void;
   reset: () => void;
@@ -93,6 +95,16 @@ export const useRelayStore = create<RelayState>((set) => ({
       const missing = { ...s.missing };
       delete missing[spaceId];
       return { missing };
+    }),
+  removeSpace: (spaceId) =>
+    set((s) => {
+      const spaces = { ...s.spaces };
+      const missing = { ...s.missing };
+      const refusals = { ...s.refusals };
+      delete spaces[spaceId];
+      delete missing[spaceId];
+      delete refusals[spaceId];
+      return { spaces, missing, refusals };
     }),
   setOrigin: (serverId, origin) =>
     set((s) =>

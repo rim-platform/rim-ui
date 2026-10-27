@@ -224,8 +224,9 @@ menu. The surfaces with a menu:
 - **A section heading** of the sidebar: Browse channels and Create channel (where you may create
   one) on Channels, Expand or Collapse on Archived.
 - **A workspace** on the rail: Mark all as read, Pause notifications, Browse channels, Create
-  channel (where you may), Invite people, a keybind to switch to it and its settings, acting on
-  that workspace without switching to it (except for its settings).
+  channel (where you may), Invite people, Rename workspace (the Owner), a keybind to switch to it,
+  its settings, and Leave workspace (not for the Owner or in the server's default workspace),
+  acting on that workspace without switching to it (except for its settings).
 - **A message request**: Accept, Read first, Ignore, Report and Block.
 
 Items the viewer cannot use are left out rather than shown disabled.

@@ -74,6 +74,7 @@ import { markLeaving, clearLeaving } from "../../features/conversations/state/pe
 import { makeConversation } from "../../features/conversations/__fixtures__/conversations";
 import type { ConversationSummaryPage } from "../../features/conversations/types";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
+import { expectDeparture } from "../../features/workspaces/state/memberEvents";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { ServerMemberRoleGql } from "../graphql/generated/schema-types";
 import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
@@ -148,6 +149,7 @@ describe("useWorkspaceEvents reconnect invalidation", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
 
     renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    spy.mockClear(); // the refetch at subscription start
     connectedHandler?.();
 
     expect(spy).not.toHaveBeenCalled();
@@ -158,6 +160,7 @@ describe("useWorkspaceEvents reconnect invalidation", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
 
     renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    spy.mockClear(); // the refetch at subscription start
     connectedHandler?.(); // initial connect — skipped
     connectedHandler?.(); // reconnect
 
@@ -196,6 +199,7 @@ describe("useWorkspaceEvents unknown events", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
 
     renderHook(() => useWorkspaceEvents("ws-1"), { wrapper: wrapperFor(qc) });
+    spy.mockClear(); // the refetch at subscription start
 
     expect(() =>
       subscribeObserver?.next({
@@ -501,6 +505,52 @@ describe("useWorkspaceEvents workspace roles and removal", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
     expect(toast.info).toHaveBeenCalledWith("You were removed from Acme");
   });
+
+  it("WorkspaceUpdated renames the workspace in the rail and its query", () => {
+    const { qc } = setup();
+    emitWorkspaceEvent({ type: "WorkspaceUpdated", workspace_id: "ws-1", name: "Acme Two" });
+
+    expect(qc.getQueryData<{ id: string; name: string }[]>(queryKeys.myServers())).toEqual([
+      { id: "ws-1", name: "Acme Two" },
+      { id: "ws-2", name: "Beta" },
+    ]);
+    expect(qc.getQueryData<{ name: string }>(queryKeys.server("ws-1"))?.name).toBe("Acme Two");
+  });
+
+  it('MemberLeft with cause left for the viewer leaves with "You left Acme"', () => {
+    const { qc } = setup();
+    emitWorkspaceEvent({
+      type: "MemberLeft",
+      workspace_id: "ws-1",
+      user_id: "me",
+      cause: "left",
+    });
+
+    expect(useWorkspaceStore.getState().workspaceId).toBeNull();
+    expect(qc.getQueryData<{ id: string }[]>(queryKeys.myServers())?.map((s) => s.id)).toEqual([
+      "ws-2",
+    ]);
+    expect(toast.info).toHaveBeenCalledWith("You left Acme");
+  });
+
+  it("MemberLeft with cause left shows no toast when this client is leaving it", () => {
+    setup();
+    expectDeparture("ws-1");
+    emitWorkspaceEvent({
+      type: "MemberLeft",
+      workspace_id: "ws-1",
+      user_id: "me",
+      cause: "left",
+    });
+
+    expect(useWorkspaceStore.getState().workspaceId).toBeNull();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("subscribing to a workspace refetches the workspace list", () => {
+    const { spy } = setup();
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.myServers() });
+  });
 });
 
 describe("useWorkspaceEvents encrypted conversations", () => {
@@ -720,6 +770,8 @@ describe("join request events", () => {
     if (withRequest) qc.setQueryData(queryKeys.myJoinRequests(), [mine]);
     const invalidate = vi.spyOn(qc, "invalidateQueries");
     renderHook(() => useWorkspaceEvents(spaceId), { wrapper: wrapperFor(qc) });
+    // Only what the events cause, not the refetch at subscription start.
+    invalidate.mockClear();
     return { qc, invalidate };
   }
 
