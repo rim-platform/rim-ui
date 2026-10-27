@@ -226,13 +226,20 @@ export const MessageItem = memo(function MessageItem({
             />
           </div>
         ) : (
-          <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "min-w-0 flex-1",
+              // An edited message's last paragraph flows inline, so the marker follows its text.
+              message.editedAt && "[&>.prose-rim>p:last-child]:inline",
+            )}
+          >
             {replyQuote}
             <MessageText {...textProps("inline")} />
             {message.editedAt && (
               <>
                 {" "}
                 <EditedMark editedAt={message.editedAt} />
+                <br />
               </>
             )}
             {extras}

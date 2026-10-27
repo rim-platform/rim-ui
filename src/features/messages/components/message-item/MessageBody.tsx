@@ -13,7 +13,7 @@ import type { MemberResolver, MessageItemHandlers } from "./types";
 /** Class sets per layout; kept verbatim from the pre-split row so density modes look identical. */
 const TEXT_STYLES = {
   inline: {
-    markdown: "inline text-sm text-rim-text prose-rim [&>p:last-child]:inline",
+    markdown: "inline text-sm text-rim-text prose-rim",
     empty: "text-sm text-rim-text-faint italic",
     deleted: "text-sm italic text-rim-text-faint",
   },
