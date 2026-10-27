@@ -124,6 +124,7 @@ new device:
 | <kbd>Ctrl+Shift+Z</kbd> | Toggle Zen mode |
 | <kbd>Alt+ArrowUp</kbd>, <kbd>Alt+ArrowDown</kbd> | Previous or next conversation |
 | <kbd>Shift+Alt+ArrowUp</kbd>, <kbd>Shift+Alt+ArrowDown</kbd> | Previous or next unread conversation |
+| <kbd>Alt+ArrowLeft</kbd> | Back to the workspace and conversation a DM or group was opened from |
 | <kbd>Ctrl+ArrowLeft</kbd>, <kbd>Ctrl+ArrowRight</kbd> | Focus the pane to the left or right |
 | <kbd>Escape</kbd> | Close the open panel: a plugin panel, the thread, a page such as Settings, or the notifications or a members list in the tool panel |
 | <kbd>?</kbd>, <kbd>Ctrl+/</kbd> | Show keyboard shortcuts |

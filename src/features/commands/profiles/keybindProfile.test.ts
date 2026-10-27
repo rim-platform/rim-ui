@@ -64,7 +64,14 @@ describe("built-in profiles", () => {
     const bindings = BUILT_IN_PROFILES["mouse-friendly"].bindings;
     const freed = bindings.filter((b) => b.commandId === null).map((b) => b.keystroke);
     expect(freed).toEqual(
-      expect.arrayContaining(["Ctrl+R", "Ctrl+B", "Ctrl+D", "Ctrl+L", "Ctrl+Shift+Z"]),
+      expect.arrayContaining([
+        "Ctrl+R",
+        "Ctrl+B",
+        "Ctrl+D",
+        "Ctrl+L",
+        "Ctrl+Shift+Z",
+        "Alt+ArrowLeft",
+      ]),
     );
     expect(bindings.find((b) => b.keystroke === "Ctrl+K")?.commandId).toBe(
       "workspace.open_command_palette",

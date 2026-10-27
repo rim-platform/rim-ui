@@ -33,6 +33,17 @@ export type MainSurface =
 export type DirectDraft =
   { workspaceId: string; otherUserId: string } | { spaceId: string; member: DirectMember };
 
+/**
+ * Where a direct message opened from a workspace came from: that workspace and the conversation
+ * it showed, the direct space the DM is in, and the DM opened (null while it is a draft).
+ */
+export type DirectOrigin = {
+  workspaceId: string;
+  conversationId: string | null;
+  spaceId: string;
+  openedId: string | null;
+};
+
 export type ActivePluginPanel = {
   pluginId: string;
   panelId: string;
@@ -53,6 +64,8 @@ type ShellState = {
   selectedConversationId: string | null;
   /** The direct message being drafted; no conversation is selected meanwhile. */
   draftDirect: DirectDraft | null;
+  /** Where the DM opened from a workspace came from, for the way back to it. */
+  directOrigin: DirectOrigin | null;
   selectedRootMessageId: string | null;
   isThreadOpen: boolean;
   focusedSurface: string | null;
@@ -83,6 +96,9 @@ type ShellState = {
    * plugin panel.
    */
   openDraftDirect: (draft: DirectDraft) => void;
+  setDirectOrigin: (origin: DirectOrigin | null) => void;
+  /** Names the conversation a draft origin became, once its first message created it. */
+  adoptDirectOrigin: (spaceId: string, conversationId: string) => void;
   openThreadForMessage: (rootMessageId: string) => void;
   closeThread: () => void;
   toggleSidebar: () => void;
@@ -110,6 +126,7 @@ export const useShellStore = create<ShellState>((set) => ({
   activePluginPanel: null,
   selectedConversationId: null,
   draftDirect: null,
+  directOrigin: null,
   selectedRootMessageId: null,
   isThreadOpen: false,
   focusedSurface: null,
@@ -155,6 +172,15 @@ export const useShellStore = create<ShellState>((set) => ({
       ...withoutMainAreaPanel(state),
     })),
 
+  setDirectOrigin: (origin) => set({ directOrigin: origin }),
+
+  adoptDirectOrigin: (spaceId, conversationId) =>
+    set((state) =>
+      state.directOrigin?.spaceId === spaceId && state.directOrigin.openedId === null
+        ? { directOrigin: { ...state.directOrigin, openedId: conversationId } }
+        : {},
+    ),
+
   openThreadForMessage: (rootMessageId) =>
     set({ selectedRootMessageId: rootMessageId, isThreadOpen: true }),
 
@@ -197,6 +223,7 @@ export const useShellStore = create<ShellState>((set) => ({
       activePluginPanel: null,
       selectedConversationId: null,
       draftDirect: null,
+      directOrigin: null,
       selectedRootMessageId: null,
       isThreadOpen: false,
       focusedSurface: null,

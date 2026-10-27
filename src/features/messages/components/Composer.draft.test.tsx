@@ -236,6 +236,22 @@ describe("Composer in a draft DM", () => {
       expect(useWorkspaceStore.getState().workspaceId).toBe("direct-1");
     });
 
+    it("the first message of a draft from a workspace names the created DM in the way back", async () => {
+      const origin = { workspaceId: "ws-1", conversationId: "c-design", spaceId: "direct-1" };
+      useShellStore.getState().setDirectOrigin({ ...origin, openedId: null });
+      relay.startDirectConversation.mockResolvedValue({
+        spaceId: "direct-1",
+        conversationId: "c-dan",
+        encrypted: false,
+        group: null,
+      });
+      await sendFirst("hi Dan", false, toDan);
+
+      await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-dan"));
+      expect(useShellStore.getState().directOrigin).toEqual({ ...origin, openedId: "c-dan" });
+      useShellStore.getState().setDirectOrigin(null);
+    });
+
     it("names who cannot receive encrypted messages and keeps the draft", async () => {
       relay.startDirectConversation.mockRejectedValue(new NotReadyError(["Dan"]));
       const textbox = await sendFirst("hi Dan", false, toDan);

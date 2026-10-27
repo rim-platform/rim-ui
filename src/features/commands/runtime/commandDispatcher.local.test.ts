@@ -119,6 +119,24 @@ describe("this app's own commands", () => {
     expect(useShellStore.getState().focusedSurface).toBe("mainSurface");
   });
 
+  it("workspace.back_to_workspace returns from the DM", () => {
+    queryClient.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme", owner: null }]);
+    useShellStore.getState().setSelectedConversationId("c-design");
+    useShellStore.getState().setDirectOrigin({
+      workspaceId: "ws-1",
+      conversationId: "c-design",
+      spaceId: "direct-1",
+      openedId: "dm-dan",
+    });
+    useWorkspaceStore.getState().setWorkspaceId("direct-1");
+    useShellStore.getState().setSelectedConversationId("dm-dan");
+
+    runDesktopLocalCommand("workspace.back_to_workspace");
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(useShellStore.getState().selectedConversationId).toBe("c-design");
+    expect(useShellStore.getState().directOrigin).toBeNull();
+  });
+
   it("cycles the layout presets", () => {
     useLayoutPresetStore.setState({ activePresetId: null });
     runDesktopLocalCommand("workspace.cycle_layout_preset");

@@ -12,6 +12,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { inboxQueryOptions } from "../api/useInboxConversations";
 import type { ConversationSummary } from "../types";
 import { pendingMembersOf } from "../utils";
+import { rememberDirectOrigin } from "./directOrigin";
 import { selectDirectConversation } from "./directSelection";
 
 /** Everyone a conversation holds: its members and those invited. */
@@ -72,16 +73,19 @@ async function spaceDirect(principalId: string): Promise<ConversationSummary | u
 /**
  * Opens the direct message with one person: the one this client has loaded, else a draft
  * whose first message creates it (also when the list cannot be read). A draft in a direct
- * space switches to that space first.
+ * space switches to that space first. One in a direct space, opened from a workspace, keeps
+ * the way back to it.
  */
 export async function openDirectWith(target: DirectDraft): Promise<void> {
   useShellStore.getState().setActivePanel("inbox");
   if ("spaceId" in target) {
     const existing = await spaceDirect(target.member.principalId).catch(() => undefined);
     if (existing) {
+      rememberDirectOrigin(existing.serverId, existing.id);
       selectDirectConversation(existing.serverId, existing.id);
       return;
     }
+    rememberDirectOrigin(target.spaceId, null);
     if (useWorkspaceStore.getState().workspaceId !== target.spaceId) {
       useWorkspaceStore.getState().setWorkspaceId(target.spaceId);
     }

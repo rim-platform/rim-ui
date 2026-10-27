@@ -36,6 +36,7 @@ export const DEFAULT_BINDINGS: readonly ProfileBinding[] = [
   bind("Alt+ArrowDown", "workspace.next_channel"),
   bind("Shift+Alt+ArrowUp", "workspace.previous_unread_channel"),
   bind("Shift+Alt+ArrowDown", "workspace.next_unread_channel"),
+  bind("Alt+ArrowLeft", "workspace.back_to_workspace"),
   bind("Ctrl+ArrowLeft", "workspace.navigate_panel_left"),
   bind("Ctrl+ArrowRight", "workspace.navigate_panel_right"),
   bind("Escape", "workspace.close_panel"),
@@ -45,7 +46,7 @@ export const DEFAULT_BINDINGS: readonly ProfileBinding[] = [
 
 /**
  * Keystrokes the mouse-friendly profile leaves to the browser and the text editor: reload,
- * bookmark, address bar, bold, redo and word jumps keep their usual meaning.
+ * bookmark, address bar, bold, redo, word jumps and browser back keep their usual meaning.
  */
 const FAMILIAR_KEYSTROKES = new Set([
   "Ctrl+R",
@@ -56,6 +57,7 @@ const FAMILIAR_KEYSTROKES = new Set([
   "Ctrl+Shift+Z",
   "Ctrl+ArrowLeft",
   "Ctrl+ArrowRight",
+  "Alt+ArrowLeft",
 ]);
 
 function profile(
@@ -91,7 +93,7 @@ export const BUILT_IN_PROFILES: Readonly<Record<BuiltInProfileId, KeybindProfile
   ),
   "mouse-friendly": profile(
     "Mouse-friendly",
-    "Only shortcuts that take no familiar key: reload, bookmarks, bold, redo and word jumps work as they do elsewhere.",
+    "Only shortcuts that take no familiar key: reload, bookmarks, bold, redo, word jumps and browser back work as they do elsewhere.",
     false,
     DEFAULT_BINDINGS.map((binding) =>
       FAMILIAR_KEYSTROKES.has(binding.keystroke) ? { ...binding, commandId: null } : binding,

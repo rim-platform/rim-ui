@@ -26,6 +26,7 @@ import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { confirmConversationCommand } from "./conversationActionGate";
 import {
   runWithHumanConfirmation,
@@ -134,6 +135,9 @@ const localHandlers: Record<
     if (args?.workspaceId) {
       useWorkspaceStore.getState().setWorkspaceId(args.workspaceId as string);
     }
+  },
+  "workspace.back_to_workspace": () => {
+    returnFromDirect();
   },
   "workspace.previous_channel": () => {
     const ids = getCachedConversationIds();

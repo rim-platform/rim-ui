@@ -32,6 +32,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - **Reply** on a message (its menu, the reply arrow on hover, or <kbd>r</kbd>) quotes it above
   the composer; the message you send shows the quote, which jumps to the original. Works in
   encrypted conversations too.
+- A DM or group started from a workspace shows **Back to \<workspace\>** in its header, and
+  <kbd>Alt+←</kbd> does the same: back to that workspace and the conversation you left. The
+  Mouse-friendly profile leaves <kbd>Alt+←</kbd> to the browser.
 
 ### Changed
 

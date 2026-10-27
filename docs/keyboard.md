@@ -37,10 +37,10 @@ A profile is a set of default bindings of a device plus the Vim switch. Three ar
 | -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Minimal        | off      | The plain default set. A new device starts here.                                                                                 |
 | Vim            | on       | The plain default set.                                                                                                           |
-| Mouse-friendly | off      | The default set without `Ctrl+R`, `Ctrl+B`, `Ctrl+E`, `Ctrl+D`, `Ctrl+L`, `Ctrl+Shift+Z`, `Ctrl+ArrowLeft` and `Ctrl+ArrowRight` |
+| Mouse-friendly | off      | The default set without `Ctrl+R`, `Ctrl+B`, `Ctrl+E`, `Ctrl+D`, `Ctrl+L`, `Ctrl+Shift+Z`, `Ctrl+ArrowLeft`, `Ctrl+ArrowRight` and `Alt+ArrowLeft` |
 
 Mouse-friendly leaves those keys to the browser and the text field: reload, bold, the search bar,
-bookmark, the address bar, redo and word jumps.
+bookmark, the address bar, redo, word jumps and browser back.
 
 Settings, Keyboard exports the bindings in force and imports a profile file. Importing asks
 how: **Merge** (the usual choice) keeps every default and lets each binding of the file take
@@ -83,6 +83,12 @@ NAVIGATE and a bar over the bottom of the timeline lists the keys for the select
 timeline leaves room for the bar under the newest message. Entering it with the keyboard selects
 the newest message; clicking into the list selects the message clicked, without scrolling.
 Focusing the composer or a thread's reply box shows COMPOSE.
+
+## Back from a direct message
+
+<kbd>Alt+ArrowLeft</kbd> (**Back to Workspace**) returns from a DM or group opened in a
+workspace to that workspace and its conversation. On macOS a text field keeps Option+Arrow
+for word jumps, so press it outside the composer there.
 
 ## Vim mode
 

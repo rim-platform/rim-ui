@@ -54,6 +54,11 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   ),
   localCommand("workspace.toggle_zen_mode", "Toggle Zen Mode", "Hide everything but the timeline"),
   localCommand(
+    "workspace.back_to_workspace",
+    "Back to Workspace",
+    "Return to the workspace and conversation a direct message was opened from",
+  ),
+  localCommand(
     "workspace.cycle_display_density",
     "Cycle Display Density",
     "Switch between comfortable, compact and ultra compact",

@@ -445,14 +445,19 @@ function MessageComposer(props: ComposerProps) {
   }
 
   /**
-   * Opens the conversation a draft became, which drops the draft. A plugin panel opened while
-   * the first message was sending stays open.
+   * Opens the conversation a draft became, which drops the draft, and names it in the way back
+   * to the workspace the draft was opened from. A plugin panel opened while the first message
+   * was sending stays open.
    */
   function openStarted(target: DirectDraft, spaceId: string, id: string) {
     qc.invalidateQueries({ queryKey: queryKeys.conversations(spaceId) });
     const options = { keepPluginPanel: true };
-    if ("spaceId" in target) selectDirectConversation(spaceId, id, options);
-    else useShellStore.getState().setSelectedConversationId(id, options);
+    if ("spaceId" in target) {
+      selectDirectConversation(spaceId, id, options);
+      useShellStore.getState().adoptDirectOrigin(spaceId, id);
+    } else {
+      useShellStore.getState().setSelectedConversationId(id, options);
+    }
   }
 
   /** Clears only the delivered draft; newer text and file selections remain. */
