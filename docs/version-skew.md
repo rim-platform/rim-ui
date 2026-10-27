@@ -47,3 +47,8 @@ info; the read keeps a second document with the field (`MessagesWithEdits` besid
 built from the same constants, and picks one per request. `scripts/skew-check.test.mjs` checks
 that only the gated documents fail against a schema without the field. `npm run skew:check`
 lists the gated documents; each listed one must be gated or have a fallback.
+
+A control that runs a new mutation is shown only when the capability names it: Leave workspace
+(`workspace_leave`) and Rename workspace (`workspace_rename`). A workspace on another server is
+gated by the relay's capabilities; its host, if older, refuses the document, and the app says the
+workspace's server does not support it yet.

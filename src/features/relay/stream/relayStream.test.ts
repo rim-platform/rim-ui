@@ -107,6 +107,14 @@ describe("RelayStreamProcessor", () => {
     expect(deps.ack).toHaveBeenLastCalledWith(processor.ackedThrough);
   });
 
+  it("passes each event's stream to apply", async () => {
+    const { processor, deps } = setup();
+    await processor.push(await message(1));
+    await processor.push(await item("w", 1, { type: "MemberRoleChanged" }));
+    const streams = vi.mocked(deps.apply).mock.calls.map((call) => call[3]);
+    expect(streams).toEqual([`c:${CONV}`, "w"]);
+  });
+
   it("drops an event signed by another key, on the wrong stream, or for another space", async () => {
     const { processor, applied, deps } = setup();
     await processor.push(await item(`c:${CONV}`, 1, { type: "NewMessage" }, { seed: 30 }));

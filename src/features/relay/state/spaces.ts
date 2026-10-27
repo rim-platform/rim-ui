@@ -6,7 +6,7 @@
 
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
-import { allRecords, putRecord, type SpaceRecord } from "./relayDb";
+import { allRecords, deleteRecord, putRecord, type SpaceRecord } from "./relayDb";
 import { useRelayStore } from "./useRelayStore";
 
 /** The key of this account's records: its relay endpoint and principal. */
@@ -89,6 +89,21 @@ export async function setSpaceDetails(
   if (space.name === known.name && space.ownerName === known.ownerName) return;
   state.addSpace(space);
   await putRecord("spaces", space);
+}
+
+/**
+ * Forget a workspace on another server this account no longer belongs to: its space and this
+ * device's delegation for it, so it leaves the rail and is not renewed.
+ */
+export async function forgetSpace(spaceId: string): Promise<void> {
+  const account = accountKey();
+  const state = useRelayStore.getState();
+  if (!account || !state.spaces[spaceId]) return;
+  state.removeSpace(spaceId);
+  await deleteRecord("spaces", [account, spaceId]);
+  await deleteRecord("delegations", [account, spaceId]);
+  void queryClient.invalidateQueries({ queryKey: ["remoteSubscriptions"] });
+  void queryClient.invalidateQueries({ queryKey: ["delegationRecords"] });
 }
 
 /** The workspaces this account uses on other servers. */

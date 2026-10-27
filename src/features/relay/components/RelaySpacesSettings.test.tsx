@@ -3,6 +3,7 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/utils";
+import type { SpaceRecord } from "../state/relayDb";
 import { useRelayStore } from "../state/useRelayStore";
 
 const api = vi.hoisted(() => ({ fetchRemoteSubscriptions: vi.fn() }));
@@ -17,7 +18,7 @@ import { RelaySpacesSettings } from "./RelaySpacesSettings";
 
 const HOST = "rims1_host";
 
-function startRelay() {
+function startRelay(spaces: SpaceRecord[] = []) {
   useRelayStore.getState().setStarted(
     { serverId: "rims1_relay", roles: ["relay"], directSpaceId: "direct-1" },
     {
@@ -26,7 +27,7 @@ function startRelay() {
       principalId: "rimp1_me",
       deviceId: "d1",
     },
-    [],
+    spaces,
   );
 }
 
@@ -40,7 +41,10 @@ beforeEach(() => {
 describe("RelaySpacesSettings", () => {
   it("shows why the host refused a space's last renewal", async () => {
     const user = userEvent.setup();
-    startRelay();
+    startRelay([
+      { account: "a", spaceId: "ws-ops", hostServerId: HOST, kind: "workspace" },
+      { account: "a", spaceId: "ws-dev", hostServerId: HOST, kind: "workspace" },
+    ]);
     api.fetchRemoteSubscriptions.mockResolvedValue([
       { hostServerId: HOST, workspaceId: "ws-ops", status: "ended", expiresAt: null, reason: null },
       {
@@ -76,6 +80,30 @@ describe("RelaySpacesSettings", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/last renewal was refused/)).toHaveLength(1);
+  });
+
+  it("leaves out an ended subscription of a workspace the app no longer has", async () => {
+    startRelay([{ account: "a", spaceId: "ws-dev", hostServerId: HOST, kind: "workspace" }]);
+    api.fetchRemoteSubscriptions.mockResolvedValue([
+      {
+        hostServerId: HOST,
+        workspaceId: "ws-left",
+        status: "ended",
+        expiresAt: null,
+        reason: null,
+      },
+      {
+        hostServerId: HOST,
+        workspaceId: "ws-dev",
+        status: "active",
+        expiresAt: "2026-10-11T12:00:00Z",
+        reason: null,
+      },
+    ]);
+    renderWithProviders(<RelaySpacesSettings />);
+    expect(await screen.findByText(/^Active/)).toBeInTheDocument();
+    expect(screen.queryByText(/ws-left/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("forgets a refusal once a renewal succeeds", () => {

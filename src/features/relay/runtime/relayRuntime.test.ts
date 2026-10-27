@@ -24,6 +24,8 @@ const routed = vi.hoisted(() => ({
   applyWorkspaceEvent: vi.fn(),
   handleRemoteJoinDecided: vi.fn(async () => undefined),
   pendingRemoteJoinAt: vi.fn(),
+  forgetSpace: vi.fn(async () => undefined),
+  departWorkspace: vi.fn(),
 }));
 vi.mock("../../../core/events/useWorkspaceEvents", () => ({
   applyWorkspaceEvent: routed.applyWorkspaceEvent,
@@ -33,6 +35,14 @@ vi.mock("../../workspaces/state/joinRequestEvents", () => ({
 }));
 vi.mock("../remote/pendingRemoteJoins", () => ({
   pendingRemoteJoinAt: routed.pendingRemoteJoinAt,
+}));
+vi.mock("../state/spaces", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/spaces")>()),
+  forgetSpace: routed.forgetSpace,
+}));
+vi.mock("../../workspaces/state/memberEvents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../workspaces/state/memberEvents")>()),
+  departWorkspace: routed.departWorkspace,
 }));
 
 import type { WorkspaceEvent } from "../../../core/events/types";
@@ -153,5 +163,52 @@ describe("applyRelayEvent", () => {
     expect(routed.handleRemoteJoinDecided).not.toHaveBeenCalled();
     expect(routed.applyWorkspaceEvent).toHaveBeenCalledTimes(2);
     expect(routed.applyWorkspaceEvent).toHaveBeenCalledWith(decided, qc, "ws-acme");
+  });
+
+  describe("a departure", () => {
+    const left: WorkspaceEvent = {
+      type: "MemberLeft",
+      workspace_id: "ws-acme",
+      user_id: "r_person_at_host",
+      cause: "left",
+    };
+
+    beforeEach(() => {
+      useRelayStore.setState({
+        account: {
+          endpoint: "https://relay.example",
+          userId: "alice",
+          principalId: "rimp1_me",
+          deviceId: null,
+        },
+        spaces: {
+          "ws-acme": {
+            account: "https://relay.example|rimp1_me",
+            spaceId: "ws-acme",
+            hostServerId: "rims1_host",
+            kind: "workspace",
+            name: "Acme",
+          },
+        },
+      });
+    });
+
+    afterEach(() => useRelayStore.getState().reset());
+
+    it("on the account's own stream forgets the workspace elsewhere", () => {
+      const qc = createTestQueryClient();
+      applyRelayEvent(qc, left, "ws-acme", "rims1_host", "u:rimp1_me");
+      expect(routed.departWorkspace).toHaveBeenCalledWith(qc, "ws-acme", "Acme", left);
+      expect(routed.forgetSpace).toHaveBeenCalledWith("ws-acme");
+      expect(routed.applyWorkspaceEvent).not.toHaveBeenCalled();
+    });
+
+    it("on w applies as before", () => {
+      const qc = createTestQueryClient();
+      applyRelayEvent(qc, left, "ws-acme", "rims1_host", "w");
+      expect(routed.applyWorkspaceEvent).toHaveBeenCalledWith(left, qc, "ws-acme");
+      expect(routed.departWorkspace).not.toHaveBeenCalled();
+      expect(routed.forgetSpace).not.toHaveBeenCalled();
+    });
   });
 });

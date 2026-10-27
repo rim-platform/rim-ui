@@ -80,6 +80,7 @@ const mockGate = { canModerate: false };
 
 vi.mock("../../workspaces/api/useMyServerRole", () => ({
   useCanModerate: () => mockGate.canModerate,
+  useMyServerRole: () => undefined,
 }));
 
 // Whether the viewer is an instance operator — mutable per test.

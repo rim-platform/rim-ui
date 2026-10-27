@@ -57,15 +57,15 @@ export function handleMemberRoleChanged(
   qc.invalidateQueries({ queryKey: ["commands"] });
 }
 
-/** Workspaces this client is deleting: the `MemberLeft` the deletion sends needs no toast. */
+/** Workspaces this client is leaving or deleting: the `MemberLeft` it sends needs no toast. */
 const departing = new Set<string>();
 
-/** Marks a workspace this client is about to delete. */
+/** Marks a workspace this client is about to leave or delete. */
 export function expectDeparture(workspaceId: string): void {
   departing.add(workspaceId);
 }
 
-/** Unmarks a workspace whose deletion failed. */
+/** Unmarks a workspace whose leave or deletion failed. */
 export function forgetDeparture(workspaceId: string): void {
   departing.delete(workspaceId);
 }
@@ -90,9 +90,9 @@ export function leaveWorkspace(qc: QueryClient, workspaceId: string): void {
 }
 
 /**
- * A member was kicked or banned, or the workspace was deleted. For anyone else, refetch the
+ * A member left, was kicked or banned, or the workspace was deleted. For anyone else, refetch the
  * member directory. For the viewer, leave the workspace and say why with a toast, unless this
- * client is deleting it.
+ * client is leaving or deleting it.
  */
 export function handleMemberLeft(
   qc: QueryClient,
@@ -108,8 +108,26 @@ export function handleMemberLeft(
   const name = qc
     .getQueryData<CachedServer[]>(queryKeys.myServers())
     ?.find((s) => s.id === workspaceId)?.name;
+  departWorkspace(qc, workspaceId, name, details);
+}
+
+/**
+ * Drops `workspaceId` for the viewer and says why: nothing when this client is leaving or
+ * deleting it, "You left <name>" for a leave on another device, the removal notice for a kick
+ * or a ban, else "You were removed from <name>".
+ */
+export function departWorkspace(
+  qc: QueryClient,
+  workspaceId: string,
+  name: string | undefined,
+  details?: { cause?: string | null; until?: string | null; reason?: string | null },
+): void {
   leaveWorkspace(qc, workspaceId);
   if (departing.delete(workspaceId)) return;
+  if (details?.cause === "left") {
+    toast.info(name ? `You left ${name}` : "You left this workspace");
+    return;
+  }
   if (details?.cause === "ban" || details?.cause === "kick") {
     const notice: RemovalNotice = {
       workspaceId,
@@ -118,7 +136,8 @@ export function handleMemberLeft(
       until: details.until,
       reason: details.reason,
     };
-    useRemovalNotices.getState().add(removalAccountKey(userId), notice);
+    const userId = currentUserId(qc);
+    if (userId) useRemovalNotices.getState().add(removalAccountKey(userId), notice);
     toast.info(removalMessage(notice));
     return;
   }
