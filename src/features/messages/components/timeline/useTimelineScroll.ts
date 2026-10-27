@@ -91,8 +91,10 @@ interface UseTimelineScrollOptions {
  * Virtualized scrolling for the message list (oldest at the top):
  * - only rows near the viewport are mounted; each is measured after render;
  * - first load lands on the newest message, or on the "New messages" divider;
- * - an appended message scrolls into view when the user was at the bottom or
- *   sent it themselves; otherwise the viewport stays put;
+ * - an appended message scrolls into view when the list follows its end or the
+ *   user sent it themselves; otherwise the viewport stays put. The list follows
+ *   its end from when it reaches it or starts a scroll to it until a scroll
+ *   moves it back toward the start away from the end;
  * - when an older page is prepended the row that was first keeps its screen
  *   position (no jump), then the top sentinel can trigger the next page;
  * - rows that leave the list above the viewport keep the first visible row in place.
@@ -144,21 +146,40 @@ export function useTimelineScroll({
     scrollPaddingEnd: HINT_BAR_CLEARANCE,
   });
 
+  // Whether the list follows its end. Unlike `isAtBottomRef`, which a scroll event can read
+  // away from the end while a scroll to the end is still on its way, it changes only when the
+  // list reaches its end, when this hook starts a scroll to it, or when a scroll moves the list
+  // toward its start away from the end (a wheel, touch, key or scrollbar, or a scroll to a row).
+  const followEndRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+
+  const scrollToEnd = useCallback(
+    (behavior: "auto" | "smooth" = "auto") => {
+      followEndRef.current = true;
+      virtualizer.scrollToEnd({ behavior });
+    },
+    [virtualizer],
+  );
+
   // When rows above the viewport are measured, keep the visible content still.
   // The default check compares each row's pre-batch start with an offset that
   // already includes earlier corrections from the same batch, so a batch of
   // shrinking rows (e.g. a freshly prepended page) under-corrects. Compare
   // against the offset from the last scroll event instead: both sides then
-  // describe the same layout. A row that changes size while the list is at its
+  // describe the same layout. A row that changes size while the list follows its
   // end keeps the end in view, unless a pointer press is held on the list.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     item.start < (instance.scrollOffset ?? 0) ||
-    (isAtBottomRef.current && pointerPressRef.current === null);
+    (followEndRef.current && pointerPressRef.current === null);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const atBottom = isScrolledToBottom(container);
+    const scrollTop = container.scrollTop;
+    if (atBottom) followEndRef.current = true;
+    else if (scrollTop < lastScrollTopRef.current) followEndRef.current = false;
+    lastScrollTopRef.current = scrollTop;
     isAtBottomRef.current = atBottom;
     onScrollPosition?.(atBottom);
   }, [isAtBottomRef, onScrollPosition]);
@@ -195,6 +216,8 @@ export function useTimelineScroll({
       }
       // A list that fits needs no scroll, so no scroll event would replace the previous list's value.
       isAtBottomRef.current = isScrolledToBottom(container);
+      followEndRef.current = firstNewIndex < 0 || isAtBottomRef.current;
+      lastScrollTopRef.current = container.scrollTop;
       return;
     }
 
@@ -209,6 +232,7 @@ export function useTimelineScroll({
         // The virtualizer's offset is the pre-commit position; resize corrections
         // applied during this commit are already included in `added`.
         container.scrollTop = (virtualizer.scrollOffset ?? container.scrollTop) + added;
+        followEndRef.current = isScrolledToBottom(container);
         return;
       }
     }
@@ -225,16 +249,14 @@ export function useTimelineScroll({
         LIST_PADDING_Y,
         offset,
       );
-      if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
+      if (followEndRef.current && pointerPressRef.current === null) scrollToEnd();
       else if (removed) container.scrollTop = offset - removed;
     }
 
     const last = items[items.length - 1];
     if (last.id !== prevLastId) {
       const isOwnMessage = currentUserId !== undefined && last.authorId === currentUserId;
-      if (isAtBottomRef.current || isOwnMessage) {
-        virtualizer.scrollToEnd({ behavior: "smooth" });
-      }
+      if (followEndRef.current || isOwnMessage) scrollToEnd("smooth");
     }
   }, [
     listKey,
@@ -245,17 +267,18 @@ export function useTimelineScroll({
     virtualizer,
     isAtBottomRef,
     pointerPressRef,
+    scrollToEnd,
   ]);
 
-  // A list at its end stays at its end when room for the hint bar appears or goes, or when its
-  // rows grow (an image arrives), but not while a pointer press is held on it: moving the rows
-  // then would send the press's click or context menu to another row.
+  // A list that follows its end stays at its end when room for the hint bar appears or goes, or
+  // when its rows grow (an image arrives), but not while a pointer press is held on it: moving
+  // the rows then would send the press's click or context menu to another row.
   const prevHintBarRef = useRef(hintBarShown);
   useLayoutEffect(() => {
     if (prevHintBarRef.current === hintBarShown) return;
     prevHintBarRef.current = hintBarShown;
-    if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
-  }, [hintBarShown, isAtBottomRef, pointerPressRef, virtualizer]);
+    if (followEndRef.current && pointerPressRef.current === null) scrollToEnd();
+  }, [hintBarShown, pointerPressRef, scrollToEnd]);
 
   const totalSize = virtualizer.getTotalSize();
   const firstItemId = items[0]?.id;
@@ -267,8 +290,8 @@ export function useTimelineScroll({
     const prepended =
       firstItemId !== prev.firstItemId && items.some((m) => m.id === prev.firstItemId);
     if (totalSize <= prev.totalSize || prepended) return;
-    if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
-  }, [totalSize, firstItemId, items, isAtBottomRef, pointerPressRef, virtualizer]);
+    if (followEndRef.current && pointerPressRef.current === null) scrollToEnd();
+  }, [totalSize, firstItemId, items, pointerPressRef, scrollToEnd]);
 
   // Top sentinel visible -> load the next (older) page. Re-observed when the
   // first row changes, which also covers the per-conversation remount.

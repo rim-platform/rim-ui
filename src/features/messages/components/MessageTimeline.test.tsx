@@ -198,6 +198,37 @@ const patched = ["offsetHeight", "offsetWidth", "clientHeight", "scrollHeight", 
 const originalDescriptors = new Map<string, PropertyDescriptor | undefined>();
 const scrollTops = new WeakMap<HTMLElement, number>();
 
+/**
+ * When set, a smooth `scrollTo` moves the offset `step` pixels a frame, as a browser animates
+ * it; a direct offset write cancels the animation. Off, every scroll lands at once.
+ */
+const smoothScroll = { animate: false, step: 20 };
+const smoothTargets = new WeakMap<HTMLElement, number>();
+
+/** Set `el`'s offset, clamped to its content, and fire "scroll" when it moved. */
+function writeScrollTop(el: HTMLElement, value: number) {
+  const max = Math.max(0, el.scrollHeight - el.clientHeight);
+  const next = Math.min(Math.max(0, value), max);
+  if (next === el.scrollTop) return;
+  scrollTops.set(el, next);
+  queueMicrotask(() => el.dispatchEvent(new Event("scroll")));
+}
+
+/** One frame of the smooth scroll toward `el`'s target. */
+function stepSmoothScroll(el: HTMLElement) {
+  const target = smoothTargets.get(el);
+  if (target === undefined) return;
+  const max = Math.max(0, el.scrollHeight - el.clientHeight);
+  const goal = Math.min(Math.max(0, target), max);
+  const distance = goal - el.scrollTop;
+  if (Math.abs(distance) <= smoothScroll.step) smoothTargets.delete(el);
+  writeScrollTop(
+    el,
+    el.scrollTop + Math.sign(distance) * Math.min(Math.abs(distance), smoothScroll.step),
+  );
+  if (smoothTargets.has(el)) requestAnimationFrame(() => stepSmoothScroll(el));
+}
+
 function contentHeight(el: HTMLElement): number {
   const list = el.querySelector<HTMLElement>("[data-virtual-list]");
   return list ? parseFloat(list.style.height) || 0 : 0;
@@ -304,11 +335,8 @@ function installLayout() {
         return Math.min(scrollTops.get(this) ?? 0, max);
       },
       set(this: HTMLElement, value: number) {
-        const max = Math.max(0, this.scrollHeight - this.clientHeight);
-        const next = Math.min(Math.max(0, value), max);
-        if (next === this.scrollTop) return;
-        scrollTops.set(this, next);
-        queueMicrotask(() => this.dispatchEvent(new Event("scroll")));
+        smoothTargets.delete(this);
+        writeScrollTop(this, value);
       },
     },
   });
@@ -316,7 +344,14 @@ function installLayout() {
     this: HTMLElement,
     arg?: ScrollToOptions | number,
   ) {
-    if (typeof arg === "object" && arg.top !== undefined) this.scrollTop = arg.top;
+    if (typeof arg !== "object" || arg.top === undefined) return;
+    if (arg.behavior === "smooth" && smoothScroll.animate) {
+      const animating = smoothTargets.has(this);
+      smoothTargets.set(this, arg.top);
+      if (!animating) requestAnimationFrame(() => stepSmoothScroll(this));
+      return;
+    }
+    this.scrollTop = arg.top;
   } as typeof HTMLElement.prototype.scrollTo;
   vi.stubGlobal("ResizeObserver", SyncResizeObserver);
 }
@@ -334,6 +369,15 @@ function uninstallLayout() {
 /** Let queued scroll events and the virtualizer's re-render settle. */
 async function settle() {
   for (let i = 0; i < 3; i++) {
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    });
+  }
+}
+
+/** Let `count` animation frames run. */
+async function frames(count: number) {
+  for (let i = 0; i < count; i++) {
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     });
@@ -435,6 +479,7 @@ afterEach(() => {
   uninstallLayout();
   rowHeights.clear();
   observers.clear();
+  smoothScroll.animate = false;
   vi.clearAllMocks();
   messageMenu.real = false;
   composer.real = false;
@@ -637,6 +682,32 @@ describe("MessageTimeline virtualization", () => {
     await settle();
 
     expect(messageList().scrollTop).toBe(100);
+  });
+
+  it("goes on to the end when a refetch drops the oldest message after the user's own message", async () => {
+    setMessages(range(0, 20));
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 100 }));
+    await settle();
+
+    // Scrolls animate, so a scroll toward the end can still be on its way at the refetch.
+    smoothScroll.animate = true;
+    const own = makeMessage(20, {
+      authorId: "me",
+      author: { id: "me", username: "me", displayName: null, avatarUrl: null },
+    });
+    setMessages([...range(0, 20), own]);
+    rerender(<MessageTimeline />);
+    await frames(3);
+
+    // A refetch slides the loaded window.
+    setMessages([...range(1, 20), own]);
+    rerender(<MessageTimeline />);
+
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    await frames(10);
+    expect(messageList().scrollTop).toBe(maxScrollTop());
   });
 
   it("keeps the visible rows in place when the oldest loaded message drops off while scrolled up", async () => {
