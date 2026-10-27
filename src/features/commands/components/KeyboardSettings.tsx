@@ -260,7 +260,10 @@ export function KeyboardSettings() {
             <p className="text-sm text-rim-text">Import "{pendingImport.profile.name}"?</p>
             <p className="text-xs text-rim-text-muted">
               <strong>Merge</strong> keeps every default shortcut; the profile's{" "}
-              {bindingCount(pendingImport.profile)} take the keys they name.{" "}
+              {bindingCount(pendingImport.profile)}{" "}
+              {pendingImport.profile.bindings.length === 1
+                ? "takes the key it names."
+                : "take the keys they name."}{" "}
               <strong>Replace all</strong> keeps only the profile's bindings.
             </p>
             <div className="flex flex-wrap gap-2">

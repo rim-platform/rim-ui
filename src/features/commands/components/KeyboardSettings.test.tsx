@@ -125,7 +125,7 @@ describe("KeyboardSettings", () => {
       );
       const box = await importBox();
       expect(box).toHaveTextContent('Import "Team keys"?');
-      expect(box).toHaveTextContent("the profile's 1 binding take the keys they name");
+      expect(box).toHaveTextContent("the profile's 1 binding takes the key it names");
       expect(within(box).getByRole("button", { name: "Merge" })).toHaveFocus();
       expect(useKeybindProfileStore.getState().profile).toEqual(BUILT_IN_PROFILES.minimal);
 
