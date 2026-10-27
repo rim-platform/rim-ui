@@ -187,6 +187,15 @@ describe("canonicalKeystroke", () => {
     expect(canonicalKeystroke("Ctrl++")).toEqual({ ok: true, value: "Ctrl++" });
     expect(canonicalKeystroke("")).toEqual({ ok: false, error: "is empty" });
   });
+
+  it("accepts modifiers in any case and stores them canonically", () => {
+    expect(canonicalKeystroke("ctrl+j")).toEqual({ ok: true, value: "Ctrl+J" });
+    expect(canonicalKeystroke("SHIFT+alt+ArrowUp")).toEqual({
+      ok: true,
+      value: "Shift+Alt+ArrowUp",
+    });
+    expect(canonicalKeystroke("cmd+k")).toEqual({ ok: true, value: "Ctrl+K" });
+  });
 });
 
 describe("profileKeybinds", () => {

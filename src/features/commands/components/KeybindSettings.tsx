@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
   Pencil,
@@ -25,12 +25,15 @@ import {
   bindsOnDevice,
   isDeviceKeybind,
   useDeviceKeybindStore,
-  withDeviceKeybinds,
 } from "../state/useDeviceKeybindStore";
+import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
-import { KEYBIND_CONTEXTS as CONTEXTS } from "../profiles/keybindProfile";
-import { parseKeystroke } from "../runtime/keybindEngine";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { commandOfferedHere } from "../../agent/agentAvailability";
+import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
+import { listedKeybinds, slotHolders } from "../runtime/effectiveKeybinds";
+import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
 import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
@@ -85,6 +88,35 @@ const CATEGORIES: Category[] = [
   },
 ];
 
+/** Keys re-recorded on a listed binding that wait for the user to confirm taking them over. */
+interface PendingRecord {
+  keybindId: string;
+  keystroke: string;
+}
+
+/**
+ * Whether a keydown carries no Ctrl, Alt or Meta, so it is a plain key such as Tab or Escape.
+ */
+function noCommandModifier(event: React.KeyboardEvent): boolean {
+  return !event.ctrlKey && !event.altKey && !event.metaKey;
+}
+
+/**
+ * The note under keys another listed binding holds: who holds them and what saving does.
+ *
+ * @param holder - The first binding the save would displace; a workspace keybind cannot be.
+ * @param title - The holder's command title.
+ */
+function ConflictNote({ holder, title }: { holder: ResolvedKeybind; title: string }) {
+  return holder.source === "WORKSPACE" ? (
+    <p className="text-[11px] text-rim-danger">
+      Already used by {title}, a workspace keybind — choose other keys.
+    </p>
+  ) : (
+    <p className="text-[11px] text-rim-warm">Already used by {title} — saving will reassign it.</p>
+  );
+}
+
 function categorizeKeybind(commandId: string): CategoryKey {
   for (const cat of CATEGORIES) {
     if (cat.key !== "other" && cat.match(commandId)) return cat.key;
@@ -101,9 +133,13 @@ export function KeybindSettings() {
   const addDeviceKeybind = useDeviceKeybindStore((s) => s.add);
   const updateDeviceKeybind = useDeviceKeybindStore((s) => s.update);
   const removeDeviceKeybind = useDeviceKeybindStore((s) => s.remove);
+  const profile = useKeybindProfileStore((s) => s.profile);
   const keybinds = useMemo(
-    () => withDeviceKeybinds(deviceKeybinds, serverKeybinds ?? []),
-    [deviceKeybinds, serverKeybinds],
+    () =>
+      listedKeybinds(deviceKeybinds, serverKeybinds, profile).filter((kb) =>
+        commandOfferedHere(kb.commandId),
+      ),
+    [deviceKeybinds, serverKeybinds, profile],
   );
   // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
   // `workspace.open_command_palette`), which causes their titles to fall back to
@@ -128,10 +164,17 @@ export function KeybindSettings() {
   const [editCommandId, setEditCommandId] = useState("");
   const [editContext, setEditContext] = useState<KeybindContext>("GLOBAL");
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingRecord, setPendingRecord] = useState<PendingRecord | null>(null);
+  const [reassignError, setReassignError] = useState<string | null>(null);
+  // The keys the add form held when recording started, which Escape puts back.
+  const recordStartRef = useRef("");
 
   // Merge built-in + plugin keybindable commands
   const builtInKeybindable = useMemo(
-    () => commands?.filter((cmd) => cmd.keybindCapable).map(withClientLabel) ?? [],
+    () =>
+      commands
+        ?.filter((cmd) => cmd.keybindCapable && commandOfferedHere(cmd.id))
+        .map(withClientLabel) ?? [],
     [commands],
   );
   // Commands bound on this device: this app's own commands and the plugins' commands.
@@ -140,7 +183,7 @@ export function KeybindSettings() {
     return [
       ...LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id)),
       ...pluginCommands.filter((cmd) => cmd.keybindCapable),
-    ];
+    ].filter((cmd) => commandOfferedHere(cmd.id));
   }, [builtInKeybindable, pluginCommands]);
   const keybindableCommands = useMemo(
     () => [...builtInKeybindable, ...deviceKeybindable],
@@ -211,6 +254,66 @@ export function KeybindSettings() {
     setNewKeystroke("");
     setNewCommandId("");
     setNewContext("GLOBAL");
+    setReassignError(null);
+  }
+
+  /**
+   * The listed bindings that saving `commandId` on `keystroke` in `context` displaces. A default
+   * of the same command is left out: overriding it replaces it on purpose.
+   *
+   * @param exceptId - The binding being re-recorded, which does not displace itself.
+   */
+  function conflictsFor(
+    context: KeybindContext,
+    keystroke: string,
+    commandId: string,
+    exceptId?: string,
+  ): ResolvedKeybind[] {
+    if (!keystroke) return [];
+    return slotHolders(keybinds, context, keystroke, exceptId).filter(
+      (kb) => !(kb.source === "DEFAULT" && kb.commandId === commandId),
+    );
+  }
+
+  /** The note under keys that `conflicts` hold, naming the binding that matters most. */
+  function conflictNote(conflicts: ResolvedKeybind[]) {
+    const holder = conflicts.find((kb) => kb.source === "WORKSPACE") ?? conflicts[0];
+    if (!holder) return null;
+    return (
+      <ConflictNote
+        holder={holder}
+        title={commandTitleMap.get(holder.commandId) ?? holder.commandId}
+      />
+    );
+  }
+
+  /**
+   * Frees the keys `conflicts` hold, then runs `save`: a device binding is removed from this
+   * device, a binding of the user's is deleted on the server first, and a default needs nothing
+   * because the new binding takes its place. Runs `save` at once when nothing is deleted on the
+   * server; on a failed delete it saves nothing and shows why.
+   */
+  function reassign(conflicts: ResolvedKeybind[], save: () => void) {
+    setReassignError(null);
+    const onDevice = conflicts.filter((kb) => isDeviceKeybind(kb.id));
+    const onServer = conflicts.filter((kb) => !isDeviceKeybind(kb.id) && kb.source === "USER");
+    const finish = () => {
+      for (const kb of onDevice) removeDeviceKeybind(kb.id);
+      save();
+    };
+    if (onServer.length === 0) {
+      finish();
+      return;
+    }
+    void (async () => {
+      try {
+        for (const kb of onServer) await deleteMutation.mutateAsync({ keybindId: kb.id });
+      } catch (err) {
+        setReassignError(graphqlErrorMessage(err, "The other keybind could not be removed."));
+        return;
+      }
+      finish();
+    })();
   }
 
   /**
@@ -227,21 +330,23 @@ export function KeybindSettings() {
   }
 
   function handleCreate() {
-    if (!newKeystroke || !newCommandId) return;
-    if (bindsOnDevice(newCommandId)) {
-      addDeviceKeybind({ keystroke: newKeystroke, commandId: newCommandId, context: newContext });
-      resetCreateForm();
-      return;
-    }
-    createMutation.mutate(
-      {
-        scope: "USER",
-        keystroke: newKeystroke,
-        commandId: newCommandId,
-        context: newContext,
-      },
-      { onSuccess: resetCreateForm },
-    );
+    if (!newKeystroke || !newCommandId || workspaceConflict) return;
+    reassign(createConflicts, () => {
+      if (bindsOnDevice(newCommandId)) {
+        addDeviceKeybind({ keystroke: newKeystroke, commandId: newCommandId, context: newContext });
+        resetCreateForm();
+        return;
+      }
+      createMutation.mutate(
+        {
+          scope: "USER",
+          keystroke: newKeystroke,
+          commandId: newCommandId,
+          context: newContext,
+        },
+        { onSuccess: resetCreateForm },
+      );
+    });
   }
 
   function handleToggle(keybind: ResolvedKeybind) {
@@ -272,12 +377,42 @@ export function KeybindSettings() {
     }
   }
 
-  function handleKeystrokeCapture(event: React.KeyboardEvent) {
+  function handleKeystrokeCapture(event: React.KeyboardEvent<HTMLInputElement>) {
     // Tab still moves on, so the form stays usable without a mouse.
-    if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey) return;
+    if (event.key === "Tab" && noCommandModifier(event)) return;
     event.preventDefault();
+    event.stopPropagation();
+    // Escape alone stops recording and puts back the keys the field held before.
+    if (event.key === "Escape" && noCommandModifier(event) && !event.shiftKey) {
+      setNewKeystroke(recordStartRef.current);
+      event.currentTarget.blur();
+      return;
+    }
     const keystroke = parseKeystroke(event);
     if (keystroke) setNewKeystroke(keystroke);
+  }
+
+  /** Saves keys re-recorded on a listed binding, on this device or on the server. */
+  function saveRecorded(kb: ResolvedKeybind, keystroke: string) {
+    if (isDeviceKeybind(kb.id)) {
+      updateDeviceKeybind(kb.id, { keystroke });
+      return;
+    }
+    updateMutation.mutate({
+      keybindId: kb.id,
+      keystroke,
+      commandId: kb.commandId,
+      context: kb.context,
+      isEnabled: kb.isEnabled,
+    });
+  }
+
+  /** Saves the pending re-recorded keys of `kb` after freeing them. */
+  function confirmPendingRecord(kb: ResolvedKeybind, keystroke: string) {
+    reassign(conflictsFor(kb.context, keystroke, kb.commandId, kb.id), () => {
+      setPendingRecord(null);
+      saveRecorded(kb, keystroke);
+    });
   }
 
   function handleInlineKeystrokeCapture(kb: ResolvedKeybind, event: React.KeyboardEvent) {
@@ -293,17 +428,47 @@ export function KeybindSettings() {
     if (!keystroke) return;
 
     setCapturingKeybindId(null);
-    if (isDeviceKeybind(kb.id)) {
-      updateDeviceKeybind(kb.id, { keystroke });
+    // Keys another binding holds wait under the row until the user confirms taking them.
+    if (conflictsFor(kb.context, keystroke, kb.commandId, kb.id).length > 0) {
+      setReassignError(null);
+      setPendingRecord({ keybindId: kb.id, keystroke });
       return;
     }
-    updateMutation.mutate({
-      keybindId: kb.id,
-      keystroke,
-      commandId: kb.commandId,
-      context: kb.context,
-      isEnabled: kb.isEnabled,
-    });
+    saveRecorded(kb, keystroke);
+  }
+
+  /** The confirmation under a row whose re-recorded keys another binding holds. */
+  function pendingRecordNote(kb: ResolvedKeybind) {
+    if (pendingRecord?.keybindId !== kb.id) return null;
+    const conflicts = conflictsFor(kb.context, pendingRecord.keystroke, kb.commandId, kb.id);
+    const blocked = conflicts.some((holder) => holder.source === "WORKSPACE");
+    return (
+      <div className="space-y-1 rounded-md border border-rim-line bg-rim-void px-2 py-1.5">
+        <p className="text-[11px] text-rim-text-muted">
+          New keys: <kbd className="font-mono">{pendingRecord.keystroke}</kbd>
+        </p>
+        {conflictNote(conflicts)}
+        <div className="flex gap-2">
+          <button
+            onClick={() => confirmPendingRecord(kb, pendingRecord.keystroke)}
+            disabled={blocked || updateMutation.isPending}
+            className="rounded bg-rim-accent px-2 py-0.5 text-[11px] font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => {
+              setPendingRecord(null);
+              setReassignError(null);
+            }}
+            className="rounded px-2 py-0.5 text-[11px] text-rim-text-muted hover:text-rim-text"
+          >
+            Cancel
+          </button>
+        </div>
+        {reassignError && <p className="text-[11px] text-rim-danger">{reassignError}</p>}
+      </div>
+    );
   }
 
   function startEditing(kb: ResolvedKeybind) {
@@ -338,6 +503,9 @@ export function KeybindSettings() {
       },
     );
   }
+
+  const createConflicts = conflictsFor(newContext, newKeystroke, newCommandId);
+  const workspaceConflict = createConflicts.some((kb) => kb.source === "WORKSPACE");
 
   if (isLoading) {
     return <div className="p-4 text-sm text-rim-text-muted">Loading keybinds...</div>;
@@ -376,12 +544,15 @@ export function KeybindSettings() {
               type="text"
               value={newKeystroke}
               onKeyDown={handleKeystrokeCapture}
+              onFocus={() => (recordStartRef.current = newKeystroke)}
               onChange={() => {}}
               placeholder="Press a key combination..."
               aria-label="Keystroke"
+              {...{ [KEYSTROKE_RECORDER_ATTRIBUTE]: "" }}
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
               readOnly
             />
+            {conflictNote(createConflicts)}
           </div>
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Command</label>
@@ -409,7 +580,7 @@ export function KeybindSettings() {
             >
               {CONTEXTS.map((ctx) => (
                 <option key={ctx} value={ctx}>
-                  {ctx}
+                  {KEYBIND_CONTEXT_LABELS[ctx]}
                 </option>
               ))}
             </select>
@@ -417,7 +588,9 @@ export function KeybindSettings() {
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleCreate}
-              disabled={!newKeystroke || !newCommandId || createMutation.isPending}
+              disabled={
+                !newKeystroke || !newCommandId || workspaceConflict || createMutation.isPending
+              }
               className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Saving..." : "Save"}
@@ -434,6 +607,7 @@ export function KeybindSettings() {
               {errorSentence(createMutation.error, "The keybind could not be created.")}
             </p>
           )}
+          {reassignError && <p className="text-[11px] text-rim-danger">{reassignError}</p>}
         </div>
       )}
 
@@ -478,6 +652,9 @@ export function KeybindSettings() {
                             }}
                             tabIndex={0}
                             role="button"
+                            {...(capturingKeybindId === kb.id && {
+                              [KEYSTROKE_RECORDER_ATTRIBUTE]: "",
+                            })}
                             onClick={() => setCapturingKeybindId(kb.id)}
                             onKeyDown={(e) => {
                               if (capturingKeybindId === kb.id) {
@@ -500,6 +677,7 @@ export function KeybindSettings() {
                             {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
                           </kbd>
                         </div>
+                        {pendingRecordNote(kb)}
                         <div>
                           <label className="block text-[11px] text-rim-text-muted mb-1">
                             Command
@@ -533,7 +711,7 @@ export function KeybindSettings() {
                           >
                             {CONTEXTS.map((ctx) => (
                               <option key={ctx} value={ctx}>
-                                {ctx}
+                                {KEYBIND_CONTEXT_LABELS[ctx]}
                               </option>
                             ))}
                           </select>
@@ -576,8 +754,8 @@ export function KeybindSettings() {
                         >
                           Default
                         </span>
-                        <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
-                          {kb.context}
+                        <span className="shrink-0 text-[10px] text-rim-text-muted">
+                          {KEYBIND_CONTEXT_LABELS[kb.context]}
                         </span>
                         <button
                           onClick={() => startOverride(kb)}
@@ -592,86 +770,91 @@ export function KeybindSettings() {
                   }
 
                   return (
-                    <div
-                      key={kb.id}
-                      className={cn(
-                        "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
-                        kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
-                      )}
-                    >
-                      <kbd
-                        ref={(el) => {
-                          if (capturingKeybindId === kb.id && el) el.focus();
-                        }}
-                        tabIndex={0}
-                        role="button"
-                        onClick={() => setCapturingKeybindId(kb.id)}
-                        onKeyDown={(e) => {
-                          if (capturingKeybindId === kb.id) {
-                            handleInlineKeystrokeCapture(kb, e);
-                          } else if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setCapturingKeybindId(kb.id);
-                          }
-                        }}
-                        onBlur={() => {
-                          if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
-                        }}
+                    <Fragment key={kb.id}>
+                      <div
                         className={cn(
-                          "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
-                          capturingKeybindId === kb.id
-                            ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
-                            : "border-rim-line bg-rim-void hover:border-rim-accent/40",
+                          "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs",
+                          kb.isEnabled ? "text-rim-text" : "text-rim-text-muted opacity-60",
                         )}
                       >
-                        {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
-                      </kbd>
-                      {kb.commandId.startsWith("plugin.") && (
-                        <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
-                      )}
-                      <span className="flex-1 truncate">
-                        {commandTitleMap.get(kb.commandId) ?? kb.commandId}
-                      </span>
-                      {isDeviceKeybind(kb.id) && (
-                        <span
-                          className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
-                          title="Kept on this device, like the plugin it runs"
+                        <kbd
+                          ref={(el) => {
+                            if (capturingKeybindId === kb.id && el) el.focus();
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          {...(capturingKeybindId === kb.id && {
+                            [KEYSTROKE_RECORDER_ATTRIBUTE]: "",
+                          })}
+                          onClick={() => setCapturingKeybindId(kb.id)}
+                          onKeyDown={(e) => {
+                            if (capturingKeybindId === kb.id) {
+                              handleInlineKeystrokeCapture(kb, e);
+                            } else if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setCapturingKeybindId(kb.id);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (capturingKeybindId === kb.id) setCapturingKeybindId(null);
+                          }}
+                          className={cn(
+                            "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px] cursor-pointer transition",
+                            capturingKeybindId === kb.id
+                              ? "border-rim-accent bg-rim-void text-rim-accent outline outline-1 outline-rim-accent"
+                              : "border-rim-line bg-rim-void hover:border-rim-accent/40",
+                          )}
                         >
-                          This device
-                        </span>
-                      )}
-                      <span className="shrink-0 text-[10px] text-rim-text-muted uppercase">
-                        {kb.context}
-                      </span>
-                      <button
-                        onClick={() => startEditing(kb)}
-                        className="shrink-0 text-rim-text-muted hover:text-rim-text"
-                        title="Edit"
-                        aria-label="Edit keybind"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleToggle(kb)}
-                        className="shrink-0 text-rim-text-muted hover:text-rim-text"
-                        title={kb.isEnabled ? "Disable" : "Enable"}
-                        aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
-                      >
-                        {kb.isEnabled ? (
-                          <ToggleRight className="h-4 w-4 text-rim-accent" />
-                        ) : (
-                          <ToggleLeft className="h-4 w-4" />
+                          {capturingKeybindId === kb.id ? "Press a key..." : kb.keystroke}
+                        </kbd>
+                        {kb.commandId.startsWith("plugin.") && (
+                          <Plug className="h-3 w-3 shrink-0 text-rim-accent" />
                         )}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(kb.id)}
-                        className="shrink-0 text-rim-text-muted hover:text-rim-danger"
-                        title="Delete"
-                        aria-label="Delete keybind"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                        <span className="flex-1 truncate">
+                          {commandTitleMap.get(kb.commandId) ?? kb.commandId}
+                        </span>
+                        {isDeviceKeybind(kb.id) && (
+                          <span
+                            className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
+                            title="Kept on this device, like the plugin it runs"
+                          >
+                            This device
+                          </span>
+                        )}
+                        <span className="shrink-0 text-[10px] text-rim-text-muted">
+                          {KEYBIND_CONTEXT_LABELS[kb.context]}
+                        </span>
+                        <button
+                          onClick={() => startEditing(kb)}
+                          className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                          title="Edit"
+                          aria-label="Edit keybind"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleToggle(kb)}
+                          className="shrink-0 text-rim-text-muted hover:text-rim-text"
+                          title={kb.isEnabled ? "Disable" : "Enable"}
+                          aria-label={kb.isEnabled ? "Disable keybind" : "Enable keybind"}
+                        >
+                          {kb.isEnabled ? (
+                            <ToggleRight className="h-4 w-4 text-rim-accent" />
+                          ) : (
+                            <ToggleLeft className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(kb.id)}
+                          className="shrink-0 text-rim-text-muted hover:text-rim-danger"
+                          title="Delete"
+                          aria-label="Delete keybind"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {pendingRecordNote(kb)}
+                    </Fragment>
                   );
                 })}
               </div>

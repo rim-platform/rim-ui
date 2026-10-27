@@ -95,14 +95,3 @@ export const useDeviceKeybindStore = create<DeviceKeybindState>()(
     { name: "rim-device-keybinds", version: 1 },
   ),
 );
-
-/**
- * Device keybinds ahead of the server's, so a plugin command bound on this
- * device wins over a server binding of the same keystroke.
- */
-export function withDeviceKeybinds(
-  device: ResolvedKeybind[],
-  server: ResolvedKeybind[],
-): ResolvedKeybind[] {
-  return device.length === 0 ? server : [...device, ...server];
-}

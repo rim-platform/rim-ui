@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useShellStore } from "../state/useShellStore";
 import { toast } from "../../shared/toast";
 import { vimModeEnabled } from "../../features/commands/state/useKeybindProfileStore";
+import { isKeystrokeRecorder } from "../../features/commands/runtime/keybindEngine";
 
 /**
  * Global keyboard handlers:
@@ -16,6 +17,7 @@ export function useGlobalKeyHandlers() {
   // are exited simultaneously.
   useEffect(() => {
     function handleZenEscape(e: KeyboardEvent) {
+      if (isKeystrokeRecorder(e.target)) return;
       if (e.key !== "Escape") return;
       if (!useShellStore.getState().zenMode) return;
       useShellStore.getState().toggleZenMode();
@@ -27,6 +29,7 @@ export function useGlobalKeyHandlers() {
 
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
+      if (isKeystrokeRecorder(e.target)) return;
       // Skip if modifier keys (except Shift) are held
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 

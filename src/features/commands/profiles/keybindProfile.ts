@@ -16,6 +16,17 @@ export const KEYBIND_CONTEXTS: readonly KeybindContext[] = [
   "COMMAND_PALETTE",
 ];
 
+/** The name Settings shows for each keybind context. */
+export const KEYBIND_CONTEXT_LABELS: Readonly<Record<KeybindContext, string>> = {
+  GLOBAL: "Global",
+  COMPOSER: "Composer",
+  MESSAGE_LIST: "Message list",
+  THREAD_VIEW: "Thread view",
+  CONVERSATION_VIEW: "Conversation view",
+  PANEL: "Panel",
+  COMMAND_PALETTE: "Command palette",
+};
+
 /**
  * One default binding of a profile. A `null` command frees the keystroke: nothing below the
  * profile (the server's defaults) binds it either.
@@ -50,6 +61,16 @@ const MAX_COMMAND_ID_LENGTH = 200;
 const COMMAND_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
 const MODIFIER_ORDER = ["Ctrl", "Shift", "Alt"] as const;
 
+/** Modifier names a profile may use, in any case, and the modifier each one means. */
+const MODIFIER_NAMES: Readonly<Record<string, (typeof MODIFIER_ORDER)[number]>> = {
+  ctrl: "Ctrl",
+  control: "Ctrl",
+  meta: "Ctrl",
+  cmd: "Ctrl",
+  shift: "Shift",
+  alt: "Alt",
+};
+
 /** Key names that mean the same key, mapped to the name `KeyboardEvent.key` uses. */
 const KEY_ALIASES: Readonly<Record<string, string>> = {
   Esc: "Escape",
@@ -79,8 +100,8 @@ export function canonicalKeystroke(
   if (/\s/.test(key)) return { ok: false, error: `"${key}" is not a key name` };
   const modifiers = new Set<string>();
   for (const raw of trimmed.slice(0, cut).split("+").filter(Boolean)) {
-    const modifier = raw === "Meta" || raw === "Cmd" || raw === "Control" ? "Ctrl" : raw;
-    if (!MODIFIER_ORDER.includes(modifier as (typeof MODIFIER_ORDER)[number])) {
+    const modifier = MODIFIER_NAMES[raw.toLowerCase()];
+    if (modifier === undefined) {
       return { ok: false, error: `"${raw}" is not a modifier (use Ctrl, Shift, Alt or Meta)` };
     }
     modifiers.add(modifier);

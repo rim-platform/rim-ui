@@ -280,4 +280,13 @@ describe("KeybindProvider with the default profile", () => {
       shell.mainSurface = { kind: "conversation" };
     }
   });
+
+  it("runs no keybind for a key pressed in a keystroke recorder", () => {
+    const { getByRole } = renderWith(<input aria-label="keys" data-keystroke-recorder="" />);
+    const field = getByRole("textbox");
+    field.focus();
+
+    expect(press(field, "k", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(dispatchCommand).not.toHaveBeenCalled();
+  });
 });

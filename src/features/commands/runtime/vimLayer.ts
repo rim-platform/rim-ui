@@ -10,6 +10,7 @@ import { useCommandStore } from "../state/useCommandStore";
 import { vimModeEnabled } from "../state/useKeybindProfileStore";
 import { useVimStore } from "../state/useVimStore";
 import { runDesktopLocalCommand } from "./commandDispatcher";
+import { isKeystrokeRecorder } from "./keybindEngine";
 
 /** The key a list already answers for each motion; the Vim keys send these to it. */
 const MOTION_KEYS: Readonly<Record<FocusStep, string>> = {
@@ -266,6 +267,7 @@ function repeatLater(command: NormalCommand, times: number): void {
  * which means Escape.
  */
 export function handleVimKeyDown(event: KeyboardEvent): boolean {
+  if (isKeystrokeRecorder(event.target)) return false;
   if (!vimModeEnabled() || sentByLayer.has(event) || event.isComposing) return false;
   const active = document.activeElement;
   const target = event.target instanceof Element ? event.target : null;
@@ -321,6 +323,7 @@ export function handleVimKeyDown(event: KeyboardEvent): boolean {
  * gives up focus to its pane. For the bubble phase, after the field's own handlers.
  */
 export function handleVimEscape(event: KeyboardEvent): void {
+  if (isKeystrokeRecorder(event.target)) return;
   if (!vimModeEnabled() || event.key !== "Escape" || event.defaultPrevented) return;
   const active = document.activeElement;
   if (!(active instanceof HTMLElement) || !isTextEntry(active)) return;

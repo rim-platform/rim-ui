@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ vi.mock("../../plugins/api/usePluginKeybinds", () => ({
 
 const createKeybind = vi.fn();
 const updateKeybind = vi.fn();
+const deleteKeybindAsync = vi.fn();
 
 vi.mock("../api/useKeybindSettings", () => ({
   useCreateKeybindMutation: vi.fn(() => ({
@@ -29,7 +30,7 @@ vi.mock("../api/useKeybindSettings", () => ({
     isError: false,
   })),
   useUpdateKeybindMutation: vi.fn(() => ({ mutate: updateKeybind, isPending: false })),
-  useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn() })),
+  useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: deleteKeybindAsync })),
 }));
 
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
@@ -44,6 +45,8 @@ import { useCreateKeybindMutation } from "../api/useKeybindSettings";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
+import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
+import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
 import { KeybindSettings } from "./KeybindSettings";
 import type { ResolvedKeybind } from "../types";
 import type { CommandDefinition } from "../types";
@@ -87,6 +90,10 @@ function makeCommand(overrides: Partial<CommandDefinition> = {}): CommandDefinit
 describe("KeybindSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // A profile with no bindings keeps each test's rows to the ones it gives.
+    useKeybindProfileStore.setState({
+      profile: { ...BUILT_IN_PROFILES.minimal, bindings: [] },
+    });
   });
 
   it("renders a loading state when keybinds are loading", () => {
@@ -274,6 +281,212 @@ describe("KeybindSettings", () => {
         expect.anything(),
       );
       expect(updateKeybind).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Already used by/)).not.toBeInTheDocument();
+    });
+
+    it("lists the app's own defaults from the active profile", () => {
+      useKeybindProfileStore.setState({ profile: BUILT_IN_PROFILES.minimal });
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as unknown as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      for (const [keystroke, title] of [
+        ["Ctrl+D", "Cycle display density"],
+        ["?", "Show keyboard shortcuts"],
+        ["Ctrl+/", "Show keyboard shortcuts"],
+      ]) {
+        const row = screen.getByText(keystroke).closest("div") as HTMLElement;
+        expect(within(row).getByText(title)).toBeInTheDocument();
+        expect(within(row).getByText("Default")).toBeInTheDocument();
+      }
+    });
+  });
+
+  describe("context names", () => {
+    it("shows readable context names in the picker and on rows", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [makeKeybind({ source: "USER" })],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      vi.mocked(useCommands).mockReturnValue({
+        data: [makeCommand()],
+        isLoading: false,
+      } as ReturnType<typeof useCommands>);
+      render(<KeybindSettings />);
+
+      const row = screen.getByText("Open Command Palette").closest("div") as HTMLElement;
+      expect(within(row).getByText("Global")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+      const contextSelect = screen.getByRole("combobox", { name: "Context" });
+      expect(within(contextSelect).getByRole("option", { name: "Message list" })).toHaveValue(
+        "MESSAGE_LIST",
+      );
+      expect(screen.queryByText("GLOBAL")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("keystroke recorder", () => {
+    const openSearch = makeCommand({ id: "workspace.open_search", title: "Open Search" });
+
+    beforeEach(() => {
+      useDeviceKeybindStore.setState({ keybinds: [] });
+      vi.mocked(useCommands).mockReturnValue({
+        data: [makeCommand(), openSearch],
+        isLoading: false,
+      } as ReturnType<typeof useCommands>);
+    });
+
+    function serve(keybinds: ResolvedKeybind[]) {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: keybinds,
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+    }
+
+    /** Opens the add form and records `key` with Ctrl on its keystroke field. */
+    function record(key: string): HTMLElement {
+      fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+      const field = screen.getByLabelText("Keystroke");
+      fireEvent.focus(field);
+      fireEvent.keyDown(field, { key, ctrlKey: true });
+      return field;
+    }
+
+    function pick(commandId: string) {
+      fireEvent.change(screen.getByRole("combobox", { name: "Command" }), {
+        target: { value: commandId },
+      });
+    }
+
+    it("records a key that is already bound and names its command", () => {
+      serve([makeKeybind()]);
+      render(<KeybindSettings />);
+
+      const field = record("k");
+      expect(field).toHaveValue("Ctrl+K");
+      expect(field).toHaveAttribute("data-keystroke-recorder");
+      pick("workspace.open_search");
+
+      expect(
+        screen.getByText("Already used by Open Command Palette — saving will reassign it."),
+      ).toBeInTheDocument();
+    });
+
+    it("Escape cancels the recording and keeps the earlier keys", () => {
+      serve([]);
+      render(<KeybindSettings />);
+      const field = record("j");
+      fireEvent.blur(field);
+
+      fireEvent.focus(field);
+      fireEvent.keyDown(field, { key: "x", ctrlKey: true });
+      expect(field).toHaveValue("Ctrl+X");
+      expect(fireEvent.keyDown(field, { key: "Escape" })).toBe(false);
+
+      expect(field).toHaveValue("Ctrl+J");
+      expect(screen.getByLabelText("Keystroke")).toBeInTheDocument();
+    });
+
+    it("saving over a binding of the user's removes it first", async () => {
+      serve([makeKeybind({ id: "kb-user", keystroke: "Ctrl+J", source: "USER" })]);
+      deleteKeybindAsync.mockResolvedValue({});
+      render(<KeybindSettings />);
+
+      record("j");
+      pick("workspace.open_search");
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(createKeybind).toHaveBeenCalled());
+      expect(deleteKeybindAsync).toHaveBeenCalledWith({ keybindId: "kb-user" });
+      expect(deleteKeybindAsync.mock.invocationCallOrder[0]).toBeLessThan(
+        createKeybind.mock.invocationCallOrder[0],
+      );
+      expect(createKeybind).toHaveBeenCalledWith(
+        expect.objectContaining({ keystroke: "Ctrl+J", commandId: "workspace.open_search" }),
+        expect.anything(),
+      );
+    });
+
+    it("saves nothing and says so when the other binding cannot be removed", async () => {
+      serve([makeKeybind({ id: "kb-user", keystroke: "Ctrl+J", source: "USER" })]);
+      deleteKeybindAsync.mockRejectedValue(new Error("Forbidden"));
+      render(<KeybindSettings />);
+
+      record("j");
+      pick("workspace.open_search");
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(await screen.findByText("Forbidden")).toBeInTheDocument();
+      expect(createKeybind).not.toHaveBeenCalled();
+    });
+
+    it("saving over a device binding removes it from this device", () => {
+      serve([]);
+      useDeviceKeybindStore.getState().add({
+        keystroke: "Ctrl+J",
+        commandId: "workspace.toggle_zen_mode",
+        context: "GLOBAL",
+      });
+      render(<KeybindSettings />);
+
+      record("j");
+      pick("workspace.open_search");
+      expect(
+        screen.getByText("Already used by Toggle Zen mode — saving will reassign it."),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
+      expect(deleteKeybindAsync).not.toHaveBeenCalled();
+      expect(createKeybind).toHaveBeenCalledWith(
+        expect.objectContaining({ keystroke: "Ctrl+J", commandId: "workspace.open_search" }),
+        expect.anything(),
+      );
+    });
+
+    it("refuses keys a workspace keybind holds", () => {
+      serve([
+        makeKeybind({ id: "kb-ws", keystroke: "Ctrl+J", source: "WORKSPACE", scope: "WORKSPACE" }),
+      ]);
+      render(<KeybindSettings />);
+
+      record("j");
+      pick("workspace.open_search");
+
+      expect(
+        screen.getByText(
+          "Already used by Open Command Palette, a workspace keybind — choose other keys.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    });
+
+    it("re-recording a binding onto used keys asks before saving", () => {
+      serve([
+        makeKeybind({ id: "kb-user", keystroke: "Ctrl+K", source: "USER" }),
+        makeKeybind({ id: "kb-default", keystroke: "Ctrl+J", commandId: "workspace.open_search" }),
+      ]);
+      render(<KeybindSettings />);
+
+      const keys = screen.getByRole("button", { name: "Ctrl+K" });
+      fireEvent.click(keys);
+      expect(keys).toHaveAttribute("data-keystroke-recorder");
+      fireEvent.keyDown(keys, { key: "j", ctrlKey: true });
+
+      expect(
+        screen.getByText("Already used by Open Search — saving will reassign it."),
+      ).toBeInTheDocument();
+      expect(updateKeybind).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      expect(updateKeybind).toHaveBeenCalledWith(
+        expect.objectContaining({ keybindId: "kb-user", keystroke: "Ctrl+J" }),
+      );
+      expect(screen.queryByText(/Already used by/)).not.toBeInTheDocument();
     });
   });
 
