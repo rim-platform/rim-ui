@@ -31,7 +31,7 @@ resolution produces, so it always matches what the keys do.
 
 ## Keybind profiles
 
-A profile is the default binding set of a device plus the Vim switch. Three are built in:
+A profile is a set of default bindings of a device plus the Vim switch. Three are built in:
 
 | Profile        | Vim mode | Bindings                                                                                                                         |
 | -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -42,7 +42,13 @@ A profile is the default binding set of a device plus the Vim switch. Three are 
 Mouse-friendly leaves those keys to the browser and the text field: reload, bold, the search bar,
 bookmark, the address bar, redo and word jumps.
 
-Settings, Keyboard exports the active profile and imports one. The file:
+Settings, Keyboard exports the bindings in force and imports a profile file. Importing asks
+how: **Merge** (the usual choice) keeps every default and lets each binding of the file take
+the place of the default on the same keystroke and context, adding the rest; **Replace all**
+uses the file's bindings alone. The device keeps the choice, and a merged profile picks up
+defaults that later versions add.
+
+The file:
 
 ```json
 {
@@ -62,7 +68,8 @@ Settings, Keyboard exports the active profile and imports one. The file:
 - `keystroke`: modifiers `Ctrl`, `Shift`, `Alt` (or `Meta` or `Cmd`, read as `Ctrl`), in any
   case, joined by `+`, then a key name as the browser reports it (`K`, `ArrowDown`, `Escape`,
   `?`). Import puts it in canonical form.
-- `commandId`: any command id, or `null` to free the keystroke so no lower layer binds it.
+- `commandId`: any command id, or `null` to free the keystroke: under Merge it removes the
+  default on those keys, and either way no lower layer binds them.
 - `context`: `GLOBAL` (the default), `COMPOSER`, `MESSAGE_LIST`, `THREAD_VIEW`,
   `CONVERSATION_VIEW`, `PANEL` or `COMMAND_PALETTE`.
 

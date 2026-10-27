@@ -4,12 +4,15 @@ import { BUILT_IN_PROFILES, BUILT_IN_PROFILE_IDS, DEFAULT_BINDINGS } from "./bui
 import {
   PROFILE_FORMAT,
   canonicalKeystroke,
+  mergeOverDefaults,
   parseKeybindProfile,
   profileFileName,
   profileKeybinds,
   sameBindings,
   serializeKeybindProfile,
   validateKeybindProfile,
+  type KeybindProfile,
+  type ProfileBinding,
 } from "./keybindProfile";
 
 function profileJson(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -209,6 +212,108 @@ describe("profileKeybinds", () => {
     });
     expect(bound).toMatchObject({ commandId: "workspace.open_command_palette", isEnabled: true });
     expect(freed).toMatchObject({ keystroke: "Ctrl+R", commandId: "", isEnabled: false });
+  });
+});
+
+describe("mergeOverDefaults", () => {
+  const defaults: ProfileBinding[] = [
+    { keystroke: "Ctrl+K", commandId: "workspace.open_command_palette", context: "GLOBAL" },
+    { keystroke: "Ctrl+R", commandId: "workspace.cycle_recent_activity", context: "GLOBAL" },
+    { keystroke: "?", commandId: "workspace.show_shortcuts", context: "GLOBAL" },
+    { keystroke: "Ctrl+/", commandId: "workspace.show_shortcuts", context: "GLOBAL" },
+  ];
+
+  function imported(bindings: ProfileBinding[]): KeybindProfile {
+    return {
+      format: PROFILE_FORMAT,
+      version: 1,
+      name: "Team keys",
+      description: "Shared keys",
+      vimMode: true,
+      bindings,
+    };
+  }
+
+  it("keeps every default the profile does not name", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([{ keystroke: "Ctrl+J", commandId: "workspace.open_search", context: "GLOBAL" }]),
+    );
+    expect(merged.bindings.slice(0, defaults.length)).toEqual(defaults);
+  });
+
+  it("puts the profile's binding in place of the default on the same keys and context", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([{ keystroke: "Ctrl+K", commandId: "workspace.open_search", context: "GLOBAL" }]),
+    );
+    expect(merged.bindings).toEqual([
+      { keystroke: "Ctrl+K", commandId: "workspace.open_search", context: "GLOBAL" },
+      ...defaults.slice(1),
+    ]);
+  });
+
+  it("adds bindings on keys no default holds after the defaults", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([
+        { keystroke: "Ctrl+J", commandId: "workspace.open_search", context: "GLOBAL" },
+        { keystroke: "Ctrl+Shift+J", commandId: "workspace.open_agent", context: "GLOBAL" },
+      ]),
+    );
+    expect(merged.bindings).toEqual([
+      ...defaults,
+      { keystroke: "Ctrl+J", commandId: "workspace.open_search", context: "GLOBAL" },
+      { keystroke: "Ctrl+Shift+J", commandId: "workspace.open_agent", context: "GLOBAL" },
+    ]);
+  });
+
+  it("removes and frees a default the profile unbinds", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([{ keystroke: "Ctrl+R", commandId: null, context: "GLOBAL" }]),
+    );
+    expect(merged.bindings).toHaveLength(defaults.length);
+    expect(merged.bindings[1]).toEqual({ keystroke: "Ctrl+R", commandId: null, context: "GLOBAL" });
+    expect(profileKeybinds(merged).find((keybind) => keybind.keystroke === "Ctrl+R")).toMatchObject(
+      { isEnabled: false, commandId: "" },
+    );
+  });
+
+  it("keeps a default on another context of the same keystroke", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([{ keystroke: "Ctrl+K", commandId: "chat.send", context: "COMPOSER" }]),
+    );
+    expect(merged.bindings).toEqual([
+      ...defaults,
+      { keystroke: "Ctrl+K", commandId: "chat.send", context: "COMPOSER" },
+    ]);
+  });
+
+  it("leaves another key of the same command bound", () => {
+    const merged = mergeOverDefaults(
+      defaults,
+      imported([{ keystroke: "Ctrl+J", commandId: "workspace.show_shortcuts", context: "GLOBAL" }]),
+    );
+    const shortcutKeys = merged.bindings
+      .filter((binding) => binding.commandId === "workspace.show_shortcuts")
+      .map((binding) => binding.keystroke);
+    expect(shortcutKeys).toEqual(["?", "Ctrl+/", "Ctrl+J"]);
+  });
+
+  it("keeps the profile's name, description and Vim mode", () => {
+    const profile = imported([]);
+    const merged = mergeOverDefaults(DEFAULT_BINDINGS, profile);
+    expect(merged).toMatchObject({
+      format: PROFILE_FORMAT,
+      version: 1,
+      name: "Team keys",
+      description: "Shared keys",
+      vimMode: true,
+    });
+    expect(merged.bindings).toEqual(DEFAULT_BINDINGS);
+    expect(profile.bindings).toEqual([]);
   });
 });
 
