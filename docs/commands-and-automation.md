@@ -74,6 +74,9 @@ keybind. Left out are a plugin command that needs arguments, which its plugin's 
 plugin command that needs a conversation while none is open, and macros, which run from
 Settings → Macros or `/macro`. Running a command closes the palette at once; a toast gives its
 title on success or "\<title\>: \<message\>" on failure, and a plugin command answers in its words.
+**Search Messages** run from the palette or a keybind without a `query` opens the search box,
+as **Open Search** does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
+the server runs the search.
 
 **Pipes.** Typing <kbd>|</kbd> locks the text before it as a stage: a command id, optionally
 followed by `key=value` arguments with no spaces in the values. Pick the last command from the

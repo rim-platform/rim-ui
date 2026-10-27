@@ -24,6 +24,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- **Search Messages** in the command palette opens the search box instead of failing with
+  ``missing string arg `query` ``.
 - A message without reactions no longer reserves an empty line under its text for the hover
   **Add reaction** button, which now sits beside **Open thread**; a thread's root shows its reply
   count right under the text.
