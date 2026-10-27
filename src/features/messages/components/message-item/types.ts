@@ -128,6 +128,8 @@ export interface MessageItemHandlers {
   canAddReaction?: boolean;
   /** Whether the viewer may start a thread on a message. Defaults to true. */
   canStartThread?: boolean;
+  /** Starts a timeline reply to the message; absent where the viewer cannot post. */
+  onReply?: (messageId: string) => void;
   onContextMenu?: (event: React.MouseEvent, messageId: string, messageText: string) => void;
   /** The handlers that open the row's context menu on a long press, for its touch events. */
   bindContextMenu?: (messageId: string, messageText: string) => ContextMenuBindings;

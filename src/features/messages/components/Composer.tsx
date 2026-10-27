@@ -55,6 +55,8 @@ import {
   TimedOutBanner,
 } from "./ComposerNotices";
 import { FilePreviewBar } from "./FilePreviewBar";
+import { ReplyBar } from "./ReplyBar";
+import { useReplyTargetStore, type ReplyTarget } from "../state/useReplyTargetStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { SendBlock } from "../../e2ee/hooks/useE2eeConversation";
 import { EncryptedSendError, EncryptedUploadError, sendEncrypted } from "../../e2ee/runtime/send";
@@ -231,6 +233,10 @@ function MessageComposer(props: ComposerProps) {
   // The instance's cap on a message's text in UTF-8 bytes; null without one.
   const byteCap = useServerInfo().limits?.messageBytes ?? null;
   const textBytes = byteCap === null ? 0 : utf8Bytes(text.trim());
+  // The timeline message the conversation's composer replies to; never in a thread or a draft.
+  const replyTarget = useReplyTargetStore((s) =>
+    conversationId && !thread && !draft ? s.targets[conversationId] : undefined,
+  );
 
   // Load the unsent text on mount and when the conversation (or draft) changes
   useEffect(() => {
@@ -330,6 +336,7 @@ function MessageComposer(props: ComposerProps) {
   }
 
   async function submit() {
+    const replyTo = replyTarget;
     if (timedOutUntil || offline) return;
     for (const { file } of pendingFiles) {
       const problem = attachmentProblem(file, Boolean(encryption || draft?.encrypted));
@@ -389,10 +396,10 @@ function MessageComposer(props: ComposerProps) {
     }
     if (!conversationId) return;
     if (encryption) {
-      await submitEncrypted(unsentText, trimmed, conversationId);
+      await submitEncrypted(unsentText, trimmed, conversationId, replyTo);
       return;
     }
-    await submitPlain(unsentText, trimmed, conversationId);
+    await submitPlain(unsentText, trimmed, conversationId, replyTo);
   }
 
   /**
@@ -467,8 +474,23 @@ function MessageComposer(props: ComposerProps) {
     if (conversationId && !thread) useUnreadStore.getState().clearWatermark(conversationId);
   }
 
-  /** Sends plaintext once; file failures retain an upload retry for the delivered message. */
-  async function submitPlain(unsentText: string, trimmed: string, target: string) {
+  /** Drops the reply target `replyTo` once its message went out, unless another replaced it. */
+  function clearSentReply(replyTo: ReplyTarget | undefined) {
+    if (!replyTo || !conversationId) return;
+    const store = useReplyTargetStore.getState();
+    if (store.targets[conversationId]?.messageId === replyTo.messageId) store.clear(conversationId);
+  }
+
+  /**
+   * Sends plaintext once, as a reply to `replyTo` when set; file failures retain an upload retry
+   * for the delivered message.
+   */
+  async function submitPlain(
+    unsentText: string,
+    trimmed: string,
+    target: string,
+    replyTo?: ReplyTarget,
+  ) {
     let processed = trimmed ? replaceShortcodes(trimmed) : "";
     processed = replaceMentions(processed, mentionsToSend(), (userId) => `<@${userId}>`);
     if (refuseOverByteCap(processed)) return false;
@@ -484,13 +506,20 @@ function MessageComposer(props: ComposerProps) {
               text: processed,
             })
           ).replyToMessage.id
-        : (await send.mutateAsync({ workspaceId, conversationId: target, text: processed }))
-            .sendMessage.id;
+        : (
+            await send.mutateAsync({
+              workspaceId,
+              conversationId: target,
+              text: processed,
+              parentMessageId: replyTo?.messageId,
+            })
+          ).sendMessage.id;
     } catch (err) {
       handleSendError(err, "Failed to send message");
       return false;
     }
     clearSent(unsentText, selected);
+    clearSentReply(replyTo);
     noteSent();
     if (selected.length > 0) {
       setIsUploading(true);
@@ -510,10 +539,15 @@ function MessageComposer(props: ComposerProps) {
   }
 
   /**
-   * Send through the encrypted path: mentions as principal tokens, files encrypted first.
-   * Returns whether the message went out.
+   * Send through the encrypted path: mentions as principal tokens, files encrypted first, as a
+   * reply to `replyTo` when set. Returns whether the message went out.
    */
-  async function submitEncrypted(unsentText: string, trimmed: string, target: string) {
+  async function submitEncrypted(
+    unsentText: string,
+    trimmed: string,
+    target: string,
+    replyTo?: ReplyTarget,
+  ) {
     if (sendBlocked) return false;
     const members = serverMembers ?? [];
     const principalOf = (userId: string) => members.find((m) => m.userId === userId)?.principalId;
@@ -537,14 +571,17 @@ function MessageComposer(props: ComposerProps) {
           principalId: me?.principalId ?? null,
         },
         ...(thread && { threadRootId: thread.rootMessageId, threadId: thread.threadId }),
+        ...(replyTo && !thread && { replyTo: replyTo.messageId }),
       });
       clearSent(unsentText, selected);
+      clearSentReply(replyTo);
       noteSent();
       if (thread) refreshThreadAfterReply(workspaceId, target, thread.rootMessageId);
       return true;
     } catch (err) {
       if (err instanceof EncryptedUploadError) {
         clearSent(unsentText, selected);
+        clearSentReply(replyTo);
         noteSent();
         if (thread) refreshThreadAfterReply(workspaceId, target, thread.rootMessageId);
         uploads.remember(err.batch);
@@ -639,6 +676,13 @@ function MessageComposer(props: ComposerProps) {
       />
       <AttachmentRetries uploads={uploads} />
       <FilePreviewBar pendingFiles={pendingFiles} onRemove={removeFile} />
+      {replyTarget && conversationId && (
+        <ReplyBar
+          workspaceId={workspaceId}
+          target={replyTarget}
+          onCancel={() => useReplyTargetStore.getState().clear(conversationId)}
+        />
+      )}
 
       {attachments && (
         <input
@@ -672,6 +716,11 @@ function MessageComposer(props: ComposerProps) {
           serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
           variant={thread ? "thread" : "conversation"}
+          onEscape={() => {
+            if (!replyTarget || !conversationId) return false;
+            useReplyTargetStore.getState().clear(conversationId);
+            return true;
+          }}
         />
       </fieldset>
       <MessageBytesCounter bytes={textBytes} cap={byteCap} />

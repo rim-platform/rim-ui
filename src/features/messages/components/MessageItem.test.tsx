@@ -344,6 +344,34 @@ describe("MessageItem", () => {
     expect(screen.queryByRole("button", { name: "View thread" })).not.toBeInTheDocument();
   });
 
+  it("shows a Reply hover button that starts a reply", () => {
+    const onReply = vi.fn();
+    render(<MessageItem {...props({ handlers: { onReply } })} />);
+    const reply = screen.getByRole("button", { name: "Reply" });
+    expect(reply).toHaveAttribute("title", "Reply");
+    expect(reply.nextElementSibling).toBe(screen.getByLabelText("Open thread"));
+    fireEvent.click(reply);
+    expect(onReply).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("shows no Reply button without onReply, on a deleted message, or in the thread pane", () => {
+    const { unmount } = render(<MessageItem {...props()} />);
+    expect(screen.queryByRole("button", { name: "Reply" })).not.toBeInTheDocument();
+    unmount();
+
+    const deleted = props({
+      message: { ...defaultMessage, isDeleted: true },
+      handlers: { onReply: vi.fn() },
+    });
+    const { unmount: unmountDeleted } = render(<MessageItem {...deleted} />);
+    expect(screen.queryByRole("button", { name: "Reply" })).not.toBeInTheDocument();
+    unmountDeleted();
+
+    const pane = props({ handlers: { onReply: vi.fn() } });
+    render(<MessageItem {...pane} view={{ ...pane.view, inThreadPane: true }} />);
+    expect(screen.queryByRole("button", { name: "Reply" })).not.toBeInTheDocument();
+  });
+
   it("renders no reactions row under a message without reactions", () => {
     const zeroCount = [{ emoji: "👍", count: 0, reactedByMe: false }];
     for (const [message, density] of [

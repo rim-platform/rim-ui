@@ -6,6 +6,7 @@ import { createTestQueryClient } from "../../../test/utils";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import {
   baseReadHandlers,
   makeConversation,
@@ -119,6 +120,27 @@ describe("Composer in an encrypted conversation", () => {
     });
     expect(requested("mutation ReplyToMessage")).toBe(false);
     expect(requested("mutation SendMessage")).toBe(false);
+  });
+
+  it("sends a reply through the encrypted path with replyTo", async () => {
+    useReplyTargetStore.getState().start("conv-1", {
+      messageId: "m-1",
+      authorId: "u-alice",
+      excerpt: "Lunch at noon?",
+    });
+    renderComposer(null);
+    await waitFor(() => expect(requestMock).toHaveBeenCalled());
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "agreed" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(sendEncrypted).toHaveBeenCalled());
+    const [ws, conversation, draft] = sendEncrypted.mock.calls[0];
+    expect([ws, conversation]).toEqual(["ws-1", "conv-1"]);
+    expect(draft).toMatchObject({ body: "agreed", replyTo: "m-1" });
+    expect(draft.threadRootId).toBeUndefined();
+    expect(requested("mutation SendMessage")).toBe(false);
+    await waitFor(() => expect(useReplyTargetStore.getState().targets["conv-1"]).toBeUndefined());
   });
 
   it("does not send while sending is stopped", async () => {

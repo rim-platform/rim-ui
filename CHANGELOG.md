@@ -29,6 +29,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   says the server does not list blocked people yet.
 - The audit log names who did each action and, for an action on a member, that member
   (**Alice → Carol**).
+- **Reply** on a message (its menu, the reply arrow on hover, or <kbd>r</kbd>) quotes it above
+  the composer; the message you send shows the quote, which jumps to the original. Works in
+  encrypted conversations too.
 
 ### Changed
 
@@ -38,6 +41,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   the person's name in capitals; a dangerous action shows only as its red button.
 - Channel and DM rows in the sidebar no longer show a grey member count, which read as an
   unread count; the conversation header still shows it.
+- <kbd>r</kbd> on a selected message starts a reply instead of opening its thread; <kbd>t</kbd>
+  opens the thread. The NAVIGATE bar offers <kbd>r</kbd>, <kbd>t</kbd> and <kbd>p</kbd> only
+  where the conversation allows them.
 
 ### Fixed
 

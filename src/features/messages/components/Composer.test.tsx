@@ -3,6 +3,7 @@ import { server } from "../../../test/mocks/server";
 import { useAttachmentUploadStore } from "../api/useAttachmentUploads";
 import { MAX_ATTACHMENT_BYTES } from "../api/attachmentTypes";
 import { useDraftStore } from "../state/useDraftStore";
+import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ import { useTimeoutStore } from "../../workspaces/state/useTimeoutStore";
 import { useKnownHandles } from "../../workspaces/state/useKnownHandles";
 import { useSlowModeStore } from "../state/useSlowModeStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import type { ConversationSummary } from "../../conversations/types";
 import {
   baseReadHandlers,
@@ -847,5 +849,111 @@ describe("ThreadComposer", () => {
     view.unmount();
     expect(useDraftStore.getState().getDraft("thread:conv-1:root-1")).toBe("half a reply");
     expect(useDraftStore.getState().getDraft("conv-1")).toBe("");
+  });
+});
+
+describe("Composer — reply", () => {
+  const target = { messageId: "m-parent", authorId: "u-alice", excerpt: "Lunch at noon?" };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    useDraftStore.setState({ drafts: {} });
+    useReplyTargetStore.setState({ targets: {} });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useReplyTargetStore.setState({ targets: {} });
+    useShellStore.getState().setNavigationMode(false);
+  });
+
+  function sentInput(): Record<string, unknown> | undefined {
+    const vars = callsTo(requestMock, "mutation SendMessage")[0] as
+      { input?: Record<string, unknown> } | undefined;
+    return vars?.input;
+  }
+
+  it("sends a reply with its parent and clears the reply bar", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => ({ sendMessage: { id: "m-2" } }),
+    });
+    useReplyTargetStore.getState().start("conv-1", target);
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    expect(screen.getByText("Lunch at noon?")).toBeInTheDocument();
+
+    fireEvent.change(textbox, { target: { value: "agreed" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+
+    await waitFor(() => expect(sentInput()).toBeDefined());
+    expect(sentInput()).toMatchObject({ text: "agreed", parentMessageId: "m-parent" });
+    await waitFor(() => expect(screen.queryByText("Replying to")).not.toBeInTheDocument());
+    expect(useReplyTargetStore.getState().targets["conv-1"]).toBeUndefined();
+  });
+
+  it("keeps the reply bar when the send fails", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation SendMessage": () => {
+        throw graphqlError("FORBIDDEN", "You cannot post here");
+      },
+    });
+    useReplyTargetStore.getState().start("conv-1", target);
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "agreed" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("You cannot post here"));
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    expect(useReplyTargetStore.getState().targets["conv-1"]).toEqual(target);
+  });
+
+  it("cancels the reply with its button and with Escape", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER);
+    useReplyTargetStore.getState().start("conv-1", target);
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel reply" }));
+    expect(screen.queryByText("Replying to")).not.toBeInTheDocument();
+
+    act(() => useReplyTargetStore.getState().start("conv-1", target));
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    expect(screen.queryByText("Replying to")).not.toBeInTheDocument();
+    expect(useShellStore.getState().navigationMode).toBe(false);
+
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    expect(useShellStore.getState().navigationMode).toBe(true);
+  });
+
+  it("sends no parent from the thread reply box", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "mutation ReplyToMessage": () => ({ replyToMessage: { id: "r-1" } }),
+    });
+    useReplyTargetStore.getState().start("conv-1", target);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ThreadComposer
+          workspaceId="ws-1"
+          conversationId="conv-1"
+          thread={{ rootMessageId: "root-1", threadId: "t-1" }}
+        />
+      </QueryClientProvider>,
+    );
+    const textbox = await screen.findByRole("textbox");
+    expect(screen.queryByText("Replying to")).not.toBeInTheDocument();
+    fireEvent.change(textbox, { target: { value: "in the thread" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ReplyToMessage")).toHaveLength(1));
+    expect(JSON.stringify(callsTo(requestMock, "mutation ReplyToMessage")[0])).not.toContain(
+      "parentMessageId",
+    );
+    expect(callsTo(requestMock, "mutation SendMessage")).toEqual([]);
+    expect(useReplyTargetStore.getState().targets["conv-1"]).toEqual(target);
   });
 });

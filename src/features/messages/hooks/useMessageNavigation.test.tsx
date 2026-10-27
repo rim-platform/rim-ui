@@ -3,8 +3,14 @@ import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders as render } from "../../../test/utils";
+import { callsTo } from "../../conversations/__fixtures__/conversations";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useMessageNavigation } from "./useMessageNavigation";
+
+const requestMock = vi.hoisted(() => vi.fn());
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
+}));
 
 function Harness({ onCopy }: { onCopy: () => void }) {
   const { handleMessageListKeyDown } = useMessageNavigation({
@@ -121,5 +127,111 @@ describe("useMessageNavigation on an own message without an author object", () =
     await user.keyboard("dd");
 
     expect(onDeleteMessage).toHaveBeenCalledWith(ownEventMessage);
+  });
+});
+
+function KeysHarness({
+  onReply,
+  openThread,
+  canStartThread,
+  canPin,
+  rootThreadId = null,
+}: {
+  onReply?: (messageId: string) => void;
+  openThread: (messageId: string) => void;
+  canStartThread?: boolean;
+  canPin?: boolean;
+  rootThreadId?: string | null;
+}) {
+  const { handleMessageListKeyDown } = useMessageNavigation({
+    items: [{ id: "m-1", text: "hi", authorId: "u-2", rootThreadId }],
+    conversationId: "c-1",
+    workspaceId: "w-1",
+    currentUserId: "u-1",
+    editingMessageId: null,
+    setEditingMessageId: vi.fn(),
+    openThread,
+    onDeleteMessage: vi.fn(),
+    onForwardMessage: vi.fn(),
+    onReply,
+    canStartThread,
+    canPin,
+    scrollToIndex: vi.fn(),
+    pointerEntryRef: { current: null },
+  });
+  return (
+    <div role="listbox" aria-label="Messages" tabIndex={0} onKeyDown={handleMessageListKeyDown} />
+  );
+}
+
+/** Focuses the list and enters NAVIGATE, which selects the only message. */
+function enterNavigate() {
+  screen.getByRole("listbox").focus();
+  act(() => useShellStore.getState().setNavigationMode(true));
+}
+
+describe("useMessageNavigation reply and thread keys", () => {
+  it("r starts a reply to the selected message", async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    const openThread = vi.fn();
+    render(<KeysHarness onReply={onReply} openThread={openThread} />);
+    enterNavigate();
+
+    await user.keyboard("r");
+
+    expect(onReply).toHaveBeenCalledWith("m-1");
+    expect(openThread).not.toHaveBeenCalled();
+  });
+
+  it("t opens the selected message's thread", async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    const openThread = vi.fn();
+    render(<KeysHarness onReply={onReply} openThread={openThread} />);
+    enterNavigate();
+
+    await user.keyboard("t");
+
+    expect(openThread).toHaveBeenCalledWith("m-1");
+    expect(onReply).not.toHaveBeenCalled();
+  });
+
+  it("r does nothing without onReply", async () => {
+    const user = userEvent.setup();
+    const openThread = vi.fn();
+    render(<KeysHarness openThread={openThread} />);
+    enterNavigate();
+
+    await user.keyboard("r");
+
+    expect(openThread).not.toHaveBeenCalled();
+  });
+
+  it("t does nothing where threads cannot start and the message has none", async () => {
+    const user = userEvent.setup();
+    const openThread = vi.fn();
+    const { unmount } = render(<KeysHarness openThread={openThread} canStartThread={false} />);
+    enterNavigate();
+    await user.keyboard("t");
+    expect(openThread).not.toHaveBeenCalled();
+    unmount();
+    act(() => useShellStore.getState().setNavigationMode(false));
+
+    render(<KeysHarness openThread={openThread} canStartThread={false} rootThreadId="th-1" />);
+    enterNavigate();
+    await user.keyboard("t");
+    expect(openThread).toHaveBeenCalledWith("m-1");
+  });
+
+  it("p does not pin where pinning is not allowed", async () => {
+    const user = userEvent.setup();
+    requestMock.mockReset();
+    render(<KeysHarness openThread={vi.fn()} canPin={false} />);
+    enterNavigate();
+
+    await user.keyboard("p");
+
+    expect(callsTo(requestMock, "mutation PinMessage")).toEqual([]);
   });
 });
