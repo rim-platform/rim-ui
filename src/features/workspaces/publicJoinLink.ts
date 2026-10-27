@@ -1,4 +1,5 @@
 import {
+  asSentence,
   CONFLICT,
   FORBIDDEN,
   graphqlErrorCode,
@@ -56,14 +57,6 @@ export function linkRateLimitedMessage(seconds: number | undefined): string {
   return `Too many tries from this network. Try again ${wait}.`;
 }
 
-/** `text` as a sentence: a capital first letter and a closing full stop. */
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return trimmed;
-  const capital = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
-}
-
 /**
  * What a failed link lookup, join or join request says: one message for every invalid link,
  * the wait for a rate limit, the banned text, whether the person is a member already or asked
@@ -81,15 +74,15 @@ export function publicLinkErrorMessage(err: unknown, fallback: string): string {
     case RATE_LIMITED:
       return linkRateLimitedMessage(retryAfterSeconds(err));
     case FORBIDDEN:
-      return message.includes("banned") ? BANNED_MESSAGE : sentence(message);
+      return message.includes("banned") ? BANNED_MESSAGE : asSentence(message);
     case CONFLICT:
       if (message.includes("already a member"))
         return "You are already a member of this workspace.";
       if (message.includes("already asked")) return "Your request to join was already sent.";
       if (message.includes("no longer open")) return "This request is no longer open.";
-      return sentence(message);
+      return asSentence(message);
     case VALIDATION:
-      return sentence(message);
+      return asSentence(message);
     default:
       return message;
   }

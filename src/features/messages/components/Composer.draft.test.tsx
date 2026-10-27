@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { SERVER_FAULT_MESSAGE } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useShellStore, type DirectDraft } from "../../../shell/state/useShellStore";
 import { toast } from "../../../shared/toast/useToastStore";
@@ -186,7 +187,7 @@ describe("Composer in a draft DM", () => {
     });
     const textbox = await sendFirst("hello Bob");
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Something went wrong"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(SERVER_FAULT_MESSAGE));
     await waitFor(() => expect(textbox.value).toBe("hello Bob"));
     expect(useShellStore.getState().draftDirect).toEqual(toBob);
     expect(useDraftStore.getState().drafts[directDraftKey(toBob)]).toBe("hello Bob");

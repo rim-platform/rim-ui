@@ -561,7 +561,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
       {error && (
         <div className="flex items-start gap-2 rounded-md border border-rim-danger/30 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          Failed to load entries: {error instanceof Error ? error.message : "Unknown error"}
+          Failed to load entries: {graphqlErrorMessage(error, "unknown error")}
         </div>
       )}
 

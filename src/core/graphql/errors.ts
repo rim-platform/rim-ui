@@ -104,6 +104,52 @@ export const FEATURE_DISABLED = "FEATURE_DISABLED";
 /** The server holds as many accounts as it accepts and takes no new one. */
 export const REGISTRATION_FULL = "REGISTRATION_FULL";
 
+/** The server failed while handling the request. */
+export const INTERNAL = "INTERNAL";
+
+/** Something the server depends on, such as its database, is down. */
+export const UNAVAILABLE = "UNAVAILABLE";
+
+/** The server gave up on the request before it finished. */
+export const TIMEOUT = "TIMEOUT";
+
+/** What a request that never reached the server says. */
+export const NETWORK_ERROR_MESSAGE =
+  "Couldn't reach the server. Check your connection and try again.";
+
+/**
+ * What a server fault says: `INTERNAL`, `UNAVAILABLE`, `TIMEOUT`, or a 5xx without GraphQL
+ * errors.
+ */
+export const SERVER_FAULT_MESSAGE = "Something went wrong on the server. Try again in a moment.";
+
+/** Codes whose server message is not written for people ("internal error", "service timeout"). */
+const SERVER_FAULT_CODES = new Set([INTERNAL, UNAVAILABLE, TIMEOUT]);
+
+/** Whether `err` is `fetch` failing to reach the server at all. */
+function isNetworkFailure(err: unknown): boolean {
+  return (
+    err instanceof TypeError &&
+    /failed to fetch|fetch failed|networkerror|load failed|network request failed/i.test(
+      err.message,
+    )
+  );
+}
+
+/** The HTTP status of a failed request's response, if `err` carries one. */
+function responseStatus(err: unknown): number | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const status = (err as { response?: { status?: unknown } }).response?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/** Whether `err` carries a response object, as graphql-request's `ClientError` does. */
+function hasResponse(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const response = (err as { response?: unknown }).response;
+  return typeof response === "object" && response !== null;
+}
+
 /**
  * The feature a failed request was refused for: a `FEATURE_DISABLED` GraphQL error's `feature`
  * extension, or a `FeatureDisabledError` from a REST route. `undefined` for anything else.
@@ -161,7 +207,9 @@ export function timedOutMessage(until: string): string {
  * The server's human-readable message for a failed request, else `err.message`, else
  * `fallback`. A `TIMED_OUT` error reads "You are timed out until …", a `FEATURE_DISABLED` one
  * "<Feature> is switched off on this server", a `RATE_LIMITED` one "Slow down: try again in
- * N s", and an `UPSTREAM_UNAVAILABLE` one names no server id, wherever they surface.
+ * N s", an `UPSTREAM_UNAVAILABLE` one names no server id, a request that never reached the
+ * server says so, and a server fault reads `SERVER_FAULT_MESSAGE`, wherever they surface. Never
+ * the serialized response of a `ClientError`: one without GraphQL errors gets `fallback`.
  */
 export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const until = timedOutUntil(err);
@@ -170,8 +218,34 @@ export function graphqlErrorMessage(err: unknown, fallback: string): string {
   const feature = disabledFeatureOf(err);
   if (feature) return featureOffMessage(feature);
   if (graphqlErrorCode(err) === UPSTREAM_UNAVAILABLE) return UPSTREAM_UNAVAILABLE_MESSAGE;
+  if (isNetworkFailure(err)) return NETWORK_ERROR_MESSAGE;
+  const code = graphqlErrorCode(err);
+  if (code && SERVER_FAULT_CODES.has(code)) return SERVER_FAULT_MESSAGE;
   const message = firstGraphQLError(err)?.message;
   if (typeof message === "string" && message.trim()) return message;
+  if (hasResponse(err)) {
+    const status = responseStatus(err);
+    return status !== undefined && status >= 500 ? SERVER_FAULT_MESSAGE : fallback;
+  }
   if (err instanceof Error && err.message) return err.message;
   return fallback;
+}
+
+/** `text` as a sentence: a capital first letter and a closing full stop. */
+export function asSentence(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  const capital = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+}
+
+/**
+ * Why `err` failed, as one sentence for a person: `graphqlErrorMessage` with a capital first
+ * letter and a closing full stop.
+ *
+ * @param err - What the request failed with.
+ * @param fallback - What to say when the failure names no reason.
+ */
+export function errorSentence(err: unknown, fallback: string): string {
+  return asSentence(graphqlErrorMessage(err, fallback));
 }

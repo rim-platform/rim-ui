@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { KeyRound } from "lucide-react";
 
@@ -28,13 +28,13 @@ import {
   defaultDeviceName,
   forgetDeviceKeys,
   forgetKeysTheServerNeverSaw,
-  listDeviceKeyAccounts,
   NoDeviceKeysError,
   recoverDeviceKeys,
   signInWithPassword,
   SignInCancelled,
   type LocalKeyAccount,
 } from "../api/keyIdentity";
+import { useDeviceKeyAccounts } from "../api/useDeviceKeyAccounts";
 import { parseRecoveryPhrase } from "../browser/recoveryKit";
 import { BrowserKeyNotice } from "./BrowserKeyNotice";
 
@@ -56,11 +56,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
   const here = inBrowser ? "this browser" : "this computer";
   const qc = useQueryClient();
   const endpoint = getGraphqlEndpoint();
-  const accounts = useQuery({
-    queryKey: queryKeys.deviceKeyAccounts(endpoint),
-    queryFn: listDeviceKeyAccounts,
-    enabled: capabilities.deviceKeys,
-  });
+  const accounts = useDeviceKeyAccounts();
   const [openId, setOpenId] = useState<string | null>(null);
   const [revokedId, setRevokedId] = useState<string | null>(null);
   // Said after keys the server never saw were removed, when their account is gone from the list.

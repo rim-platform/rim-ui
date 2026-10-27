@@ -118,9 +118,16 @@ export function ToastItem({ toast: t }: ToastItemProps) {
 
         {/* Text area */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-rim-text">{t.title}</p>
+          <p className="line-clamp-3 break-words text-sm font-medium text-rim-text" title={t.title}>
+            {t.title}
+          </p>
           {t.description && (
-            <p className="mt-0.5 line-clamp-2 text-xs text-rim-text-muted">{t.description}</p>
+            <p
+              className="mt-0.5 line-clamp-3 break-words text-xs text-rim-text-muted"
+              title={t.description}
+            >
+              {t.description}
+            </p>
           )}
           {t.action && (
             <button

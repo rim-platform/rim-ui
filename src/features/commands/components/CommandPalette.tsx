@@ -25,6 +25,7 @@ import {
   unfilledRequiredArguments,
   type ArgumentContext,
 } from "../runtime/commandArguments";
+import { commandSuccessText } from "../runtime/commandResultText";
 import { currentCommandContext } from "../runtime/commandContext";
 import { runWithHumanConfirmation } from "../runtime/humanConfirmation";
 import {
@@ -301,11 +302,7 @@ export function CommandPalette() {
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
-          const payloadPreview =
-            result.payload !== null && result.payload !== undefined
-              ? ` — ${String(result.payload).slice(0, 80)}`
-              : "";
-          toast.success(`${command.title}${payloadPreview}`);
+          toast.success(commandSuccessText(command.title, result));
         }
       } catch (err) {
         // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)

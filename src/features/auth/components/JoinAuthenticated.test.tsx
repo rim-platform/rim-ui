@@ -6,7 +6,9 @@
  *   - `WORKSPACE` arm: renders the workspace join CTA (with and without a
  *     workspace name in the header) and wires the join button to the
  *     mutation + navigation.
- *   - `INSTANCE` arm: renders the existing-user error copy.
+ *     An account already in the workspace is told so and offered **Open**; a revoked invite
+ *     shows the dead-link page; a ban and other refusals read as one sentence.
+ *   - `INSTANCE` arm: renders the existing-user error copy and **Go to RIM**.
  *
  * The mocking style mirrors `JoinPage.test.tsx` — `vi.mock` for the
  * `useJoinServerByInviteMutation` hook, `useWorkspaceStore`, and
@@ -51,11 +53,17 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   ) => selector({ workspaceId: null, setWorkspaceId: mockSetWorkspaceId }),
 }));
 
-vi.mock("../../workspaces/api/useMyServers", () => ({
-  useMyServers: () => ({ data: [] }),
+const myServers = vi.hoisted(() => ({
+  data: [] as { id: string; name: string; owner: null }[],
 }));
 
+vi.mock("../../workspaces/api/useMyServers", () => ({
+  useMyServers: () => myServers,
+}));
+
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { JoinAuthenticated } from "./JoinAuthenticated";
+import { DEAD_INVITE_MESSAGE } from "./InvalidTokenState";
 import { InviteTokenType } from "../types";
 
 function renderInRouter(ui: React.ReactElement) {
@@ -70,7 +78,21 @@ describe("JoinAuthenticated", () => {
       isPending: false,
       error: null,
     };
+    myServers.data = [];
   });
+
+  /** Renders the Acme Corp invite with the join mutation failed with `error`. */
+  function renderRefused(error: Error) {
+    mockJoinServerState = { mutate: mockJoinServerMutate, isPending: false, error };
+    renderInRouter(
+      <JoinAuthenticated
+        token="rim_inv_secret"
+        tokenType={InviteTokenType.WORKSPACE}
+        workspaceName="Acme Corp"
+        workspaceId="server-1"
+      />,
+    );
+  }
 
   describe("WORKSPACE token", () => {
     it("renders the join CTA with the workspace name in the header", () => {
@@ -140,7 +162,7 @@ describe("JoinAuthenticated", () => {
       expect(button).toBeDisabled();
     });
 
-    it("surfaces the mutation error message", () => {
+    it("surfaces the mutation error as a sentence", () => {
       mockJoinServerState = {
         mutate: mockJoinServerMutate,
         isPending: false,
@@ -155,7 +177,50 @@ describe("JoinAuthenticated", () => {
         />,
       );
 
-      expect(screen.getByText("Invite already used")).toBeInTheDocument();
+      expect(screen.getByText("Invite already used.")).toBeInTheDocument();
+    });
+
+    it("says the account is already a member and opens the workspace", async () => {
+      myServers.data = [{ id: "server-1", name: "Acme Corp", owner: null }];
+      const user = userEvent.setup();
+      renderInRouter(
+        <JoinAuthenticated
+          token="ws-token-abc"
+          tokenType={InviteTokenType.WORKSPACE}
+          workspaceName="Acme Corp"
+          workspaceId="server-1"
+        />,
+      );
+
+      expect(screen.getByText("You're already a member of Acme Corp.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Join workspace" })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Open Acme Corp" }));
+      expect(mockSetWorkspaceId).toHaveBeenCalledWith("server-1");
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+    });
+
+    it("turns a CONFLICT refusal into the member state", () => {
+      renderRefused(graphqlError("CONFLICT", "already a member of this server"));
+
+      expect(screen.getByText("You're already a member of Acme Corp.")).toBeInTheDocument();
+      expect(screen.queryByText(/rim_inv_|serialized/)).not.toBeInTheDocument();
+    });
+
+    it("shows the dead-link page when the invite was revoked", async () => {
+      renderRefused(graphqlError("FORBIDDEN", "permission denied"));
+
+      expect(screen.getByText(DEAD_INVITE_MESSAGE)).toBeInTheDocument();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Go to RIM" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+    });
+
+    it("says a banned account is banned", () => {
+      renderRefused(graphqlError("FORBIDDEN", "you are banned from this workspace"));
+
+      expect(screen.getByText("You are banned from this workspace.")).toBeInTheDocument();
+      expect(screen.queryByText(DEAD_INVITE_MESSAGE)).not.toBeInTheDocument();
     });
   });
 
@@ -171,6 +236,16 @@ describe("JoinAuthenticated", () => {
         ),
       ).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Join workspace" })).not.toBeInTheDocument();
+    });
+
+    it("offers Go to RIM", async () => {
+      const user = userEvent.setup();
+      renderInRouter(
+        <JoinAuthenticated token="inst-token-abc" tokenType={InviteTokenType.INSTANCE} />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Go to RIM" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
     });
   });
 });

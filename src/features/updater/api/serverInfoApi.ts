@@ -1,6 +1,6 @@
 import { GraphQLClient, gql } from "graphql-request";
 
-import { graphqlClient } from "../../../core/graphql/client";
+import { graphqlClient, readableClientError } from "../../../core/graphql/client";
 import type {
   DmInbound,
   DmOutbound,
@@ -197,7 +197,7 @@ export function fetchServerInfo(): Promise<KnownServerInfo> {
  * cookies; for checking a server before the app moves to it.
  */
 export function fetchServerInfoAt(endpoint: string): Promise<KnownServerInfo> {
-  return readServerInfo(new GraphQLClient(endpoint));
+  return readServerInfo(new GraphQLClient(endpoint, { responseMiddleware: readableClientError }));
 }
 
 async function readServerInfo(client: GraphQLClient): Promise<KnownServerInfo> {

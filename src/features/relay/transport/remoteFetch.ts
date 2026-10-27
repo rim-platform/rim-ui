@@ -9,6 +9,7 @@
 
 import { GraphQLClient } from "graphql-request";
 
+import { readableClientError } from "../../../core/graphql/client";
 import { authHeaders } from "../../../core/graphql/csrf";
 import { getApiOrigin } from "../../../core/graphql/config";
 import { utf8 } from "../../key-identity/browser/bytes";
@@ -176,6 +177,7 @@ export function hostClient(host: string): GraphQLClient {
   if (!client) {
     client = new GraphQLClient(`${getApiOrigin()}/api/remote/${host}/api`, {
       fetch: async (_url, init) => sendGraphql(host, String(init?.body ?? "")),
+      responseMiddleware: readableClientError,
     });
     hostClients.set(host, client);
   }

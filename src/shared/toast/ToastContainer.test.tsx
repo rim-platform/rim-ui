@@ -29,4 +29,12 @@ describe("ToastContainer", () => {
     expect(screen.getByText("Toast 1")).toBeInTheDocument();
     expect(screen.getByText("Toast 2")).toBeInTheDocument();
   });
+
+  it("sits at the top right, clear of the composer", () => {
+    useToastStore.getState().add({ variant: "info", title: "Placed" });
+    const { container } = render(<ToastContainer />);
+    const stack = container.firstChild as HTMLElement;
+    expect(stack).toHaveClass("top-20", "right-4");
+    expect(stack).not.toHaveClass("bottom-4");
+  });
 });

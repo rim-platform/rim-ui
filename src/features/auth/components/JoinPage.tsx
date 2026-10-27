@@ -15,6 +15,7 @@
  * 7. Otherwise: renders `JoinForm` with the appropriate variant copy and the registration mode.
  *    An open server takes no token at signup, so there `JoinForm` signs up without the link's
  *    token and accepts a workspace invite once the account exists.
+ *    A workspace invite also offers sign-in to an existing account (`InviteSignIn`).
  *
  * Post-signup navigation:
  * - Workspace token (`serverId` present): set workspace, navigate to `/`.
@@ -42,6 +43,7 @@ import { InviteTokenType } from "../types";
 import { JoinForm } from "./JoinForm";
 import { JoinAuthenticated } from "./JoinAuthenticated";
 import { InvalidTokenState } from "./InvalidTokenState";
+import { InviteSignIn } from "./InviteSignIn";
 import { RestoringSession } from "./RestoringSession";
 import { useNoReferrerMeta } from "../hooks/useNoReferrerMeta";
 
@@ -70,6 +72,7 @@ export function JoinPage() {
         }
         navigate("/");
       }}
+      onSignedIn={(userId) => setSession({ userId })}
     />
   );
 }
@@ -110,6 +113,8 @@ interface JoinPageWithTokenProps {
   isHydrating: boolean;
   isAuthenticated: boolean;
   onSignupSuccess: (userId: string, serverId: string | null) => void;
+  /** Called when an existing account signs in on the page; the page then offers the join. */
+  onSignedIn: (userId: string) => void;
 }
 
 function JoinPageWithToken({
@@ -117,6 +122,7 @@ function JoinPageWithToken({
   isHydrating,
   isAuthenticated,
   onSignupSuccess,
+  onSignedIn,
 }: JoinPageWithTokenProps) {
   const { data: preview, isPending, error, refetch } = usePreviewInviteToken(token);
   const { data: serverConfig, isPending: configPending } = useServerConfig();
@@ -172,6 +178,15 @@ function JoinPageWithToken({
       ownerName={preview.workspace?.ownerDisplayName}
       registrationMode={serverConfig?.registrationMode}
       onSuccess={onSignupSuccess}
+      signIn={
+        preview.tokenType === InviteTokenType.WORKSPACE ? (
+          <InviteSignIn
+            token={token}
+            workspaceName={preview.workspace?.serverName}
+            onSignedIn={onSignedIn}
+          />
+        ) : undefined
+      }
     />
   );
 }

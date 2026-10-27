@@ -10,6 +10,7 @@ import {
   ToggleRight,
 } from "lucide-react";
 
+import { errorSentence } from "../../../core/graphql/errors";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
   useCreateKeybindMutation,
@@ -429,7 +430,9 @@ export function KeybindSettings() {
             </button>
           </div>
           {createMutation.isError && (
-            <p className="text-[11px] text-rim-danger">{(createMutation.error as Error).message}</p>
+            <p className="text-[11px] text-rim-danger">
+              {errorSentence(createMutation.error, "The keybind could not be created.")}
+            </p>
           )}
         </div>
       )}

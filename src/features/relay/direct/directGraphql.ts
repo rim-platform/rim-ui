@@ -5,6 +5,7 @@
 
 import { GraphQLClient } from "graphql-request";
 
+import { readableClientError } from "../../../core/graphql/client";
 import { directTransport, type DirectTransport } from "./directTransport";
 
 /** A GraphQL client whose requests go to `serverId` directly, over `transport`. */
@@ -20,6 +21,7 @@ export function directClient(
         headers: { "Content-Type": res.contentType ?? "application/json" },
       });
     },
+    responseMiddleware: readableClientError,
   });
 }
 

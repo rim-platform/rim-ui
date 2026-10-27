@@ -19,8 +19,14 @@ vi.mock("../api/useUserCommands", () => ({
   useUserCommandSteps: vi.fn(),
 }));
 
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { useCommands } from "../api/useCommands";
-import { useUserCommand, useUserCommandSteps, type SavedUserCommand } from "../api/useUserCommands";
+import {
+  useCreateUserCommandMutation,
+  useUserCommand,
+  useUserCommandSteps,
+  type SavedUserCommand,
+} from "../api/useUserCommands";
 import { UserCommandSettings } from "./UserCommandSettings";
 import type { CommandDefinition } from "../types";
 
@@ -238,5 +244,22 @@ describe("UserCommandSettings list", () => {
     render(<UserCommandSettings />);
     expect(screen.getByText("user.standup")).toBeInTheDocument();
     expect(screen.queryByText(/steps?$/)).not.toBeInTheDocument();
+  });
+
+  it("shows a refused new command as one sentence, without the request", () => {
+    vi.mocked(useUserCommandSteps).mockReturnValue({
+      data: undefined,
+    } as unknown as ReturnType<typeof useUserCommandSteps>);
+    vi.mocked(useCreateUserCommandMutation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error: graphqlError("CONFLICT", "user command already exists"),
+    } as unknown as ReturnType<typeof useCreateUserCommandMutation>);
+    render(<UserCommandSettings />);
+    fireEvent.click(screen.getByRole("button", { name: /New command/ }));
+
+    expect(screen.getByText("User command already exists.")).toBeInTheDocument();
+    expect(screen.queryByText(/serialized response/)).not.toBeInTheDocument();
   });
 });
