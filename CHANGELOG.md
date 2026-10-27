@@ -215,6 +215,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   the app, such as **Search Messages** or **Open Settings**; **Mark All as Read** and **Reload
   Commands** say what they did.
 - Times on a 12-hour clock read "9:15 PM" instead of "09:15 PM".
+- The four conversation navigation commands are named alike: **Previous Conversation**, **Next
+  Conversation**, **Previous Unread Conversation** and **Next Unread Conversation**; they go through
+  DMs and groups as well as channels.
 
 ## [0.0.5] - 2026-10-26
 
