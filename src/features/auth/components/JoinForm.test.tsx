@@ -131,6 +131,28 @@ describe("JoinForm — the key signup", () => {
     expect(screen.getByLabelText(/invite code/i)).toBeDisabled();
   });
 
+  it("says Account created and hides the invite code field while the kit is shown", async () => {
+    const user = userEvent.setup();
+    renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm
+          variant="CODE"
+          token={null}
+          registrationMode={RegistrationMode.INVITE_ONLY}
+          onSuccess={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Create your RIM account")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /create key account/i }));
+
+    expect(screen.getByText("Account created")).toBeInTheDocument();
+    expect(screen.queryByText("Create your RIM account")).toBeNull();
+    expect(screen.queryByLabelText(/invite code/i)).toBeNull();
+    expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+  });
+
   it("hands no token to the key form on a relay that takes key signups with a proof-of-work", () => {
     renderWithServerInfo(
       <MemoryRouter>
@@ -252,6 +274,22 @@ describe("JoinForm — invite links by registration mode", () => {
 
     expect(mockJoinMutate).toHaveBeenCalledWith("ws-tok", expect.anything());
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", "ws-acme"));
+  });
+
+  it("joins the workspace as soon as the account exists, before the kit is closed", async () => {
+    const user = userEvent.setup();
+    const onSuccess = renderLink(InviteTokenType.WORKSPACE, "ws-tok", RegistrationMode.OPEN);
+
+    await user.click(screen.getByRole("button", { name: /create key account/i }));
+
+    expect(mockJoinMutate).toHaveBeenCalledWith("ws-tok", expect.anything());
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    await signUp(user);
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("user-key", "ws-acme"));
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(mockJoinMutate).toHaveBeenCalledTimes(1);
   });
 
   it("signs up from an instance link on an open server with no token, and joins nothing", async () => {

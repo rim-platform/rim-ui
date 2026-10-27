@@ -11,8 +11,10 @@
  *
  * An open server (`registrationMode` `OPEN`) takes no token at signup, whichever variant: there
  * the signup sends none, a workspace invite, from a link or a code, is accepted with
- * `joinServerByInvite` once the account exists, and an instance invite is not needed. A failure
- * of that join says the account is ready and lets the person go on without the workspace.
+ * `joinServerByInvite` as soon as the account exists, before the person closes the recovery kit,
+ * and an instance invite is not needed. A failure of that join says the account is ready and
+ * lets the person go on without the workspace. While the recovery kit of the new account is
+ * shown, the header says "Account created" and the invite and sign-in parts are gone.
  *
  * The server's instance notice shows at the top, its abuse contact at the bottom. When the server
  * has terms of service, the signup asks for "I accept the terms of use" and sends the terms URL
@@ -37,7 +39,7 @@
  * A workspace invite link can pass `signIn`, shown above the signup.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
@@ -57,6 +59,10 @@ import { RegistrationFullNotice } from "./RegistrationFullNotice";
 import { NoKeysHere } from "./NoKeysHere";
 
 type JoinFormVariant = InviteTokenType | "CODE";
+
+/** How joining the invite's workspace after the signup went. */
+type JoinOutcome =
+  { state: "pending" } | { state: "joined"; serverId: string } | { state: "failed"; error: string };
 
 interface JoinFormProps {
   /**
@@ -136,8 +142,13 @@ export function JoinForm({
   const byCode = variant === "CODE";
   const invite = useInviteCode(registrationMode);
   const join = useJoinServerMutation();
-  // The new account while its invite's workspace is joined, and why that failed, if it did.
-  const [joining, setJoining] = useState<{ userId: string; error: string | null } | null>(null);
+  // The new account, from the moment the server created it.
+  const [createdUserId, setCreatedUserId] = useState<string | null>(null);
+  // The new account once the person is done with its recovery kit, while its workspace is joined.
+  const [finishedUserId, setFinishedUserId] = useState<string | null>(null);
+  const [joinOutcome, setJoinOutcome] = useState<JoinOutcome | null>(null);
+  const joinStarted = useRef(false);
+  const opened = useRef(false);
   const openServer = registrationMode === RegistrationMode.OPEN;
   const signupTokens = byCode ? invite.tokens : openServer ? {} : tokenFields(variant, token);
   // The workspace invite to accept once the account exists, where the signup could not take it.
@@ -156,22 +167,46 @@ export function JoinForm({
     (byCode ? invite.preview?.workspace?.serverName : workspaceName) ?? "the workspace";
 
   /**
-   * Opens the new account, joining the invite's workspace first where the signup could not take
+   * Starts joining the invite's workspace once the account exists, where the signup could not
+   * take the invite.
+   */
+  function accountCreated(userId: string) {
+    setCreatedUserId(userId);
+    if (!joinAfter || joinStarted.current) return;
+    joinStarted.current = true;
+    setJoinOutcome({ state: "pending" });
+    join.mutate(joinAfter, {
+      onSuccess: (data) =>
+        setJoinOutcome({ state: "joined", serverId: data.joinServerByInvite.serverId }),
+      onError: (err) =>
+        setJoinOutcome({
+          state: "failed",
+          error: graphqlErrorMessage(err, "Could not join the workspace."),
+        }),
+    });
+  }
+
+  /**
+   * Opens the new account, once the invite's workspace is joined where the signup could not take
    * the invite.
    */
   function signedUp(userId: string, serverId: string | null) {
-    const joinToken = joinAfter;
-    if (!joinToken) {
+    if (!joinAfter) {
       onSuccess(userId, serverId);
       return;
     }
-    setJoining({ userId, error: null });
-    join.mutate(joinToken, {
-      onSuccess: (data) => onSuccess(userId, data.joinServerByInvite.serverId),
-      onError: (err) =>
-        setJoining({ userId, error: graphqlErrorMessage(err, "Could not join the workspace.") }),
-    });
+    accountCreated(userId);
+    setFinishedUserId(userId);
   }
+
+  useEffect(() => {
+    if (opened.current || !finishedUserId || joinOutcome?.state !== "joined") return;
+    opened.current = true;
+    onSuccess(finishedUserId, joinOutcome.serverId);
+  }, [finishedUserId, joinOutcome, onSuccess]);
+
+  const joinError = joinOutcome?.state === "failed" ? joinOutcome.error : null;
+  const created = createdUserId !== null;
 
   /** Offers a failed signup to the invite code field, which shows a refused token itself. */
   function inviteRefused(err: unknown): boolean {
@@ -185,8 +220,10 @@ export function JoinForm({
 
         <header className="text-center">
           <BrandHeading />
-          <p className="mt-1 text-sm text-rim-text-muted">{headerCopy(variant, workspaceName)}</p>
-          {variant === InviteTokenType.WORKSPACE && workspaceName && (
+          <p className="mt-1 text-sm text-rim-text-muted">
+            {created ? "Account created" : headerCopy(variant, workspaceName)}
+          </p>
+          {!created && variant === InviteTokenType.WORKSPACE && workspaceName && (
             <>
               <InviteByline invitedBy={invitedBy} ownerName={ownerName} />
               {!signIn && <p className="mt-1 text-sm text-rim-text-faint">Create your account.</p>}
@@ -194,20 +231,20 @@ export function JoinForm({
           )}
         </header>
 
-        {signIn}
-        {signIn && (
+        {!created && signIn}
+        {!created && signIn && (
           <p className="text-center text-sm text-rim-text-muted">
             New to RIM? Create your account.
           </p>
         )}
 
         <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
-          {joining ? (
-            joining.error ? (
+          {finishedUserId && joinOutcome ? (
+            joinError ? (
               <div role="alert" className="space-y-3 text-sm">
                 <p className="font-medium text-rim-text">Your account is ready</p>
                 <p className="text-rim-danger">
-                  It could not join {invitedWorkspace}: {joining.error}
+                  It could not join {invitedWorkspace}: {joinError}
                 </p>
                 <p className="text-rim-text-muted">
                   Continue to the app and join with the invite link or code from there.
@@ -215,7 +252,7 @@ export function JoinForm({
                 <Button
                   type="button"
                   className="w-full"
-                  onClick={() => onSuccess(joining.userId, null)}
+                  onClick={() => onSuccess(finishedUserId, null)}
                 >
                   Continue
                 </Button>
@@ -233,7 +270,7 @@ export function JoinForm({
             <NoKeysHere />
           ) : (
             <div className="space-y-4">
-              {byCode && (
+              {byCode && !created && (
                 <InviteCodeField invite={invite} mode={registrationMode} disabled={keySignupBusy} />
               )}
               <KeySignupForm
@@ -243,6 +280,7 @@ export function JoinForm({
                 onBusyChange={setKeySignupBusy}
                 ready={inviteReady}
                 onFailure={inviteRefused}
+                onAccountCreated={accountCreated}
               />
             </div>
           )}

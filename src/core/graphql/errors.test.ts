@@ -158,6 +158,16 @@ describe("TIMED_OUT and RATE_LIMITED error extensions", () => {
     expect(graphqlErrorMessage(fractional, "fallback")).toBe("Slow down: try again in 1 s");
   });
 
+  it.each([
+    [535, "Slow down: try again in 9 minutes"],
+    [60, "Slow down: try again in 1 minute"],
+    [59.2, "Slow down: try again in 1 minute"],
+    [59, "Slow down: try again in 59 s"],
+  ])("RATE_LIMITED of %s s reads %s", (seconds, expected) => {
+    const err = withExtensions("x", { code: RATE_LIMITED, retryAfterSeconds: seconds });
+    expect(graphqlErrorMessage(err, "fallback")).toBe(expected);
+  });
+
   it("words a RATE_LIMITED failure without seconds as a moment", () => {
     expect(graphqlErrorMessage(withExtensions("x", { code: RATE_LIMITED }), "fallback")).toBe(
       "Slow down: try again in a moment",

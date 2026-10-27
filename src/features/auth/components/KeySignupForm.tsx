@@ -4,6 +4,7 @@ import { isTauri } from "@tauri-apps/api/core";
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import {
+  asSentence,
   CONFLICT,
   EXPIRED_TOKEN,
   graphqlErrorCode,
@@ -40,6 +41,7 @@ import { useSignupMinimumAge } from "../api/useMinimumAge";
 import { isRegistrationFull, REGISTRATION_FULL_MESSAGE } from "../api/registrationFull";
 import { checkDisplayName } from "../displayName";
 import { EMPTY_NEW_PASSWORD, keepSignedInByDefault, newPasswordProblem } from "../password";
+import { usernameHint, usernameProblem } from "../username";
 import { JoinField } from "./JoinField";
 import { KeepSignedInCheckbox, NewPasswordFields } from "./PasswordFields";
 import { MinimumAgeConfirmation } from "./MinimumAgeConfirmation";
@@ -62,6 +64,11 @@ interface KeySignupFormProps {
    * invite code field does with a refused token.
    */
   onFailure?: (err: unknown) => boolean;
+  /**
+   * Told as soon as the server has created the account, before the person is done with the
+   * recovery kit.
+   */
+  onAccountCreated?: (userId: string) => void;
 }
 
 /** `retry` offers to try again: a refused proof-of-work is searched for again. */
@@ -112,8 +119,18 @@ function signupError(err: unknown): SignupError {
             "An account on this server already uses these keys. Sign in with this device from the sign-in page.",
           )
         : { field: "username", message: "This username is taken. Choose another." };
-    case VALIDATION:
-      return general(graphqlErrorMessage(err, "The server did not accept these details."));
+    case VALIDATION: {
+      const message = graphqlErrorMessage(err, "");
+      if (/\busernames?\b/i.test(message)) {
+        return { field: "username", message: asSentence(message) };
+      }
+      if (/this name is reserved/i.test(message)) {
+        return general(
+          "This name is reserved on this server. Choose another username or display name.",
+        );
+      }
+      return general(asSentence(message) || "The server did not accept these details.");
+    }
     case RATE_LIMITED: {
       const seconds = retryAfterSeconds(err);
       if (seconds === undefined) {
@@ -182,8 +199,9 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
  * the person can cancel; a relay whose discovery document says it is full is not asked. A server
  * with terms of service, or a minimum age, has the person accept them, or confirm it, before the
  * keys are made. After a refusal they can try again with the same keys,
- * so a saved kit stays valid, or discard the keys. Only where this app can hold an identity
- * key.
+ * so a saved kit stays valid, or start over with new keys where the kit was saved first. The
+ * username is checked against the server's rules before anything is sent. Only where this app
+ * can hold an identity key.
  */
 export function KeySignupForm({
   tokens,
@@ -192,6 +210,7 @@ export function KeySignupForm({
   onBusyChange,
   ready = true,
   onFailure,
+  onAccountCreated,
 }: KeySignupFormProps) {
   const qc = useQueryClient();
   // Read once: the form follows one flow from start to end.
@@ -267,6 +286,7 @@ export function KeySignupForm({
 
   /** The account exists: open it now, or once the person is done with the kit. */
   function accountCreated(result: KeySignupResult) {
+    onAccountCreated?.(result.userId);
     if (!kitAfter) {
       finish(result);
       return;
@@ -320,6 +340,11 @@ export function KeySignupForm({
     e.preventDefault();
     setFormError(null);
     setCanRetry(false);
+    const nameProblem = usernameProblem(username);
+    if (nameProblem) {
+      setUsernameError(nameProblem);
+      return;
+    }
     const nameError = checkDisplayName(displayName);
     if (nameError) {
       setDisplayNameError(nameError);
@@ -408,6 +433,7 @@ export function KeySignupForm({
           if (usernameError) setUsernameError(null);
         }}
         placeholder="yourname"
+        hint={usernameHint(username)}
         error={usernameError}
         required
       />
@@ -422,7 +448,7 @@ export function KeySignupForm({
         hint="If left blank, your username will be shown."
         error={displayNameError}
       />
-      {!draft && (
+      {(!draft || kitAfter) && (
         <JoinField
           label="Name of this device"
           value={deviceName}
@@ -430,6 +456,7 @@ export function KeySignupForm({
           placeholder="Laptop"
           maxLength={64}
           required
+          disabled={draft !== null}
         />
       )}
       {draft && !kitAfter && (
@@ -465,13 +492,27 @@ export function KeySignupForm({
       )}
       {storage.prompt}
       {draft ? (
-        <div className="flex gap-2">
-          <Button type="submit" className="flex-1" isLoading={busy} disabled={!canSubmit}>
-            Create account
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => void discard()} disabled={busy}>
-            Discard keys
-          </Button>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1" isLoading={busy} disabled={!canSubmit}>
+              Create account
+            </Button>
+            {!kitAfter && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void discard()}
+                disabled={busy}
+              >
+                Start over
+              </Button>
+            )}
+          </div>
+          {!kitAfter && (
+            <p className="text-xs text-rim-text-faint">
+              Start over makes new keys and a new recovery kit; the kit you saved stops working.
+            </p>
+          )}
         </div>
       ) : (
         <Button type="submit" className="w-full" isLoading={busy} disabled={!canSubmit}>
