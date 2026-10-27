@@ -23,6 +23,8 @@ vi.mock("../contacts/identity", () => identity);
 vi.mock("../crypto/relayCrypto", () => ({ relayCrypto: () => crypto }));
 vi.mock("../runtime/relayRuntime", () => ({ relayProcessor: () => processor }));
 vi.mock("../../conversations/api/useChannelMembership", () => membership);
+const conversations = vi.hoisted(() => ({ fetchConversation: vi.fn() }));
+vi.mock("../../conversations/api/useConversation", () => conversations);
 vi.mock("../../e2ee/runtime/session", () => ({ e2eeSession: async () => null }));
 vi.mock("../../e2ee/runtime/groups", () => ({ processWelcomes: vi.fn() }));
 
@@ -48,9 +50,11 @@ beforeEach(() => {
     crypto.verifyCard,
     processor.verifyHeld,
     membership.leaveConversation,
+    conversations.fetchConversation,
   ]) {
     fn.mockReset();
   }
+  conversations.fetchConversation.mockResolvedValue({ id: "conv-1", conversationType: "DIRECT" });
   useRelayStore.getState().reset();
   useRelayStore
     .getState()
@@ -96,8 +100,12 @@ describe("DmRequestInbox", () => {
     await waitFor(() => expect(api.ignoreDmRequest).toHaveBeenCalledWith("req-1"));
   });
 
-  it("asks before blocking, then blocks the sender and leaves the conversation through its home", async () => {
+  it("asks before blocking, then blocks the sender and leaves a group through its home", async () => {
     const user = userEvent.setup();
+    conversations.fetchConversation.mockResolvedValue({
+      id: "conv-1",
+      conversationType: "GROUP",
+    });
     renderWithProviders(<DmRequestInbox />);
     expect(await screen.findByText("Alice")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Block" }));
@@ -108,6 +116,18 @@ describe("DmRequestInbox", () => {
     await waitFor(() =>
       expect(membership.leaveConversation).toHaveBeenCalledWith("home-direct", "conv-1"),
     );
+  });
+
+  it("blocks a DM's sender and leaves nothing", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<DmRequestInbox />);
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    await user.click(within(dialog).getByRole("button", { name: "Block" }));
+    await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
+    await waitFor(() => expect(conversations.fetchConversation).toHaveBeenCalled());
+    expect(membership.leaveConversation).not.toHaveBeenCalled();
   });
 
   it("asks before blocking from the context menu", async () => {

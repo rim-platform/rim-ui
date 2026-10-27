@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { asSentence, graphqlErrorMessage } from "../../../core/graphql/errors";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { leaveConversation } from "../../conversations/api/useChannelMembership";
+import { fetchConversation } from "../../conversations/api/useConversation";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { processWelcomes } from "../../e2ee/runtime/groups";
 import { e2eeSession } from "../../e2ee/runtime/session";
@@ -80,8 +82,8 @@ interface DmRequestActionsOptions {
  * The decisions on one message request, shared by the request inbox and the bar a request's
  * conversation shows instead of its composer: the sender's verified name, and Accept, Read first,
  * Ignore, Block and Report. Block asks first: `askBlock` opens the confirmation
- * (`confirmingBlock`), `block` runs it and says so in a toast. One runs at a time (`busy`); a
- * failure is a toast.
+ * (`confirmingBlock`), `block` runs it, leaves a group's conversation and says so in a toast. One
+ * runs at a time (`busy`); a failure is a toast.
  */
 export function useDmRequestActions(request: DmRequestView, options: DmRequestActionsOptions = {}) {
   const qc = useQueryClient();
@@ -156,11 +158,15 @@ export function useDmRequestActions(request: DmRequestView, options: DmRequestAc
     await blockPrincipal(request.fromPrincipalId);
     await qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals });
     const spaceId = await bindRequestSpace(request).catch(() => null);
-    if (spaceId) {
-      await leaveConversation(spaceId, request.conversationId).catch((err: unknown) =>
-        logger.warn("[RIM:relay] leaving a blocked sender's conversation failed:", err),
-      );
-    }
+    if (!spaceId) return;
+    // A group is left through its home; a DM cannot be left, and the relay drops what follows.
+    const conversation = await fetchConversation(qc, spaceId, request.conversationId).catch(
+      () => null,
+    );
+    if (conversation?.conversationType !== ConversationTypeEnum.GROUP) return;
+    await leaveConversation(spaceId, request.conversationId).catch((err: unknown) =>
+      logger.warn("[RIM:relay] leaving a blocked sender's group failed:", err),
+    );
   }
 
   return {
