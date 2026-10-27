@@ -6,6 +6,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { useToastStore } from "../../../shared/toast";
 import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
 import type { BlockedPrincipalView } from "../api/relayApi";
+import { useContactStore } from "../contacts/useContactStore";
 import { useRelayStore } from "../state/useRelayStore";
 
 const requestMock = vi.hoisted(() => vi.fn());
@@ -42,6 +43,7 @@ const STRANGER: BlockedPrincipalView = {
 beforeEach(() => {
   requestMock.mockReset();
   useToastStore.setState({ toasts: [] });
+  useContactStore.setState({ aliases: {} });
   useRelayStore.getState().reset();
   useRelayStore
     .getState()
@@ -69,6 +71,17 @@ describe("BlockedPeople", () => {
       day: "numeric",
     });
     expect(screen.getAllByText(`Blocked ${date}`)).toHaveLength(3);
+  });
+
+  it("names a blocked contact by the name given to them", async () => {
+    useContactStore.setState({ aliases: { [ERIN.principalId]: "Erin from work" } });
+    routeRequests(requestMock, {
+      "query MyBlockedPrincipals": () => ({ myBlockedPrincipals: [ERIN] }),
+    });
+    renderWithProviders(<BlockedPeople />);
+
+    expect(await screen.findByText("Erin from work")).toBeInTheDocument();
+    expect(screen.queryByText("erin")).not.toBeInTheDocument();
   });
 
   it("unblocks without asking, says so and refreshes the list", async () => {

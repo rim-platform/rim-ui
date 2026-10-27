@@ -6,11 +6,20 @@ import { Button } from "../../../shared/ui/Button";
 import { shortPrincipal } from "../../plugins/registry/model";
 import type { BlockedPrincipalView } from "../api/relayApi";
 import { useBlockedPrincipals, useUnblockPrincipal } from "../api/useBlockedPrincipals";
+import { useContactStore } from "../contacts/useContactStore";
 import { useRelayStore } from "../state/useRelayStore";
 
-/** How the list names a blocked person: display name, username, or a short principal id. */
-function blockedName(entry: BlockedPrincipalView): string {
-  return entry.displayName || entry.username || shortPrincipal(entry.principalId);
+/**
+ * How the list names a blocked person: the name given to them as a contact, their display name,
+ * username, or a short principal id.
+ */
+function blockedName(entry: BlockedPrincipalView, aliases: Record<string, string>): string {
+  return (
+    aliases[entry.principalId] ||
+    entry.displayName ||
+    entry.username ||
+    shortPrincipal(entry.principalId)
+  );
 }
 
 /**
@@ -23,6 +32,7 @@ export function BlockedPeople() {
   const relayOn = useRelayStore((s) => s.info !== null);
   const blocked = useBlockedPrincipals();
   const unblock = useUnblockPrincipal();
+  const aliases = useContactStore((s) => s.aliases);
 
   if (!relayOn) return null;
 
@@ -55,7 +65,7 @@ export function BlockedPeople() {
       {blocked.data && blocked.data.length > 0 && (
         <ul className="divide-y divide-rim-line rounded-lg border border-rim-line bg-rim-panel">
           {blocked.data.map((entry) => {
-            const name = blockedName(entry);
+            const name = blockedName(entry, aliases);
             const date = new Date(entry.blockedAt).toLocaleDateString([], {
               year: "numeric",
               month: "short",
