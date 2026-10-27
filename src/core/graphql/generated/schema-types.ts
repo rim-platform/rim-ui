@@ -109,6 +109,26 @@ export enum AuditOutcomeGql {
   SUCCESS = 'SUCCESS'
 }
 
+/**
+ * A principal the caller blocked: its DM requests are ignored and its invites and key
+ * package claims refused.
+ */
+export type BlockedPrincipal = {
+  /** When the caller blocked the principal. */
+  blockedAt: Scalars['DateTime']['output'];
+  /**
+   * That account's display name; null when it has none or no account here holds the
+   * principal.
+   */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** The blocked principal's id. */
+  principalId: Scalars['String']['output'];
+  /** The account on this server that holds the principal; null when none does. */
+  userId?: Maybe<Scalars['ID']['output']>;
+  /** That account's username; null when no account here holds the principal. */
+  username?: Maybe<Scalars['String']['output']>;
+};
+
 export type ChannelCursorInput = {
   conversationId: Scalars['ID']['input'];
   createdAt: Scalars['DateTime']['input'];
@@ -599,6 +619,7 @@ export type CreateUserCommandInput = {
 export type CustomEmoji = {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  /** Where a member of the workspace loads the image: `/api/emoji/<id>` on this server, with the session cookie. */
   imageUrl: Scalars['String']['output'];
   name: Scalars['String']['output'];
   serverId: Scalars['ID']['output'];
@@ -3361,6 +3382,8 @@ export type Query = {
    */
   mlsCommits: MlsCommitPage;
   mutedConversations: Array<MutedConversation>;
+  /** The principals the caller blocked, newest first. */
+  myBlockedPrincipals: Array<BlockedPrincipal>;
   /**
    * Who may start a DM with the caller: their choice for people outside their workspaces,
    * for each workspace's members, and what applies once the operator's and the workspaces'
