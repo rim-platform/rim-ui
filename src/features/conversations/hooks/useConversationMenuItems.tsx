@@ -44,6 +44,7 @@ import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
 import type { ConversationSummary } from "../types";
 import {
+  canEditChannelTopic,
   canInviteToConversation,
   canLeaveConversation,
   conversationLabel,
@@ -77,7 +78,8 @@ type PendingDialog = {
  *
  * - An invitation the viewer holds: Accept (on a device set up for encryption) and Decline.
  * - A channel: Join channel first for a public one the viewer is not in, then Mark as read
- *   (when unread), Notifications, Members, Invite people…, Edit topic…, Assign keybind…, the
+ *   (when unread), Notifications, Members, Invite people…, Edit topic… (Owner, Moderator or a
+ *   private channel's creator), Assign keybind…, the
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
  *   posting policies, Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
@@ -238,7 +240,14 @@ export function useConversationMenuItems(workspaceId: string | null): {
         });
       }
 
-      if (isChannel && !archived) {
+      if (
+        isChannel &&
+        !archived &&
+        canEditChannelTopic(conversation, {
+          userId: currentUserId,
+          canModerate: canModerate && serverId === workspaceId,
+        })
+      ) {
         items.push({
           id: "edit-topic",
           label: "Edit topic…",

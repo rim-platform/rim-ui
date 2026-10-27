@@ -3,8 +3,12 @@ import { fireEvent, render as renderPlain, screen, waitFor, within } from "@test
 
 import { renderWithProviders as render } from "../../../test/utils";
 import { withLimits } from "../../../test/limits";
-import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
+import {
+  PipelineTriggerKindGql,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
 import { useToastStore } from "../../../shared/toast";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import type { Pipeline } from "../api/usePipelines";
@@ -122,10 +126,13 @@ beforeEach(() => {
   };
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
   useToastStore.setState({ toasts: [] });
+  // The viewer created both fixture pipelines unless a test says otherwise.
+  useAuthStore.setState({ session: { userId: "u-1" } });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  useAuthStore.setState({ session: null });
 });
 
 describe("PipelineSettings list states", () => {
@@ -545,5 +552,44 @@ describe("PipelineSettings edit, toggle and delete", () => {
 
     fireEvent.click(screen.getAllByTitle("Delete pipeline")[0]);
     await waitFor(() => expect(toastTitles()).toContain("Forbidden"));
+  });
+});
+
+describe("PipelineSettings controls by role", () => {
+  const mine: Pipeline = { ...basePipeline, id: "p-mine", name: "Mine", createdBy: "me" };
+  const olivias: Pipeline = {
+    ...basePipeline,
+    id: "p-olivia",
+    name: "Olivia's",
+    createdBy: "u-olivia",
+  };
+
+  function serveAs(viewerRole: ServerMemberRoleGql) {
+    useAuthStore.setState({ session: { userId: "me" } });
+    handlers.Pipelines = () => ({ pipelines: [mine, olivias] });
+    handlers.Server = () => ({ server: { id: "ws-1", name: "Acme", viewerRole } });
+  }
+
+  it("shows a member no toggle, edit or delete on someone else's pipeline, and all three on their own", async () => {
+    serveAs(ServerMemberRoleGql.MEMBER);
+    render(<PipelineSettings />);
+    await screen.findByText("Olivia's");
+    await waitFor(() => expect(callsTo("Server")).toHaveLength(1));
+
+    expect(screen.getAllByTitle("Disable pipeline")).toHaveLength(1);
+    expect(screen.getAllByTitle("Edit pipeline")).toHaveLength(1);
+    expect(screen.getAllByTitle("Delete pipeline")).toHaveLength(1);
+    const row = screen.getByText("Mine").closest("div.justify-between") as HTMLElement;
+    expect(within(row).getByTitle("Edit pipeline")).toBeInTheDocument();
+  });
+
+  it("shows a moderator the controls on every pipeline", async () => {
+    serveAs(ServerMemberRoleGql.MODERATOR);
+    render(<PipelineSettings />);
+    await screen.findByText("Olivia's");
+
+    await waitFor(() => expect(screen.getAllByTitle("Disable pipeline")).toHaveLength(2));
+    expect(screen.getAllByTitle("Edit pipeline")).toHaveLength(2);
+    expect(screen.getAllByTitle("Delete pipeline")).toHaveLength(2);
   });
 });

@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   ServerMemberRoleGql,
   assignableRoles,
+  canCreateChannel,
   canModerate,
   canTarget,
   canTargetMember,
@@ -104,5 +105,19 @@ describe("assignableRoles", () => {
     expect(assignableRoles(OWNER, OWNER)).toEqual([]);
     expect(assignableRoles(MEMBER, GUEST)).toEqual([]);
     expect(assignableRoles(GUEST, MEMBER)).toEqual([]);
+  });
+});
+
+describe("canCreateChannel", () => {
+  it.each([
+    [GUEST, false, false],
+    [MEMBER, false, true],
+    [MEMBER, true, false],
+    [MODERATOR, true, true],
+    [OWNER, true, true],
+    [undefined, false, false],
+    [undefined, true, false],
+  ])("%s, default workspace %s: %s", (role, inDefault, expected) => {
+    expect(canCreateChannel(role, inDefault)).toBe(expected);
   });
 });

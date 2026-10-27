@@ -10,6 +10,7 @@ import { useDmRequestPending } from "../../features/conversations/api/useDmReque
 import { ChannelIcon } from "../../features/conversations/components/ChannelIcon";
 import { ConversationActionsMenu } from "../../features/conversations/components/ConversationActionsMenu";
 import {
+  canEditChannelTopic,
   directPeerId,
   isInvited,
   memberCountLabel,
@@ -32,7 +33,7 @@ import {
 } from "../../features/presence/state/usePresenceStore";
 import { ConversationTypeEnum } from "../../core/graphql/generated/schema-types";
 import { InviteDialog } from "../../features/settings/components/InviteDialog";
-import { useIsOwner } from "../../features/workspaces/api/useMyServerRole";
+import { useCanModerate, useIsOwner } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
@@ -115,6 +116,10 @@ function SelectedConversationHeader() {
   // Only the Owner can create invites; the server refuses everyone else.
   const canInvite = useIsOwner(workspaceId ?? undefined);
 
+  const canModerate = useCanModerate(workspaceId ?? undefined);
+  const canEditTopic = conversation
+    ? canEditChannelTopic(conversation, { userId: currentUserId, canModerate })
+    : false;
   const topic = conversation?.topic ?? null;
   const isEditingTopic = useTopicEditStore(
     (s) => conversationId !== null && s.conversationId === conversationId,
@@ -129,7 +134,7 @@ function SelectedConversationHeader() {
   const updateTopic = useUpdateTopicMutation();
 
   // The edit can start from a menu before the channel has loaded.
-  const showTopicInput = isChannel && isEditingTopic;
+  const showTopicInput = isChannel && isEditingTopic && canEditTopic;
   useEffect(() => {
     if (showTopicInput && topicInputRef.current) {
       topicInputRef.current.focus();
@@ -137,10 +142,10 @@ function SelectedConversationHeader() {
   }, [showTopicInput]);
 
   const handleTopicClick = useCallback(() => {
-    if (conversationId && isChannel && !conversation?.isArchived) {
+    if (conversationId && canEditTopic) {
       startTopicEdit(conversationId, topic ?? "");
     }
-  }, [conversationId, isChannel, conversation?.isArchived, topic, startTopicEdit]);
+  }, [conversationId, canEditTopic, topic, startTopicEdit]);
 
   const handleTopicKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -206,7 +211,7 @@ function SelectedConversationHeader() {
                 placeholder="Set a topic..."
                 className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
               />
-            ) : (
+            ) : canEditTopic ? (
               <button
                 type="button"
                 onClick={handleTopicClick}
@@ -214,7 +219,11 @@ function SelectedConversationHeader() {
               >
                 {topic || "Set a topic..."}
               </button>
-            ))}
+            ) : topic ? (
+              <p className="block max-w-[400px] truncate text-xs text-rim-text-muted" title={topic}>
+                {topic}
+              </p>
+            ) : null)}
           {!isChannel && (
             <p className="text-xs text-rim-text-faint">
               {workspace?.name ?? ""}

@@ -18,8 +18,9 @@ import {
 import { inOneHour, isPauseActive, tomorrowMorning } from "../../notifications/rules";
 import { joinRequestBadge, useJoinRequestCount } from "../api/publicJoinLink";
 import { useCanHavePublicLink } from "./useCanHavePublicLink";
+import { useIsDefaultWorkspace } from "./useIsDefaultWorkspace";
 import { useMyServerRole } from "../api/useMyServerRole";
-import { canModerate, isGuest, isOwner } from "../role";
+import { canCreateChannel, canModerate, isGuest, isOwner } from "../role";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 
 /** A dialog a workspace's menu opens for that workspace. */
@@ -51,9 +52,10 @@ interface UseWorkspaceMenuItemsOptions {
  * The menu of a workspace on the rail. It acts on that workspace without opening it, except
  * Workspace settings, which goes there: Mark all as read (when something is unread), Pause
  * notifications with its durations and Resume notifications while paused, Browse channels…
- * and Create channel… (not for guests), Workspace settings (Owner and Moderator, who have
- * that page), Join requests… with the number waiting (Owner and Moderator, while requests are
- * open), Invite people… (the Owner) and Assign keybind….
+ * (not for guests), Workspace settings (Owner and Moderator, who have that page), Join
+ * requests… with the number waiting (Owner and Moderator, while requests are open), Invite
+ * people… (the Owner), Create channel… (not for guests, and in the server's default workspace
+ * only for its Owner and Moderators) and Assign keybind….
  *
  * @returns A function that gives the items when the menu opens.
  */
@@ -67,6 +69,7 @@ export function useWorkspaceMenuItems({
   const { data: settings } = useNotificationSettings(enabled ? workspaceId : null);
   const { mutate: setDnd } = useSetDoNotDisturb();
   const canHaveLink = useCanHavePublicLink(workspaceId, enabled);
+  const inDefault = useIsDefaultWorkspace(workspaceId);
   const { data: requestCount } = useJoinRequestCount(
     workspaceId,
     enabled && canModerate(role) && canHaveLink,
@@ -175,7 +178,7 @@ export function useWorkspaceMenuItems({
         onSelect: () => onOpenDialog("invite"),
       });
     }
-    if (member) {
+    if (canCreateChannel(role, inDefault)) {
       items.push({
         id: "create-channel",
         label: "Create channel…",
@@ -190,5 +193,5 @@ export function useWorkspaceMenuItems({
         useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label }),
     });
     return items;
-  }, [workspaceId, label, role, settings, setDnd, onOpenDialog, requestBadge]);
+  }, [workspaceId, label, role, settings, setDnd, onOpenDialog, requestBadge, inDefault]);
 }

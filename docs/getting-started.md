@@ -175,7 +175,11 @@ people who joined with it stay, and open requests stay open.
 <kbd>Ctrl+Shift+C</kbd>) asks for a **Channel name**. The **Private** switch says "Only invited
 members can see this channel. This cannot be changed later." **Add members (optional)** picks
 people to add, and **Create** opens the channel. **Browse channels**, the compass beside
-**New channel**, lists the public channels you can join.
+**New channel**, lists the public channels you can join. In the server's default workspace only
+its Owner and Moderators create channels, and only they see **New channel**.
+
+A channel's topic under its name is changed by the Owner and Moderators, and in a private
+channel by its creator; everyone else reads it.
 
 ## Talk
 

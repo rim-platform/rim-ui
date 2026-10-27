@@ -82,10 +82,13 @@ describe("ConversationHeader — keyboard", () => {
   });
 });
 
-function serveConversation(conversation: ConversationSummary) {
+function serveConversation(conversation: ConversationSummary, viewerRole?: ServerMemberRoleGql) {
   requestMock.mockImplementation((document: string) => {
     if (document.includes("query Conversation(")) {
       return Promise.resolve({ conversation });
+    }
+    if (viewerRole && document.includes("query Server(")) {
+      return Promise.resolve({ server: { id: "srv-1", name: "Acme", viewerRole } });
     }
     if (document.includes("query InboxConversations")) return Promise.resolve(emptyInbox);
     return new Promise(() => {});
@@ -126,7 +129,10 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
   });
 
   it("edits the topic from the conversation menu and saves it with Enter", async () => {
-    serveConversation(makeConversation({ id: "conv-1", topic: "Old topic" }));
+    serveConversation(
+      makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
+      ServerMemberRoleGql.MODERATOR,
+    );
     renderHeader();
     fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
@@ -151,6 +157,72 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     expect(await screen.findByText("Archived")).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Private channel" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Not encrypted" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ConversationHeader — who may change the topic", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useTopicEditStore.getState().stop();
+    useAuthStore.setState({ session: null });
+  });
+
+  it("shows a member the topic as text, with no way to edit it", async () => {
+    serveConversation(
+      makeConversation({ serverId: "srv-1", topic: "Release day", createdBy: "ana" }),
+      ServerMemberRoleGql.MEMBER,
+    );
+    renderHeader();
+
+    const text = await screen.findByText("Release day");
+    await waitFor(() =>
+      expect(requestMock.mock.calls.some(([doc]) => String(doc).includes("query Server("))).toBe(
+        true,
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Release day" })).not.toBeInTheDocument();
+    fireEvent.click(text);
+    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
+  });
+
+  it('shows a member no "Set a topic..." for a channel without one', async () => {
+    serveConversation(makeConversation({ serverId: "srv-1" }), ServerMemberRoleGql.MEMBER);
+    renderHeader();
+
+    await screen.findByRole("button", { name: "1 member" });
+    expect(screen.queryByText("Set a topic...")).not.toBeInTheDocument();
+  });
+
+  it("lets the creator of a private channel edit its topic", async () => {
+    serveConversation(
+      makeConversation({ serverId: "srv-1", isPrivate: true, createdBy: "me" }),
+      ServerMemberRoleGql.MEMBER,
+    );
+    renderHeader();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set a topic..." }));
+    expect(await screen.findByPlaceholderText("Set a topic...")).toBeInTheDocument();
+  });
+
+  it("shows an archived channel's topic as text, even to a moderator", async () => {
+    serveConversation(
+      makeConversation({ serverId: "srv-1", topic: "Old plans", isArchived: true }),
+      ServerMemberRoleGql.MODERATOR,
+    );
+    renderHeader();
+
+    const text = await screen.findByText("Old plans");
+    expect(screen.queryByRole("button", { name: "Old plans" })).not.toBeInTheDocument();
+    fireEvent.click(text);
+    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
   });
 });
 

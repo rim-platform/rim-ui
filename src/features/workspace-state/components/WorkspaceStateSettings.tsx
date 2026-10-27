@@ -24,6 +24,7 @@ import {
 import type { WorkspaceStateEntryGql, SetWorkspaceStateInput } from "../index";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
+import { useIsGuest } from "../../workspaces/api/useMyServerRole";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -287,9 +288,11 @@ interface EntryRowProps {
   onEdit: (entry: WorkspaceStateEntryGql) => void;
   onDelete: (key: string) => Promise<void>;
   isDeleting: boolean;
+  /** Shows the entry without its Edit and Delete buttons. */
+  readOnly: boolean;
 }
 
-function EntryRow({ entry, onEdit, onDelete, isDeleting }: EntryRowProps) {
+function EntryRow({ entry, onEdit, onDelete, isDeleting, readOnly }: EntryRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -345,44 +348,46 @@ function EntryRow({ entry, onEdit, onDelete, isDeleting }: EntryRowProps) {
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => onEdit(entry)}
-            title="Edit"
-            className="rounded p-1 text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text"
-          >
-            <Edit3 className="h-3.5 w-3.5" />
-          </button>
-          {!confirmDelete ? (
+        {!readOnly && (
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
-              onClick={() => setConfirmDelete(true)}
-              title="Delete"
-              className="rounded p-1 text-rim-text-muted hover:bg-rim-danger/20 hover:text-rim-danger"
+              onClick={() => onEdit(entry)}
+              title="Edit"
+              className="rounded p-1 text-rim-text-muted hover:bg-rim-void/50 hover:text-rim-text"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Edit3 className="h-3.5 w-3.5" />
             </button>
-          ) : (
-            <div className="flex items-center gap-1">
+            {!confirmDelete ? (
               <button
                 type="button"
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="rounded bg-rim-danger px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger/80 disabled:opacity-50"
+                onClick={() => setConfirmDelete(true)}
+                title="Delete"
+                className="rounded p-1 text-rim-text-muted hover:bg-rim-danger/20 hover:text-rim-danger"
               >
-                {isDeleting ? "..." : "Delete"}
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="rounded px-1.5 py-0.5 text-[10px] text-rim-text-muted hover:text-rim-text"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="rounded bg-rim-danger px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger/80 disabled:opacity-50"
+                >
+                  {isDeleting ? "..." : "Delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-rim-text-muted hover:text-rim-text"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Expanded detail */}
@@ -416,6 +421,9 @@ interface WorkspaceStateSettingsProps {
 
 export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps) {
   const [scope, setScope] = useState<WorkspaceStateScopeGql>(WorkspaceStateScopeGql.SERVER);
+  // The server refuses a guest's writes to the workspace scope; the user scope stays open.
+  const isGuest = useIsGuest(serverId);
+  const readOnly = isGuest && scope === WorkspaceStateScopeGql.SERVER;
   const [prefix, setPrefix] = useState("");
   const deferredPrefix = useDeferredValue(prefix);
   const [editorMode, setEditorMode] = useState<
@@ -530,18 +538,26 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
         </div>
 
         {/* Create button */}
-        <button
-          type="button"
-          onClick={() => setEditorMode({ kind: "create" })}
-          className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New entry
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setEditorMode({ kind: "create" })}
+            className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New entry
+          </button>
+        )}
       </div>
 
+      {readOnly && (
+        <p className="text-xs text-rim-text-faint">
+          Guests read workspace entries; members change them.
+        </p>
+      )}
+
       {/* Editor (inline) */}
-      {editorMode.kind !== "closed" && (
+      {editorMode.kind !== "closed" && !readOnly && (
         <EntryEditor
           serverId={serverId}
           scope={scope}
@@ -573,13 +589,15 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
               ? `No entries matching "${prefix}" in ${SCOPE_LABELS[scope].toLowerCase()} scope.`
               : `No ${SCOPE_LABELS[scope].toLowerCase()}-scoped entries yet.`}
           </p>
-          <button
-            type="button"
-            onClick={() => setEditorMode({ kind: "create" })}
-            className="mt-3 text-xs font-medium text-rim-accent hover:underline"
-          >
-            Create the first entry
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => setEditorMode({ kind: "create" })}
+              className="mt-3 text-xs font-medium text-rim-accent hover:underline"
+            >
+              Create the first entry
+            </button>
+          )}
         </div>
       )}
 
@@ -601,6 +619,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
               onEdit={handleEdit}
               onDelete={handleDeleteEntry}
               isDeleting={deleteWorkspaceState.isPending}
+              readOnly={readOnly}
             />
           ))}
         </div>

@@ -2,6 +2,8 @@ import { useState, useCallback, useMemo } from "react";
 import { Plus, Pencil, Trash2, Power, ChevronDown, X } from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import {
   usePipelines,
   useCreatePipelineMutation,
@@ -491,6 +493,8 @@ function triggerLabel(kind: PipelineTriggerKindGql): string {
 
 export function PipelineSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const currentUserId = useAuthStore((s) => s.session?.userId);
+  const canModerate = useCanModerate(workspaceId ?? undefined);
   const { data: pipelines, isLoading, isError } = usePipelines(workspaceId ?? undefined);
   const deletePipeline = useDeletePipelineMutation();
   const togglePipeline = useTogglePipelineMutation();
@@ -603,37 +607,40 @@ export function PipelineSettings() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleToggle(pipeline.id, !pipeline.enabled)}
-                  title={pipeline.enabled ? "Disable pipeline" : "Enable pipeline"}
-                  className={cn(
-                    "rounded-md p-1.5 transition",
-                    pipeline.enabled
-                      ? "text-rim-success hover:bg-rim-success/10"
-                      : "text-rim-text-muted hover:bg-rim-void/50",
-                  )}
-                >
-                  <Power className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditing(pipeline)}
-                  title="Edit pipeline"
-                  className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(pipeline.id, pipeline.name)}
-                  title="Delete pipeline"
-                  className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+              {/* Only the creator, an Owner or a Moderator may change a pipeline. */}
+              {(canModerate || pipeline.createdBy === currentUserId) && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggle(pipeline.id, !pipeline.enabled)}
+                    title={pipeline.enabled ? "Disable pipeline" : "Enable pipeline"}
+                    className={cn(
+                      "rounded-md p-1.5 transition",
+                      pipeline.enabled
+                        ? "text-rim-success hover:bg-rim-success/10"
+                        : "text-rim-text-muted hover:bg-rim-void/50",
+                    )}
+                  >
+                    <Power className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(pipeline)}
+                    title="Edit pipeline"
+                    className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(pipeline.id, pipeline.name)}
+                    title="Delete pipeline"
+                    className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -170,6 +170,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   it.
 - Owners and Moderators find archived channels under **Archived** in **Browse channels**, so a
   channel archived without joining it can be opened and unarchived.
+- Controls the server would refuse are no longer shown: a channel's topic can be edited only by
+  its Owner and Moderators (and a private channel's creator), someone else's pipeline has no
+  enable, edit or delete buttons for a Member, the default workspace offers creating channels to
+  its Owner and Moderators only, and a guest gets no New entry, Edit or Delete for
+  workspace-scoped state.
 
 ## [0.0.5] - 2026-10-26
 
