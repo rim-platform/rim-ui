@@ -5,6 +5,7 @@ import { EmojiPicker } from "../../../../shared/ui/EmojiPicker";
 import { HoverTooltip } from "../../../../shared/ui/HoverTooltip";
 import { cn } from "../../../../shared/ui/cn";
 import { useCustomEmojis } from "../../../emoji/api/useCustomEmojis";
+import { useMessageEmojiMap } from "../../../emoji/hooks/useMessageEmojiMap";
 import type { MemberResolver, Reaction } from "./types";
 
 interface MessageReactionsProps {
@@ -35,6 +36,14 @@ export const MessageReactions = memo(function MessageReactions({
   resolveMember,
   placement = "row",
 }: MessageReactionsProps) {
+  const shortcodes =
+    placement === "row"
+      ? (reactions ?? [])
+          .filter((r) => r.count > 0)
+          .map((r) => r.emoji)
+          .join(" ")
+      : null;
+  const customEmoji = useMessageEmojiMap(shortcodes, serverId);
   const addButton = canAddReaction ? (
     <AddReactionButton
       messageId={messageId}
@@ -57,6 +66,7 @@ export const MessageReactions = memo(function MessageReactions({
           onToggleReaction={onToggleReaction}
           readOnly={!canAddReaction && !reaction.reactedByMe}
           resolveMember={resolveMember}
+          imageSrc={customEmoji?.get(/^:([a-zA-Z0-9_-]+):$/.exec(reaction.emoji)?.[1] ?? "")}
         />
       ))}
       {addButton}
@@ -112,12 +122,35 @@ function AddReactionButton({
   );
 }
 
+/** A reaction's emoji: the image of a custom one, else the text. */
+function ReactionEmoji({
+  emoji,
+  src,
+  className,
+}: {
+  emoji: string;
+  src?: string;
+  className?: string;
+}) {
+  return src ? (
+    <img
+      src={src}
+      alt={emoji}
+      title={emoji}
+      className={cn("inline-block object-contain", className)}
+    />
+  ) : (
+    <span className={className}>{emoji}</span>
+  );
+}
+
 function ReactionPill({
   reaction,
   messageId,
   onToggleReaction,
   readOnly,
   resolveMember,
+  imageSrc,
 }: {
   reaction: Reaction;
   messageId: string;
@@ -125,6 +158,8 @@ function ReactionPill({
   /** Shows the count without toggling it. */
   readOnly: boolean;
   resolveMember?: MemberResolver;
+  /** The image of a custom emoji reaction, once it has loaded. */
+  imageSrc?: string;
 }) {
   const pill = (
     <button
@@ -139,7 +174,7 @@ function ReactionPill({
           : "border border-rim-line bg-rim-void text-rim-text-muted",
       )}
     >
-      <span>{reaction.emoji}</span>
+      <ReactionEmoji emoji={reaction.emoji} src={imageSrc} className="h-4 w-4" />
       <span>{reaction.count}</span>
     </button>
   );
@@ -164,7 +199,7 @@ function ReactionPill({
   const tooltipContent = (
     <div>
       <div className="flex items-center gap-1.5 text-xs text-rim-text-muted">
-        <span className="text-base">{reaction.emoji}</span>
+        <ReactionEmoji emoji={reaction.emoji} src={imageSrc} className="h-5 w-5 text-base" />
         <span>reacted</span>
       </div>
       <div className="mt-1 border-t border-rim-line pt-1">

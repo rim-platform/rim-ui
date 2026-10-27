@@ -203,6 +203,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   form cancels the edit without closing the thread.
 - Error toasts show a name the server quotes, such as an argument, as code instead of printing its
   backticks ("missing string arg text").
+- A reaction with a custom emoji shows the emoji's image instead of its `:name:`; the name shows on
+  hover.
 
 ## [0.0.5] - 2026-10-26
 
