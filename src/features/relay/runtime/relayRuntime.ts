@@ -27,6 +27,7 @@ import { keyBackend } from "../../key-identity/api/keyBackend";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { handleRemoteJoinDecided } from "../../workspaces/state/joinRequestEvents";
+import { departWorkspace } from "../../workspaces/state/memberEvents";
 import { ackRelayItems, fetchRelayInfo, fetchRelayMe, fetchStreamHeads } from "../api/relayApi";
 import { RELAY_STREAM_SUBSCRIPTION } from "../api/documents";
 import { relayCrypto } from "../crypto/relayCrypto";
@@ -42,7 +43,7 @@ import { resetRelaySelf } from "../remote/relaySelf";
 import { finishOnNewRelay } from "../remote/relaySwitchLive";
 import { getRecord, putRecord } from "../state/relayDb";
 import { ensurePinned, hostKeyAt, loadPins, resetPinCache } from "../state/serverPins";
-import { loadSpaces, localSpaceHost, registerSpace } from "../state/spaces";
+import { forgetSpace, loadSpaces, localSpaceHost, registerSpace } from "../state/spaces";
 import { isBlockedConversation, useBlockedConversations } from "../state/useBlockedConversations";
 import { hostOf, useRelayStore } from "../state/useRelayStore";
 import { activeProcessor, setActiveProcessor } from "../stream/activeProcessor";
@@ -98,13 +99,14 @@ async function refetchSpace(qc: QueryClient, spaceId: string, conversationIds: s
  * Apply a host event of `spaceId` at `host`. The decision on a join request this account filed
  * at `host` through a public link goes to the request it decides; every other event applies to
  * its space. Nothing happens for an event of a conversation hidden because someone blocked
- * started it.
+ * started it. `stream` is the host stream the event came on.
  */
 export function applyRelayEvent(
   qc: QueryClient,
   event: WorkspaceEvent,
   spaceId: string,
   host?: string,
+  stream?: string,
 ): void {
   // A conversation someone blocked started takes nothing: its items are acknowledged, not applied.
   if ("conversation_id" in event && isBlockedConversation(spaceId, event.conversation_id)) return;
@@ -119,6 +121,18 @@ export function applyRelayEvent(
     pendingRemoteJoinAt(host, event.workspace_id)
   ) {
     void handleRemoteJoinDecided(qc, host, event);
+    return;
+  }
+  // The account left this workspace elsewhere, here or on another device, or was removed.
+  const { account, spaces } = useRelayStore.getState();
+  if (
+    event.type === "MemberLeft" &&
+    account &&
+    stream === `u:${account.principalId}` &&
+    spaces[spaceId]?.kind === "workspace"
+  ) {
+    departWorkspace(qc, spaceId, spaces[spaceId]?.name, event);
+    void forgetSpace(spaceId);
     return;
   }
   applyWorkspaceEvent(event, qc, spaceId);
@@ -175,7 +189,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
     },
     streamHeads: fetchStreamHeads,
     refetchSpace: (spaceId, conversations) => refetchSpace(qc, spaceId, conversations),
-    apply: (event, spaceId, host) => applyRelayEvent(qc, event, spaceId, host),
+    apply: (event, spaceId, host, stream) => applyRelayEvent(qc, event, spaceId, host, stream),
     ack: async (upTo) => {
       await ackRelayItems(upTo);
       await putRecord<CursorRecord>("meta", { account: key, name: CURSOR, after: upTo });
@@ -224,9 +238,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
   void acceptWorkspaceMembers().catch(() => undefined);
 
   for (const space of spaces) {
-    if (space.kind === "workspace" && (!space.name || space.ownerName === undefined)) {
-      void refreshWorkspaceDetails(space.spaceId);
-    }
+    if (space.kind === "workspace") void refreshWorkspaceDetails(space.spaceId);
   }
   renewInBackground();
   void finishOnNewRelay(me.principalId).catch((err: unknown) =>

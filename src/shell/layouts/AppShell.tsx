@@ -45,6 +45,7 @@ import { useNotificationEventHandler } from "../../features/notifications/runtim
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
 import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
+import { WorkspaceActionDialogs } from "../../features/workspaces/components/WorkspaceActionDialogs";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
 import { canShowPanels } from "../../features/plugins/pluginPanels";
@@ -482,6 +483,7 @@ function WorkspaceShell() {
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
           <ConversationActionConfirmHost />
+          <WorkspaceActionDialogs />
           <PluginSettingsDialogHost />
           <RegistryHost />
           <QuickAccessAssigner />

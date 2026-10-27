@@ -1797,6 +1797,20 @@ export type Mutation = {
    */
   leaveRelay: Scalars['Boolean']['output'];
   /**
+   * Leave the workspace: the caller is removed from it and from every conversation of it,
+   * with their macros and pipelines there; their messages stay. Members get `MemberLeft`
+   * with cause `left` and the caller's event stream for the workspace ends. They come back
+   * only with a new invite or the public link.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   * - `FORBIDDEN`: the caller is not a member.
+   * - `VALIDATION`: the direct space, the server's default workspace, or the caller is the
+   * owner, who transfers ownership or deletes the workspace instead.
+   */
+  leaveWorkspace: Scalars['Boolean']['output'];
+  /**
    * Sign in with a `login` statement signed by one of the account's device keys. Sets the
    * session and CSRF cookies.
    *
@@ -1913,6 +1927,19 @@ export type Mutation = {
   removeConversationMember: Scalars['Boolean']['output'];
   /** Remove an entry from the workspace's registry. Owner or Moderator. */
   removeWorkspacePlugin: Scalars['Boolean']['output'];
+  /**
+   * Rename the workspace: trimmed, 1 to 128 characters, not the name of another workspace
+   * the owner owns (ignoring case). Every member gets `WorkspaceUpdated`. Returns the
+   * workspace.
+   *
+   * # Errors
+   *
+   * - `UNAUTHENTICATED`: no session.
+   * - `FORBIDDEN`: the caller is not the owner.
+   * - `VALIDATION`: the direct space, or a blank or overlong name.
+   * - `CONFLICT`: the owner owns another workspace of that name.
+   */
+  renameWorkspace: Server;
   /**
    * Present fresh delegations of the caller's devices to their hosts; one entry per
    * delegation, in order.
@@ -2486,6 +2513,11 @@ export type MutationLeaveConversationArgs = {
 };
 
 
+export type MutationLeaveWorkspaceArgs = {
+  serverId: Scalars['ID']['input'];
+};
+
+
 export type MutationLoginWithKeyArgs = {
   keepKeyHeld: Scalars['Boolean']['input'];
   keepSignedIn: Scalars['Boolean']['input'];
@@ -2602,6 +2634,12 @@ export type MutationRemoveConversationMemberArgs = {
 
 export type MutationRemoveWorkspacePluginArgs = {
   pluginId: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type MutationRenameWorkspaceArgs = {
+  name: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
 };
 
@@ -4252,7 +4290,8 @@ export type ServerInfo = {
   auditRetentionDays?: Maybe<Scalars['Int']['output']>;
   /**
    * API additions this server has that an older server lacks, by name: `message_edited_at`
-   * (`Message.editedAt`). A client ignores names it does not know.
+   * (`Message.editedAt`), `workspace_leave` (`leaveWorkspace`), `workspace_rename`
+   * (`renameWorkspace`). A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**

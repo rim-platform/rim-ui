@@ -52,7 +52,10 @@ export function RelaySpacesSettings() {
     }
   }
 
-  const rows = subscriptions.data ?? [];
+  // A workspace left or removed from is no longer used here; its ended row says nothing.
+  const rows = (subscriptions.data ?? []).filter(
+    (row) => row.status !== "ended" || row.workspaceId in spaces,
+  );
   return (
     <section className="space-y-2 rounded-lg border border-rim-line bg-rim-panel p-4">
       <p className="text-sm font-medium text-rim-text">Spaces through this relay</p>

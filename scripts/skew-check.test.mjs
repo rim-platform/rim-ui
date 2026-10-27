@@ -22,6 +22,20 @@ function schemaWithoutEditTimes() {
   return buildASTSchema(document);
 }
 
+/** The mutations the committed schema has beyond a server without leaving and renaming. */
+const NEWER_MUTATIONS = new Set(["leaveWorkspace", "renameWorkspace"]);
+
+/** The committed schema as a server without `leaveWorkspace` and `renameWorkspace`. */
+function schemaWithoutLeaveAndRename() {
+  const document = visit(parse(SDL), {
+    ObjectTypeDefinition(node) {
+      if (node.name.value !== "Mutation") return undefined;
+      return { ...node, fields: node.fields?.filter((f) => !NEWER_MUTATIONS.has(f.name.value)) };
+    },
+  });
+  return buildASTSchema(document);
+}
+
 describe("skew check", () => {
   const documents = collectDocuments();
 
@@ -38,5 +52,13 @@ describe("skew check", () => {
     expect(documents.some((d) => d.text.includes("query MessagesWithEdits("))).toBe(true);
     expect(documents.some((d) => d.text.includes("query ThreadMessagesWithEdits("))).toBe(true);
     expect(refusedOperations(buildASTSchema(parse(SDL)), documents)).toEqual([]);
+  });
+
+  it("refuses only the leave and rename mutations on a server without them", () => {
+    const refused = refusedOperations(schemaWithoutLeaveAndRename(), documents);
+    expect(refused.map((r) => r.label).sort()).toEqual([
+      "mutation LeaveWorkspace",
+      "mutation RenameWorkspace",
+    ]);
   });
 });

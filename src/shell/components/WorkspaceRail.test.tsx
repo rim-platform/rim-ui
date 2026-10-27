@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
@@ -10,6 +10,8 @@ import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../core/query/keys";
 import { callsTo, routeRequests } from "../../features/conversations/__fixtures__/conversations";
 import { fakeServerInfo } from "../../test/serverInfo";
+import { useWorkspaceActionStore } from "../../features/workspaces/state/useWorkspaceActionStore";
+import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../../features/updater/api/serverCapabilities";
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../core/graphql/client", () => ({
@@ -121,9 +123,12 @@ describe("WorkspaceRail — workspace context menu", () => {
     dndPaused = false,
     joinRequests = 0,
     defaultWorkspace?: string,
+    capabilities: string[] = [],
   ) {
     routeRequests(requestMock, {
-      "query ServerInfo": () => ({ serverInfo: fakeServerInfo({}, { defaultWorkspace }) }),
+      "query ServerInfo": () => ({
+        serverInfo: fakeServerInfo({}, { defaultWorkspace, capabilities }),
+      }),
       "query JoinRequestCount": () => ({
         joinRequests: {
           items: Array.from({ length: joinRequests }, (_, i) => ({ id: `jr-${i}` })),
@@ -316,6 +321,65 @@ describe("WorkspaceRail — workspace context menu", () => {
     await act(async () => {});
     fireEvent.keyDown(beta, { key: "ContextMenu" });
     expect(menuLabels()).toEqual(["Pause notifications", "Browse channels…", "Assign keybind…"]);
+  });
+
+  /** Opens Beta's menu once its role and the server's capabilities are cached. */
+  async function openBetaMenuWithCapabilities() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <WorkspaceRail />
+      </QueryClientProvider>,
+    );
+    const beta = screen.getByRole("button", { name: /^Beta/ });
+    fireEvent.mouseEnter(beta);
+    await waitFor(() => expect(qc.getQueryData(queryKeys.server("ws-2"))).toBeDefined());
+    await waitFor(() => expect(qc.getQueryData(queryKeys.serverInfo)).toBeDefined());
+    await act(async () => {});
+    fireEvent.keyDown(beta, { key: "ContextMenu" });
+  }
+
+  it("offers a member Leave workspace last on a server that supports it", async () => {
+    serve(ServerMemberRoleGql.MEMBER, false, 0, undefined, [WORKSPACE_LEAVE, WORKSPACE_RENAME]);
+    useWorkspaceActionStore.setState({ action: null });
+    await openBetaMenuWithCapabilities();
+    expect(menuLabels()).toEqual([
+      "Pause notifications",
+      "Browse channels…",
+      "Create channel…",
+      "Assign keybind…",
+      "Leave workspace…",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Leave workspace…" }));
+    expect(useWorkspaceActionStore.getState().action).toEqual({
+      kind: "leave",
+      workspaceId: "ws-2",
+    });
+  });
+
+  it("offers the owner Rename workspace and no Leave", async () => {
+    serve(ServerMemberRoleGql.OWNER, false, 0, undefined, [WORKSPACE_LEAVE, WORKSPACE_RENAME]);
+    await openBetaMenuWithCapabilities();
+    const labels = menuLabels();
+    expect(labels[labels.indexOf("Create channel…") + 1]).toBe("Rename workspace…");
+    expect(labels).not.toContain("Leave workspace…");
+  });
+
+  it("offers no Leave in the default workspace", async () => {
+    serve(ServerMemberRoleGql.MEMBER, false, 0, "ws-2", [WORKSPACE_LEAVE, WORKSPACE_RENAME]);
+    await openBetaMenuWithCapabilities();
+    expect(menuLabels()).not.toContain("Leave workspace…");
+  });
+
+  it("offers neither on a server without the capabilities", async () => {
+    for (const role of [ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MEMBER]) {
+      serve(role);
+      await openBetaMenuWithCapabilities();
+      const labels = menuLabels();
+      expect(labels).not.toContain("Leave workspace…");
+      expect(labels).not.toContain("Rename workspace…");
+      cleanup();
+    }
   });
 
   it("hides browsing and creating channels from a guest", async () => {

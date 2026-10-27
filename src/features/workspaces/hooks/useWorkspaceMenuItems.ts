@@ -20,8 +20,12 @@ import { joinRequestBadge, useJoinRequestCount } from "../api/publicJoinLink";
 import { useCanHavePublicLink } from "./useCanHavePublicLink";
 import { useIsDefaultWorkspace } from "./useIsDefaultWorkspace";
 import { useMyServerRole } from "../api/useMyServerRole";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { canCreateChannel, canModerate, isGuest, isOwner } from "../role";
+import { useWorkspaceActionStore } from "../state/useWorkspaceActionStore";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
+import { canLeaveWorkspace, canRenameWorkspace } from "../workspaceActions";
 
 /** A dialog a workspace's menu opens for that workspace. */
 export type WorkspaceMenuDialog = "invite" | "browse-channels" | "create-channel";
@@ -55,7 +59,9 @@ interface UseWorkspaceMenuItemsOptions {
  * (not for guests), Workspace settings (Owner and Moderator, who have that page), Join
  * requests… with the number waiting (Owner and Moderator, while requests are open), Invite
  * people… (the Owner), Create channel… (not for guests, and in the server's default workspace
- * only for its Owner and Moderators) and Assign keybind….
+ * only for its Owner and Moderators), Rename workspace… (the Owner), Assign keybind… and
+ * Leave workspace… (anyone but the Owner, not in the server's default workspace), the last two
+ * on a server that supports them.
  *
  * @returns A function that gives the items when the menu opens.
  */
@@ -70,6 +76,8 @@ export function useWorkspaceMenuItems({
   const { mutate: setDnd } = useSetDoNotDisturb();
   const canHaveLink = useCanHavePublicLink(workspaceId, enabled);
   const inDefault = useIsDefaultWorkspace(workspaceId);
+  const { info } = useServerInfo();
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const { data: requestCount } = useJoinRequestCount(
     workspaceId,
     enabled && canModerate(role) && canHaveLink,
@@ -185,6 +193,19 @@ export function useWorkspaceMenuItems({
         onSelect: () => onOpenDialog("create-channel"),
       });
     }
+    const facts = {
+      role,
+      inDirectSpace,
+      isDefault: inDefault,
+      capabilities: info?.capabilities,
+    };
+    if (canRenameWorkspace(facts)) {
+      items.push({
+        id: "rename-workspace",
+        label: "Rename workspace…",
+        onSelect: () => useWorkspaceActionStore.getState().open("rename", workspaceId),
+      });
+    }
     items.push({
       id: "assign-keybind",
       label: "Assign keybind…",
@@ -192,6 +213,26 @@ export function useWorkspaceMenuItems({
       onSelect: () =>
         useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label }),
     });
+    if (canLeaveWorkspace(facts)) {
+      items.push({
+        id: "leave-workspace",
+        label: "Leave workspace…",
+        danger: true,
+        separatorBefore: true,
+        onSelect: () => useWorkspaceActionStore.getState().open("leave", workspaceId),
+      });
+    }
     return items;
-  }, [workspaceId, label, role, settings, setDnd, onOpenDialog, requestBadge, inDefault]);
+  }, [
+    workspaceId,
+    label,
+    role,
+    settings,
+    setDnd,
+    onOpenDialog,
+    requestBadge,
+    inDefault,
+    info,
+    inDirectSpace,
+  ]);
 }
