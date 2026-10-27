@@ -15,7 +15,8 @@ function blockedName(entry: BlockedPrincipalView): string {
 
 /**
  * Settings → Direct messages → Blocked people: the people this account blocked, newest first,
- * each with when and an Unblock that lifts the block at once. Nothing while the relay is off.
+ * each with when and an Unblock that lifts the block at once and says they can message you
+ * again. Nothing while the relay is off.
  */
 export function BlockedPeople() {
   const headingId = useId();
@@ -27,7 +28,10 @@ export function BlockedPeople() {
 
   function unblockEntry(entry: BlockedPrincipalView, name: string) {
     unblock.mutate(entry.principalId, {
-      onSuccess: () => toast.success(asSentence(`Unblocked ${name}`)),
+      onSuccess: () =>
+        toast.success(asSentence(`Unblocked ${name}`), {
+          description: "They can message you again.",
+        }),
       onError: (err) => toast.error(graphqlErrorMessage(err, `Could not unblock ${name}`)),
     });
   }

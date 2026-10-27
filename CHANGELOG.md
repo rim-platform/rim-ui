@@ -67,9 +67,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   and Moderators and to a private channel's creator, the people the server lets add members
   there.
 - Settings → Security → Spaces through this relay no longer lists a workspace you left.
+- **Unblock** in Settings → Direct messages says the person can message you again.
 
 ### Fixed
 
+- **Block** on a message request for a DM no longer tries to leave the DM, which the server
+  refuses; a group's request is still left.
 - **Search Messages** in the command palette opens the search box instead of failing with
   ``missing string arg `query` ``.
 - Search results and notifications show a mention as the person's name and the message as plain
