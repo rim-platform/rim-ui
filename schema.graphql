@@ -104,6 +104,34 @@ enum AuditOutcomeGql {
 	MACRO_PARTIAL_FAILURE
 }
 
+"""
+A principal the caller blocked: its DM requests are ignored and its invites and key
+package claims refused.
+"""
+type BlockedPrincipal {
+	"""
+	The blocked principal's id.
+	"""
+	principalId: String!
+	"""
+	The account on this server that holds the principal; null when none does.
+	"""
+	userId: ID
+	"""
+	That account's username; null when no account here holds the principal.
+	"""
+	username: String
+	"""
+	That account's display name; null when it has none or no account here holds the
+	principal.
+	"""
+	displayName: String
+	"""
+	When the caller blocked the principal.
+	"""
+	blockedAt: DateTime!
+}
+
 input ChannelCursorInput {
 	createdAt: DateTime!
 	conversationId: ID!
@@ -659,6 +687,9 @@ type CustomEmoji {
 	id: ID!
 	serverId: ID!
 	name: String!
+	"""
+	Where a member of the workspace loads the image: `/api/emoji/<id>` on this server, with the session cookie.
+	"""
 	imageUrl: String!
 	uploadedBy: ID!
 	createdAt: DateTime!
@@ -3300,6 +3331,10 @@ type Query {
 	The caller's DM requests, newest first.
 	"""
 	dmRequests(status: DmRequestStatus): [DmRequest!]!
+	"""
+	The principals the caller blocked, newest first.
+	"""
+	myBlockedPrincipals: [BlockedPrincipal!]!
 	"""
 	The session device's queued host events above `after` (its cursor when omitted).
 	`limit` is 1 to 500, 200 by default.
