@@ -201,6 +201,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Your replies in a thread can be edited in the thread pane: **Edit message** in a reply's menu,
   or <kbd>e</kbd> in the pane, edits it in place as in the timeline. <kbd>Esc</kbd> in an edit
   form cancels the edit without closing the thread.
+- Error toasts show a name the server quotes, such as an argument, as code instead of printing its
+  backticks ("missing string arg text").
 
 ## [0.0.5] - 2026-10-26
 
