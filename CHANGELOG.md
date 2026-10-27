@@ -211,6 +211,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - The "This conversation is not encrypted" dialog opens by itself once per conversation on a device
   instead of in every browser session; while the account is locked it waits, and **Not encrypted**
   in the header opens it.
+- The command palette no longer toasts "Executed locally" after a command that opens something in
+  the app, such as **Search Messages** or **Open Settings**; **Mark All as Read** and **Reload
+  Commands** say what they did.
 
 ## [0.0.5] - 2026-10-26
 

@@ -80,7 +80,8 @@ Macros or `/macro`. **Leave Conversation** and **Archive Channel** ask first, as
 does: "Archive \<channel\>?" always, "Leave \<name\>?" for a group or a private channel; a
 public channel, which you can join again, is left at once. Running a command closes the palette
 at once; a toast gives its title and the result's message on success, such as "List Channels: 3
-channels found.", or "\<title\>: \<message\>" on failure, and a plugin command answers in its
+channels found.", except for a command that opens or moves something in the app, which shows
+that instead, or "\<title\>: \<message\>" on failure, and a plugin command answers in its
 words.
 **Search Messages** run from the palette or a keybind without a `query` opens the search box,
 as **Open Search** does; with a `query`, such as a keybind's preset argument, or as a pipe stage,

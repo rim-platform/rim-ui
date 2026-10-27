@@ -19,6 +19,7 @@ import {
   commandResultOf,
   dispatchCommand,
   hasLocalHandler,
+  isLocalActionResult,
 } from "../runtime/commandDispatcher";
 import {
   serverRunsWithContext,
@@ -310,6 +311,8 @@ export function CommandPalette() {
           toastPluginCommandResult(command.title, result);
         } else if (isCancelledResult(result)) {
           // The user declined the confirmation, or was told it expired.
+        } else if (isLocalActionResult(result)) {
+          // The command shows what it did.
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
