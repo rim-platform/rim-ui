@@ -42,7 +42,6 @@ export function ChannelPostingDialog({
       title={`Who can post in ${label}`}
       description="Owners and moderators can always post. The setting applies to everyone else in the channel."
       tone="accent"
-      chips={["MUTATING"]}
       confirmLabel="Save"
       confirmDisabled={!posting.supported || unchanged}
       errorFallback="Could not change who can post"

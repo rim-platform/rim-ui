@@ -27,7 +27,6 @@ export function SlowModeDialog({ workspaceId, conversation, onClose }: SlowModeD
       title={`Slow mode in ${label}`}
       description="Members must wait this long between two messages. Owners and moderators are exempt."
       tone="accent"
-      chips={["MUTATING"]}
       confirmLabel="Save"
       confirmDisabled={seconds === current}
       errorFallback="Could not change slow mode"

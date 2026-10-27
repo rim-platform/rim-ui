@@ -9,10 +9,13 @@ import { AuditOutcomeGql, TypedVerbGql } from "../../../core/graphql/generated/s
 import type { AuditLogEntry } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { useServerBans } from "../../workspaces/api/useModeration";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
+import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { canModerate } from "../../workspaces/role";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useListAuditLog, type AuditLogScope } from "../api/useListAuditLog";
+import { auditTargetUserId, shortUserId } from "../auditTarget";
 
 // ── Typed verb display config ──────────────────────────────────────────────
 
@@ -65,6 +68,9 @@ function outcomeBadgeClass(outcome: AuditOutcomeGql): string {
   }
 }
 
+/** The columns shared by the header and the rows: Verb, Outcome, Who, Command, Initiator, Time. */
+const ROW_GRID = "grid grid-cols-[80px_168px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function FilterChip({
@@ -107,13 +113,18 @@ function SkeletonRow() {
 
 interface AuditRowProps {
   entry: AuditLogEntry;
+  /** A user's name as the log shows it. */
+  nameOf: (userId: string) => string;
 }
 
-function AuditRow({ entry }: AuditRowProps) {
+function AuditRow({ entry, nameOf }: AuditRowProps) {
+  const actor = nameOf(entry.actorUserId);
+  const targetId = auditTargetUserId(entry);
+  const target = targetId ? nameOf(targetId) : null;
   return (
     <li
       data-testid={`audit-row-${entry.id}`}
-      className="grid grid-cols-[80px_96px_1fr_96px_180px] items-center gap-3 border-b border-rim-line px-4 py-3"
+      className={cn(ROW_GRID, "items-center border-b border-rim-line px-4 py-3")}
     >
       {/* Typed verb chip */}
       <span
@@ -129,11 +140,22 @@ function AuditRow({ entry }: AuditRowProps) {
       {/* Outcome chip */}
       <span
         className={cn(
-          "rounded px-2 py-0.5 text-center text-[10px] font-medium uppercase",
+          "truncate rounded px-2 py-0.5 text-center text-[10px] font-medium uppercase",
           outcomeBadgeClass(entry.outcome),
         )}
+        title={entry.outcome}
       >
         {entry.outcome}
+      </span>
+
+      {/* Who acted, and on whom */}
+      <span
+        className="truncate text-xs text-rim-text"
+        title={target ? `${actor} → ${target}` : actor}
+        data-testid="audit-who"
+      >
+        {actor}
+        {target && <span className="text-rim-text-muted"> → {target}</span>}
       </span>
 
       {/* Command ID */}
@@ -211,6 +233,21 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
     after: afterCursor,
   });
   const forbidden = query.isError && graphqlErrorCode(query.error) === FORBIDDEN;
+
+  // Members by name; the ban list names a banned member, who is no longer a member. Only the
+  // whole-log view (Owners, Moderators) reads it.
+  const members = useMemberLookup(scope?.serverId ?? undefined);
+  const bans = useServerBans(scope?.serverId, !ownOnly);
+  const nameOf = useCallback(
+    (userId: string) => {
+      const member = members.resolve(userId).displayName;
+      if (member) return member;
+      const banned = bans.data?.find((b) => b.userId === userId)?.user;
+      if (banned) return banned.displayName || banned.username;
+      return shortUserId(userId);
+    },
+    [members, bans.data],
+  );
 
   const handleSelectVerb = useCallback((value: TypedVerbGql) => {
     setVerbFilter((prev) => (prev === value ? null : value));
@@ -317,9 +354,15 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
       {/* Table */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Column headers */}
-        <div className="grid grid-cols-[80px_96px_1fr_96px_180px] gap-3 border-b border-rim-line px-4 py-1.5 text-[10px] uppercase tracking-wide text-rim-text-faint">
+        <div
+          className={cn(
+            ROW_GRID,
+            "border-b border-rim-line px-4 py-1.5 text-[10px] uppercase tracking-wide text-rim-text-faint",
+          )}
+        >
           <span>Verb</span>
           <span>Outcome</span>
+          <span>Who</span>
           <span>Command</span>
           <span>Initiator</span>
           <span className="text-right">Time</span>
@@ -380,7 +423,7 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
           {!query.isPending && !query.isError && items.length > 0 && (
             <ul aria-label="Audit log entries">
               {items.map((entry) => (
-                <AuditRow key={entry.id} entry={entry} />
+                <AuditRow key={entry.id} entry={entry} nameOf={nameOf} />
               ))}
             </ul>
           )}

@@ -12,6 +12,7 @@ import { ConversationActionsMenu } from "../../features/conversations/components
 import {
   directPeerId,
   isInvited,
+  memberCountLabel,
   pendingMembersOf,
   untitledGroupName,
 } from "../../features/conversations/utils";
@@ -180,10 +181,10 @@ function SelectedConversationHeader() {
               <button
                 type="button"
                 onClick={toggleMembers}
-                aria-label={`${conversation.memberCount} members`}
+                aria-label={memberCountLabel(conversation.memberCount)}
                 className="text-xs text-rim-text-faint transition hover:text-rim-text"
               >
-                {conversation.memberCount} {conversation.memberCount === 1 ? "member" : "members"}
+                {memberCountLabel(conversation.memberCount)}
               </button>
             )}
             {conversation?.isArchived && (
@@ -217,7 +218,7 @@ function SelectedConversationHeader() {
           {!isChannel && (
             <p className="text-xs text-rim-text-faint">
               {workspace?.name ?? ""}
-              {conversation && ` \u00b7 ${conversation.memberCount} members`}
+              {conversation && ` \u00b7 ${memberCountLabel(conversation.memberCount)}`}
               {invitedCount > 0 && ` \u00b7 ${invitedCount} invited`}
             </p>
           )}

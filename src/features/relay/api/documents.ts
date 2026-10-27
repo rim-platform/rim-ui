@@ -162,6 +162,18 @@ export const BLOCK_PRINCIPAL_MUTATION = gql`
   }
 `;
 
+export const MY_BLOCKED_PRINCIPALS_QUERY = gql`
+  query MyBlockedPrincipals {
+    myBlockedPrincipals {
+      principalId
+      userId
+      username
+      displayName
+      blockedAt
+    }
+  }
+`;
+
 export const UNBLOCK_PRINCIPAL_MUTATION = gql`
   mutation UnblockPrincipal($principalId: String!) {
     unblockPrincipal(principalId: $principalId)

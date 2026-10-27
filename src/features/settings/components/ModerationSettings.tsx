@@ -390,7 +390,6 @@ function ReportRow({
           title="Delete this message?"
           description="You are deleting a reported message as an instance operator. It is removed for every member of the conversation. This cannot be undone, and it is recorded in the audit log."
           tone="danger"
-          chips={["DANGEROUS", "OPERATOR"]}
           confirmLabel="Delete"
           errorFallback="Failed to delete message"
           onConfirm={() =>

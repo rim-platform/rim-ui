@@ -2,13 +2,15 @@ import { useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
 import type { DmRequestView } from "../api/relayApi";
+import { BlockConfirmDialog } from "./BlockConfirmDialog";
 import { PrincipalFingerprint } from "./PrincipalFingerprint";
 import { REPORT_REASONS, useDmRequestActions } from "./useDmRequestActions";
 
 /**
  * In place of the composer of a conversation whose message request the viewer has not decided:
  * who wants to message them, that nothing they write reaches the sender before they accept, and
- * Accept, Ignore, Block and Report. Ignore and Block leave the conversation's view.
+ * Accept, Ignore, Block, after a confirmation, and Report. Ignore and Block leave the
+ * conversation's view.
  */
 export function DmRequestBar({ request }: { request: DmRequestView }) {
   const actions = useDmRequestActions(request, { closeOnDismiss: true });
@@ -37,7 +39,7 @@ export function DmRequestBar({ request }: { request: DmRequestView }) {
         <Button variant="secondary" size="sm" disabled={busy} onClick={() => void actions.ignore()}>
           Ignore
         </Button>
-        <Button variant="danger" size="sm" disabled={busy} onClick={() => void actions.block()}>
+        <Button variant="danger" size="sm" disabled={busy} onClick={actions.askBlock}>
           Block
         </Button>
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReporting((v) => !v)}>
@@ -60,6 +62,13 @@ export function DmRequestBar({ request }: { request: DmRequestView }) {
             </Button>
           ))}
         </div>
+      )}
+      {actions.confirmingBlock && (
+        <BlockConfirmDialog
+          name={actions.blockName}
+          onConfirm={() => void actions.block()}
+          onClose={actions.cancelBlock}
+        />
       )}
     </section>
   );

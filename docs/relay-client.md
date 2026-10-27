@@ -14,7 +14,7 @@ as before.
 
 | Where | What |
 |---|---|
-| `src/features/relay/api/documents.ts` | Every GraphQL document of the relay (`relayInfo`, `remoteServer`, `remoteIdentity`, contacts, `dmRequests` and its mutations, `relayItems`, `ackRelayItems`, `streamHeads`, the `relayStream` subscription, a conversation's predecessor) |
+| `src/features/relay/api/documents.ts` | Every GraphQL document of the relay (`relayInfo`, `remoteServer`, `remoteIdentity`, contacts, `dmRequests` and its mutations, `myBlockedPrincipals`, `relayItems`, `ackRelayItems`, `streamHeads`, the `relayStream` subscription, a conversation's predecessor) |
 | `src/features/relay/crypto/serverStatements.ts` | The statements in the browser: server key log replay, descriptor, discovery document, device request, host response, host event |
 | `src/features/relay/crypto/relayCrypto.ts` | The same work per platform: the Tauri `relay_*` commands and `key_identity_sign_device_request` on the desktop, WebCrypto and the browser's device key in the web app |
 | `src-tauri/src/relay/` | The desktop's checks of server statements (`server.rs`) and their commands |
@@ -23,7 +23,7 @@ as before.
 | `src/features/relay/transport/` | `remoteFetch.ts` (signed requests, verified answers), `requestSeq.ts`, `relayHealth.ts` |
 | `src/features/relay/stream/` | `relayStream.ts` (the queue on the WebSocket), `sequencer.ts`, `streamRules.ts` |
 | `src/features/relay/contacts/` | Contact links, fingerprints, verified identities, aliases, relays seen in invites |
-| `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx` | Message requests |
+| `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx`, `components/BlockedPeople.tsx`, `components/BlockConfirmDialog.tsx` | Message requests |
 | `src/features/dm-policy/` | Who may start a DM: the person's settings, a workspace's policy, the operator's settings in About |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
 | `src/features/relay/runtime/relayRuntime.ts` | Start-up and wiring (`useRelayRuntime`, mounted in `AppShell`) |
@@ -229,8 +229,12 @@ from being sent at all;
 Accept, Ignore, Block (which also leaves the conversation through its home) and Report act on the
 relay. Accepting then catches the conversation up: while the request was pending its events never
 reached the account, so nothing synced what the sender wrote meanwhile; the app processes any
-Welcome, asks the change feed for the conversation and refreshes its timeline. A request from someone on this server invites to one of its own spaces (its direct space or
-a workspace of the account), which is never bound as a remote space: when verifying held items,
+Welcome, asks the change feed for the conversation and refreshes its timeline. Block asks first
+(`BlockConfirmDialog`), then blocks on the relay and leaves the conversation through its home.
+Settings → Direct messages lists `myBlockedPrincipals` under Blocked people
+(`components/BlockedPeople.tsx`), each with Unblock (`unblockPrincipal`), which asks nothing. A
+request from someone on this server invites to one of its own spaces (its direct space or a
+workspace of the account), which is never bound as a remote space: when verifying held items,
 such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is
 this server's id and whose envelope its key signed verifies. An invite from another host that
 names one of these spaces is still dropped.

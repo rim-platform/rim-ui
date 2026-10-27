@@ -120,3 +120,8 @@ export function conversationRowIn(container: Element, conversationId: string): H
   const rows = container.querySelectorAll<HTMLElement>("[data-conversation-id]");
   return Array.from(rows).find((row) => row.dataset.conversationId === conversationId) ?? null;
 }
+
+/** `count` members as text: "1 member", "3 members". */
+export function memberCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "member" : "members"}`;
+}

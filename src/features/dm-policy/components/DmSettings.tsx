@@ -4,6 +4,7 @@ import { graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/erro
 import { DmMembers, DmOutside } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
+import { BlockedPeople } from "../../relay/components/BlockedPeople";
 import { useMyServers } from "../../workspaces/api/useMyServers";
 import { useMyDmSettings, useSetMyDmSettings, useSetMyWorkspaceDmSetting } from "../api/dmPolicy";
 import { MEMBER_CHOICES, OUTSIDE_CHOICES, choiceOf, floorSourceText } from "../labels";
@@ -12,7 +13,8 @@ import { ChoiceGroup } from "./ChoiceGroup";
 /**
  * Settings → Direct messages: who can message this person. Their choice for people outside
  * their workspaces, held to a floor the operator or a workspace may set, and their choice for
- * each workspace's members, with the workspace's default beside it.
+ * each workspace's members, with the workspace's default beside it; and the people they
+ * blocked.
  */
 export function DmSettings() {
   const settings = useMyDmSettings();
@@ -81,6 +83,8 @@ export function DmSettings() {
           </section>
         </>
       )}
+
+      <BlockedPeople />
     </div>
   );
 }

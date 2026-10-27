@@ -5,6 +5,7 @@ import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import type { DmRequestView } from "../api/relayApi";
 import { usePendingDmRequestsIn } from "../api/useDmRequests";
+import { BlockConfirmDialog } from "./BlockConfirmDialog";
 import { PrincipalFingerprint } from "./PrincipalFingerprint";
 import { REPORT_REASONS, useDmRequestActions } from "./useDmRequestActions";
 
@@ -19,8 +20,8 @@ interface DmRequestInboxProps {
 /**
  * Message requests: DMs the person's settings take as requests, held by the relay until they
  * decide. Each shows the name from the sender's verified card and the fingerprint of their
- * principal id; the person may read the conversation first, then accept, ignore, block or
- * report. Requests a shared workspace lets through are accepted on their own.
+ * principal id; the person may read the conversation first, then accept, ignore, block, after a
+ * confirmation, or report. Requests a shared workspace lets through are accepted on their own.
  */
 export function DmRequestInbox({ workspaceId }: DmRequestInboxProps) {
   const requests = usePendingDmRequestsIn(workspaceId);
@@ -71,7 +72,7 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
             label: "Block",
             danger: true,
             separatorBefore: true,
-            onSelect: () => void actions.block(),
+            onSelect: actions.askBlock,
           },
         ];
 
@@ -108,7 +109,7 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
           >
             Ignore
           </Button>
-          <Button variant="danger" size="sm" disabled={busy} onClick={() => void actions.block()}>
+          <Button variant="danger" size="sm" disabled={busy} onClick={actions.askBlock}>
             Block
           </Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReporting((v) => !v)}>
@@ -132,6 +133,13 @@ function DmRequestRow({ request }: { request: DmRequestView }) {
         )}
       </li>
       {contextMenu.menu}
+      {actions.confirmingBlock && (
+        <BlockConfirmDialog
+          name={actions.blockName}
+          onConfirm={() => void actions.block()}
+          onClose={actions.cancelBlock}
+        />
+      )}
     </>
   );
 }

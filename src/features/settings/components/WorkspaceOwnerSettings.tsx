@@ -121,7 +121,6 @@ function TransferOwnership({
           title={`Make ${memberName(picked)} the owner?`}
           description={`${memberName(picked)} becomes the owner of ${workspaceName} and you become a moderator. Only the new owner can hand it back.`}
           tone="warm"
-          chips={["OWNER"]}
           confirmLabel="Transfer"
           errorFallback="Could not transfer ownership"
           onConfirm={() => transfer.mutateAsync({ serverId, userId: picked.userId })}
@@ -165,7 +164,6 @@ function DeleteWorkspace({ serverId, workspaceName }: { serverId: string; worksp
           title={`Delete ${workspaceName}?`}
           description="Every member loses the workspace: its channels and conversations with their messages and files, invites, pins, workspace state, keybinds, pipelines, macros, plugins and custom emoji are deleted. This cannot be undone."
           tone="danger"
-          chips={["DANGEROUS", "OWNER"]}
           confirmLabel="Delete workspace"
           confirmDisabled={!matches}
           errorFallback="Could not delete the workspace"

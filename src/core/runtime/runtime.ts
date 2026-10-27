@@ -56,6 +56,11 @@ export function detectOs(): OsType {
   return "unknown";
 }
 
+/** The shortcut that confirms a dialog, as this platform writes it: ⌘↵ on macOS, Ctrl+↵ elsewhere. */
+export function confirmShortcutLabel(): string {
+  return detectOs() === "macos" ? "⌘↵" : "Ctrl+↵";
+}
+
 /** Where `platform` keeps its device key; `browserKeys` is the web probe's answer, if known. */
 export function getDeviceKeyStore(platform: AppPlatform, browserKeys?: boolean): DeviceKeyStore {
   if (platform === "desktop") return "keyring";

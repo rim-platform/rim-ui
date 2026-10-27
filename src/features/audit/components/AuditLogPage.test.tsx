@@ -46,13 +46,15 @@ function makeEntry(overrides: {
   typedVerb?: TypedVerbGql | null;
   outcome?: AuditOutcomeGql;
   initiator?: string;
+  actorUserId?: string;
+  argsRedacted?: unknown;
 }) {
   return {
-    actorUserId: "user-1",
+    actorUserId: overrides.actorUserId ?? "user-1",
     serverId: "ws-1",
     commandId: overrides.commandId,
     initiator: overrides.initiator ?? "user",
-    argsRedacted: {},
+    argsRedacted: overrides.argsRedacted ?? {},
     sensitivity: "LOW",
     dangerous: false,
     confirmationKind: "none",
@@ -64,6 +66,11 @@ function makeEntry(overrides: {
     createdAt: "2026-04-25T10:00:00Z",
     id: overrides.id,
   };
+}
+
+/** The `serverMock` calls whose document contains `needle`. */
+function serverCallsTo(needle: string) {
+  return serverMock.mock.calls.filter(([document]) => String(document).includes(needle));
 }
 
 function serverWithRole(viewerRole: ServerMemberRoleGql) {
@@ -164,7 +171,7 @@ describe("AuditLogPage", () => {
 
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
     expect(requestMock.mock.calls[0][1].filter).toEqual({ actorUserId: "user-1" });
-    expect(serverMock).not.toHaveBeenCalled();
+    expect(serverCallsTo("query Server(")).toHaveLength(0);
     expect(screen.getByTestId("audit-scope-note")).toHaveTextContent("Showing your own actions");
   });
 
@@ -173,7 +180,7 @@ describe("AuditLogPage", () => {
     serverMock.mockImplementation(() => new Promise(() => {}));
     renderWithProviders(<AuditLogPage />);
 
-    await waitFor(() => expect(serverMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(serverCallsTo("query Server(")).toHaveLength(1));
     expect(requestMock).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Loading audit log")).toBeInTheDocument();
   });
@@ -200,6 +207,89 @@ describe("AuditLogPage", () => {
     );
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
     expect(screen.queryByText("No audit log entries yet.")).not.toBeInTheDocument();
+  });
+
+  it("names who acted and, for an action on a member, on whom", async () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    const member = (userId: string, username: string, displayName: string) => ({
+      userId,
+      username,
+      displayName,
+      memberRole: ServerMemberRoleGql.MEMBER,
+      timeoutUntil: null,
+      joinedAt: "2026-01-01T00:00:00Z",
+      avatarUrl: null,
+      statusText: null,
+      bio: null,
+    });
+    serverMock.mockImplementation((document: unknown) => {
+      const text = String(document);
+      if (text.includes("query Server(")) {
+        return Promise.resolve(serverWithRole(ServerMemberRoleGql.OWNER));
+      }
+      if (text.includes("query ServerMembers")) {
+        return Promise.resolve({
+          serverMembers: [member("user-1", "alice", "Alice A."), member("u-bob", "bob", "Bob B.")],
+        });
+      }
+      if (text.includes("query Me")) {
+        return Promise.resolve({
+          me: {
+            id: "user-1",
+            username: "alice",
+            displayName: "Alice A.",
+            avatarUrl: null,
+            statusText: null,
+            bio: null,
+          },
+        });
+      }
+      if (text.includes("query ServerBans")) {
+        return Promise.resolve({
+          serverBans: [
+            {
+              userId: "u-carol",
+              reason: null,
+              bannedBy: "u-bob",
+              createdAt: "2026-04-25T09:00:00Z",
+              expiresAt: null,
+              user: { id: "u-carol", username: "carol", displayName: "Carol C.", avatarUrl: null },
+            },
+          ],
+        });
+      }
+      return new Promise(() => {});
+    });
+    requestMock.mockResolvedValue(
+      makePage([
+        makeEntry({
+          id: "ban",
+          commandId: "admin.ban",
+          actorUserId: "u-bob",
+          argsRedacted: { user_id: "u-carol" },
+        }),
+        makeEntry({
+          id: "kick",
+          commandId: "admin.kick",
+          actorUserId: "user-1",
+          argsRedacted: { user_id: "0192abcd-1111-7000-8000-000000000002" },
+        }),
+        makeEntry({
+          id: "joined",
+          commandId: "workspace.member_joined",
+          actorUserId: "u-bob",
+          argsRedacted: { user_id: "u-bob" },
+        }),
+      ]),
+    );
+    renderWithProviders(<AuditLogPage />);
+
+    const who = (id: string) =>
+      screen.getByTestId(`audit-row-${id}`).querySelector("[data-testid='audit-who']");
+    await waitFor(() => expect(who("ban")).toHaveTextContent("Bob B. → Carol C."));
+    await waitFor(() => expect(who("kick")).toHaveTextContent("Alice A. → 0192abcd…"));
+    expect(who("joined")).toHaveTextContent(/^Bob B\.$/);
+    expect(who("joined")?.textContent).not.toContain("→");
   });
 
   it("renders skeleton rows while loading", () => {

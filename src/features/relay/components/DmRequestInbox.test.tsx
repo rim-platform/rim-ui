@@ -96,14 +96,28 @@ describe("DmRequestInbox", () => {
     await waitFor(() => expect(api.ignoreDmRequest).toHaveBeenCalledWith("req-1"));
   });
 
-  it("blocks the sender and leaves the conversation through its home", async () => {
+  it("asks before blocking, then blocks the sender and leaves the conversation through its home", async () => {
     const user = userEvent.setup();
     renderWithProviders(<DmRequestInbox />);
-    await user.click(await screen.findByRole("button", { name: "Block" }));
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    expect(api.blockPrincipal).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Block" }));
     await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
     await waitFor(() =>
       expect(membership.leaveConversation).toHaveBeenCalledWith("home-direct", "conv-1"),
     );
+  });
+
+  it("asks before blocking from the context menu", async () => {
+    renderWithProviders(<DmRequestInbox />);
+    const row = (await screen.findByText("Alice")).closest("li")!;
+    fireEvent.contextMenu(row);
+    const menu = screen.getByRole("menu", { name: "Message request from Alice" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Block" }));
+    expect(screen.getByRole("dialog", { name: "Block Alice?" })).toBeInTheDocument();
+    expect(api.blockPrincipal).not.toHaveBeenCalled();
   });
 
   it("reports a request with a reason", async () => {

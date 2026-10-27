@@ -116,6 +116,15 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     expect(screen.getByRole("button", { name: "Conversation menu" })).toBeInTheDocument();
   });
 
+  it("says 1 member for a channel of one, in its label too", async () => {
+    serveConversation(makeConversation({ title: "solo", memberCount: 1 }));
+    renderHeader();
+
+    const count = await screen.findByRole("button", { name: "1 member" });
+    expect(count).toHaveTextContent("1 member");
+    expect(screen.queryByText(/1 members/)).not.toBeInTheDocument();
+  });
+
   it("edits the topic from the conversation menu and saves it with Enter", async () => {
     serveConversation(makeConversation({ id: "conv-1", topic: "Old topic" }));
     renderHeader();
@@ -215,6 +224,26 @@ describe("ConversationHeader — group without a title", () => {
       await screen.findByRole("heading", { level: 2, name: "Alice and Bob" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Untitled")).not.toBeInTheDocument();
+  });
+
+  it("counts a group's members in the singular", async () => {
+    const group = makeConversation({
+      title: "Planning",
+      conversationType: ConversationTypeEnum.GROUP,
+      memberIds: ["me"],
+      memberCount: 1,
+    });
+    requestMock.mockImplementation((document: string) => {
+      if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
+      if (document.includes("query ServerMembers"))
+        return Promise.resolve({ serverMembers: workspaceMembers });
+      if (document.includes("query InboxConversations")) return Promise.resolve(emptyInbox);
+      return new Promise(() => {});
+    });
+    renderHeader();
+
+    expect(await screen.findByText(/· 1 member$/)).toBeInTheDocument();
+    expect(screen.queryByText(/1 members/)).not.toBeInTheDocument();
   });
 });
 

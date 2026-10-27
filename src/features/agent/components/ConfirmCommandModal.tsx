@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ShieldAlert, X } from "lucide-react";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import { confirmShortcutLabel } from "../../../core/runtime/runtime";
 import { cn } from "../../../shared/ui/cn";
 import { Z } from "../../../shared/ui/zIndex";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -26,8 +27,6 @@ const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 interface SeverityVisuals {
   borderAccent: string;
-  chipBg: string;
-  chipText: string;
   confirmBg: string;
   confirmHover: string;
   confirmLabel: string;
@@ -43,8 +42,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.RESTRICTED:
       return {
         borderAccent: "border-l-rim-danger",
-        chipBg: "bg-rim-danger/20",
-        chipText: "text-rim-danger",
         confirmBg: "bg-rim-danger",
         confirmHover: "hover:bg-rim-danger/90",
         confirmLabel: "I understand — execute",
@@ -55,8 +52,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.MUTATING:
       return {
         borderAccent: "border-l-rim-warm",
-        chipBg: "bg-rim-warm/20",
-        chipText: "text-rim-warm",
         confirmBg: "bg-rim-warm",
         confirmHover: "hover:bg-rim-warm/90",
         confirmLabel: "Run anyway",
@@ -67,8 +62,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.SENSITIVE:
       return {
         borderAccent: "border-l-rim-accent",
-        chipBg: "bg-rim-accent/20",
-        chipText: "text-rim-accent",
         confirmBg: "bg-rim-accent",
         confirmHover: "hover:bg-rim-accent/90",
         confirmLabel: "Confirm",
@@ -80,8 +73,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     default:
       return {
         borderAccent: "border-l-rim-success",
-        chipBg: "bg-rim-success/20",
-        chipText: "text-rim-success",
         confirmBg: "bg-rim-accent",
         confirmHover: "hover:bg-rim-accent/90",
         confirmLabel: "Confirm",
@@ -90,10 +81,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
         requireTypeToConfirm: false,
       };
   }
-}
-
-function severityWireLabel(sev: CommandSensitivity | undefined): string {
-  return (sev ?? CommandSensitivity.SAFE).toString();
 }
 
 interface ContainerProps {
@@ -240,7 +227,6 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
     }
   }
 
-  const sensitivityLabel = severityWireLabel(sensitivity);
   // A dangerous command without a consequence line of its own is said to be dangerous.
   const subtitle =
     request.description ??
@@ -328,19 +314,9 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               {requireType ? ` Type the word ${expectedVerb} to confirm.` : ""}
             </span>
 
-            {/* Chips row */}
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                  visuals.chipBg,
-                  visuals.chipText,
-                )}
-                data-testid="sensitivity-chip"
-              >
-                {sensitivityLabel}
-              </span>
-              {!byUser && (
+            {/* Chips row: who proposed the command, when the agent did */}
+            {!byUser && (
+              <div className="flex items-center gap-2">
                 <span
                   className={cn(
                     "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
@@ -350,8 +326,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 >
                   <Bot className="h-3 w-3" /> AGENT
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Cross-channel warning chip. Shows the first 8 chars of the raw
              * conversation id: it guards against a command reaching another
@@ -449,7 +425,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               ) : (
                 <>
                   <span>{visuals.confirmLabel}</span>
-                  <span className="text-rim-void/70">⌘↵</span>
+                  <span className="text-rim-void/70">{confirmShortcutLabel()}</span>
                 </>
               )}
             </button>

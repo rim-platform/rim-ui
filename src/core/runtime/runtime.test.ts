@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { getRuntimeCapabilities, getDeviceKeyStore, detectPlatform, detectOs } from "./runtime";
+import {
+  getRuntimeCapabilities,
+  getDeviceKeyStore,
+  detectPlatform,
+  detectOs,
+  confirmShortcutLabel,
+} from "./runtime";
 
 describe("getRuntimeCapabilities", () => {
   it("returns all capabilities enabled for desktop", () => {
@@ -153,4 +159,28 @@ describe("detectOs", () => {
       expect(detectOs()).toBe("unknown");
     });
   });
+});
+
+describe("confirmShortcutLabel", () => {
+  function withUserAgent(ua: string, fn: () => void) {
+    const original = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", { value: ua, configurable: true });
+    fn();
+    Object.defineProperty(navigator, "userAgent", { value: original, configurable: true });
+  }
+
+  it("writes ⌘↵ on macOS", () => {
+    withUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", () => {
+      expect(confirmShortcutLabel()).toBe("⌘↵");
+    });
+  });
+
+  it.each([["Mozilla/5.0 (X11; Linux x86_64)"], ["Mozilla/5.0 (Windows NT 10.0; Win64; x64)"]])(
+    "writes Ctrl+↵ on %s",
+    (ua) => {
+      withUserAgent(ua, () => {
+        expect(confirmShortcutLabel()).toBe("Ctrl+↵");
+      });
+    },
+  );
 });

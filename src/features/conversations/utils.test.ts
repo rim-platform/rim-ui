@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PostingPolicy } from "../../core/graphql/generated/schema-types";
-import { postingAllows, untitledGroupName, type PostKind } from "./utils";
+import { memberCountLabel, postingAllows, untitledGroupName, type PostKind } from "./utils";
 
 const names: Record<string, string> = {
   me: "Me",
@@ -64,5 +64,13 @@ describe("postingAllows", () => {
   it("leaves everyone else thread replies and reactions only while threads are allowed", () => {
     expect(allowed(PostingPolicy.MODERATORS, true, false)).toEqual(["thread", "reaction"]);
     expect(allowed(PostingPolicy.MODERATORS, false, false)).toEqual([]);
+  });
+});
+
+describe("memberCountLabel", () => {
+  it("counts members in the singular for one and the plural otherwise", () => {
+    expect(memberCountLabel(1)).toBe("1 member");
+    expect(memberCountLabel(0)).toBe("0 members");
+    expect(memberCountLabel(3)).toBe("3 members");
   });
 });

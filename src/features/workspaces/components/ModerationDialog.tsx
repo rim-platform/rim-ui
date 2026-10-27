@@ -2,30 +2,16 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
-import { cn } from "../../../shared/ui/cn";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { confirmShortcutLabel } from "../../../core/runtime/runtime";
 
 export type ModerationTone = "danger" | "warm" | "accent";
-
-const TONE_BORDER: Record<ModerationTone, string> = {
-  danger: "border-rim-danger",
-  warm: "border-rim-warm",
-  accent: "border-rim-accent",
-};
-
-const TONE_CHIP: Record<ModerationTone, string> = {
-  danger: "bg-rim-danger/20 text-rim-danger",
-  warm: "bg-rim-warm/20 text-rim-warm",
-  accent: "bg-rim-accent/20 text-rim-accent",
-};
 
 interface ModerationDialogProps {
   title: string;
   description: ReactNode;
-  /** Peripheral severity cue: left accent border, first chip and confirm button colour. */
+  /** `danger` gives the confirm button the danger style; `warm` and `accent` the primary one. */
   tone: ModerationTone;
-  /** Chip labels; the first takes the tone colour (e.g. `DANGEROUS`), the rest are neutral. */
-  chips?: string[];
   confirmLabel: string;
   confirmDisabled?: boolean;
   /** Runs the action; a rejection keeps the dialog open with the server's message. */
@@ -40,15 +26,13 @@ interface ModerationDialogProps {
 
 /**
  * Confirmation for moderation actions in the dangerous-action style of the command
- * confirmation modal: a severity-coloured left border and chip, Cancel
- * focused first, Escape always cancels, Ctrl/Cmd+Enter confirms, and a failure shows the
- * server's message inline with Close / Retry instead of closing.
+ * confirmation modal: Cancel focused first, Escape always cancels, Ctrl/Cmd+Enter confirms, and
+ * a failure shows the server's message inline with Close / Retry instead of closing.
  */
 export function ModerationDialog({
   title,
   description,
   tone,
-  chips = [],
   confirmLabel,
   confirmDisabled = false,
   onConfirm,
@@ -97,26 +81,7 @@ export function ModerationDialog({
 
   return (
     <Dialog open title={title} onClose={onClose} maxWidth="max-w-md">
-      <div
-        onKeyDown={handleKeyDown}
-        className={cn("space-y-4 border-l-4 pl-4", TONE_BORDER[tone])}
-        data-testid="moderation-dialog"
-      >
-        {chips.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {chips.map((chip, i) => (
-              <span
-                key={chip}
-                className={cn(
-                  "rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                  i === 0 ? TONE_CHIP[tone] : "bg-rim-line/40 text-rim-text-muted",
-                )}
-              >
-                {chip}
-              </span>
-            ))}
-          </div>
-        )}
+      <div onKeyDown={handleKeyDown} className="space-y-4" data-testid="moderation-dialog">
         <div className="text-sm text-rim-text-muted">{description}</div>
         {children}
         {error && (
@@ -137,7 +102,7 @@ export function ModerationDialog({
             size="sm"
             isLoading={pending}
             disabled={confirmDisabled}
-            title="Ctrl+Enter"
+            title={confirmShortcutLabel()}
             onClick={() => void handleConfirm()}
           >
             {error ? "Retry" : confirmLabel}

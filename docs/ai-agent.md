@@ -125,8 +125,7 @@ dialog:
 
 - **Header**: the **RIM** badge ("Verified RIM system dialog") and "Confirm command".
 - **Title**: "Agent wants to:" and the command's id, with the command's description under it.
-- **Chips**: the sensitivity in capitals, MUTATING or RESTRICTED, and **AGENT** for who started
-  it.
+- **Chip**: **AGENT** when the agent proposed it.
 - **Destination**: when the command names another conversation than the open one, "Destination
   differs from active conversation" with "Will post in conversation" and the first eight
   characters of its id.
@@ -142,8 +141,9 @@ dialog:
 - **Buttons**: **Cancel**, and **Run anyway** for a Mutating command or **I understand —
   execute** for a Restricted one. A Restricted command first asks you to type its verb, the word
   after the dot in its id, as in `Type "delete" to confirm`; so does a Mutating command under the
-  warning. <kbd>Ctrl+Enter</kbd> confirms; <kbd>Esc</kbd>, the close button and **Cancel**
-  cancel. A click outside the dialog does nothing.
+  warning. <kbd>Ctrl+Enter</kbd> (<kbd>⌘ Return</kbd> on macOS, as the button shows) confirms;
+  <kbd>Esc</kbd>, the close button and **Cancel** cancel. A click outside the dialog does
+  nothing.
 - **Expiry**: the server's confirmation is valid for 60 seconds. When it runs out, the dialog
   closes and counts as cancelled. If it lapses as you confirm, the dialog opens once more.
 
@@ -187,8 +187,9 @@ without their tool results, in the app's local storage; the settings; and the en
 The RIM server runs the agent's built-in commands as it runs yours and records each in its audit
 log with the initiator `agent`. Arguments that look secret are stored as `[REDACTED]`, by the same
 rules as the dialog. The **Audit log** in the side rail shows your own entries, and a workspace's
-Owners and Moderators see all of the workspace's. Masking keeps values out of the dialog and the
-log, not out of the provider: the model wrote those arguments. Plugin commands run on this device;
+Owners and Moderators see all of the workspace's. Each entry names who ran it and, for an action
+on a member, that member. Masking keeps values out of the dialog and the log, not out of the
+provider: the model wrote those arguments. Plugin commands run on this device;
 `rim.log` records each one the agent calls by plugin and command id, and the saving, removal or
 absence of a provider key, never the key itself.
 

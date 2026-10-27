@@ -218,7 +218,6 @@ function PublicLinkSection({
           title="Turn on the public link?"
           description={PUBLIC_LINK_WARNING}
           tone="warm"
-          chips={["OWNER"]}
           confirmLabel="Turn on"
           errorFallback="Could not turn on the public link"
           onConfirm={() => update.mutateAsync({ serverId, enabled: true })}
@@ -234,7 +233,6 @@ function PublicLinkSection({
           title="Issue a new link?"
           description={REISSUE_WARNING}
           tone="danger"
-          chips={["OWNER"]}
           confirmLabel="Issue a new link"
           errorFallback="Could not issue a new link"
           onConfirm={() => reissue.mutateAsync(serverId)}
