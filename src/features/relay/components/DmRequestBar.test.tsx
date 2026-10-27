@@ -145,7 +145,7 @@ describe("DmRequestBar", () => {
     const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
     expect(
       within(dialog).getByText(
-        "They won't be able to send you direct messages or requests. They won't be told. You can unblock them in Settings → Direct messages.",
+        "You won't get their requests, and their messages won't reach you while they're blocked. They won't be told. You can unblock them in Settings → Direct messages.",
       ),
     ).toBeInTheDocument();
     expect(api.blockPrincipal).not.toHaveBeenCalled();
