@@ -165,6 +165,16 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     () => (editingMessageId ? items.findIndex((m) => m.id === editingMessageId) : -1),
     [items, editingMessageId],
   );
+  // The message a held pointer press on the list landed on (`""` for none), or null.
+  const pointerEntryRef = useRef<string | null>(null);
+  // A press ends wherever the pointer is released, inside the list or not.
+  useEffect(() => {
+    const release = () => {
+      pointerEntryRef.current = null;
+    };
+    window.addEventListener("mouseup", release, true);
+    return () => window.removeEventListener("mouseup", release, true);
+  }, []);
   const { virtualizer, scrollContainerRef, topSentinelRef, handleScroll, scrollToIndex } =
     useTimelineScroll({
       listKey: conversationId,
@@ -179,6 +189,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       isAtBottomRef,
       pinnedIndex: editingIndex,
       hintBarShown: navigationMode,
+      pointerPressRef: pointerEntryRef,
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
@@ -230,7 +241,6 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     [deleteMessageFn],
   );
 
-  const pointerEntryRef = useRef<string | null>(null);
   // Vim-style keyboard navigation for the message list
   const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } =
     useMessageNavigation({
@@ -308,13 +318,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
               (e.target as Element).closest("[data-message-id]")?.getAttribute("data-message-id") ??
               "";
           }}
-          onMouseUp={() => {
-            pointerEntryRef.current = null;
-          }}
-          onFocus={() => {
-            useShellStore.getState().setNavigationMode(true);
-            pointerEntryRef.current = null;
-          }}
+          onFocus={() => useShellStore.getState().setNavigationMode(true)}
           onBlur={() => {
             pointerEntryRef.current = null;
           }}

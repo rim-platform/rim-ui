@@ -53,6 +53,11 @@ interface UseTimelineScrollOptions {
    * it under the newest row.
    */
   hintBarShown: boolean;
+  /**
+   * Set while a pointer press on the list is held; the list then keeps its scroll position, so
+   * the press, its click and its context menu land on the row under the pointer.
+   */
+  pointerPressRef: React.RefObject<string | null>;
 }
 
 /**
@@ -81,6 +86,7 @@ export function useTimelineScroll({
   isAtBottomRef,
   pinnedIndex,
   hintBarShown,
+  pointerPressRef,
 }: UseTimelineScrollOptions) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
@@ -116,9 +122,10 @@ export function useTimelineScroll({
   // shrinking rows (e.g. a freshly prepended page) under-corrects. Compare
   // against the offset from the last scroll event instead: both sides then
   // describe the same layout. A row that changes size while the list is at its
-  // end keeps the end in view.
+  // end keeps the end in view, unless a pointer press is held on the list.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.start < (instance.scrollOffset ?? 0) || isAtBottomRef.current;
+    item.start < (instance.scrollOffset ?? 0) ||
+    (isAtBottomRef.current && pointerPressRef.current === null);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -188,13 +195,26 @@ export function useTimelineScroll({
     }
   }, [listKey, items, firstNewIndex, currentUserId, virtualizer, isAtBottomRef]);
 
-  // A list at its end stays at its end when room for the hint bar appears or goes.
+  // A list at its end stays at its end when room for the hint bar appears or goes, or when its
+  // rows grow (an image arrives), but not while a pointer press is held on it: moving the rows
+  // then would send the press's click or context menu to another row.
   const prevHintBarRef = useRef(hintBarShown);
   useLayoutEffect(() => {
     if (prevHintBarRef.current === hintBarShown) return;
     prevHintBarRef.current = hintBarShown;
-    if (isAtBottomRef.current) virtualizer.scrollToEnd();
-  }, [hintBarShown, isAtBottomRef, virtualizer]);
+    if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
+  }, [hintBarShown, isAtBottomRef, pointerPressRef, virtualizer]);
+
+  const totalSize = virtualizer.getTotalSize();
+  const firstItemId = items[0]?.id;
+  const prevSizeRef = useRef({ totalSize, firstItemId });
+  useLayoutEffect(() => {
+    const prev = prevSizeRef.current;
+    prevSizeRef.current = { totalSize, firstItemId };
+    // A prepended page grows the list above the viewport; the prepend logic keeps its place.
+    if (totalSize <= prev.totalSize || firstItemId !== prev.firstItemId) return;
+    if (isAtBottomRef.current && pointerPressRef.current === null) virtualizer.scrollToEnd();
+  }, [totalSize, firstItemId, isAtBottomRef, pointerPressRef, virtualizer]);
 
   // Top sentinel visible -> load the next (older) page. Re-observed when the
   // first row changes, which also covers the per-conversation remount.

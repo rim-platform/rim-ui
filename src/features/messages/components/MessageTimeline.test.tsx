@@ -855,6 +855,30 @@ describe("MessageTimeline keyboard", () => {
     expect(row.getAttribute("aria-selected")).toBe("true");
     expect(messageList().scrollTop).toBe(100);
   });
+
+  it("keeps its place at the bottom while a pointer press focuses the list", async () => {
+    setMessages(range(0, 20));
+    render(<MessageTimeline />);
+    await settle();
+    const before = messageList().scrollTop;
+    expect(before).toBe(maxScrollTop());
+
+    const row = document.querySelector<HTMLElement>('[data-message-id="m-019"]')!;
+    fireEvent.mouseDown(row);
+    act(() => messageList().focus());
+    await settle();
+
+    expect(useShellStore.getState().navigationMode).toBe(true);
+    expect(messageList().scrollTop).toBe(before);
+    expect(row.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.mouseUp(window);
+    act(() => useShellStore.setState({ navigationMode: false }));
+    await settle();
+    act(() => useShellStore.setState({ navigationMode: true }));
+    await settle();
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+  });
 });
 
 describe("MessageTimeline — the menu of an own message for a moderator", () => {

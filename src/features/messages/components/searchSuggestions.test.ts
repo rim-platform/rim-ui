@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { renderHook } from "@testing-library/react";
 
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { makeConversation, workspaceMembers } from "../../conversations/__fixtures__/conversations";
@@ -8,6 +9,7 @@ import {
   MAX_SUGGESTIONS,
   applySuggestion,
   computeSuggestions,
+  useOperatorSuggestions,
   findActiveToken,
   type ActiveToken,
 } from "./searchSuggestions";
@@ -106,6 +108,22 @@ describe("computeSuggestions", () => {
     ]);
     const byDomain = computeSuggestions(token("from:@ada:else"), members, directory);
     expect(byDomain.map((r) => r.id)).toEqual(["u-r_abcdef"]);
+  });
+
+  it("drops a member whose handle is typed in full without the own domain", () => {
+    const members = [
+      { ...member("kuba", "Kuba"), handle: { shown: "@kuba", copied: "@kuba:rim.example" } },
+    ];
+    const { result } = renderHook(() =>
+      useOperatorSuggestions("from:@kuba", "from:@kuba".length, members, directory),
+    );
+    expect(result.current.suggestions).toEqual([]);
+    const partial = renderHook(() =>
+      useOperatorSuggestions("from:@ku", "from:@ku".length, members, directory),
+    );
+    expect(partial.result.current.suggestions.map((r) => r.insert)).toEqual([
+      "from:@kuba:rim.example",
+    ]);
   });
 
   it("orders members by match position, then by name, at most eight", () => {
