@@ -142,5 +142,5 @@ export function useBlockedConversationsRuntime(): void {
     ];
     check();
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  });
+  }, []);
 }
