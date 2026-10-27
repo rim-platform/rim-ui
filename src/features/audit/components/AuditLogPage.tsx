@@ -69,7 +69,7 @@ function outcomeBadgeClass(outcome: AuditOutcomeGql): string {
 }
 
 /** The columns shared by the header and the rows: Verb, Outcome, Who, Command, Initiator, Time. */
-const ROW_GRID = "grid grid-cols-[80px_96px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
+const ROW_GRID = "grid grid-cols-[80px_168px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -140,9 +140,10 @@ function AuditRow({ entry, nameOf }: AuditRowProps) {
       {/* Outcome chip */}
       <span
         className={cn(
-          "rounded px-2 py-0.5 text-center text-[10px] font-medium uppercase",
+          "truncate rounded px-2 py-0.5 text-center text-[10px] font-medium uppercase",
           outcomeBadgeClass(entry.outcome),
         )}
+        title={entry.outcome}
       >
         {entry.outcome}
       </span>
