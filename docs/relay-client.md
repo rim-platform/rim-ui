@@ -286,9 +286,9 @@ search directory, Forward choice or palette command, and records it. Its relay i
 acknowledged and applied nowhere: no timeline, unread count, typing, toast or notification.
 The cache sync never asks the change feed for it. Its unread counts are left out, the bell
 leaves out its unread entries among the newest 100, and the notification inbox lists none of
-them. Selecting it any other way (a notification, a search result, a keybind) closes it at
-once and goes to Direct messages, saying so when it was on screen. **Send message** and New message for someone blocked open
-nothing and say to unblock them first.
+them. Selecting it any other way (a notification, a search result) closes it at once and goes
+to Direct messages, saying so when it was on screen. **Send message**, New message and a
+keybind to it open nothing and say to unblock them first.
 
 The blocked list is read again every two minutes while the app is in front, when the window
 regains focus and when the WebSocket reconnects, so a block or unblock on another device
