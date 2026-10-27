@@ -157,9 +157,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
                 {signInLabel(account)}
               </span>
               {!account.username && (
-                <span className="block font-mono text-[11px] text-rim-text-faint">
-                  {idLabel(account)}
-                </span>
+                <span className="block font-mono text-[11px] opacity-75">{idLabel(account)}</span>
               )}
             </Button>
           )}
