@@ -78,15 +78,14 @@ describe("PluginSlotContainer", () => {
     expect(screen.getByText("Test Panel")).toBeInTheDocument();
   });
 
-  it("keeps the panel title whole and lets the plugin line give way", () => {
+  it("shows the plugin line whole on its own row under the title", () => {
     render(<PluginSlotContainer plugin={mockPlugin} panel={mockPanel} onClose={vi.fn()} />);
 
     const title = screen.getByText("Test Panel");
-    expect(title).toHaveClass("shrink-0", "max-w-[70%]");
-    expect(title).not.toHaveClass("min-w-0");
     const pluginLine = screen.getByText(/^Test Plugin · /);
-    expect(pluginLine).toHaveClass("min-w-0", "truncate");
-    expect(pluginLine).not.toHaveClass("shrink-0");
+    expect(pluginLine).not.toHaveClass("truncate");
+    expect(pluginLine).toHaveClass("break-words");
+    expect(title.parentElement).not.toContainElement(pluginLine);
   });
 
   it("shows the whole plugin line on hover", () => {

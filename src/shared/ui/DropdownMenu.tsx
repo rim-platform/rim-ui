@@ -381,13 +381,19 @@ export function DropdownMenu({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [onClose, anchorRef]);
 
-  // Close on scroll
+  // Close when the user scrolls outside the menu; a scroll the app makes leaves it open.
   useEffect(() => {
-    function handleScroll() {
+    function handleUserScroll(e: Event) {
+      if (menuRef.current?.contains(e.target as Node)) return;
       onClose();
     }
-    document.addEventListener("scroll", handleScroll, true);
-    return () => document.removeEventListener("scroll", handleScroll, true);
+    const options = { capture: true, passive: true };
+    document.addEventListener("wheel", handleUserScroll, options);
+    document.addEventListener("touchmove", handleUserScroll, options);
+    return () => {
+      document.removeEventListener("wheel", handleUserScroll, options);
+      document.removeEventListener("touchmove", handleUserScroll, options);
+    };
   }, [onClose]);
 
   return createPortal(

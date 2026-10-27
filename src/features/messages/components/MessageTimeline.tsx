@@ -178,6 +178,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       onScrollPosition,
       isAtBottomRef,
       pinnedIndex: editingIndex,
+      hintBarShown: navigationMode,
     });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
@@ -229,6 +230,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     [deleteMessageFn],
   );
 
+  const pointerEntryRef = useRef<string | null>(null);
   // Vim-style keyboard navigation for the message list
   const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } =
     useMessageNavigation({
@@ -244,6 +246,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       onOpenActions: openActionsFor,
       firstNewIndex,
       scrollToIndex,
+      pointerEntryRef,
     });
 
   if (!conversationId) {
@@ -300,7 +303,21 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
           aria-activedescendant={selectedMsg ? `message-${selectedMsg.id}` : undefined}
           onScroll={handleScroll}
           onKeyDown={handleMessageListKeyDown}
-          onFocus={() => useShellStore.getState().setNavigationMode(true)}
+          onMouseDown={(e) => {
+            pointerEntryRef.current =
+              (e.target as Element).closest("[data-message-id]")?.getAttribute("data-message-id") ??
+              "";
+          }}
+          onMouseUp={() => {
+            pointerEntryRef.current = null;
+          }}
+          onFocus={() => {
+            useShellStore.getState().setNavigationMode(true);
+            pointerEntryRef.current = null;
+          }}
+          onBlur={() => {
+            pointerEntryRef.current = null;
+          }}
           className="relative flex-1 overflow-y-auto px-4 outline-none"
         >
           {/* Top sentinel for the infinite-scroll trigger; scrolls with the content. */}

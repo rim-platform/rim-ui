@@ -7,6 +7,8 @@ import { expectReachableByKeyboard } from "../../test/keyboard";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useShellStore } from "../state/useShellStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import type { PluginInfo } from "../../features/plugins/types";
 
 const requestMock = vi.fn();
@@ -350,6 +352,16 @@ describe("SideRail — plugin panels", () => {
     expect(useShellStore.getState().activePluginPanel).toBeNull();
     expect(inbox()).toHaveAttribute("aria-current", "page");
     expect(plugins()).not.toHaveAttribute("aria-current");
+  });
+
+  it("closes the workspace members list and a conversation's members when Inbox is chosen", async () => {
+    const user = userEvent.setup();
+    useMembersPanelStore.getState().setOpen(true);
+    useMemberDirectoryStore.getState().setOpen(true);
+    renderWithProviders(<SideRail />);
+    await user.click(inbox());
+    expect(useMembersPanelStore.getState().open).toBe(false);
+    expect(useMemberDirectoryStore.getState().open).toBe(false);
   });
 
   it("marks Plugins beside Inbox for a tool-panel panel, and neither while settings cover them", async () => {

@@ -59,7 +59,7 @@ describe("this app's own commands", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("c");
   });
 
-  it("closes a main-area plugin panel before the thread it covers, and leaves a tool-panel one", () => {
+  it("closes a main-area plugin panel, then the thread, then a side plugin panel", () => {
     const shell = () => useShellStore.getState();
     shell().openThreadForMessage("root-1");
     shell().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
@@ -72,7 +72,28 @@ describe("this app's own commands", () => {
     runDesktopLocalCommand("workspace.close_panel");
     expect(shell().isThreadOpen).toBe(false);
     runDesktopLocalCommand("workspace.close_panel");
-    expect(shell().activePluginPanel).toMatchObject({ panelId: "notes" });
+    expect(shell().activePluginPanel).toBeNull();
+  });
+
+  it("says no panel is open when Close Panel has nothing to close", async () => {
+    const closePanel: CommandDefinition = {
+      id: "workspace.close_panel",
+      title: "Close Panel",
+      description: "",
+      category: "Workspace",
+      sourceKind: "BUILT_IN",
+      executionTarget: "DESKTOP_LOCAL",
+      requiredContext: [],
+      requiredCapabilities: [],
+      visibleInPalette: true,
+      visibleInContextMenus: false,
+      keybindCapable: true,
+      dangerous: false,
+    };
+    await expect(dispatchCommand(closePanel, vi.fn())).resolves.toMatchObject({
+      status: "ERROR",
+      message: "No panel is open",
+    });
   });
 
   it("opens and closes the shortcuts panel", () => {

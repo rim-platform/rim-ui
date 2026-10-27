@@ -230,10 +230,26 @@ describe("WorkspaceRail — workspace context menu", () => {
     });
   });
 
+  it("lists the open workspace's join requests on the first right-click", async () => {
+    serve(ServerMemberRoleGql.MODERATOR, false, 2);
+    renderWithQuery(<WorkspaceRail />);
+    // Alpha is the open workspace; it is never pointed at before its menu opens.
+    const alpha = screen.getByRole("button", { name: /^Alpha/ });
+    await waitFor(() => expect(callsTo(requestMock, "query JoinRequestCount")).toHaveLength(1));
+    await act(async () => {});
+
+    fireEvent.contextMenu(alpha);
+    expect(menuLabels()).toContain("Join requests…: 2 waiting");
+  });
+
   it("leaves join requests out of the menu while none are open", async () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await openBetaMenu();
-    await waitFor(() => expect(callsTo(requestMock, "query JoinRequestCount")).toHaveLength(1));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query JoinRequestCount")).toContainEqual(
+        expect.objectContaining({ serverId: "ws-2" }),
+      ),
+    );
     expect(menuLabels().some((label) => label.startsWith("Join requests"))).toBe(false);
   });
 

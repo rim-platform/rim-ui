@@ -8,7 +8,10 @@ interface SearchSuggestionsPopoverProps {
   onHover: (index: number) => void;
 }
 
-/** The operator value popover under the search input; rows insert their value when clicked. */
+/**
+ * The operator value list between the search input and the results; rows insert their value
+ * when clicked.
+ */
 export function SearchSuggestionsPopover({
   suggestions,
   selectedIndex,
@@ -20,7 +23,7 @@ export function SearchSuggestionsPopover({
       id={SEARCH_SUGGESTIONS_ID}
       role="listbox"
       aria-label="Operator suggestions"
-      className="absolute left-0 right-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-lg border border-rim-line bg-rim-panel p-1 shadow-xl"
+      className="max-h-72 overflow-y-auto border-b border-rim-line p-1"
     >
       {suggestions.map((suggestion, index) => (
         <li

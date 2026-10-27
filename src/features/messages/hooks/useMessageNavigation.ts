@@ -31,6 +31,11 @@ interface UseMessageNavigationOptions {
    * not be mounted; the caller scrolls by index rather than by DOM node.
    */
   scrollToIndex: (index: number) => void;
+  /**
+   * The message a pointer press on the list landed on (`""` for none) while that press gives the
+   * list focus; entering NAVIGATE then selects it, or the newest message, without scrolling.
+   */
+  pointerEntryRef: React.RefObject<string | null>;
 }
 
 const ROW_CONTROL = "button, a[href], video, audio, [role='button']";
@@ -53,6 +58,7 @@ export function useMessageNavigation({
   onOpenActions,
   firstNewIndex = -1,
   scrollToIndex,
+  pointerEntryRef,
 }: UseMessageNavigationOptions) {
   // Selection is tracked by message id so it stays on the same message when
   // older pages are prepended (which shifts every index).
@@ -107,12 +113,19 @@ export function useMessageNavigation({
     const unsub = useShellStore.subscribe((state, prev) => {
       if (state.navigationMode && !prev.navigationMode) {
         if (selectedMessageIndex === -1 && items.length > 0) {
-          selectIndex(items.length - 1);
+          const pressed = pointerEntryRef.current;
+          if (pressed !== null) {
+            setSelectedMessageId(
+              items.some((m) => m.id === pressed) ? pressed : items[items.length - 1].id,
+            );
+          } else {
+            selectIndex(items.length - 1);
+          }
         }
       }
     });
     return unsub;
-  }, [selectedMessageIndex, items.length, selectIndex]);
+  }, [selectedMessageIndex, items, selectIndex, pointerEntryRef]);
 
   // Clean up delete confirmation timer on unmount
   useEffect(() => {

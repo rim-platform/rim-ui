@@ -55,43 +55,46 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
       {/* Header: the host's chrome names the plugin and how far to trust it, so a
           plugin cannot pass its panel off as part of the app. */}
       <div
-        className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-rim-line px-3"
+        className="flex shrink-0 flex-col gap-0.5 border-b border-rim-line px-3 py-2"
         {...contextMenu.bind(headerMenuItems, { label: `${panel.title} panel` })}
       >
         <div className="flex min-w-0 items-center gap-2">
           <Puzzle className="h-4 w-4 shrink-0 text-rim-accent" />
           <span
-            className="max-w-[70%] shrink-0 truncate text-sm font-medium text-rim-text"
+            className="min-w-0 flex-1 truncate text-sm font-medium text-rim-text"
             title={panel.title}
           >
             {panel.title}
           </span>
-          <span className="min-w-0 truncate text-[11px] text-rim-text-muted" title={pluginLine}>
-            {pluginLine}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {settings && (
+          <div className="flex shrink-0 items-center gap-1">
+            {settings && (
+              <button
+                type="button"
+                onClick={() => openPluginSettings(plugin.plugin_id)}
+                title="Plugin settings"
+                aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+                className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => openPluginSettings(plugin.plugin_id)}
-              title="Plugin settings"
-              aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+              onClick={onClose}
+              title="Close plugin panel"
+              aria-label="Close plugin panel"
               className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
             >
-              <SlidersHorizontal className="h-4 w-4" />
+              <X className="h-4 w-4" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close plugin panel"
-            aria-label="Close plugin panel"
-            className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          </div>
         </div>
+        <p
+          className="break-words pl-6 text-[11px] leading-snug text-rim-text-muted"
+          title={pluginLine}
+        >
+          {pluginLine}
+        </p>
       </div>
       {contextMenu.menu}
 

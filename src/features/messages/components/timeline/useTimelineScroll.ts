@@ -48,6 +48,11 @@ interface UseTimelineScrollOptions {
    * edited), so its unsaved draft and focus survive scrolling away.
    */
   pinnedIndex: number;
+  /**
+   * Whether the NAVIGATE hint bar floats over the list's bottom; the list then ends with room for
+   * it under the newest row.
+   */
+  hintBarShown: boolean;
 }
 
 /**
@@ -75,6 +80,7 @@ export function useTimelineScroll({
   onScrollPosition,
   isAtBottomRef,
   pinnedIndex,
+  hintBarShown,
 }: UseTimelineScrollOptions) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
@@ -100,7 +106,7 @@ export function useTimelineScroll({
     rangeExtractor,
     overscan: 8,
     paddingStart: LIST_PADDING_Y,
-    paddingEnd: LIST_PADDING_Y,
+    paddingEnd: LIST_PADDING_Y + (hintBarShown ? HINT_BAR_CLEARANCE : 0),
     scrollPaddingEnd: HINT_BAR_CLEARANCE,
   });
 
@@ -109,9 +115,10 @@ export function useTimelineScroll({
   // already includes earlier corrections from the same batch, so a batch of
   // shrinking rows (e.g. a freshly prepended page) under-corrects. Compare
   // against the offset from the last scroll event instead: both sides then
-  // describe the same layout.
+  // describe the same layout. A row that changes size while the list is at its
+  // end keeps the end in view.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.start < (instance.scrollOffset ?? 0);
+    item.start < (instance.scrollOffset ?? 0) || isAtBottomRef.current;
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -180,6 +187,14 @@ export function useTimelineScroll({
       }
     }
   }, [listKey, items, firstNewIndex, currentUserId, virtualizer, isAtBottomRef]);
+
+  // A list at its end stays at its end when room for the hint bar appears or goes.
+  const prevHintBarRef = useRef(hintBarShown);
+  useLayoutEffect(() => {
+    if (prevHintBarRef.current === hintBarShown) return;
+    prevHintBarRef.current = hintBarShown;
+    if (isAtBottomRef.current) virtualizer.scrollToEnd();
+  }, [hintBarShown, isAtBottomRef, virtualizer]);
 
   // Top sentinel visible -> load the next (older) page. Re-observed when the
   // first row changes, which also covers the per-conversation remount.

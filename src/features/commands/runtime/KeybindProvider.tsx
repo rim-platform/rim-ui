@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
 import {
   isKeystrokeRecorder,
@@ -110,13 +111,10 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       if (overlayOpen) {
         return;
       }
-      // Check whether there is actually a panel to close (thread open or
-      // non-conversation surface like settings/plugin).  When nothing
-      // needs closing, let the event fall through completely so the
+      // When nothing needs closing, let the event fall through completely so the
       // ComposerInput's own Escape handler (or message list handler) can
       // process it naturally.
-      const hasPanelToClose = shell.isThreadOpen || shell.mainSurface.kind !== "conversation";
-      if (!hasPanelToClose) {
+      if (!hasPanelToClose()) {
         return;
       }
     }

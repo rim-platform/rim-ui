@@ -183,9 +183,27 @@ function isList(el: HTMLElement): boolean {
   return el.hasAttribute("data-message-list");
 }
 
+/** Heights of rows that grew after their first measurement, by message id. */
+const rowHeights = new Map<string, number>();
+
+/** The live observers, with the rows each one watches. */
+const observers = new Set<{
+  observer: SyncResizeObserver;
+  callback: ResizeObserverCallback;
+  targets: Set<Element>;
+}>();
+
+function messageIdOf(row: HTMLElement): string | null {
+  return row.querySelector("[data-message-id]")?.getAttribute("data-message-id") ?? null;
+}
+
 class SyncResizeObserver {
-  constructor(private readonly callback: ResizeObserverCallback) {}
+  private readonly targets = new Set<Element>();
+  constructor(private readonly callback: ResizeObserverCallback) {
+    observers.add({ observer: this, callback, targets: this.targets });
+  }
   observe(target: Element) {
+    this.targets.add(target);
     // Browsers deliver resize observations after layout, i.e. after the
     // frame's scroll events; a frame callback keeps that order.
     requestAnimationFrame(() => {
@@ -198,8 +216,29 @@ class SyncResizeObserver {
       this.callback([entry], this as unknown as ResizeObserver);
     });
   }
-  unobserve() {}
-  disconnect() {}
+  unobserve(target: Element) {
+    this.targets.delete(target);
+  }
+  disconnect() {
+    this.targets.clear();
+  }
+}
+
+/** Give the row holding message `id` a new height and report it, as a browser's observer would. */
+function growRow(id: string, height: number) {
+  rowHeights.set(id, height);
+  act(() => {
+    for (const { observer, callback, targets } of observers) {
+      for (const target of targets) {
+        if (!target.isConnected || messageIdOf(target as HTMLElement) !== id) continue;
+        const entry = {
+          target,
+          borderBoxSize: [{ blockSize: height, inlineSize: 800 }],
+        } as unknown as ResizeObserverEntry;
+        callback([entry], observer as unknown as ResizeObserver);
+      }
+    }
+  });
 }
 
 function installLayout() {
@@ -211,7 +250,7 @@ function installLayout() {
       configurable: true,
       get(this: HTMLElement) {
         if (isList(this)) return VIEWPORT;
-        if (this.hasAttribute("data-index")) return ROW;
+        if (this.hasAttribute("data-index")) return rowHeights.get(messageIdOf(this) ?? "") ?? ROW;
         return 0;
       },
     },
@@ -370,6 +409,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   uninstallLayout();
+  rowHeights.clear();
+  observers.clear();
   vi.clearAllMocks();
   messageMenu.real = false;
   dmRequest.pending = false;
@@ -542,6 +583,32 @@ describe("MessageTimeline virtualization", () => {
 
     expect(messageList().scrollTop).toBe(maxScrollTop());
     expect(screen.getByText("message 20")).toBeInTheDocument();
+  });
+
+  it("keeps a growing newest message in view when the user is at the bottom", async () => {
+    setMessages(range(0, 20));
+    render(<MessageTimeline />);
+    await settle();
+    const oldMax = maxScrollTop();
+
+    growRow("m-019", 150);
+    await settle();
+
+    expect(maxScrollTop()).toBe(oldMax + 100);
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+  });
+
+  it("does not move the viewport when a row grows while scrolled up", async () => {
+    setMessages(range(0, 20));
+    render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 100 }));
+    await settle();
+
+    growRow("m-019", 150);
+    await settle();
+
+    expect(messageList().scrollTop).toBe(100);
   });
 
   it("k from the first visible row scrolls the off-screen row above into view", async () => {
@@ -757,6 +824,36 @@ describe("MessageTimeline keyboard", () => {
     } finally {
       useKeybindProfileStore.getState().setVimMode(false);
     }
+  });
+
+  it("keeps the newest message clear of the NAVIGATE hints when navigation starts at the bottom", async () => {
+    setMessages(range(0, 20));
+    render(<MessageTimeline />);
+    await settle();
+    const oldMax = maxScrollTop();
+
+    act(() => useShellStore.setState({ navigationMode: true }));
+    await settle();
+
+    expect(maxScrollTop()).toBe(oldMax + 36);
+    expect(messageList().scrollTop).toBe(maxScrollTop());
+    expect(rowViewportOffset("m-019")! + ROW).toBeLessThanOrEqual(VIEWPORT - 36);
+  });
+
+  it("selects the pressed message without scrolling when a pointer press focuses the list", async () => {
+    setMessages(range(0, 30));
+    render(<MessageTimeline />);
+    await settle();
+    act(() => messageList().scrollTo({ top: 100 }));
+    await settle();
+
+    const row = document.querySelector<HTMLElement>("[data-index] [data-message-id]")!;
+    fireEvent.mouseDown(row);
+    act(() => messageList().focus());
+    await settle();
+
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(messageList().scrollTop).toBe(100);
   });
 });
 

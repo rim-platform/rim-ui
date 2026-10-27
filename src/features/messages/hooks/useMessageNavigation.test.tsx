@@ -18,6 +18,7 @@ function Harness({ onCopy }: { onCopy: () => void }) {
     onDeleteMessage: vi.fn(),
     onForwardMessage: vi.fn(),
     scrollToIndex: vi.fn(),
+    pointerEntryRef: { current: null },
   });
   return (
     <>
@@ -54,6 +55,7 @@ function OwnMessageHarness({
     onDeleteMessage,
     onForwardMessage: vi.fn(),
     scrollToIndex: vi.fn(),
+    pointerEntryRef: { current: null },
   });
   return (
     <div role="listbox" aria-label="Messages" tabIndex={0} onKeyDown={handleMessageListKeyDown} />

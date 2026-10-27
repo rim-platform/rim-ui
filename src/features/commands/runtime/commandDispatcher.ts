@@ -24,6 +24,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
+import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { confirmConversationCommand } from "./conversationActionGate";
 import {
@@ -81,7 +82,10 @@ type ExecuteBackendCommand = (input: {
 // Registry of desktop-local command handlers. `dispatchCommand` checks this map FIRST for
 // every dispatch path (palette AND keybind), so a bare keybind fires the handler with no
 // args, and the handler supplies any args it needs itself.
-const localHandlers: Record<string, (args: Record<string, unknown> | undefined) => void> = {
+const localHandlers: Record<
+  string,
+  (args: Record<string, unknown> | undefined) => void | CommandResult
+> = {
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
@@ -188,20 +192,10 @@ const localHandlers: Record<string, (args: Record<string, unknown> | undefined) 
   "workspace.open_agent": () => {
     useAgentStore.getState().open();
   },
-  "workspace.close_panel": () => {
-    const shell = useShellStore.getState();
-    // A main-area plugin panel covers the conversation, and the thread beside it.
-    if (
-      shell.mainSurface.kind === "conversation" &&
-      shell.activePluginPanel?.slot === "main_area"
-    ) {
-      shell.closePluginPanel();
-    } else if (shell.isThreadOpen) {
-      shell.closeThread();
-    } else if (shell.mainSurface.kind !== "conversation") {
-      shell.setMainSurface({ kind: "conversation" });
-    }
-  },
+  "workspace.close_panel": () =>
+    closeTopPanel()
+      ? undefined
+      : { status: "ERROR", message: "No panel is open", payload: null, followUpCommands: [] },
   "workspace.reopen_last_thread": () => {
     const lastThread = useShellStore.getState().lastClosedThreadId;
     if (lastThread) useShellStore.getState().openThreadForMessage(lastThread);
@@ -350,7 +344,8 @@ export async function dispatchCommand(
   // a dialog or performs a client-side action instead.
   const localHandler = localHandlers[command.id];
   if (localHandler) {
-    localHandler(context?.args);
+    const result = localHandler(context?.args);
+    if (result) return result;
     return { status: "SUCCESS", message: "Executed locally", payload: null, followUpCommands: [] };
   }
 

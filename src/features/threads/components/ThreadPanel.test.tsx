@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { server } from "../../../test/mocks/server";
@@ -204,7 +204,7 @@ describe("ThreadPanel — message context menu", () => {
   it("opens the person's menu on a reply's author instead of the message's", async () => {
     serve();
     await renderPanel();
-    fireEvent.contextMenu(screen.getAllByText("u-bob")[0]);
+    fireEvent.contextMenu((await screen.findAllByText("Bob"))[0]);
     expect(labels()).toContain("Send message");
     expect(labels()).not.toContain("Copy text");
   });
@@ -234,6 +234,16 @@ describe("ThreadPanel — mentions", () => {
     await renderPanel();
     await screen.findByRole("button", { name: "@Bob" });
     expect(screen.queryByText(/<@u-bob>/)).toBeNull();
+  });
+
+  it("names the root's author from the member list when the cached root carries no author", async () => {
+    serve();
+    await renderPanel();
+    const root = (await screen.findByText("the root")).closest<HTMLElement>(
+      '[data-message-id="root-1"]',
+    )!;
+    expect(await within(root).findByText("Alice")).toBeInTheDocument();
+    expect(screen.queryByText("Unknown user")).toBeNull();
   });
 
   it("offers no Open thread action or thread link on the root", async () => {

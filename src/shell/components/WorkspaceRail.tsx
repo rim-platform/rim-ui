@@ -180,7 +180,8 @@ function WorkspaceRailButton({
   const getItems = useWorkspaceMenuItems({
     workspaceId,
     label,
-    enabled: reached,
+    // The open workspace's menu data loads with the rail, so its first menu is complete.
+    enabled: reached || active,
     onOpenDialog,
   });
   const menu = bindMenu(getItems, { label: `${label} actions` });

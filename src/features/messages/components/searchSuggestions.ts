@@ -222,6 +222,12 @@ export function useOperatorSuggestions(
 ): { token: ActiveToken | null; suggestions: Suggestion[] } {
   return useMemo(() => {
     const token = findActiveToken(query, caret);
-    return { token, suggestions: token ? computeSuggestions(token, members, directory) : [] };
+    if (!token) return { token, suggestions: [] };
+    // A value typed in full needs no suggestion.
+    const typed = query.slice(token.start, token.end);
+    const suggestions = computeSuggestions(token, members, directory).filter(
+      (suggestion) => suggestion.insert !== typed,
+    );
+    return { token, suggestions };
   }, [query, caret, members, directory]);
 }

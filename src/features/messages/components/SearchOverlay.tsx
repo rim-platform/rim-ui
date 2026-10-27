@@ -410,15 +410,6 @@ export function SearchOverlay() {
             </button>
           )}
 
-          {suggestionsOpen && (
-            <SearchSuggestionsPopover
-              suggestions={suggestions}
-              selectedIndex={activeSuggestion}
-              onPick={pickSuggestion}
-              onHover={setSuggestionIndex}
-            />
-          )}
-
           {tipsOpen && (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-rim-line bg-rim-panel p-3 shadow-xl">
               <p className="mb-2 text-[10px] uppercase tracking-wider text-rim-text-faint">
@@ -440,6 +431,15 @@ export function SearchOverlay() {
             </div>
           )}
         </div>
+
+        {suggestionsOpen && (
+          <SearchSuggestionsPopover
+            suggestions={suggestions}
+            selectedIndex={activeSuggestion}
+            onPick={pickSuggestion}
+            onHover={setSuggestionIndex}
+          />
+        )}
 
         {/* Results area */}
         <div ref={listRef} className="max-h-96 overflow-y-auto p-1">

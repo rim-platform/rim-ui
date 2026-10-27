@@ -179,6 +179,20 @@ export function ThreadPanel() {
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const members = useMessageMembers(memberLookup, rootMessage ? [rootMessage, ...items] : items);
   const ownDomain = useOwnHandleDomain();
+  /** The name, avatar and handle shown for a message's author, from the member list first. */
+  const authorView = (msg: Pick<MessageItemData, "author" | "authorId">) => {
+    const member = memberLookup.resolve(msg.authorId);
+    return {
+      name: member.displayName || personName(msg.author, msg.authorId, ownDomain),
+      avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
+      username: member.username ?? msg.author?.username,
+      handle: viewHandle(
+        msg.author?.username ?? member.username,
+        msg.author?.handle ?? member.handle,
+        ownDomain,
+      ),
+    };
+  };
   useEffect(
     () => rememberHandles([rootMessage?.author, ...items.map((m) => m.author)]),
     [rootMessage, items],
@@ -354,26 +368,18 @@ export function ThreadPanel() {
       {/* Root message */}
       {rootMessage &&
         (() => {
-          const name = personName(rootMessage.author, rootMessage.authorId, ownDomain);
           return (
             <div className="border-b border-rim-line px-4 py-3">
               <MessageItem
                 view={{
                   message: rootMessage,
                   author: {
-                    name,
+                    ...authorView(rootMessage),
                     ban: {
                       banned: activeBan(rootMessage.author),
                       bannedUntil: rootMessage.author?.bannedUntil,
                       banReason: rootMessage.author?.banReason,
                     },
-                    avatarUrl: rootMessage.author?.avatarUrl,
-                    username: rootMessage.author?.username,
-                    handle: viewHandle(
-                      rootMessage.author?.username,
-                      rootMessage.author?.handle,
-                      ownDomain,
-                    ),
                     isCurrentUser:
                       currentUserId !== undefined && rootMessage.authorId === currentUserId,
                   },
@@ -398,22 +404,18 @@ export function ThreadPanel() {
           </p>
         ) : (
           items.map((msg) => {
-            const name = personName(msg.author, msg.authorId, ownDomain);
             return (
               <MessageItem
                 key={msg.id}
                 view={{
                   message: msg,
                   author: {
-                    name,
+                    ...authorView(msg),
                     ban: {
                       banned: activeBan(msg.author),
                       bannedUntil: msg.author?.bannedUntil,
                       banReason: msg.author?.banReason,
                     },
-                    avatarUrl: msg.author?.avatarUrl,
-                    username: msg.author?.username,
-                    handle: viewHandle(msg.author?.username, msg.author?.handle, ownDomain),
                     isCurrentUser: currentUserId !== undefined && msg.authorId === currentUserId,
                   },
                 }}
