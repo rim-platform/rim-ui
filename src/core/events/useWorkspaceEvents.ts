@@ -29,6 +29,7 @@ import {
   handleConversationUpdated,
   handleMemberAddedToConversation,
   handleMemberRemovedFromConversation,
+  handleWorkspaceMemberJoined,
 } from "../../features/conversations/state/membershipEvents";
 import {
   handleMemberLeft,
@@ -367,6 +368,7 @@ export function applyWorkspaceEvent(
     case "MemberJoined":
       // Invalidate member list
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
+      handleWorkspaceMemberJoined(qc, workspaceId);
       // A join through the public link counts in the Owner's link statistics.
       if (event.source === "public_link") {
         qc.invalidateQueries({ queryKey: queryKeys.publicJoinLink(workspaceId) });

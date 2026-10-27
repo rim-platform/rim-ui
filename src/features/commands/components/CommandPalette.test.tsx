@@ -28,6 +28,8 @@ import { renderHook, act } from "@testing-library/react";
 
 vi.mock("../runtime/commandDispatcher", () => ({
   dispatchCommand: vi.fn(),
+  isLocalActionResult: (result: { payload: unknown } | null | undefined) =>
+    (result?.payload as { local?: boolean } | null)?.local === true,
 }));
 
 vi.mock("../../../shared/toast", () => ({
@@ -44,7 +46,7 @@ vi.mock("../../../shared/toast", () => ({
 // ─── Imports (after vi.mock hoisting) ────────────────────────────────────────
 
 import { useCallback } from "react";
-import { dispatchCommand } from "../runtime/commandDispatcher";
+import { dispatchCommand, isLocalActionResult } from "../runtime/commandDispatcher";
 import { currentCommandContext } from "../runtime/commandContext";
 import { commandSuccessText } from "../runtime/commandResultText";
 import { toast } from "../../../shared/toast";
@@ -74,6 +76,8 @@ function useExecuteSelected(
         });
         if (isCancelledResult(result)) {
           // The user declined the confirmation, or was told it expired.
+        } else if (isLocalActionResult(result)) {
+          // The command shows what it did.
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
@@ -287,5 +291,33 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
 
     // Now the toast fires
     expect(toast.success).toHaveBeenCalledOnce();
+  });
+
+  it("shows no success toast for a command that opens something here", async () => {
+    vi.mocked(dispatchCommand).mockResolvedValue(
+      makeResult({ message: "", payload: { local: true } }),
+    );
+    const { executeSelected } = setup();
+    await act(async () => {
+      await executeSelected(makeCommand({ title: "Open Settings" }));
+    });
+
+    expect(dispatchCommand).toHaveBeenCalledOnce();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("shows a local command's result text", async () => {
+    vi.mocked(dispatchCommand).mockResolvedValue(
+      makeResult({ message: "All conversations marked as read" }),
+    );
+    const { executeSelected } = setup();
+    await act(async () => {
+      await executeSelected(makeCommand({ title: "Mark All as Read" }));
+    });
+
+    expect(toast.success).toHaveBeenCalledWith(
+      "Mark All as Read: All conversations marked as read.",
+    );
   });
 });

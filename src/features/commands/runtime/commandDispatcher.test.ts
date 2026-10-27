@@ -144,7 +144,7 @@ vi.mock("../../../core/query/keys", () => ({
   },
 }));
 
-import { dispatchCommand } from "./commandDispatcher";
+import { LOCAL_ACTION_PAYLOAD, dispatchCommand } from "./commandDispatcher";
 import type { CommandDefinition } from "../types";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
@@ -189,11 +189,46 @@ describe("dispatchCommand", () => {
     const result = await dispatchCommand(command, mockExecuteBackend);
     expect(result).toEqual({
       status: "SUCCESS",
-      message: "Executed locally",
-      payload: null,
+      message: "",
+      payload: LOCAL_ACTION_PAYLOAD,
       followUpCommands: [],
     });
     expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("answers an opened argument prompt as a local action", async () => {
+    const command = makeCommand({ id: "chat.search_messages" });
+    const result = await dispatchCommand(command, mockExecuteBackend);
+    expect(result).toEqual({
+      status: "SUCCESS",
+      message: "",
+      payload: LOCAL_ACTION_PAYLOAD,
+      followUpCommands: [],
+    });
+    expect(mockExecuteBackend).not.toHaveBeenCalled();
+  });
+
+  it("answers Mark All as Read and Reload Commands with their result text", async () => {
+    const read = await dispatchCommand(
+      makeCommand({ id: "chat.mark_all_as_read" }),
+      mockExecuteBackend,
+    );
+    const reload = await dispatchCommand(
+      makeCommand({ id: "workspace.reload_commands" }),
+      mockExecuteBackend,
+    );
+    expect(read).toEqual({
+      status: "SUCCESS",
+      message: "All conversations marked as read",
+      payload: null,
+      followUpCommands: [],
+    });
+    expect(reload).toEqual({
+      status: "SUCCESS",
+      message: "Commands reloaded",
+      payload: null,
+      followUpCommands: [],
+    });
   });
 
   it("returns error for unknown local command", async () => {

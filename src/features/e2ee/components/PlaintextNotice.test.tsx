@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import type { ConversationSummary } from "../../conversations/types";
@@ -10,6 +10,7 @@ vi.mock("../../conversations/api/useConversation", () => ({
   useConversation: () => ({ data: conversation.current }),
 }));
 
+import { lockVault } from "../../../core/accountVault/accountVault";
 import { writeSealedItem } from "../../../core/accountVault/sealedStorage";
 import { unlockTestVault } from "../../../test/accountVault";
 import { renderWithProviders } from "../../../test/utils";
@@ -85,6 +86,24 @@ describe("PlaintextNotice", () => {
     openDm({ notReady: ["Bob", "Carol"] });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Not encrypted" })).toBeInTheDocument();
+  });
+
+  it("does not open by itself while the account is locked, and opens from the marker", () => {
+    act(() => lockVault());
+    openDm();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Not encrypted" }));
+    expect(screen.getByRole("dialog", { name: TITLE })).toBeInTheDocument();
+  });
+
+  it("opens by itself once the account is unlocked", async () => {
+    act(() => lockVault());
+    openDm();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await act(unlockTestVault);
+    expect(screen.getByRole("dialog", { name: TITLE })).toBeInTheDocument();
   });
 
   it("stays closed for a conversation dismissed in an earlier session", () => {
