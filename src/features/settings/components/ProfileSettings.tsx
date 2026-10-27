@@ -119,6 +119,10 @@ export function ProfileSettings() {
           return;
         }
         refreshLockOnRefusal(err);
+        if (probationEnd) {
+          setAvatarError(probationText("set a profile picture", probationEnd));
+          return;
+        }
         setAvatarError(errorSentence(err, "Avatar upload failed."));
       } finally {
         setAvatarUploading(false);
@@ -126,7 +130,7 @@ export function ProfileSettings() {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [updateProfile, qc, refreshLockOnRefusal],
+    [updateProfile, qc, refreshLockOnRefusal, probationEnd],
   );
 
   const handleSave = useCallback(async () => {
@@ -193,7 +197,7 @@ export function ProfileSettings() {
               onChange={handleAvatarChange}
             />
             <div className="text-sm text-rim-text-muted">
-              Click to upload avatar. Max 10MB, images only.
+              {!restricted && "Click to upload avatar. Max 10MB, images only."}
               {avatarError && <p className="mt-1 text-rim-danger">{avatarError}</p>}
             </div>
           </>

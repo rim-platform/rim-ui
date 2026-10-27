@@ -207,7 +207,8 @@ function WorkspaceShell() {
   useAllWorkspaceUnreadCounts(workspaceId);
   useMutedConversations(workspaceId ?? undefined);
   useWorkspacePresence(workspaceId);
-  useHeartbeat(workspaceId);
+  const selfId = useAuthStore((s) => s.session?.userId ?? null);
+  useHeartbeat(workspaceId, selfId);
   usePluginEvents();
   useStatusExpiration();
   usePresenceEventHandler();

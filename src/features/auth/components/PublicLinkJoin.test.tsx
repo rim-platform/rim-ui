@@ -208,18 +208,26 @@ describe("PublicLinkJoin", () => {
     const user = userEvent.setup();
     renderPage();
     expect(await screen.findByText("You're already a member.")).toBeVisible();
+    expect(screen.getByText("You're a member of")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open workspace" }));
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-acme");
     expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
-  it("tells a banned person they are banned and offers nothing", async () => {
-    serve(() => preview({ viewer: PublicJoinLinkViewer.BANNED }));
+  it("tells a banned person they can't join and offers only Open RIM", async () => {
+    serve(() =>
+      preview({ viewer: PublicJoinLinkViewer.BANNED, mode: PublicJoinLinkMode.REQUESTS }),
+    );
+    const user = userEvent.setup();
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /^You are banned from this workspace\.$/,
     );
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText("You can't join")).toBeInTheDocument();
+    expect(screen.queryByText("You can ask to join")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Open RIM" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
   it("joins directly and opens the workspace in the rail", async () => {

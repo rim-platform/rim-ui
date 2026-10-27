@@ -117,6 +117,13 @@ describe("ProfileSettings during probation and a lock", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
+  it("says nothing about uploading a picture during probation", () => {
+    const endsAt = new Date(Date.now() + HOUR).toISOString();
+    renderProfile(restrictedClient({ probationEndsAt: endsAt }));
+
+    expect(screen.queryByText(/Click to upload avatar/)).toBeNull();
+  });
+
   it("saves only the display name during probation", async () => {
     const sent = vi.fn();
     server.use(

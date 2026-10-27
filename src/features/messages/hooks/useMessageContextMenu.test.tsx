@@ -151,6 +151,7 @@ describe("useMessageContextMenu — report and delete", () => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.info).mockReset();
     useConfirmationModalStore.getState().reset();
   });
 
@@ -264,7 +265,7 @@ describe("useMessageContextMenu — report and delete", () => {
     }
   });
 
-  it("shows the server's message when the message was already reported", async () => {
+  it("says the message was already reported and closes, without Retry", async () => {
     serve(ServerMemberRoleGql.MEMBER, {
       "mutation ReportMessage": () => {
         throw graphqlError("CONFLICT", "you already reported this message");
@@ -274,7 +275,13 @@ describe("useMessageContextMenu — report and delete", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
     fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "spam" } });
     fireEvent.click(screen.getByRole("button", { name: "Report" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("you already reported this message");
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith("You already reported this message."),
+    );
+    expect(screen.queryByRole("dialog", { name: "Report message" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("lets a moderator delete someone else's message once the confirmation dialog is confirmed", async () => {
@@ -410,6 +417,27 @@ describe("useMessageContextMenu — reporting an encrypted message", () => {
   beforeEach(() => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.info).mockReset();
+  });
+
+  it("says the encrypted message was already reported and closes, without Retry", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ReportEncryptedMessage": () => {
+        throw graphqlError("CONFLICT", "you already reported this message");
+      },
+    });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, encryptedMessage(CACHED_E2EE));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
+    const dialog = screen.getByRole("dialog", { name: "Report message" });
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "threats" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Report" }));
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith("You already reported this message."),
+    );
+    expect(screen.queryByRole("dialog", { name: "Report message" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("reports with the content, franking key and receipt from the cache row", async () => {

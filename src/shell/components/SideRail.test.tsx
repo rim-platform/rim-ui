@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../test/utils";
@@ -20,8 +20,12 @@ vi.mock("../../core/graphql/client", () => ({
 }));
 
 // Unrelated SideRail dependencies — stubbed so only the rail itself is exercised.
+const currentUser = vi.hoisted(() => ({
+  data: undefined as
+    { id: string; username: string; displayName: string; avatarUrl: string | null } | undefined,
+}));
 vi.mock("../../features/workspaces/api/useCurrentUser", () => ({
-  useCurrentUser: () => ({ data: undefined }),
+  useCurrentUser: () => currentUser,
 }));
 const pluginList = vi.hoisted(() => ({ data: [] as PluginInfo[] }));
 vi.mock("../../features/plugins/api/usePluginList", () => ({
@@ -374,5 +378,34 @@ describe("SideRail — plugin panels", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(plugins()).not.toHaveAttribute("aria-current");
     expect(inbox()).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("SideRail — user menu", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useShellStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+  });
+
+  afterEach(() => {
+    currentUser.data = undefined;
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  it("shows the profile picture on the user menu button", () => {
+    currentUser.data = {
+      id: "u-alice",
+      username: "alice",
+      displayName: "Alice",
+      avatarUrl: "https://example.com/alice.png",
+    };
+    renderWithProviders(<SideRail />);
+
+    const picture = within(screen.getByRole("button", { name: "alice" })).getByRole("img", {
+      name: "Alice",
+    });
+    expect(picture).toHaveAttribute("src", "https://example.com/alice.png");
   });
 });
