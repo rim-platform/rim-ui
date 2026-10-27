@@ -3,8 +3,48 @@ export const HIGHLIGHT_START = "\uE000";
 /** Marks the end of a highlighted match inside snippet text (a private-use character). */
 export const HIGHLIGHT_END = "\uE001";
 
+/** A code fence, closed or running to the end, or an inline code span. */
+const CODE_SEGMENT = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/;
+/** Any character but a highlight sentinel. */
+const NOT_SENTINEL = new RegExp(`[^${HIGHLIGHT_START}${HIGHLIGHT_END}]`, "g");
+
 /**
- * Turns a Markdown message excerpt into plain text: drops code fences with their info string,
+ * Drops all of `match` but the highlight sentinels in it.
+ *
+ * @param match - the text to drop
+ * @returns the highlight sentinels `match` holds, in order
+ */
+function keepSentinels(match: string): string {
+  return match.replace(NOT_SENTINEL, "");
+}
+
+/**
+ * Drops what a Markdown message holds outside code that is not text: HTML tags (and the content
+ * of `script` and `style`), table pipes and delimiter rows, task boxes and thematic breaks; an
+ * autolink keeps its address. Highlight sentinels inside a dropped tag are kept.
+ *
+ * @param text - a part of the message outside code
+ * @returns the part with that syntax removed
+ */
+function plainProse(text: string): string {
+  return text
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, keepSentinels)
+    .replace(/<((?:https?|mailto):[^<>\s]+)>/gi, "$1")
+    .replace(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g, keepSentinels)
+    .replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, "")
+    .replace(/^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*:?-+:?[ \t]*\|?[ \t]*$/gm, "")
+    .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_row, inner: string) =>
+      inner
+        .split("|")
+        .map((cell) => cell.trim())
+        .join(" "),
+    )
+    .replace(/^([ \t]*(?:[-*+]|\d+\.)[ \t]+)\[[ xX]\][ \t]+/gm, "$1");
+}
+
+/**
+ * Turns a Markdown message excerpt into plain text: drops HTML tags, table pipes and delimiter
+ * rows, task boxes and thematic breaks outside code, code fences with their info string,
  * backticks, emphasis markers, heading, quote and list markers, keeps the text of links and
  * images, and collapses whitespace to single spaces. Underscores inside words (`snake_case`)
  * stay, and the highlight sentinels {@link HIGHLIGHT_START} and {@link HIGHLIGHT_END} pass
@@ -15,6 +55,9 @@ export const HIGHLIGHT_END = "\uE001";
  */
 export function plainSnippet(text: string): string {
   return text
+    .split(CODE_SEGMENT)
+    .map((part, i) => (i % 2 === 1 ? part : plainProse(part)))
+    .join("")
     .replace(/(```|~~~)[^\s`~]*/g, "")
     .replace(/`/g, "")
     .replace(/\*\*|__|~~/g, "")

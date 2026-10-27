@@ -241,6 +241,40 @@ describe("NotificationsPanel", () => {
     expect(screen.queryByText(/<@/)).not.toBeInTheDocument();
   });
 
+  it("shows HTML, tables and task boxes in a preview as plain text", async () => {
+    serve(() =>
+      page([
+        notification({
+          message: {
+            ...notification().message!,
+            text: "<b>raw html</b><script>alert(1)</script>\n\n| a | b |\n|---|---|\n\n- [ ] todo",
+          },
+        }),
+      ]),
+    );
+    renderPanel();
+
+    expect(await screen.findByText("raw html a b todo")).toBeInTheDocument();
+    expect(screen.queryByText(/<b>|\||\[ \]/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the reason on one line and names the whole conversation on hover", async () => {
+    serve(() =>
+      page([
+        notification({
+          reason: NotificationReason.ALL,
+          conversation: { ...notification().conversation!, title: "a-very-long-channel-name" },
+        }),
+      ]),
+    );
+    renderPanel();
+
+    const reason = await screen.findByText("New message");
+    expect(reason).toHaveClass("shrink-0", "whitespace-nowrap");
+    const conversation = screen.getByText("#a-very-long-channel-name");
+    expect(conversation).toHaveAttribute("title", "#a-very-long-channel-name");
+  });
+
   it("the Unread only filter asks the server for unread entries", async () => {
     serve((vars) => page(vars.unreadOnly ? [notification()] : [notification(), keyword]));
     renderPanel();
