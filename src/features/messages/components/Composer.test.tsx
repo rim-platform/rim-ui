@@ -17,7 +17,7 @@ import { limitsQueryClient } from "../../../test/limits";
 import { queryKeys } from "../../../core/query/keys";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast/useToastStore";
-import { timedOutMessage } from "../../../core/graphql/errors";
+import { NETWORK_ERROR_MESSAGE, timedOutMessage } from "../../../core/graphql/errors";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useTimeoutStore } from "../../workspaces/state/useTimeoutStore";
 import { useKnownHandles } from "../../workspaces/state/useKnownHandles";
@@ -187,6 +187,35 @@ describe("Composer — membership and archive gate", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("You cannot post here"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("says the server could not be reached when a send never gets there", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.GUEST, {
+      "mutation SendMessage": () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "hello" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(NETWORK_ERROR_MESSAGE));
+    expect(screen.getByRole("textbox")).toHaveValue("hello");
+  });
+
+  it("keeps the fallback for a failure that is not the server's", async () => {
+    serve(makeConversation(), ServerMemberRoleGql.GUEST, {
+      "mutation SendMessage": () => {
+        throw new Error("encoder state mismatch");
+      },
+    });
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    fireEvent.change(textbox, { target: { value: "hello" } });
+    fireEvent.submit(textbox.closest("form")!);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to send message"));
   });
 });
 

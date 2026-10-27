@@ -28,7 +28,9 @@ import {
   FORBIDDEN,
   graphqlErrorCode,
   graphqlErrorMessage,
+  NETWORK_ERROR_MESSAGE,
   retryAfterSeconds,
+  SERVER_FAULT_MESSAGE,
 } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { slowModeWaitMessage } from "../../conversations/api/useSlowMode";
@@ -230,7 +232,8 @@ function MessageComposer(props: ComposerProps) {
   );
 
   /**
-   * Shows the server's message for a failed send. An archived (or no longer visible)
+   * Shows the server's message for a failed send, or that the server could not be reached or
+   * failed; any other error reads `fallback`. An archived (or no longer visible)
    * conversation also refetches, so the composer flips to the archived bar, and so does a
    * refused one, whose channel may have just been closed to the viewer's posts. Unsent drafts stay
    * in the composer until the server accepts the message.
@@ -243,7 +246,10 @@ function MessageComposer(props: ComposerProps) {
       useSlowModeStore.getState().markRateLimited(conversationId, waitSeconds);
       toast.error(slowModeWaitMessage(waitSeconds));
     } else {
-      toast.error(code ? graphqlErrorMessage(err, fallback) : fallback);
+      const message = graphqlErrorMessage(err, fallback);
+      const readable =
+        code !== undefined || message === NETWORK_ERROR_MESSAGE || message === SERVER_FAULT_MESSAGE;
+      toast.error(readable ? message : fallback);
     }
     if (noteTimedOutError(workspaceId, err)) {
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
