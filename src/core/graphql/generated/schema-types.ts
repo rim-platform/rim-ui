@@ -1620,10 +1620,11 @@ export type Mutation = {
   /** Add a contact, or replace its relay URLs (1 to 8 of at most 256 bytes each). */
   addContact: Contact;
   /**
-   * Add (invite) workspace members to a channel or group the caller belongs to. In the
-   * server's default workspace a channel takes them from an Owner, a Moderator or a private
-   * channel's creator, a group as a DM with each would be started, and one call names at
-   * most 50.
+   * Add (invite) people to a channel or group the caller belongs to: workspace members by
+   * `userIds`, and in the direct space anyone by principal id in `remoteMembers`, here or on
+   * another server, as `createConversation` names them. In the server's default workspace a
+   * channel takes them from an Owner, a Moderator or a private channel's creator, a group as a
+   * DM with each would be started, and one call names at most 50.
    */
   addConversationMembers: Conversation;
   /** Add a device certified by the current identity key. */
@@ -2200,8 +2201,9 @@ export type MutationAddContactArgs = {
 
 export type MutationAddConversationMembersArgs = {
   conversationId: Scalars['ID']['input'];
+  remoteMembers?: InputMaybe<Array<RemoteMemberInput>>;
   serverId: Scalars['ID']['input'];
-  userIds: Array<Scalars['ID']['input']>;
+  userIds?: Array<Scalars['ID']['input']>;
 };
 
 
