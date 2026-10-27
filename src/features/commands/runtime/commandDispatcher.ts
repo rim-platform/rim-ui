@@ -289,12 +289,14 @@ const argumentPrompts: Record<string, { argument: string; open: () => void }> = 
 
 /** Whether this app runs `commandId` itself, so it needs none of the server's arguments. */
 export function hasLocalHandler(commandId: string): boolean {
-  return commandId in localHandlers;
+  return Object.prototype.hasOwnProperty.call(localHandlers, commandId);
 }
 
 /** The argument a client surface asks for when `commandId` runs without it, if any. */
 export function argumentPromptName(commandId: string): string | undefined {
-  return argumentPrompts[commandId]?.argument;
+  return Object.prototype.hasOwnProperty.call(argumentPrompts, commandId)
+    ? argumentPrompts[commandId].argument
+    : undefined;
 }
 
 /**

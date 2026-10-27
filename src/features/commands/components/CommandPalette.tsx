@@ -521,7 +521,7 @@ export function CommandPalette() {
           {pipeSegments.length > 0 ? (
             <>
               <span>
-                <kbd className="font-mono">Tab</kbd> add command
+                <kbd className="font-mono">Tab</kbd> add and run
               </span>
               <span>
                 <kbd className="font-mono">Enter</kbd> run pipe
