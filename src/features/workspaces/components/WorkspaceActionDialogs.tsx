@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useMyServers } from "../api/useMyServers";
 import { useWorkspaceActionStore } from "../state/useWorkspaceActionStore";
@@ -26,8 +28,11 @@ function OpenAction({
 }) {
   const { data: servers } = useMyServers(false);
   const remoteName = useRelayStore((s) => s.spaces[workspaceId]?.name);
-  const name = servers?.find((s) => s.id === workspaceId)?.name ?? remoteName ?? "this workspace";
-  const props = { workspaceId, name, onClose };
+  const known = servers?.find((s) => s.id === workspaceId)?.name ?? remoteName;
+  // Keeps the last known name while a leave drops the workspace from the lists.
+  const [name, setName] = useState(known);
+  if (known && known !== name) setName(known);
+  const props = { workspaceId, name: name ?? "this workspace", onClose };
   return kind === "leave" ? (
     <LeaveWorkspaceDialog {...props} />
   ) : (
