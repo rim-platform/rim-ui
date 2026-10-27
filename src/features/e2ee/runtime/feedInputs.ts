@@ -4,6 +4,7 @@
  * belongs to. Fetched before the page is handed to the cache, so a page rarely stops.
  */
 
+import { ConversationChangesStatus } from "../../../core/graphql/generated/schema-types";
 import type { MessageItem } from "../../../core/types/messages";
 import type {
   CacheAccount,
@@ -44,6 +45,9 @@ export async function mlsInputsFor(
 
   const inputs: MlsSyncInput[] = [];
   for (const conversation of changes) {
+    // The store forgets a conversation the user can no longer read, and the server refuses its
+    // Commits, which would fail the whole page.
+    if (conversation.status === ConversationChangesStatus.NO_ACCESS) continue;
     const encrypted = conversation.changes.filter((c) => isEncrypted(c.message));
     const group = byId.get(conversation.conversationId);
     const holdsGroup = Boolean(group?.hasGroup && group.incarnation > 0);
