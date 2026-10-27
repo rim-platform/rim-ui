@@ -209,6 +209,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   sitting on its own line.
 - The web app no longer lists Settings → **AI Agent** and **Plugin AI**, which only the desktop
   app's AI agent uses.
+- When part of the app cannot be downloaded (a dropped connection), the app tries again, and if it
+  still fails says "This part of the app could not load" with **Reload**, instead of a crashed
+  conversation or Settings page whose Retry could not help.
 
 ## [0.0.5] - 2026-10-26
 
