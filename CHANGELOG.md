@@ -208,6 +208,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A group's or DM's search button reads "Search in Bob and Carol" instead of "Search in #Bob and
   Carol", and the search box calls its scope "This conversation" instead of "Current channel".
 - One <kbd>Esc</kbd> closes message search, as its footer says, instead of first clearing the query.
+- The "This conversation is not encrypted" dialog opens by itself once per conversation on a device
+  instead of in every browser session; while the account is locked it waits, and **Not encrypted**
+  in the header opens it.
 
 ## [0.0.5] - 2026-10-26
 

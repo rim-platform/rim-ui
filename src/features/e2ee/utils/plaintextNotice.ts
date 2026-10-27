@@ -1,7 +1,7 @@
 /**
  * Which unencrypted conversations already showed their "not encrypted" dialog on this device,
  * per account. Kept sealed with the account's other values (the newest 1000), and in memory for
- * this session too, so the dialog still shows once per session where nothing is kept.
+ * this session too.
  */
 
 import { readSealedItem, writeSealedItem } from "../../../core/accountVault/sealedStorage";

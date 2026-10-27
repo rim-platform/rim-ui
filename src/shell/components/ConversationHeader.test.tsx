@@ -29,6 +29,8 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: () => null,
 }));
 
+import { lockVault } from "../../core/accountVault/accountVault";
+import { unlockTestVault } from "../../test/accountVault";
 import { ConversationHeader } from "./ConversationHeader";
 import {
   emptyInbox,
@@ -251,7 +253,9 @@ describe("ConversationHeader — who may change the topic", () => {
 });
 
 describe("ConversationHeader — unencrypted conversation", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The dialog opens by itself only while its dismissal can be kept.
+    await unlockTestVault();
     requestMock.mockReset();
     localStorage.clear();
     useWorkspaceStore.setState({ workspaceId: "srv-1" });
@@ -265,6 +269,7 @@ describe("ConversationHeader — unencrypted conversation", () => {
     useShellStore.getState().reset();
     useAuthStore.setState({ session: null });
     useE2eeStore.setState({ webEncryption: "checking", notReady: {} });
+    lockVault();
   });
 
   it("marks a DM that is not encrypted and reopens its dialog from the mark", async () => {
