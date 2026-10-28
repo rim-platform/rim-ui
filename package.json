@@ -1,7 +1,7 @@
 {
   "name": "rim-ui",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "RIM desktop and web client: a programmable communication workspace",
   "license": "Apache-2.0",
   "homepage": "https://github.com/rim-platform/rim-ui",
