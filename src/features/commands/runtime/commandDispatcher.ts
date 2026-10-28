@@ -1,7 +1,7 @@
 import type { CommandDefinition, CommandResult } from "../types";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
-import { useCommandStore } from "../state/useCommandStore";
+import { useCommandStore, type TargetPickerKind } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -27,6 +27,7 @@ import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore"
 import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
+import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { confirmConversationCommand } from "./conversationActionGate";
 import { openWorkspaceAction } from "../../workspaces/workspaceActions";
@@ -101,9 +102,22 @@ function resultText(message: string): CommandResult {
 // args, and the handler supplies any args it needs itself.
 /** The space a navigation command's conversation is in: its `serverId`, else the open workspace. */
 function spaceOf(args: Record<string, unknown>): string | null {
-  return typeof args.serverId === "string"
-    ? args.serverId
-    : useWorkspaceStore.getState().workspaceId;
+  return argString(args, "serverId", "server_id") ?? useWorkspaceStore.getState().workspaceId;
+}
+
+/**
+ * The first non-blank string among `args[names]`: a command's argument under either of its
+ * spellings, the camelCase of the client's own callers and the snake_case the server declares.
+ */
+export function argString(
+  args: Record<string, unknown> | undefined,
+  ...names: string[]
+): string | undefined {
+  for (const name of names) {
+    const value = args?.[name];
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
 }
 
 const localHandlers: Record<
@@ -142,24 +156,22 @@ const localHandlers: Record<
     document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
   },
   "workspace.navigate_to_channel": (args) => {
-    if (args?.conversationId) {
-      if (refuseBlockedConversation(spaceOf(args), args.conversationId as string)) return;
-      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
-    } else {
-      // No specific channel — open command palette so the user can pick one
-      useCommandStore.getState().openCommandPalette();
-    }
+    const conversationId = argString(args, "conversationId", "conversation_id");
+    if (!args || !conversationId) return;
+    if (refuseBlockedConversation(spaceOf(args), conversationId)) return;
+    useShellStore.getState().setSelectedConversationId(conversationId);
   },
   "workspace.navigate_to_dm": (args) => {
-    if (args?.conversationId) {
-      if (refuseBlockedConversation(spaceOf(args), args.conversationId as string)) return;
-      useShellStore.getState().setSelectedConversationId(args.conversationId as string);
-    }
+    const conversationId = argString(args, "conversationId", "conversation_id");
+    if (!args || !conversationId) return;
+    const spaceId = spaceOf(args);
+    if (refuseBlockedConversation(spaceId, conversationId)) return;
+    if (spaceId) selectDirectConversation(spaceId, conversationId);
+    else useShellStore.getState().setSelectedConversationId(conversationId);
   },
   "workspace.switch_workspace": (args) => {
-    if (args?.workspaceId) {
-      useWorkspaceStore.getState().setWorkspaceId(args.workspaceId as string);
-    }
+    const workspaceId = argString(args, "workspaceId", "workspace_id");
+    if (workspaceId) useWorkspaceStore.getState().setWorkspaceId(workspaceId);
   },
   "workspace.back_to_workspace": () => {
     returnFromDirect();
@@ -305,16 +317,47 @@ const localHandlers: Record<
 };
 
 /**
- * Backend commands a person may run without the argument they need, each with the argument's
- * name and the client surface that asks for it instead of sending the server an incomplete
- * command.
+ * Commands a person may run without the argument they need, each with the argument's name as
+ * the server declares it and what asks for it instead of running an incomplete command: a
+ * client surface to `open`, or a `picker` of targets in the command palette. `alias` is the
+ * argument's other spelling, which counts as given too.
  */
-const argumentPrompts: Record<string, { argument: string; open: () => void }> = {
+const argumentPrompts: Record<
+  string,
+  { argument: string; alias?: string } & ({ open: () => void } | { picker: TargetPickerKind })
+> = {
   "chat.search_messages": {
     argument: "query",
     open: () => useSearchOverlayStore.getState().openWithScope({ kind: "all" }),
   },
+  "workspace.navigate_to_channel": {
+    argument: "conversation_id",
+    alias: "conversationId",
+    picker: "channel",
+  },
+  "workspace.navigate_to_dm": {
+    argument: "conversation_id",
+    alias: "conversationId",
+    picker: "direct",
+  },
+  "workspace.switch_workspace": {
+    argument: "workspace_id",
+    alias: "workspaceId",
+    picker: "workspace",
+  },
+  "chat.join_channel": {
+    argument: "conversation_id",
+    alias: "conversationId",
+    picker: "joinableChannel",
+  },
 };
+
+/** The kind of target the palette asks for before it runs `commandId`, if it asks. */
+export function targetPickerKind(commandId: string): TargetPickerKind | undefined {
+  if (!Object.prototype.hasOwnProperty.call(argumentPrompts, commandId)) return undefined;
+  const prompt = argumentPrompts[commandId];
+  return "picker" in prompt ? prompt.picker : undefined;
+}
 
 /** Whether this app runs `commandId` itself, so it needs none of the server's arguments. */
 export function hasLocalHandler(commandId: string): boolean {
@@ -341,9 +384,12 @@ function openArgumentPrompt(
 ): boolean {
   const prompt = argumentPrompts[commandId];
   if (!prompt || isPipe) return false;
-  const value = args?.[prompt.argument];
-  if (typeof value === "string" && value.trim() !== "") return false;
-  prompt.open();
+  if (argString(args, prompt.argument, ...(prompt.alias ? [prompt.alias] : []))) return false;
+  if ("picker" in prompt) {
+    useCommandStore.getState().openTargetPicker({ commandId, kind: prompt.picker });
+  } else {
+    prompt.open();
+  }
   return true;
 }
 
@@ -374,13 +420,8 @@ export async function dispatchCommand(
     callerPluginId?: string;
   },
 ): Promise<CommandResult | null> {
-  // Local handlers always take precedence — even if the backend marks a
-  // command as "Backend", the frontend may have a local handler that opens
-  // a dialog or performs a client-side action instead.
-  const localHandler = localHandlers[command.id];
-  if (localHandler) {
-    const result = localHandler(context?.args);
-    if (result) return result;
+  // A command that lacks the argument a surface asks for opens that surface instead.
+  if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
     return {
       status: "SUCCESS",
       message: "",
@@ -389,7 +430,13 @@ export async function dispatchCommand(
     };
   }
 
-  if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
+  // Local handlers always take precedence — even if the backend marks a
+  // command as "Backend", the frontend may have a local handler that opens
+  // a dialog or performs a client-side action instead.
+  const localHandler = localHandlers[command.id];
+  if (localHandler) {
+    const result = localHandler(context?.args);
+    if (result) return result;
     return {
       status: "SUCCESS",
       message: "",

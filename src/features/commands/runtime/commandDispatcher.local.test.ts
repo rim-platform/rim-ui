@@ -179,6 +179,42 @@ describe("this app's own commands", () => {
     useBlockedConversations.getState().reset();
   });
 
+  it("takes a navigation target under either spelling of its argument", () => {
+    runDesktopLocalCommand("workspace.navigate_to_channel", { conversation_id: "c-snake" });
+    expect(useShellStore.getState().selectedConversationId).toBe("c-snake");
+    runDesktopLocalCommand("workspace.navigate_to_dm", { conversationId: "c-camel" });
+    expect(useShellStore.getState().selectedConversationId).toBe("c-camel");
+    runDesktopLocalCommand("workspace.switch_workspace", { workspace_id: "ws-snake" });
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-snake");
+    runDesktopLocalCommand("workspace.switch_workspace", { workspaceId: "ws-camel" });
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-camel");
+  });
+
+  it("navigates nowhere without a target", () => {
+    useShellStore.getState().setSelectedConversationId("c-here");
+    runDesktopLocalCommand("workspace.navigate_to_channel");
+    runDesktopLocalCommand("workspace.navigate_to_dm", { conversationId: " " });
+    runDesktopLocalCommand("workspace.switch_workspace", {});
+    expect(useShellStore.getState().selectedConversationId).toBe("c-here");
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(useCommandStore.getState().isCommandPaletteOpen).toBe(false);
+  });
+
+  it("asks which target when a keybind runs a navigation command without one", async () => {
+    const command = { id: "workspace.navigate_to_channel" } as CommandDefinition;
+    await dispatchCommand(command, vi.fn());
+    expect(useCommandStore.getState().targetPicker).toEqual({
+      commandId: "workspace.navigate_to_channel",
+      kind: "channel",
+    });
+    expect(useCommandStore.getState().isCommandPaletteOpen).toBe(true);
+
+    useCommandStore.getState().closeCommandPalette();
+    await dispatchCommand(command, vi.fn(), { args: { conversation_id: "c-1" } });
+    expect(useCommandStore.getState().isCommandPaletteOpen).toBe(false);
+    expect(useShellStore.getState().selectedConversationId).toBe("c-1");
+  });
+
   it("cycles the layout presets", () => {
     useLayoutPresetStore.setState({ activePresetId: null });
     runDesktopLocalCommand("workspace.cycle_layout_preset");
