@@ -55,6 +55,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- **Upgrade:** update the server to rim-server 0.0.5 before the web client. With an older
+  server, leaving and renaming a workspace are hidden, **Blocked people** says the server does
+  not list them, an edited channel message shows no **(edited)**, and **Add people** on a group
+  fails with the server's refusal.
 - Conversations started by someone you blocked, including DMs and groups hosted on other
   servers, stay out of Direct messages, search, notifications and unread counts and are not synced
   until you unblock them; then they come back with their history. **Send message** to someone you
