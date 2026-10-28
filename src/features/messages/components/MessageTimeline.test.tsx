@@ -180,6 +180,7 @@ vi.mock("./MessageItem", async (importOriginal) => {
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import { MessageTimeline } from "./MessageTimeline";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { MARK_SEEN_DELAY_MS } from "./timeline/useMarkSeen";
 
@@ -1259,5 +1260,47 @@ describe("MessageTimeline — reply", () => {
     expect(within(hints).queryByText("Thread")).not.toBeInTheDocument();
     fireEvent.keyDown(list, { key: "r" });
     expect(useReplyTargetStore.getState().targets).toEqual({});
+  });
+});
+
+describe("MessageTimeline — role badge and handle by space", () => {
+  const originalResolve = memberLookup.resolve;
+
+  beforeEach(() => {
+    messageItem.real = true;
+    dmRequest.conversation = makeConversation();
+    memberLookup.resolve = (userId: string) =>
+      ({
+        displayName: userId,
+        isCurrentUser: userId === "me",
+        role: "OWNER",
+        handle: "@alice:rim-platform.org",
+      }) as ReturnType<typeof originalResolve>;
+  });
+
+  afterEach(() => {
+    memberLookup.resolve = originalResolve;
+    useRelayStore.setState({ info: null });
+  });
+
+  it("marks an owner and shows no handle inline in a workspace channel", async () => {
+    setMessages([makeMessage(0, { authorId: "u-alice" })]);
+    render(<MessageTimeline />);
+    await settle();
+
+    expect(screen.getByTestId("role-badge")).toHaveTextContent("Owner");
+    expect(screen.queryByText(/^@alice/)).not.toBeInTheDocument();
+  });
+
+  it("shows the handle and no role in the direct space", async () => {
+    useRelayStore.setState({
+      info: { serverId: "relay", roles: [], directSpaceId: "ws-1" },
+    });
+    setMessages([makeMessage(0, { authorId: "u-alice" })]);
+    render(<MessageTimeline />);
+    await settle();
+
+    expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
+    expect(screen.getByText("@alice:rim-platform.org")).toBeInTheDocument();
   });
 });

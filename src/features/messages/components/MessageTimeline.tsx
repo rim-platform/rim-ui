@@ -23,6 +23,7 @@ import { LockMark } from "../../e2ee/components/LockMark";
 import { ConversationContinuity } from "../../relay/components/ConversationContinuity";
 import { DmRequestBar } from "../../relay/components/DmRequestBar";
 import { incomingRequestOf } from "../../relay/components/useDmRequestActions";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { usePendingDmRequests } from "../../relay/api/useDmRequests";
 import {
   useDeviceNames,
@@ -92,6 +93,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const clearLens = useLensStore((s) => s.setActiveLens);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const { data: pendingRequests } = usePendingDmRequests();
   const incomingRequest = incomingRequestOf(pendingRequests, conversationId);
   const { data: conversation } = useConversation(workspaceId, conversationId);
@@ -461,7 +463,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                             memberLookup.ownDomain,
                           ),
                           statusText: member.statusText,
-                          role: member.role,
+                          role: inDirectSpace ? undefined : member.role,
+                          inDirectSpace,
                           joinedAt: member.joinedAt,
                           bio: member.bio,
                           isCurrentUser:
