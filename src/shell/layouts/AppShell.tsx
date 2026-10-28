@@ -38,6 +38,7 @@ import { usePluginPrincipalSync } from "../../features/plugins/api/usePluginPrin
 import { usePluginChatRelay } from "../../features/plugins/chat/usePluginChatRelay";
 import { useWebPluginRuntime } from "../../features/plugins/web/useWebPluginRuntime";
 import { useStatusExpiration } from "../../features/settings/hooks/useStatusExpiration";
+import { useRecentActivitySeed } from "../../features/conversations/state/useRecentActivitySeed";
 import { useUnreadEventHandler } from "../../features/conversations/state/useUnreadEventHandler";
 import { usePresenceEventHandler } from "../../features/presence/state/usePresenceEventHandler";
 import { useTypingEventHandler } from "../../features/messages/state/useTypingEventHandler";
@@ -154,6 +155,7 @@ function UnlockedShell() {
   useDirectSpaceRuntime();
   useBlockedConversationsRuntime();
   useUnreadEventHandler();
+  useRecentActivitySeed();
   usePluginPrincipalSync();
   usePluginChatRelay();
   useWebPluginRuntime();
