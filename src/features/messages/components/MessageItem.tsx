@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "../../../shared/ui/cn";
+import { useClockFormatStore } from "../../../shared/state/useClockFormatStore";
 import { areMessageItemPropsEqual } from "./message-item/areMessageItemPropsEqual";
 import { formatShortTime } from "./message-item/formatShortTime";
 import {
@@ -54,6 +55,7 @@ export const MessageItem = memo(function MessageItem({
     displayDensity = "comfortable",
     inThreadPane = false,
   } = view;
+  useClockFormatStore((s) => s.clockFormat);
   const {
     onContextMenu,
     bindContextMenu,

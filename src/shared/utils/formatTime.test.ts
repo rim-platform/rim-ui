@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatTime } from "./formatTime";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { forceEnUsTimes } from "../../test/forceEnUsTimes";
+import { useClockFormatStore } from "../state/useClockFormatStore";
+import { formatEditedAt, formatTime, hourCycleOptions } from "./formatTime";
 
 describe("formatTime", () => {
   afterEach(() => {
@@ -51,5 +54,76 @@ describe("formatTime", () => {
   it("returns em-dash for unparseable input instead of 'Invalid Date'", () => {
     expect(formatTime("not-a-date")).toBe("—");
     expect(formatTime("")).toBe("—");
+  });
+});
+
+const evening = new Date(2026, 0, 5, 21, 5).toISOString();
+const morning = new Date(2026, 0, 5, 9, 5).toISOString();
+
+function today(hour: number): string {
+  const d = new Date();
+  d.setHours(hour, 5, 0, 0);
+  return d.toISOString();
+}
+
+beforeEach(() => {
+  forceEnUsTimes();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  useClockFormatStore.setState({ clockFormat: "auto" });
+  localStorage.removeItem("rim:clock-format");
+});
+
+describe("hourCycleOptions", () => {
+  it("maps each setting to Intl options", () => {
+    expect(hourCycleOptions()).toEqual({});
+    useClockFormatStore.getState().setClockFormat("12h");
+    expect(hourCycleOptions()).toEqual({ hour12: true });
+    useClockFormatStore.getState().setClockFormat("24h");
+    expect(hourCycleOptions()).toEqual({ hour12: false });
+  });
+});
+
+describe("formatTime with a clock choice", () => {
+  it("follows the language in automatic mode", () => {
+    expect(formatTime(today(21))).toBe("9:05 PM");
+  });
+
+  it("writes 12-hour times without a leading zero", () => {
+    useClockFormatStore.getState().setClockFormat("12h");
+    expect(formatTime(today(21))).toBe("9:05 PM");
+    expect(formatTime(today(9))).toBe("9:05 AM");
+  });
+
+  it("writes 24-hour times with two-digit hours", () => {
+    useClockFormatStore.getState().setClockFormat("24h");
+    expect(formatTime(today(21))).toBe("21:05");
+    expect(formatTime(today(9))).toBe("09:05");
+    expect(formatTime(today(0))).toBe("00:05");
+  });
+
+  it("applies the choice to the time of an earlier day", () => {
+    useClockFormatStore.getState().setClockFormat("24h");
+    expect(formatTime(new Date(2020, 0, 5, 21, 5).toISOString())).toBe("Jan 5 21:05");
+  });
+});
+
+describe("formatEditedAt", () => {
+  it("applies the choice to the tooltip", () => {
+    expect(formatEditedAt(evening)).toBe("Jan 5, 2026, 9:05 PM");
+    useClockFormatStore.getState().setClockFormat("24h");
+    expect(formatEditedAt(evening)).toBe("Jan 5, 2026, 21:05");
+    expect(formatEditedAt(morning)).toBe("Jan 5, 2026, 09:05");
+  });
+});
+
+describe("clock format storage", () => {
+  it("keeps the choice on this device", () => {
+    useClockFormatStore.getState().setClockFormat("12h");
+    expect(JSON.parse(localStorage.getItem("rim:clock-format") ?? "{}")).toEqual({
+      clockFormat: "12h",
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { useClientVersion } from "../hooks/useClientVersion";
 import { useUpdater, type UpdaterView } from "../hooks/useUpdater";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 /** The running client's version, as the About page shows it. */
 export function AboutVersion() {
@@ -9,7 +10,11 @@ export function AboutVersion() {
 }
 
 function formatTime(at: number): string {
-  return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(at).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    ...hourCycleOptions(),
+  });
 }
 
 function summaryOf(view: UpdaterView): string {

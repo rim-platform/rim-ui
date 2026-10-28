@@ -5,6 +5,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { isSchemaRefusal } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 const ME_DELETION_QUERY = gql`
   query MeDeletion {
@@ -125,5 +126,5 @@ export function useCancelAccountDeletionMutation() {
 export function deletionDateText(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString([], { dateStyle: "long", timeStyle: "short" });
+  return date.toLocaleString([], { dateStyle: "long", timeStyle: "short", ...hourCycleOptions() });
 }

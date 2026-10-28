@@ -5,6 +5,7 @@ import { activeBan, banLabel } from "../../hooks/useBanExpiry";
 import { Avatar } from "../../../../shared/ui/Avatar";
 import { UserHoverCard } from "../../../../shared/ui/UserHoverCard";
 import { cn } from "../../../../shared/ui/cn";
+import { useClockFormatStore } from "../../../../shared/state/useClockFormatStore";
 import { formatTime } from "../../../../shared/utils/formatTime";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { LockMark } from "../../../e2ee/components/LockMark";
@@ -120,6 +121,7 @@ export const MessageHeader = memo(function MessageHeader({
   onNavigateToForwardedSource,
   bindUserContextMenu,
 }: MessageHeaderProps) {
+  useClockFormatStore((s) => s.clockFormat);
   return (
     <div className="flex items-baseline gap-2">
       <AuthorHoverCard authorId={authorId} author={author}>

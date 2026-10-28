@@ -18,6 +18,7 @@ import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
 import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { refreshServerMedia, useServerMediaUrl } from "../../../shared/media/serverMedia";
 import { cn } from "../../../shared/ui/cn";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 /** The largest picture file taken; it is resized to a small PNG before the upload. */
 const MAX_PICTURE_FILE_BYTES = 10 * 1024 * 1024;
@@ -46,7 +47,7 @@ export function ProfileSettings() {
   const locked = lockedUntil !== null;
   const restricted = locked || probationEnd !== null;
   const restriction = lockedUntil
-    ? `This server's operators locked your profile until ${new Date(lockedUntil).toLocaleString()}.`
+    ? `This server's operators locked your profile until ${new Date(lockedUntil).toLocaleString(undefined, hourCycleOptions())}.`
     : probationEnd
       ? probationText("set a profile picture, bio or status", probationEnd)
       : null;

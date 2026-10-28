@@ -28,6 +28,7 @@ import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { ConversationSelect } from "./ConversationSelect";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
   { value: PipelineTriggerKindGql.NEW_MESSAGE, label: "New Message" },
@@ -603,7 +604,10 @@ export function PipelineSettings() {
                     {pipeline.actions.length} action{pipeline.actions.length !== 1 ? "s" : ""}
                   </span>
                   {pipeline.lastFiredAt && (
-                    <span>Last fired: {new Date(pipeline.lastFiredAt).toLocaleString()}</span>
+                    <span>
+                      Last fired:{" "}
+                      {new Date(pipeline.lastFiredAt).toLocaleString(undefined, hourCycleOptions())}
+                    </span>
                   )}
                 </div>
               </div>

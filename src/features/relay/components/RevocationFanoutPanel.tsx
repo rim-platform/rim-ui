@@ -19,6 +19,7 @@ import { useRevocationStore, type FollowedRevocation } from "../remote/useRevoca
 import { hostKeyAt } from "../state/serverPins";
 import { accountKey } from "../state/spaces";
 import { useRelayStore } from "../state/useRelayStore";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 const POLL_MS = 5_000;
 
@@ -134,7 +135,7 @@ function FollowedFanout({ entry }: { entry: FollowedRevocation }) {
                   space.label,
                   new Date(
                     accessUntil(entry.revokedAt, expiryOf(space.workspaceId)),
-                  ).toLocaleString(),
+                  ).toLocaleString(undefined, hourCycleOptions()),
                 )}
                 {h.problem ? ` (${h.problem})` : ""}
               </li>
