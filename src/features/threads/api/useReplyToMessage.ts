@@ -7,7 +7,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { logger } from "../../../core/logger";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
-import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
+import { refusePlaintextIfEncrypted } from "../../e2ee/runtime/pins";
 
 export const REPLY_TO_MESSAGE_MUTATION = gql`
   mutation ReplyToMessage($input: ReplyToMessageInput!) {
@@ -52,7 +52,7 @@ export function useReplyToMessageMutation() {
 
   return useMutation({
     mutationFn: async (vars: ReplyToMessageVars) => {
-      await refusePlaintextIfPinned(vars.serverId, vars.conversationId);
+      await refusePlaintextIfEncrypted(qc, vars.serverId, vars.conversationId);
       return graphqlClient.request<ReplyToMessageResponse>(REPLY_TO_MESSAGE_MUTATION, {
         input: {
           serverId: vars.serverId,

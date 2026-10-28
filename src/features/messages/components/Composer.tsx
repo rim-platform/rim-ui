@@ -67,7 +67,9 @@ import {
 } from "../../conversations/api/startDirectMessage";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { NotReadyError } from "../../relay/conversations/startDirect";
-import { directDraftKey } from "../../conversations/state/openDirect";
+import { composerShown, directDraftKey, directOpening } from "../../conversations/state/openDirect";
+import { EncryptedConversationError, PinnedEncryptedError } from "../../e2ee/runtime/pins";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore, type DirectDraft } from "../../../shell/state/useShellStore";
 
 interface PendingFile {
@@ -250,6 +252,8 @@ function MessageComposer(props: ComposerProps) {
       }
     }
     const input = textareaRef.current;
+    // The composer of a direct message just opened takes the focus, with what was typed meanwhile.
+    if (!thread && composerShown(textKey)) input?.focus();
     return () => {
       // Flush any pending debounced save when switching away
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -294,7 +298,11 @@ function MessageComposer(props: ComposerProps) {
       const message = graphqlErrorMessage(err, fallback);
       const readable =
         code !== undefined || message === NETWORK_ERROR_MESSAGE || message === SERVER_FAULT_MESSAGE;
-      toast.error(readable ? message : fallback);
+      if (err instanceof EncryptedConversationError || err instanceof PinnedEncryptedError) {
+        toast.error(err.message);
+      } else {
+        toast.error(readable ? message : fallback);
+      }
     }
     if (noteTimedOutError(workspaceId, err)) {
       qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
@@ -323,6 +331,29 @@ function MessageComposer(props: ComposerProps) {
     if (id) qc.invalidateQueries({ queryKey: queryKeys.conversation(workspaceId, id) });
   }
 
+  /**
+   * Whether the app has moved on from where this composer writes: a direct message is opening,
+   * or another workspace, conversation or draft is open than the one the composer was drawn
+   * for. A thread's reply box writes to its own thread and is never stale.
+   */
+  function targetIsStale(): boolean {
+    if (thread) return false;
+    if (directOpening()) return true;
+    const openWorkspace = useWorkspaceStore.getState().workspaceId;
+    if (openWorkspace !== null && openWorkspace !== workspaceId) return true;
+    const { selectedConversationId, draftDirect } = useShellStore.getState();
+    if (draft) {
+      return (
+        selectedConversationId !== null ||
+        (draftDirect !== null && directDraftKey(draftDirect) !== textKey)
+      );
+    }
+    return (
+      draftDirect !== null ||
+      (selectedConversationId !== null && selectedConversationId !== conversationId)
+    );
+  }
+
   async function handleSubmit() {
     if (submitting.current) return;
     submitting.current = true;
@@ -349,6 +380,14 @@ function MessageComposer(props: ComposerProps) {
     draftStore.getState().setDraft(textKey, unsentText);
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
+    // Text typed while the app switches conversations stays here unsent, never going to the
+    // conversation being left.
+    if (targetIsStale()) {
+      toast.info("Not sent: another conversation is opening.", {
+        description: "Your text is kept unsent.",
+      });
+      return;
+    }
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
     if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {

@@ -4,7 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 import { queryKeys } from "../../../core/query/keys";
-import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
+import { refusePlaintextIfEncrypted } from "../../e2ee/runtime/pins";
 
 const FORWARD_MESSAGE = gql`
   mutation ForwardMessage($input: ForwardMessageInput!) {
@@ -27,7 +27,7 @@ export function useForwardMessageMutation() {
 
   return useMutation({
     mutationFn: async (vars: ForwardMessageVars) => {
-      await refusePlaintextIfPinned(vars.serverId, vars.targetConversationId);
+      await refusePlaintextIfEncrypted(qc, vars.serverId, vars.targetConversationId);
       return graphqlClient.request(FORWARD_MESSAGE, {
         input: {
           serverId: vars.serverId,

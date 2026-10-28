@@ -65,6 +65,8 @@ export function NewMessagePicker({ open, onClose, onCreated }: NewMessagePickerP
   const openDirect = useCallback(
     async (target: DirectDraft) => {
       setStartError(null);
+      // What is typed while it opens goes to its composer, not to the picker's search.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       try {
         await openDirectWith(target);
         onClose();

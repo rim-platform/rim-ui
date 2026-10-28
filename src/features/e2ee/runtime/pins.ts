@@ -5,7 +5,12 @@
  * direct message stays between the two principals it was first seen with.
  */
 
+import type { QueryClient } from "@tanstack/react-query";
+
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../core/query/keys";
+import { findCachedConversation } from "../../conversations/api/useConversation";
+import type { ConversationSummary } from "../../conversations/types";
 import type { ConversationGroupInfo } from "../api/e2eeApi";
 import { e2eeCommands, type GroupView } from "../api/e2eeCommands";
 import { useE2eeStore } from "../state/useE2eeStore";
@@ -19,6 +24,14 @@ export class PinnedEncryptedError extends Error {
       "This conversation is encrypted on this device, but the server no longer says so. Sending is stopped.",
     );
     this.name = "PinnedEncryptedError";
+  }
+}
+
+/** A plaintext write refused: the server says the conversation is end-to-end encrypted. */
+export class EncryptedConversationError extends Error {
+  constructor() {
+    super("This conversation is end-to-end encrypted. The message was not sent unencrypted.");
+    this.name = "EncryptedConversationError";
   }
 }
 
@@ -100,10 +113,22 @@ export async function pinnedEncrypted(
   return Boolean(view?.pinned);
 }
 
-/** Refuse a plaintext write (`sendMessage`, a reply, an edit, a forward) into a pinned conversation. */
-export async function refusePlaintextIfPinned(
+/**
+ * Refuse a plaintext write (`sendMessage`, a reply, an edit, a forward) into an encrypted
+ * conversation: one this device pinned as encrypted, or one the server called encrypted in the
+ * answer `qc` holds for it.
+ *
+ * @throws PinnedEncryptedError for a conversation this device pinned as encrypted.
+ * @throws EncryptedConversationError for one the cached server answer calls encrypted.
+ */
+export async function refusePlaintextIfEncrypted(
+  qc: QueryClient,
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
   if (await pinnedEncrypted(workspaceId, conversationId)) throw new PinnedEncryptedError();
+  const known =
+    qc.getQueryData<ConversationSummary>(queryKeys.conversation(workspaceId, conversationId)) ??
+    findCachedConversation(qc, workspaceId, conversationId);
+  if (known?.encryptedAt) throw new EncryptedConversationError();
 }
