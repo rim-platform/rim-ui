@@ -22,6 +22,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-28
+
 ### Changed
 
 - Cycle Recent Activity jumps to the conversations and threads where someone last posted, newest
@@ -950,7 +952,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.7...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/rim-platform/rim-ui/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/rim-platform/rim-ui/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/rim-platform/rim-ui/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/rim-platform/rim-ui/compare/v0.0.4...v0.0.5
