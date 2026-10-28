@@ -27,9 +27,9 @@ export function usePrefetchMessages(workspaceId: string | null, conversationIds:
     for (const convId of conversationIds) {
       const queryKey = queryKeys.messages(workspaceId, convId);
 
-      // Only prefetch if not already in cache
-      const existing = qc.getQueryData(queryKey);
-      if (existing) continue;
+      // Only a conversation the cache has no query for: no data, and no load under way (the open
+      // timeline's included, whose own read may come from the encrypted store).
+      if (qc.getQueryState(queryKey)) continue;
 
       qc.prefetchInfiniteQuery({
         queryKey,
