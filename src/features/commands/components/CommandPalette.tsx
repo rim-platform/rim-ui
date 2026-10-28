@@ -236,6 +236,12 @@ function CommandPaletteDialog() {
     }
   }, [isOpen, setFocusedSurface]);
 
+  // The search input is drawn again when a target list returns to the commands; it takes the
+  // keyboard back, so typing and Escape reach the palette.
+  useEffect(() => {
+    if (isOpen && !targetPicker) requestAnimationFrame(() => inputRef.current?.focus());
+  }, [isOpen, targetPicker]);
+
   // Scroll selected item into view
   useEffect(() => {
     if (!listRef.current) return;
