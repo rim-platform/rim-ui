@@ -29,6 +29,8 @@ vi.mock("../api/useCommands", () => ({
 
 vi.mock("./commandDispatcher", () => ({
   dispatchCommand: vi.fn(),
+  hasLocalHandler: () => false,
+  isLocalActionResult: () => false,
 }));
 
 vi.mock("../../plugins/chat/appMessageService", () => ({
