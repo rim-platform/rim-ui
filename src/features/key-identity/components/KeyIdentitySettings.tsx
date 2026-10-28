@@ -31,6 +31,7 @@ import { BrowserHistoryNotice } from "./BrowserHistoryNotice";
 import { CardRelays } from "./CardRelays";
 import { IdentityKeyBackup } from "./IdentityKeyBackup";
 import { LinkDevicePanel } from "./LinkDevicePanel";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 /** The signed-in account, with the name its profile card shows. */
 interface Me extends KeyAccount {
@@ -42,7 +43,7 @@ function errorText(err: unknown, fallback: string): string {
 }
 
 function formatDate(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleString() : "never";
+  return iso ? new Date(iso).toLocaleString(undefined, hourCycleOptions()) : "never";
 }
 
 /**

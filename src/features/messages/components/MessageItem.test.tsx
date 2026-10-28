@@ -37,6 +37,9 @@ vi.mock("../../emoji/hooks/useMessageEmojiMap", () => ({
 
 import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { formatEditedAt } from "../../../shared/utils/formatTime";
+import { act } from "@testing-library/react";
+import { forceEnUsTimes } from "../../../test/forceEnUsTimes";
+import { useClockFormatStore } from "../../../shared/state/useClockFormatStore";
 import { MessageItem } from "./MessageItem";
 import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
 
@@ -101,6 +104,21 @@ describe("MessageItem", () => {
     const { container } = render(<MessageItem {...props()} />);
     // formatTime renders the sentAt on the message row element
     expect(container.querySelector("[data-message-id='msg-1']")).toBeInTheDocument();
+  });
+
+  it("rewrites the time when the clock setting changes", () => {
+    forceEnUsTimes();
+    try {
+      const sentAt = new Date(2026, 0, 5, 21, 5).toISOString();
+      render(<MessageItem {...props({ message: { ...defaultMessage, sentAt } })} />);
+      expect(screen.getByText(/9:05 PM/)).toBeInTheDocument();
+      act(() => useClockFormatStore.getState().setClockFormat("24h"));
+      expect(screen.getByText(/21:05/)).toBeInTheDocument();
+      expect(screen.queryByText(/9:05 PM/)).not.toBeInTheDocument();
+    } finally {
+      vi.restoreAllMocks();
+      useClockFormatStore.setState({ clockFormat: "auto" });
+    }
   });
 
   it("renders pin icon when message is pinned", () => {

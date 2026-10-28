@@ -7,6 +7,7 @@ import { Avatar, type PresenceStatus } from "./Avatar";
 import { toast } from "../toast";
 import { formatRelativeDate } from "../utils/formatDate";
 import { viewHandle, type HandleView } from "../utils/handles";
+import { hourCycleOptions } from "../utils/formatTime";
 
 export interface UserCardContentProps {
   userId: string;
@@ -81,7 +82,9 @@ export function UserCardContent({
         <div className="mt-2 text-sm text-rim-text-muted">
           <p>
             Banned from this workspace
-            {ban?.bannedUntil ? ` until ${new Date(ban.bannedUntil).toLocaleString()}` : ""}
+            {ban?.bannedUntil
+              ? ` until ${new Date(ban.bannedUntil).toLocaleString(undefined, hourCycleOptions())}`
+              : ""}
           </p>
           {ban?.banReason && (
             <p className="whitespace-pre-wrap break-words">Reason: {ban.banReason}</p>

@@ -1,15 +1,31 @@
+import { useClockFormatStore } from "../state/useClockFormatStore";
+
+/** Intl options that apply the device's clock choice; empty when the browser's language decides. */
+export function hourCycleOptions(): Intl.DateTimeFormatOptions {
+  const { clockFormat } = useClockFormatStore.getState();
+  if (clockFormat === "12h") return { hourCycle: "h12" };
+  if (clockFormat === "24h") return { hourCycle: "h23" };
+  return {};
+}
+
+/** Options for a bare time of day: 24-hour times always have two-digit hours. */
+export function timeOfDayOptions(): Intl.DateTimeFormatOptions {
+  const cycle = hourCycleOptions();
+  return { hour: cycle.hourCycle === "h23" ? "2-digit" : "numeric", minute: "2-digit", ...cycle };
+}
+
 export function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return date.toLocaleTimeString([], timeOfDayOptions());
   }
   return (
     date.toLocaleDateString([], { month: "short", day: "numeric" }) +
     " " +
-    date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    date.toLocaleTimeString([], timeOfDayOptions())
   );
 }
 
@@ -33,5 +49,9 @@ export function formatRelativeTime(sentAt: string): string {
 export function formatEditedAt(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+    ...hourCycleOptions(),
+  });
 }

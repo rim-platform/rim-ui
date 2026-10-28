@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
 import { getApiOrigin } from "../../../core/graphql/config";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 export interface RemovalNotice {
   workspaceId: string;
@@ -72,5 +73,5 @@ export function removalMessage(notice: RemovalNotice): string {
   const name = notice.workspaceName ?? "this workspace";
   if (notice.cause === "kick") return `You were removed from ${name}`;
   const until = notice.until ? new Date(notice.until) : null;
-  return `You were banned from ${name}${until && Number.isFinite(until.getTime()) ? ` until ${until.toLocaleString()}` : ""}`;
+  return `You were banned from ${name}${until && Number.isFinite(until.getTime()) ? ` until ${until.toLocaleString(undefined, hourCycleOptions())}` : ""}`;
 }

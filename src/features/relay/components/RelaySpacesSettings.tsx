@@ -7,9 +7,12 @@ import { fetchRemoteSubscriptions } from "../api/relayApi";
 import { refusalText } from "../remote/delegations";
 import { delegationRecords, renewWorkspaceDelegations } from "../remote/remoteWorkspaces";
 import { useRelayStore } from "../state/useRelayStore";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 function when(value: string | number | null | undefined): string {
-  return value === null || value === undefined ? "not set" : new Date(value).toLocaleString();
+  return value === null || value === undefined
+    ? "not set"
+    : new Date(value).toLocaleString(undefined, hourCycleOptions());
 }
 
 /**

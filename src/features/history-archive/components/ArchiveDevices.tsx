@@ -8,6 +8,7 @@ import {
   listArchiveDevices,
   type DeviceBackup,
 } from "../api/historyArchive";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 function backupText(device: DeviceBackup): string {
   if (device.unreadable) return "its backup list cannot be read";
@@ -15,6 +16,7 @@ function backupText(device: DeviceBackup): string {
   const when = new Date(device.lastExportMs).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+    ...hourCycleOptions(),
   });
   return `last backup ${when}`;
 }

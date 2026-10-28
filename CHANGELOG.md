@@ -24,6 +24,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Settings → Messages → **Clock** shows times on a 12-hour or 24-hour clock on this device;
+  **Automatic** keeps following the browser's language.
 - Settings → Direct messages lists the people you blocked under **Blocked people**, with
   **Unblock**. It needs rim-server with `myBlockedPrincipals`; with an older server the section
   says the server does not list blocked people yet.

@@ -3,6 +3,7 @@ import { useRevokeCapability } from "../api/usePluginCapabilities";
 import { EMPTY_AUDIT } from "../audit";
 import type { PluginInfo } from "../types";
 import { capabilityLabel, plainCapabilityOf } from "./consentText";
+import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 /** Grant events the panel lists, newest first. */
 const SHOWN_EVENTS = 20;
@@ -11,7 +12,7 @@ const SHOWN_DAYS = 14;
 
 function when(at: string): string {
   const date = new Date(at);
-  return Number.isNaN(date.getTime()) ? at : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? at : date.toLocaleString(undefined, hourCycleOptions());
 }
 
 /**
