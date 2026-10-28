@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
 
 const request = vi.hoisted(() => vi.fn());
 const commands = vi.hoisted(() => ({ status: vi.fn(), pin: vi.fn() }));
@@ -11,13 +13,19 @@ vi.mock("./session", () => ({
   e2eeSession: async () => session,
 }));
 
+import { queryKeys } from "../../../core/query/keys";
 import { TestProviders } from "../../../test/utils";
 import { useEditMessageMutation } from "../../messages/api/useEditMessage";
 import { useForwardMessageMutation } from "../../messages/api/useForwardMessage";
 import { useSendMessageMutation } from "../../messages/api/useMessages";
 import { useReplyToMessageMutation } from "../../threads/api/useReplyToMessage";
 import { useE2eeStore } from "../state/useE2eeStore";
-import { foreignPrincipals, pinConversation, PinnedEncryptedError } from "./pins";
+import {
+  EncryptedConversationError,
+  foreignPrincipals,
+  pinConversation,
+  PinnedEncryptedError,
+} from "./pins";
 
 const session = {
   account: { endpoint: "http://x/api", userId: "u-me" },
@@ -81,6 +89,37 @@ describe("pins", () => {
     // A conversation this device never saw encrypted sends as before.
     commands.status.mockResolvedValue([view({ conversationId: "plain" })]);
     await send.mutateAsync({ workspaceId: "ws", conversationId: "plain", text: "hi" });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("never sends plaintext into a conversation the server's cached answer calls encrypted", async () => {
+    // Not pinned on this device yet: the server's answer alone stops the plaintext write.
+    commands.status.mockResolvedValue([view({ conversationId: "dm" })]);
+    // Kept past garbage collection: nothing observes these answers while the guard reads them.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(queryKeys.conversation("space", "dm"), {
+      id: "dm",
+      encryptedAt: "2026-10-01T00:00:00Z",
+    });
+    qc.setQueryData(queryKeys.conversation("space", "plain"), { id: "plain", encryptedAt: null });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+    const send = renderHook(useSendMessageMutation, { wrapper }).result.current;
+    await expect(
+      send.mutateAsync({ workspaceId: "space", conversationId: "dm", text: "plaintext" }),
+    ).rejects.toBeInstanceOf(EncryptedConversationError);
+    const reply = renderHook(useReplyToMessageMutation, { wrapper }).result.current;
+    await expect(
+      reply.mutateAsync({
+        serverId: "space",
+        conversationId: "dm",
+        rootMessageId: "m",
+        text: "plaintext",
+      }),
+    ).rejects.toBeInstanceOf(EncryptedConversationError);
+    expect(request).not.toHaveBeenCalled();
+
+    await send.mutateAsync({ workspaceId: "space", conversationId: "plain", text: "hi" });
     expect(request).toHaveBeenCalledTimes(1);
   });
 

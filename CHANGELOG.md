@@ -32,6 +32,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 - The desktop app's sign-in, sign-up and join screens, and its error screen, now have the title
   bar with minimize, maximize and close, so the window can be moved and closed there.
+- Typing right after opening a direct message from New message or a profile goes to that
+  conversation: before, the first letters could land in the conversation you came from, and a
+  quick Enter could post the message there unencrypted. A send while the conversation is still
+  opening is refused with a notice and the text is kept, and text is never sent unencrypted into
+  a conversation the server calls end-to-end encrypted.
 
 ## [0.0.6] - 2026-10-28
 
