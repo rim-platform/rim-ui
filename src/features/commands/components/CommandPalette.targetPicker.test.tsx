@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import {
   CommandArgumentType,
@@ -241,7 +241,9 @@ describe("the command palette's target picker", () => {
 
     expect(useCommandStore.getState().isCommandPaletteOpen).toBe(true);
     expect(useCommandStore.getState().targetPicker).toBeNull();
-    expect(screen.getByPlaceholderText("Type a command...")).toBeTruthy();
+    const search = screen.getByPlaceholderText("Type a command...");
+    // The command list takes the keyboard back, so typing and Escape reach it again.
+    await waitFor(() => expect(document.activeElement).toBe(search));
   });
 
   it("opens the picked direct message in its space", async () => {
