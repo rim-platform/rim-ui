@@ -93,6 +93,10 @@ export const CLIENT_COMMAND_LABELS: Readonly<
     title: "Next Conversation",
     description: "Go to the conversation below in the sidebar.",
   },
+  "workspace.open_marketplace": {
+    title: "Open Marketplace",
+    description: "Coming soon: browse and install plugins",
+  },
   "workspace.next_unread_channel": {
     title: "Next Unread Conversation",
     description: "Go to the next conversation with unread messages.",
