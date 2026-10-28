@@ -18,6 +18,9 @@ vi.mock("../api/useCommands", () => ({
 
 vi.mock("./commandDispatcher", () => ({
   dispatchCommand: vi.fn(),
+  hasLocalHandler: (id: string) => id === "chat.mark_all_as_read",
+  isLocalActionResult: (result: { payload: unknown } | null) =>
+    (result?.payload as { local?: boolean } | null)?.local === true,
 }));
 
 vi.mock("../../../shared/toast", () => ({
@@ -78,6 +81,7 @@ vi.mock("../../plugins/runtime/pluginCommandInfo", async (importOriginal) => ({
 import { KeybindProvider } from "./KeybindProvider";
 import { dispatchCommand } from "./commandDispatcher";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
+import { useCommands } from "../api/useCommands";
 import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
@@ -123,6 +127,34 @@ describe("KeybindProvider with a plugin command bound on this device", () => {
     });
     await vi.waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Refresh pods: 3 pods in shop (kind-dev)"),
+    );
+  });
+
+  it("shows what a local command says when its key runs it", async () => {
+    vi.mocked(useCommands).mockReturnValueOnce({
+      data: [{ id: "chat.mark_all_as_read", title: "Mark All as Read" }],
+    } as never);
+    useDeviceKeybindStore
+      .getState()
+      .add({ keystroke: "Ctrl+Shift+M", commandId: "chat.mark_all_as_read", context: "GLOBAL" });
+    vi.mocked(dispatchCommand).mockResolvedValue({
+      status: "SUCCESS",
+      message: "All conversations marked as read",
+      payload: null,
+      followUpCommands: [],
+    });
+    render(
+      <KeybindProvider>
+        <div />
+      </KeybindProvider>,
+    );
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "M", ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Mark All as Read: All conversations marked as read.",
+      ),
     );
   });
 

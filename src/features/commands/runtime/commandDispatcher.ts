@@ -183,7 +183,10 @@ const localHandlers: Record<
   },
   "workspace.next_unread_channel": () => {
     const unread = getCachedUnreadConversationIds();
-    if (unread.length === 0) return;
+    if (unread.length === 0) {
+      toast.info("No unread conversations");
+      return;
+    }
     const current = useShellStore.getState().selectedConversationId;
     const allIds = getCachedConversationIds();
     const currentIdx = current ? allIds.indexOf(current) : -1;
@@ -193,7 +196,10 @@ const localHandlers: Record<
   },
   "workspace.previous_unread_channel": () => {
     const unread = getCachedUnreadConversationIds();
-    if (unread.length === 0) return;
+    if (unread.length === 0) {
+      toast.info("No unread conversations");
+      return;
+    }
     const current = useShellStore.getState().selectedConversationId;
     const allIds = getCachedConversationIds();
     const currentIdx = current ? allIds.indexOf(current) : allIds.length;
@@ -229,6 +235,7 @@ const localHandlers: Record<
   "workspace.reopen_last_thread": () => {
     const lastThread = useShellStore.getState().lastClosedThreadId;
     if (lastThread) useShellStore.getState().openThreadForMessage(lastThread);
+    else toast.info("No thread to reopen");
   },
   "workspace.cycle_recent_activity": () => {
     // Cycle to the next conversation in the list (wrapping), same as next_channel.
