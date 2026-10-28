@@ -27,6 +27,7 @@ import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore"
 import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
+import { cycleRecentActivity } from "./cycleRecentActivity";
 import { confirmConversationCommand } from "./conversationActionGate";
 import { openWorkspaceAction } from "../../workspaces/workspaceActions";
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
@@ -231,13 +232,7 @@ const localHandlers: Record<
     if (lastThread) useShellStore.getState().openThreadForMessage(lastThread);
   },
   "workspace.cycle_recent_activity": () => {
-    // Cycle to the next conversation in the list (wrapping), same as next_channel.
-    const ids = getCachedConversationIds();
-    if (ids.length === 0) return;
-    const current = useShellStore.getState().selectedConversationId;
-    const idx = current ? ids.indexOf(current) : -1;
-    const next = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : ids[0];
-    useShellStore.getState().setSelectedConversationId(next);
+    cycleRecentActivity();
   },
   "chat.create_channel": () => {
     // Switch to the conversation surface, then open the channel dialog

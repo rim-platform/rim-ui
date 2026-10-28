@@ -79,6 +79,9 @@ vi.mock("../../features/settings/hooks/useStatusExpiration", () => ({
 vi.mock("../../features/conversations/state/useUnreadEventHandler", () => ({
   useUnreadEventHandler: () => {},
 }));
+vi.mock("../../features/conversations/state/useRecentActivitySeed", () => ({
+  useRecentActivitySeed: () => {},
+}));
 vi.mock("../../features/presence/state/usePresenceEventHandler", () => ({
   usePresenceEventHandler: () => {},
 }));

@@ -118,7 +118,7 @@ new device:
 | <kbd>Ctrl+Shift+M</kbd> | Mark everything as read |
 | <kbd>Ctrl+Shift+K</kbd> | Jump to a conversation; with none named, opens the palette |
 | <kbd>Ctrl+Shift+T</kbd> | Reopen the last thread |
-| <kbd>Ctrl+R</kbd> | Cycle recent activity: the next conversation, wrapping around |
+| <kbd>Ctrl+R</kbd> | Cycle recent activity: jump to where someone last posted, newest first; pressed again within 5 seconds it goes further back |
 | <kbd>Ctrl+B</kbd> | Toggle the sidebar |
 | <kbd>Ctrl+E</kbd> | Focus the composer |
 | <kbd>Ctrl+D</kbd> | Cycle display density |

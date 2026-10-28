@@ -22,6 +22,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Changed
+
+- Cycle Recent Activity jumps to the conversations and threads where someone last posted, newest
+  first; before it did the same as Next Conversation.
+
 ## [0.0.7] - 2026-10-28
 
 ### Added

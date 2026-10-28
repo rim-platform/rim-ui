@@ -119,7 +119,7 @@ export const BUILT_IN_COMMAND_TITLES: Readonly<Record<string, string>> = {
   "workspace.open_search": "Search the workspace",
   "workspace.open_marketplace": "Open the plugin marketplace",
   "workspace.open_agent": "Open the AI agent",
-  "workspace.cycle_recent_activity": "Cycle recent activity",
+  "workspace.cycle_recent_activity": "Jump to where someone last posted",
   "workspace.toggle_sidebar": "Toggle the sidebar",
   "workspace.reopen_last_thread": "Reopen the last thread",
   "workspace.focus_composer": "Focus the composer",
