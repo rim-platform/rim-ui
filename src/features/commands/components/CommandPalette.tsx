@@ -46,6 +46,8 @@ import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
 import { PaletteTargetPicker, type PickerTarget } from "./PaletteTargetPicker";
+import { CommandResultView } from "./CommandResultView";
+import { presentReadResult } from "../runtime/readCommandResult";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
@@ -88,7 +90,7 @@ function runsFromPalette(command: CommandDefinition, context: ArgumentContext): 
   );
 }
 
-export function CommandPalette() {
+function CommandPaletteDialog() {
   const isOpen = useCommandStore((s) => s.isCommandPaletteOpen);
   const searchQuery = useCommandStore((s) => s.searchQuery);
   const setSearchQuery = useCommandStore((s) => s.setSearchQuery);
@@ -348,7 +350,15 @@ export function CommandPalette() {
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
         } else {
-          toast.success(commandSuccessText(command.title, result));
+          // A read command shows what it read; anything else says it ran.
+          const shown = await presentReadResult(
+            command.id,
+            command.title,
+            result,
+            args,
+            options?.commandContext ?? currentCommandContext(),
+          );
+          if (!shown) toast.success(commandSuccessText(command.title, result));
           options?.onSuccess?.();
         }
       } catch (err) {
@@ -677,5 +687,15 @@ export function CommandPalette() {
         )}
       </div>
     </div>
+  );
+}
+
+/** The command palette, and the view that shows a read command's result after it closes. */
+export function CommandPalette() {
+  return (
+    <>
+      <CommandPaletteDialog />
+      <CommandResultView />
+    </>
   );
 }

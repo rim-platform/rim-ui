@@ -21,6 +21,8 @@ import {
 } from "../../plugins/runtime/pluginCommandInfo";
 import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
 import { toast } from "../../../shared/toast";
+import { useCommandResultStore } from "../state/useCommandResultStore";
+import { presentReadResult } from "./readCommandResult";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
@@ -120,6 +122,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       const overlayOpen =
         useCommandStore.getState().isCommandPaletteOpen ||
         useSearchOverlayStore.getState().isOpen ||
+        useCommandResultStore.getState().view !== null ||
         useAgentStore.getState().isOpen ||
         shell.showNewChannelDialog ||
         shell.showNewMessagePicker ||
@@ -166,6 +169,18 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         dangerous: pluginCommand?.dangerous ?? false,
       };
 
+    // A search with its query given opens the search overlay on that query.
+    const presetArgs = match.presetArgs as Record<string, unknown> | undefined;
+    const presetQuery = presetArgs?.query;
+    if (
+      match.commandId === "chat.search_messages" &&
+      typeof presetQuery === "string" &&
+      presetQuery.trim() !== ""
+    ) {
+      useSearchOverlayStore.getState().openWithScope({ kind: "all" }, presetQuery);
+      return;
+    }
+
     dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
       args: match.presetArgs as Record<string, unknown> | undefined,
       commandContext: currentCommandContext(),
@@ -185,6 +200,14 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         ) {
           // A local command that has something to say says it, as the palette does.
           toast.success(commandSuccessText(command.title, result));
+        } else if (!isPluginCommand) {
+          void presentReadResult(
+            command.id,
+            command.title,
+            result,
+            presetArgs,
+            currentCommandContext(),
+          );
         }
       })
       .catch((err: unknown) => {
