@@ -4858,7 +4858,7 @@ dependencies = [
 
 [[package]]
 name = "rim-ui"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "aes-gcm",
  "argon2",
