@@ -81,6 +81,7 @@ import { SUBSCRIPTION_LIMIT_TOAST_ID } from "../graphql/subscriptionErrors";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
 import { eventBus } from "./eventBus";
 import { BUS_EVENTS, type TypingStartedEvent, type TypingStoppedEvent } from "./busEvents";
+import { useRecentActivityStore } from "../../features/conversations/state/useRecentActivityStore";
 import { applyWorkspaceEvent, useWorkspaceEvents } from "./useWorkspaceEvents";
 import { JoinRequestStatus } from "../graphql/generated/schema-types";
 import { useNotificationSettingsStore } from "../../features/notifications/state/useNotificationSettingsStore";
@@ -693,6 +694,36 @@ describe("useWorkspaceEvents thread reply counts", () => {
     emitWorkspaceEvent(newMessage("c-1", ENCRYPTION));
 
     expect(spy).not.toHaveBeenCalledWith({ queryKey: ["threadReplyCount", "ws-1", "c-1"] });
+  });
+});
+
+describe("useWorkspaceEvents recent activity", () => {
+  beforeEach(() => {
+    useRecentActivityStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  it("records where someone else posted, a thread reply with its thread", () => {
+    const qc = new QueryClient();
+    applyWorkspaceEvent(newMessage("c-1"), qc, "ws-1");
+    applyWorkspaceEvent(newMessage("c-2", ENCRYPTION), qc, "ws-1");
+    const reply = newMessage("c-3");
+    if (reply.type !== "NewMessage") throw new Error("not a NewMessage");
+    applyWorkspaceEvent({ ...reply, message: { ...reply.message, thread_id: "t-1" } }, qc, "ws-1");
+
+    expect(
+      useRecentActivityStore.getState().entries.map((e) => [e.conversationId, e.threadId]),
+    ).toEqual([
+      ["c-3", "t-1"],
+      ["c-2", null],
+      ["c-1", null],
+    ]);
+  });
+
+  it("leaves out the user's own message", () => {
+    useAuthStore.setState({ session: { userId: "u-2" } });
+    applyWorkspaceEvent(newMessage("c-1"), new QueryClient(), "ws-1");
+    expect(useRecentActivityStore.getState().entries).toEqual([]);
   });
 });
 

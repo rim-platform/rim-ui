@@ -22,12 +22,24 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Changed
+
+- Cycle Recent Activity jumps to the conversations and threads where someone last posted, newest
+  first; before it did the same as Next Conversation.
+
 ### Fixed
 
 - Navigate to Channel, Navigate to DM, Switch Workspace and Join Channel in the command palette now
   ask which one to use; before, they did nothing, or joined the open channel. A keybind or macro
   that runs them with a `conversation_id` or `workspace_id` argument (or the camelCase spelling)
   keeps working.
+- Focus the Pane to the Left and Right now move the focus when run from the command palette.
+  The palette no longer offers commands that cannot apply: List Channels, List State, Join
+  Channel and Navigate to Channel in direct messages, Close Panel with no panel open, and Back
+  to Workspace with nowhere to return to. Open Marketplace is marked as coming soon.
+- Next and Previous Unread Conversation and Reopen Last Thread say so when there is nothing to
+  go to, and Mark All as Read confirms when run from its keybind. Typing a command name in the
+  palette no longer logs a highlight warning.
 
 ## [0.0.7] - 2026-10-28
 

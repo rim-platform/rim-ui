@@ -11,7 +11,8 @@ import {
   matchKeybind,
   surfaceToContext,
 } from "./keybindEngine";
-import { dispatchCommand } from "./commandDispatcher";
+import { dispatchCommand, hasLocalHandler, isLocalActionResult } from "./commandDispatcher";
+import { commandSuccessText } from "./commandResultText";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
 import {
@@ -176,6 +177,14 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
           // An open panel shows for itself; one that cannot open says why.
           toast.error(result.message);
+        } else if (
+          hasLocalHandler(command.id) &&
+          result?.status === "SUCCESS" &&
+          result.message.trim() &&
+          !isLocalActionResult(result)
+        ) {
+          // A local command that has something to say says it, as the palette does.
+          toast.success(commandSuccessText(command.title, result));
         }
       })
       .catch((err: unknown) => {

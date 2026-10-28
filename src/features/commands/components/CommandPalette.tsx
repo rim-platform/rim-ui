@@ -49,6 +49,11 @@ import { PaletteTargetPicker, type PickerTarget } from "./PaletteTargetPicker";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
+import { releasePaletteFocus } from "../runtime/paletteFocus";
+import { offeredInSituation } from "../runtime/paletteAvailability";
+import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
+import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import type {
   CommandContextInput,
@@ -116,16 +121,31 @@ export function CommandPalette() {
   const [pipelineResult, setPipelineResult] = useState<CommandResult | null>(null);
   const [pipeExecuting, setPipeExecuting] = useState(false);
 
+  const inDirectSpace = useIsDirectSpace(workspaceId);
+  const hasDirectOrigin = useApplicableDirectOrigin() !== null;
+  // Whether a panel is open is read when the palette opens; nothing opens one behind it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const panelOpen = useMemo(() => hasPanelToClose(), [isOpen]);
+
+  const situation = useMemo(
+    () => ({ inDirectSpace, panelOpen, hasDirectOrigin }),
+    [inDirectSpace, panelOpen, hasDirectOrigin],
+  );
+
   // Pre-filter to palette-visible commands, merge with plugin commands
   const visibleCommands = useMemo(() => {
     const base =
       commands
         ?.filter((cmd) => cmd.visibleInPalette && runsFromPalette(cmd, argumentContext))
         .filter((cmd) => commandOfferedHere(cmd.id))
+        .filter((cmd) => offeredInSituation(cmd.id, situation))
         .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
     const local = LOCAL_COMMANDS.filter(
-      (cmd) => !serverIds.has(cmd.id) && workspaceCommandOffered(cmd.id),
+      (cmd) =>
+        !serverIds.has(cmd.id) &&
+        workspaceCommandOffered(cmd.id) &&
+        offeredInSituation(cmd.id, situation),
     );
     return [
       ...base,
@@ -134,7 +154,15 @@ export function CommandPalette() {
       ...pluginCommands.filter((cmd) => cmd.visibleInPalette && runnableHere(cmd.requiredContext)),
       ...registryItems,
     ];
-  }, [commands, pluginCommands, registryItems, runnableHere, argumentContext, workspaceId]);
+  }, [
+    commands,
+    pluginCommands,
+    registryItems,
+    runnableHere,
+    argumentContext,
+    workspaceId,
+    situation,
+  ]);
 
   const { data: openConversation } = useConversation(workspaceId, argumentContext.conversationId);
   // Archive Channel and Unarchive Channel only where they would change something.
@@ -202,7 +230,7 @@ export function CommandPalette() {
       setPipeExecuting(false);
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
-      setFocusedSurface(null);
+      releasePaletteFocus();
     }
   }, [isOpen, setFocusedSurface]);
 

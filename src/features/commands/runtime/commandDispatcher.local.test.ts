@@ -121,6 +121,20 @@ describe("this app's own commands", () => {
     expect(useShellStore.getState().focusedSurface).toBe("mainSurface");
   });
 
+  it("says so when there is no unread conversation to go to", () => {
+    serveConversations(["c-1", "c-2"]);
+    runDesktopLocalCommand("workspace.next_unread_channel");
+    runDesktopLocalCommand("workspace.previous_unread_channel");
+    expect(toast.info).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledWith("No unread conversations");
+  });
+
+  it("says so when there is no thread to reopen", () => {
+    useShellStore.setState({ lastClosedThreadId: null });
+    runDesktopLocalCommand("workspace.reopen_last_thread");
+    expect(toast.info).toHaveBeenCalledWith("No thread to reopen");
+  });
+
   it("workspace.back_to_workspace returns from the DM", () => {
     queryClient.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme", owner: null }]);
     useShellStore.getState().setSelectedConversationId("c-design");

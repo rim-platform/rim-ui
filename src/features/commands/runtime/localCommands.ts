@@ -93,6 +93,10 @@ export const CLIENT_COMMAND_LABELS: Readonly<
     title: "Next Conversation",
     description: "Go to the conversation below in the sidebar.",
   },
+  "workspace.open_marketplace": {
+    title: "Open Marketplace",
+    description: "Coming soon: browse and install plugins",
+  },
   "workspace.next_unread_channel": {
     title: "Next Unread Conversation",
     description: "Go to the next conversation with unread messages.",
@@ -119,7 +123,7 @@ export const BUILT_IN_COMMAND_TITLES: Readonly<Record<string, string>> = {
   "workspace.open_search": "Search the workspace",
   "workspace.open_marketplace": "Open the plugin marketplace",
   "workspace.open_agent": "Open the AI agent",
-  "workspace.cycle_recent_activity": "Cycle recent activity",
+  "workspace.cycle_recent_activity": "Jump to where someone last posted",
   "workspace.toggle_sidebar": "Toggle the sidebar",
   "workspace.reopen_last_thread": "Reopen the last thread",
   "workspace.focus_composer": "Focus the composer",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createPaletteSearch, fuzzySearchFactory } from "./paletteSearch";
+import { createPaletteSearch, fuzzySearchFactory, normalizeRanges } from "./paletteSearch";
 
 interface Item {
   title: string;
@@ -124,5 +124,42 @@ describe("fuzzySearchFactory", () => {
 
   it("refuses a module without the function", () => {
     expect(() => fuzzySearchFactory({ default: {} })).toThrow(/createFuzzySearch/);
+  });
+});
+
+describe("highlight ranges", () => {
+  it("are sorted and free of overlaps for Focus the Pane to the Left", () => {
+    const search = createPaletteSearch([
+      item(
+        "Focus the Pane to the Left",
+        "Move keyboard focus to the pane on the left",
+        "Workspace",
+      ),
+    ]);
+    const [match] = search("Focus the Pane to the Left");
+    for (const ranges of [match.titleRanges, match.descriptionRanges]) {
+      let last = -1;
+      for (const [start, end] of ranges ?? []) {
+        expect(start).toBeGreaterThan(last);
+        expect(end).toBeGreaterThanOrEqual(start);
+        last = end;
+      }
+    }
+  });
+
+  it("merge duplicate and overlapping spans", () => {
+    expect(
+      normalizeRanges([
+        [14, 16],
+        [5, 9],
+        [14, 16],
+        [15, 20],
+        [21, 22],
+      ]),
+    ).toEqual([
+      [5, 9],
+      [14, 22],
+    ]);
+    expect(normalizeRanges(null)).toBeNull();
   });
 });

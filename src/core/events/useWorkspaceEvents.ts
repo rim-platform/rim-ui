@@ -5,6 +5,8 @@ import {
   handleMemberBanChanged,
   handleMemberProfileUpdated,
 } from "../../features/workspaces/state/memberEvents";
+import { useRecentActivityStore } from "../../features/conversations/state/useRecentActivityStore";
+import { useBlockedConversations } from "../../features/relay/state/useBlockedConversations";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { isSessionEndedClose, reportSubscriptionLimit } from "../graphql/subscriptionErrors";
 import { logger } from "../logger";
@@ -151,6 +153,24 @@ export function useWorkspaceEvents(workspaceId: string | null) {
 }
 
 /**
+ * Records where a new message was posted in the recent-activity log; the log leaves out the
+ * signed-in user's own messages, and so does this for a conversation hidden because someone
+ * this account blocked started it.
+ */
+function recordActivity(
+  workspaceId: string,
+  message: Extract<WorkspaceEvent, { type: "NewMessage" }>["message"],
+) {
+  if (useBlockedConversations.getState().bySpace[workspaceId]?.[message.conversation_id]) return;
+  useRecentActivityStore.getState().record({
+    workspaceId,
+    conversationId: message.conversation_id,
+    threadId: message.thread_id,
+    authorId: message.author_id,
+  });
+}
+
+/**
  * The name shown for whoever started typing: the alias this person gave them as a contact, else
  * the name the event carries, else the cached member's, else "Someone".
  */
@@ -203,6 +223,7 @@ export function applyWorkspaceEvent(
     event.message.encryption
   ) {
     if (event.type === "NewMessage") {
+      recordActivity(workspaceId, event.message);
       eventBus.emit<UnreadIncrementEvent>(BUS_EVENTS.UNREAD_INCREMENT, {
         workspaceId,
         conversationId: event.conversation_id,
@@ -232,6 +253,8 @@ export function applyWorkspaceEvent(
   switch (event.type) {
     case "NewMessage": {
       insertTimelineMessage(qc, workspaceId, messageFromEvent(event.message));
+
+      recordActivity(workspaceId, event.message);
 
       // Unread tracking via event bus; the feature filters (own message, active conversation).
       // Desktop notifications are decided by the server and arrive as `NotificationDue`.

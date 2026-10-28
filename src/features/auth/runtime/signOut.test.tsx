@@ -9,6 +9,7 @@ vi.mock("graphql-ws", () => ({
 }));
 
 import { createTestQueryClient } from "../../../test/utils";
+import { useRecentActivityStore } from "../../conversations/state/useRecentActivityStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAuthStore } from "../state/useAuthStore";
@@ -37,6 +38,12 @@ describe("useSessionEndedSignOut", () => {
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useOfflineStore.setState({ offline: true });
     queryClient.setQueryData(["me"], { id: "alice" });
+    useRecentActivityStore.getState().record({
+      workspaceId: "ws-1",
+      conversationId: "c-1",
+      threadId: null,
+      authorId: "bob",
+    });
   });
 
   afterEach(() => {
@@ -60,6 +67,7 @@ describe("useSessionEndedSignOut", () => {
     expect(useWorkspaceStore.getState().workspaceId).toBeNull();
     expect(useOfflineStore.getState().offline).toBe(false);
     expect(queryClient.getQueryData(["me"])).toBeUndefined();
+    expect(useRecentActivityStore.getState().entries).toEqual([]);
   });
 
   it("keeps the session through any other close, and stops listening once unmounted", () => {
