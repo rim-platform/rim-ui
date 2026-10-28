@@ -9,6 +9,7 @@ import { useClockFormatStore } from "../../../../shared/state/useClockFormatStor
 import { formatTime } from "../../../../shared/utils/formatTime";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { LockMark } from "../../../e2ee/components/LockMark";
+import { MessageRoleBadge } from "../../../workspaces/components/MemberBadges";
 import { sameAuthor } from "./areMessageItemPropsEqual";
 import { useAuthorPresence } from "./useAuthorPresence";
 import type { ForwardedFromInfo, MessageAuthorView, MessageItemHandlers } from "./types";
@@ -137,6 +138,14 @@ export const MessageHeader = memo(function MessageHeader({
           {author.name}
         </span>
       </AuthorHoverCard>
+      {!author.inDirectSpace && !author.isFormerMember && !activeBan(author.ban) && (
+        <MessageRoleBadge role={author.role} className="self-center" />
+      )}
+      {author.inDirectSpace && !author.isCurrentUser && author.handle && (
+        <span className="text-xs text-rim-text-faint truncate max-w-[160px]">
+          {author.handle.shown}
+        </span>
+      )}
       {activeBan(author.ban) ? (
         <span className="text-xs text-rim-text-muted">({banLabel(author.ban)})</span>
       ) : (
