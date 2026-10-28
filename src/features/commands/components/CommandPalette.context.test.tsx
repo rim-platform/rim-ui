@@ -34,6 +34,7 @@ vi.mock("../runtime/commandDispatcher", () => ({
   commandResultOf: (outcome: { result: CommandResult }) => outcome.result,
   hasLocalHandler: (id: string) => id === "chat.create_channel",
   argumentPromptName: (id: string) => (id === "chat.search_messages" ? "query" : undefined),
+  targetPickerKind: () => undefined,
 }));
 
 vi.mock("../runtime/humanConfirmation", () => ({

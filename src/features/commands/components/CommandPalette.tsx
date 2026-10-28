@@ -20,6 +20,7 @@ import {
   dispatchCommand,
   hasLocalHandler,
   isLocalActionResult,
+  targetPickerKind,
 } from "../runtime/commandDispatcher";
 import {
   serverRunsWithContext,
@@ -37,15 +38,24 @@ import {
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
 import { offeredForConversation } from "../runtime/conversationActionGate";
 import { useConversation } from "../../conversations/api/useConversation";
+import { invalidateConversationQueries } from "../../conversations/api/useChannelMembership";
+import { useOpenConversation } from "../../conversations/hooks/useOpenConversation";
+import { queryClient } from "../../../core/query/queryClient";
 import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
+import { PaletteTargetPicker, type PickerTarget } from "./PaletteTargetPicker";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
-import type { CommandDefinition, CommandSourceKind, CommandResult } from "../types";
+import type {
+  CommandContextInput,
+  CommandDefinition,
+  CommandSourceKind,
+  CommandResult,
+} from "../types";
 
 function sourceIcon(source: CommandSourceKind) {
   switch (source) {
@@ -78,6 +88,9 @@ export function CommandPalette() {
   const searchQuery = useCommandStore((s) => s.searchQuery);
   const setSearchQuery = useCommandStore((s) => s.setSearchQuery);
   const closeCommandPalette = useCommandStore((s) => s.closeCommandPalette);
+  const targetPicker = useCommandStore((s) => s.targetPicker);
+  const closeTargetPicker = useCommandStore((s) => s.closeTargetPicker);
+  const openConversationById = useOpenConversation();
   const setFocusedSurface = useShellStore((s) => s.setFocusedSurface);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
   const selectedConversationId = useShellStore((s) => s.selectedConversationId) ?? undefined;
@@ -284,6 +297,41 @@ export function CommandPalette() {
     [closeCommandPalette, executeCommandMutation, commands, knownCommands],
   );
 
+  // Run a command and tell the person how it went.
+  const runCommand = useCallback(
+    async (
+      command: CommandDefinition,
+      args?: Record<string, unknown>,
+      options?: { commandContext?: CommandContextInput; onSuccess?: () => void },
+    ) => {
+      try {
+        const result = await dispatchCommand(
+          command,
+          (input) => executeCommandMutation.mutateAsync(input),
+          { args, commandContext: options?.commandContext ?? currentCommandContext() },
+        );
+        if (command.sourceKind === "PLUGIN") {
+          // A plugin answers in words (its payload is for scripts and the agent).
+          toastPluginCommandResult(command.title, result);
+        } else if (isCancelledResult(result)) {
+          // The user declined the confirmation, or was told it expired.
+        } else if (isLocalActionResult(result)) {
+          // The command shows what it did.
+        } else if (result === null || result.status === "ERROR") {
+          toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
+        } else {
+          toast.success(commandSuccessText(command.title, result));
+          options?.onSuccess?.();
+        }
+      } catch (err) {
+        // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)
+        // rather than graphql-request's serialized response dump.
+        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
+      }
+    },
+    [executeCommandMutation],
+  );
+
   const executeSelected = useCallback(
     async (command: CommandDefinition) => {
       // A registry entry opens its install dialog; one that cannot be installed here stays put.
@@ -300,34 +348,58 @@ export function CommandPalette() {
         await executePipeChain(pipeSegments, command.id);
         return;
       }
+      // A command that needs a target keeps the palette open to ask for it.
+      if (targetPickerKind(command.id)) {
+        void dispatchCommand(command, (input) => executeCommandMutation.mutateAsync(input), {
+          commandContext: currentCommandContext(),
+        });
+        return;
+      }
       // Close immediately so the palette dismisses before the async result arrives —
       // the toast will appear on top without requiring the palette to stay open.
       closeCommandPalette();
-      try {
-        const result = await dispatchCommand(
-          command,
-          (input) => executeCommandMutation.mutateAsync(input),
-          { commandContext: currentCommandContext() },
-        );
-        if (command.sourceKind === "PLUGIN") {
-          // A plugin answers in words (its payload is for scripts and the agent).
-          toastPluginCommandResult(command.title, result);
-        } else if (isCancelledResult(result)) {
-          // The user declined the confirmation, or was told it expired.
-        } else if (isLocalActionResult(result)) {
-          // The command shows what it did.
-        } else if (result === null || result.status === "ERROR") {
-          toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
-        } else {
-          toast.success(commandSuccessText(command.title, result));
-        }
-      } catch (err) {
-        // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)
-        // rather than graphql-request's serialized response dump.
-        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
+      await runCommand(command);
+    },
+    [closeCommandPalette, executeCommandMutation, pipeSegments, executePipeChain, runCommand],
+  );
+
+  // Run the command a target was picked for, with that target as its argument.
+  const pickTarget = useCallback(
+    async (target: PickerTarget) => {
+      const request = useCommandStore.getState().targetPicker;
+      const command = request && knownCommands.find((cmd) => cmd.id === request.commandId);
+      if (!request || !command) {
+        closeCommandPalette();
+        return;
+      }
+      closeCommandPalette();
+      switch (request.kind) {
+        case "channel":
+        case "direct":
+          await runCommand(command, { conversationId: target.id, serverId: target.serverId });
+          break;
+        case "workspace":
+          await runCommand(command, { workspaceId: target.id });
+          break;
+        case "joinableChannel":
+          await runCommand(
+            command,
+            { server_id: target.serverId, conversation_id: target.id },
+            {
+              commandContext: currentCommandContext({
+                workspaceId: target.serverId,
+                conversationId: target.id,
+              }),
+              onSuccess: () => {
+                invalidateConversationQueries(queryClient, target.serverId, target.id);
+                openConversationById(target.id, target.serverId);
+              },
+            },
+          );
+          break;
       }
     },
-    [closeCommandPalette, executeCommandMutation, pipeSegments, executePipeChain],
+    [closeCommandPalette, knownCommands, runCommand, openConversationById],
   );
 
   const handleKeyDown = useCallback(
@@ -412,155 +484,169 @@ export function CommandPalette() {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
-        {/* Pipe chain display */}
-        {pipeSegments.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-rim-line px-4 py-2">
-            {pipeSegments.map((segment, i) => (
-              <span key={i} className="flex items-center gap-1.5">
-                <span className="bg-rim-accent/10 text-rim-accent text-xs rounded px-2 py-0.5 font-mono">
-                  {segment}
-                </span>
-                <span className="text-rim-text-faint text-xs" aria-hidden="true">
-                  {"\u2192"}
-                </span>
-              </span>
-            ))}
-            <span className="text-rim-text-muted text-xs">...</span>
-          </div>
-        )}
-
-        {/* Search input */}
-        <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
-          <Search className="h-4 w-4 text-rim-text-muted" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder={
-              pipeSegments.length > 0
-                ? "Next command, or Enter to run the pipe..."
-                : "Type a command..."
-            }
-            className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
+        {targetPicker ? (
+          <PaletteTargetPicker
+            kind={targetPicker.kind}
+            onPick={(target) => void pickTarget(target)}
+            onBack={closeTargetPicker}
           />
-        </div>
+        ) : (
+          <>
+            {/* Pipe chain display */}
+            {pipeSegments.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-rim-line px-4 py-2">
+                {pipeSegments.map((segment, i) => (
+                  <span key={i} className="flex items-center gap-1.5">
+                    <span className="bg-rim-accent/10 text-rim-accent text-xs rounded px-2 py-0.5 font-mono">
+                      {segment}
+                    </span>
+                    <span className="text-rim-text-faint text-xs" aria-hidden="true">
+                      {"\u2192"}
+                    </span>
+                  </span>
+                ))}
+                <span className="text-rim-text-muted text-xs">...</span>
+              </div>
+            )}
 
-        {/* Command list */}
-        <div ref={listRef} className="max-h-80 overflow-y-auto p-1">
-          {isLoadingCommands ? (
-            <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
-              <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-rim-text-muted border-t-transparent mr-2 align-middle" />
-              Loading commands...
+            {/* Search input */}
+            <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
+              <Search className="h-4 w-4 text-rim-text-muted" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder={
+                  pipeSegments.length > 0
+                    ? "Next command, or Enter to run the pipe..."
+                    : "Type a command..."
+                }
+                className="flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
+              />
             </div>
-          ) : sortedResults.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
-              No commands found.
-            </div>
-          ) : (
-            sortedResults.map((result, index) => {
-              const cmd = result.item;
-              return (
-                <div key={cmd.id}>
-                  {categoryHeaders.has(index) && (
-                    <div className="text-[10px] uppercase tracking-wider text-rim-text-faint px-3 pt-2 pb-1">
-                      {categoryHeaders.get(index)}
-                    </div>
-                  )}
-                  <button
-                    data-command-item
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                      index === selectedIndex
-                        ? "bg-rim-accent/10 text-rim-text"
-                        : "text-rim-text-muted hover:bg-rim-void/50",
-                      isRegistryPaletteItem(cmd) && cmd.registry.refusal !== null && "opacity-60",
-                    )}
-                    aria-disabled={
-                      isRegistryPaletteItem(cmd) && cmd.registry.refusal !== null ? true : undefined
-                    }
-                    onClick={() => executeSelected(cmd)}
-                    onMouseEnter={() => setSelectedIndex(index)}
-                  >
-                    {sourceIcon(cmd.sourceKind)}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">
-                          <Highlight text={cmd.title} ranges={result.titleRanges} />
-                        </span>
-                        {cmd.dangerous && (
-                          <span className="rounded bg-rim-danger/20 px-1.5 py-0.5 text-[10px] font-medium text-rim-danger">
-                            dangerous
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-rim-text-muted truncate">
-                        <Highlight text={cmd.description} ranges={result.descriptionRanges} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] text-rim-text-muted uppercase">
-                        {cmd.category}
-                      </span>
-                      {keybindMap.has(cmd.id) && (
-                        <kbd className="rounded border border-rim-line bg-rim-void px-1.5 py-0.5 text-[11px] font-mono text-rim-text-muted">
-                          {keybindMap.get(cmd.id)}
-                        </kbd>
-                      )}
-                    </div>
-                  </button>
+
+            {/* Command list */}
+            <div ref={listRef} className="max-h-80 overflow-y-auto p-1">
+              {isLoadingCommands ? (
+                <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
+                  <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-rim-text-muted border-t-transparent mr-2 align-middle" />
+                  Loading commands...
                 </div>
-              );
-            })
-          )}
-        </div>
+              ) : sortedResults.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-rim-text-muted">
+                  No commands found.
+                </div>
+              ) : (
+                sortedResults.map((result, index) => {
+                  const cmd = result.item;
+                  return (
+                    <div key={cmd.id}>
+                      {categoryHeaders.has(index) && (
+                        <div className="text-[10px] uppercase tracking-wider text-rim-text-faint px-3 pt-2 pb-1">
+                          {categoryHeaders.get(index)}
+                        </div>
+                      )}
+                      <button
+                        data-command-item
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                          index === selectedIndex
+                            ? "bg-rim-accent/10 text-rim-text"
+                            : "text-rim-text-muted hover:bg-rim-void/50",
+                          isRegistryPaletteItem(cmd) &&
+                            cmd.registry.refusal !== null &&
+                            "opacity-60",
+                        )}
+                        aria-disabled={
+                          isRegistryPaletteItem(cmd) && cmd.registry.refusal !== null
+                            ? true
+                            : undefined
+                        }
+                        onClick={() => executeSelected(cmd)}
+                        onMouseEnter={() => setSelectedIndex(index)}
+                      >
+                        {sourceIcon(cmd.sourceKind)}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate">
+                              <Highlight text={cmd.title} ranges={result.titleRanges} />
+                            </span>
+                            {cmd.dangerous && (
+                              <span className="rounded bg-rim-danger/20 px-1.5 py-0.5 text-[10px] font-medium text-rim-danger">
+                                dangerous
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-rim-text-muted truncate">
+                            <Highlight text={cmd.description} ranges={result.descriptionRanges} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-rim-text-muted uppercase">
+                            {cmd.category}
+                          </span>
+                          {keybindMap.has(cmd.id) && (
+                            <kbd className="rounded border border-rim-line bg-rim-void px-1.5 py-0.5 text-[11px] font-mono text-rim-text-muted">
+                              {keybindMap.get(cmd.id)}
+                            </kbd>
+                          )}
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
 
-        {/* Pipeline result display */}
-        {pipelineResult?.pipelineStages && pipelineResult.pipelineStages.length > 0 && (
-          <div className="border-t border-rim-line px-3 py-2 max-h-60 overflow-y-auto">
-            <PipelineResultView stages={pipelineResult.pipelineStages} />
-          </div>
+            {/* Pipeline result display */}
+            {pipelineResult?.pipelineStages && pipelineResult.pipelineStages.length > 0 && (
+              <div className="border-t border-rim-line px-3 py-2 max-h-60 overflow-y-auto">
+                <PipelineResultView stages={pipelineResult.pipelineStages} />
+              </div>
+            )}
+
+            {/* Pipe execution progress */}
+            {pipeExecuting && (
+              <div className="border-t border-rim-line px-4 py-2 flex items-center gap-2 text-xs text-rim-text-muted">
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rim-accent border-t-transparent" />
+                Executing pipe...
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
+              <span>
+                <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
+              </span>
+              {pipeSegments.length > 0 ? (
+                <>
+                  <span>
+                    <kbd className="font-mono">Tab</kbd> add and run
+                  </span>
+                  <span>
+                    <kbd className="font-mono">Enter</kbd> run pipe
+                  </span>
+                  <span>
+                    <kbd className="font-mono">Esc</kbd> clear pipe
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    <kbd className="font-mono">Enter</kbd> execute
+                  </span>
+                  <span>
+                    <kbd className="font-mono">|</kbd> pipe
+                  </span>
+                  <span>
+                    <kbd className="font-mono">Esc</kbd> close
+                  </span>
+                </>
+              )}
+            </div>
+          </>
         )}
-
-        {/* Pipe execution progress */}
-        {pipeExecuting && (
-          <div className="border-t border-rim-line px-4 py-2 flex items-center gap-2 text-xs text-rim-text-muted">
-            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rim-accent border-t-transparent" />
-            Executing pipe...
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="border-t border-rim-line px-4 py-2 flex items-center gap-4 text-[11px] text-rim-text-muted">
-          <span>
-            <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
-          </span>
-          {pipeSegments.length > 0 ? (
-            <>
-              <span>
-                <kbd className="font-mono">Tab</kbd> add and run
-              </span>
-              <span>
-                <kbd className="font-mono">Enter</kbd> run pipe
-              </span>
-              <span>
-                <kbd className="font-mono">Esc</kbd> clear pipe
-              </span>
-            </>
-          ) : (
-            <>
-              <span>
-                <kbd className="font-mono">Enter</kbd> execute
-              </span>
-              <span>
-                <kbd className="font-mono">|</kbd> pipe
-              </span>
-              <span>
-                <kbd className="font-mono">Esc</kbd> close
-              </span>
-            </>
-          )}
-        </div>
       </div>
     </div>
   );
