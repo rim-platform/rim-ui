@@ -28,6 +28,23 @@ const PALETTE_LOCALE = "en";
 /** The score microfuzz gives a query found inside a word rather than at its start. */
 const MID_WORD_CONTAINS_SCORE = 2;
 
+/**
+ * `ranges` sorted by start with overlapping or touching ranges merged, as `<Highlight>` needs.
+ * microfuzz can return the same span twice when a query word matches the field in two ways.
+ */
+export function normalizeRanges(
+  ranges: HighlightRanges | null | undefined,
+): HighlightRanges | null {
+  if (!ranges) return null;
+  const merged: [number, number][] = [];
+  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0] || a[1] - b[1])) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+
 /** One command the palette lists for a search, with the letters to highlight. */
 export interface PaletteMatch<T> {
   item: T;
@@ -91,8 +108,8 @@ export function createPaletteSearch<T extends Searchable>(
       item: hit.item,
       tier: 0,
       score: hit.score,
-      titleRanges: hit.matches[0] ?? null,
-      descriptionRanges: descriptionHits.get(hit.item)?.matches[0] ?? null,
+      titleRanges: normalizeRanges(hit.matches[0]),
+      descriptionRanges: normalizeRanges(descriptionHits.get(hit.item)?.matches[0]),
     }));
     const titleHits = new Set(ranked.map((match) => match.item));
     for (const hit of descriptionHits.values()) {
@@ -102,7 +119,7 @@ export function createPaletteSearch<T extends Searchable>(
         tier: 1,
         score: hit.score,
         titleRanges: null,
-        descriptionRanges: hit.matches[0] ?? null,
+        descriptionRanges: normalizeRanges(hit.matches[0]),
       });
     }
     ranked.sort(compareMatches);
