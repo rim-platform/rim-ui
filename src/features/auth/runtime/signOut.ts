@@ -9,6 +9,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { onWsSessionEnded } from "../../../core/graphql/wsClient";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useRecentActivityStore } from "../../conversations/state/useRecentActivityStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { logout } from "../api/logout";
@@ -21,8 +22,9 @@ export const SESSION_ENDED_MESSAGE = "Your session ended. Sign in again.";
 
 /**
  * Back to sign-in with nothing of the session left: the account locked on this device
- * ({@link lockAccount}), no session, no open workspace, no offline mode, a fresh shell and an
- * empty query cache. `sessionEnded` marks a session the server ended, which sign-in then says.
+ * ({@link lockAccount}), no session, no open workspace, no offline mode, a fresh shell, an empty
+ * recent-activity log and an empty query cache. `sessionEnded` marks a session the server ended,
+ * which sign-in then says.
  */
 export function signOutLocally(
   queryClient: QueryClient,
@@ -37,6 +39,7 @@ export function signOutLocally(
   }
   useWorkspaceStore.getState().clearWorkspaceId();
   useShellStore.getState().reset();
+  useRecentActivityStore.getState().reset();
   queryClient.clear();
 }
 

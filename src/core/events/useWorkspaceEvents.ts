@@ -1,5 +1,3 @@
-import { useRecentActivityStore } from "../../features/conversations/state/useRecentActivityStore";
-import { useBlockedConversations } from "../../features/relay/state/useBlockedConversations";
 import { useEffect, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 
@@ -7,6 +5,8 @@ import {
   handleMemberBanChanged,
   handleMemberProfileUpdated,
 } from "../../features/workspaces/state/memberEvents";
+import { useRecentActivityStore } from "../../features/conversations/state/useRecentActivityStore";
+import { useBlockedConversations } from "../../features/relay/state/useBlockedConversations";
 import { wsClient, onWsConnected } from "../graphql/wsClient";
 import { isSessionEndedClose, reportSubscriptionLimit } from "../graphql/subscriptionErrors";
 import { logger } from "../logger";
