@@ -9,11 +9,13 @@ import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-type
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   baseReadHandlers,
   callsTo,
   routeRequests,
+  workspaceMembers,
 } from "../../conversations/__fixtures__/conversations";
 
 const requestMock = vi.fn();
@@ -515,5 +517,52 @@ describe("ThreadPanel — reply box", () => {
     await renderPanel();
     expect(document.querySelector("[data-composer-input]")).toBeNull();
     expect(document.querySelector("[data-thread-composer-input]")).not.toBeNull();
+  });
+});
+
+describe("ThreadPanel — role badge and handle by space", () => {
+  beforeEach(() => {
+    fixture.rootText = "the root";
+    fixture.rootAuthorId = "u-alice";
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useShellStore.setState({ selectedConversationId: "c-1", selectedRootMessageId: "root-1" });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    useRelayStore.setState({ info: null });
+  });
+
+  /** Serves the members with Alice as an owner. */
+  function serveOwnerAlice() {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "u-alice" ? { ...m, memberRole: ServerMemberRoleGql.OWNER } : m,
+        ),
+      }),
+    });
+  }
+
+  async function rootRow(): Promise<HTMLElement> {
+    return (await screen.findByText("the root")).closest<HTMLElement>(
+      '[data-message-id="root-1"]',
+    )!;
+  }
+
+  it("marks an owner's message in a workspace and shows no handle inline", async () => {
+    serveOwnerAlice();
+    await renderPanel();
+    const root = await rootRow();
+    expect(await within(root).findByTestId("role-badge")).toHaveTextContent("Owner");
+    expect(within(root).queryByText(/^@alice/)).toBeNull();
+  });
+
+  it("shows the handle and no role badge in the direct space", async () => {
+    useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "ws-1" } });
+    serveOwnerAlice();
+    await renderPanel();
+    const root = await rootRow();
+    expect(await within(root).findByText(/^@alice/)).toBeInTheDocument();
+    expect(within(root).queryByTestId("role-badge")).toBeNull();
   });
 });

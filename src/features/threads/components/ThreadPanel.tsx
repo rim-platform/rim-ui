@@ -32,6 +32,7 @@ import { withSenderAsAuthor } from "../../e2ee/utils/timeline";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useOwnHandleDomain } from "../../workspaces/api/useCurrentUser";
 import { rememberHandles } from "../../workspaces/state/useKnownHandles";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { personName, viewHandle } from "../../../shared/utils/handles";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
 
@@ -181,7 +182,8 @@ export function ThreadPanel() {
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const members = useMessageMembers(memberLookup, rootMessage ? [rootMessage, ...items] : items);
   const ownDomain = useOwnHandleDomain();
-  /** The name, avatar and handle shown for a message's author, from the member list first. */
+  const inDirectSpace = useIsDirectSpace(workspaceId);
+  /** The name, avatar, role and handle shown for a message's author, from the member list first. */
   const authorView = (msg: Pick<MessageItemData, "author" | "authorId">) => {
     const member = memberLookup.resolve(msg.authorId);
     return {
@@ -193,6 +195,8 @@ export function ThreadPanel() {
         msg.author?.handle ?? member.handle,
         ownDomain,
       ),
+      role: inDirectSpace ? undefined : member.role,
+      inDirectSpace,
     };
   };
   useEffect(

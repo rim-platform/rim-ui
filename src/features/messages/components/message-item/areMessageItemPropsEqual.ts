@@ -21,6 +21,7 @@ export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean 
       a.handle?.copied === b.handle?.copied &&
       a.statusText === b.statusText &&
       a.role === b.role &&
+      a.inDirectSpace === b.inDirectSpace &&
       a.joinedAt === b.joinedAt &&
       a.bio === b.bio &&
       a.presenceStatus === b.presenceStatus &&

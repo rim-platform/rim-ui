@@ -85,6 +85,8 @@ export interface MessageAuthorView {
   role?: string;
   joinedAt?: string;
   bio?: string | null;
+  /** The message is in the direct space: no workspace role applies and the handle shows inline. */
+  inDirectSpace?: boolean;
   /** Fallback when the presence store has no entry for the author. */
   presenceStatus?: PresenceStatus | null;
   isCurrentUser: boolean;
