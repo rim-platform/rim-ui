@@ -78,7 +78,7 @@ export function OpenJoinPage() {
 
   if (isPending) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+      <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
         <p className="text-sm text-rim-text-muted">Loading...</p>
       </div>
     );
@@ -86,7 +86,7 @@ export function OpenJoinPage() {
 
   if (!canSignUp) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+      <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
         <div className="w-full max-w-sm text-center space-y-2">
           <p className="text-sm text-rim-text-muted">
             {isPow

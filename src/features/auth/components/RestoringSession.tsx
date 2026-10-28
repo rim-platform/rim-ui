@@ -13,7 +13,7 @@ export function RestoringSessionSplash() {
 /** Full-page placeholder for the auth routes while a session cookie is being checked. */
 export function RestoringSession() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+    <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
       <RestoringSessionSplash />
     </div>
   );

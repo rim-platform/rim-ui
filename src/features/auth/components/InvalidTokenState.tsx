@@ -48,7 +48,7 @@ interface InvalidTokenStateProps {
 export function InvalidTokenState({ code, onRetry }: InvalidTokenStateProps) {
   const navigate = useNavigate();
   return (
-    <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+    <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
       <div className="w-full max-w-sm space-y-6">
         <BrandHeading />
         <div className="space-y-4 rounded-xl border border-rim-line bg-rim-panel p-6 text-center">

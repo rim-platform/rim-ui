@@ -94,7 +94,7 @@ export function PublicLinkJoin({ token }: PublicLinkJoinProps) {
 
 function Centered({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">{children}</div>
+    <div className="flex min-h-full items-center justify-center bg-rim-void p-4">{children}</div>
   );
 }
 

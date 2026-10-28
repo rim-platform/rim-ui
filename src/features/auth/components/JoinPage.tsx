@@ -129,7 +129,7 @@ function JoinPageWithToken({
 
   if (isPending || configPending) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+      <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
         <p className="text-sm text-rim-text-muted">Loading invite...</p>
       </div>
     );
