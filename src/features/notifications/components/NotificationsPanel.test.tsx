@@ -17,6 +17,7 @@ import {
   workspaceMembers,
 } from "../../conversations/__fixtures__/conversations";
 import type { NotificationItem, NotificationPage } from "../api/useNotifications";
+import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
 
 const requestMock = vi.fn();
@@ -165,6 +166,22 @@ describe("NotificationsPanel", () => {
       cursor: null,
       limit: 30,
     });
+  });
+
+  it("lists no entry of a hidden conversation", async () => {
+    useBlockedConversations.getState().reset();
+    useBlockedConversations.getState().setIn("ws-1", { "c-hidden": "rimp1_alice" });
+    const hidden = notification({
+      id: "n-hidden",
+      conversationId: "c-hidden",
+      message: { ...notification().message!, id: "m-hidden", text: "secret from a blocked person" },
+    });
+    serve(() => page([notification(), hidden]));
+    renderPanel();
+
+    await screen.findByText("can you look at the deploy?");
+    expect(screen.queryByText("secret from a blocked person")).not.toBeInTheDocument();
+    useBlockedConversations.getState().reset();
   });
 
   it("shows an encrypted message's text from this device's store, or that it is encrypted", async () => {

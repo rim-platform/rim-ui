@@ -24,6 +24,7 @@ import { SearchOverlay } from "../../features/messages/components/SearchOverlay"
 import { ToastContainer } from "../../shared/toast";
 import { AgentOverlay } from "../../features/agent/components/AgentOverlay";
 import { ConfirmCommandModal } from "../../features/agent/components/ConfirmCommandModal";
+import { useBlockedConversationsRuntime } from "../../features/relay/runtime/useBlockedConversationsRuntime";
 import { useUnreadCounts } from "../../features/conversations/api/useUnreadCounts";
 import { useAllWorkspaceUnreadCounts } from "../../features/conversations/api/useAllWorkspaceUnreadCounts";
 import { useMutedConversations } from "../../features/conversations/api/useMutedConversations";
@@ -151,6 +152,7 @@ function UnlockedShell() {
   useResumeDeviceLinks();
   useRelayRuntime();
   useDirectSpaceRuntime();
+  useBlockedConversationsRuntime();
   useUnreadEventHandler();
   usePluginPrincipalSync();
   usePluginChatRelay();

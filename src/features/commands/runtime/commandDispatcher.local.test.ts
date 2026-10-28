@@ -19,6 +19,8 @@ import { LOCAL_COMMANDS } from "./localCommands";
 import type { CommandDefinition } from "../types";
 import type { PluginInfo } from "../../plugins/types";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
+import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
+import { toast } from "../../../shared/toast";
 
 function serveConversations(ids: string[]) {
   queryClient.setQueryData(queryKeys.channels("ws-1"), {
@@ -135,6 +137,32 @@ describe("this app's own commands", () => {
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
     expect(useShellStore.getState().selectedConversationId).toBe("c-design");
     expect(useShellStore.getState().directOrigin).toBeNull();
+  });
+
+  it("opens no conversation hidden because someone blocked started it, and says why", () => {
+    useBlockedConversations.getState().setIn("remote-direct", { "dm-alice": "rimp1_alice" });
+    useShellStore.getState().setSelectedConversationId("c-carol");
+
+    for (const id of ["workspace.navigate_to_dm", "workspace.navigate_to_channel"]) {
+      runDesktopLocalCommand(id, { conversationId: "dm-alice", serverId: "remote-direct" });
+    }
+
+    expect(useShellStore.getState().selectedConversationId).toBe("c-carol");
+    expect(toast.info).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(toast.info).mock.calls[0][1]).toEqual({
+      description: "Unblock them in Settings → Direct messages to message them.",
+    });
+    useBlockedConversations.getState().reset();
+  });
+
+  it("opens a conversation of another space that is not hidden", () => {
+    useBlockedConversations.getState().setIn("remote-direct", { "dm-alice": "rimp1_alice" });
+    runDesktopLocalCommand("workspace.navigate_to_dm", {
+      conversationId: "dm-carol",
+      serverId: "remote-direct",
+    });
+    expect(useShellStore.getState().selectedConversationId).toBe("dm-carol");
+    useBlockedConversations.getState().reset();
   });
 
   it("cycles the layout presets", () => {
