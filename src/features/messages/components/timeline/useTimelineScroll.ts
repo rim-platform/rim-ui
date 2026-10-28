@@ -152,6 +152,9 @@ export function useTimelineScroll({
   // toward its start away from the end (a wheel, touch, key or scrollbar, or a scroll to a row).
   const followEndRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  // The scroll corrections the virtualizer makes for measured rows since the last scroll event,
+  // so that handleScroll does not take a correction toward the start for the user scrolling away.
+  const pendingCorrectionRef = useRef(0);
 
   const scrollToEnd = useCallback(
     (behavior: "auto" | "smooth" = "auto") => {
@@ -168,17 +171,25 @@ export function useTimelineScroll({
   // against the offset from the last scroll event instead: both sides then
   // describe the same layout. A row that changes size while the list follows its
   // end keeps the end in view, unless a pointer press is held on the list.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.start < (instance.scrollOffset ?? 0) ||
-    (followEndRef.current && pointerPressRef.current === null);
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    const adjust =
+      item.start < (instance.scrollOffset ?? 0) ||
+      (followEndRef.current && pointerPressRef.current === null);
+    if (adjust) pendingCorrectionRef.current += delta;
+    return adjust;
+  };
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const atBottom = isScrolledToBottom(container);
     const scrollTop = container.scrollTop;
+    // Where the list would be had only the virtualizer's corrections moved it; a pixel of slack
+    // absorbs fractional row heights.
+    const expected = lastScrollTopRef.current + pendingCorrectionRef.current - 1;
+    pendingCorrectionRef.current = 0;
     if (atBottom) followEndRef.current = true;
-    else if (scrollTop < lastScrollTopRef.current) followEndRef.current = false;
+    else if (scrollTop < expected) followEndRef.current = false;
     lastScrollTopRef.current = scrollTop;
     isAtBottomRef.current = atBottom;
     onScrollPosition?.(atBottom);
