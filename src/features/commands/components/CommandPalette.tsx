@@ -41,6 +41,8 @@ import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import { createPaletteSearch } from "../runtime/paletteSearch";
 import { cn } from "../../../shared/ui/cn";
 import { PipelineResultView } from "./PipelineResultView";
+import { CommandResultView } from "./CommandResultView";
+import { presentReadResult } from "../runtime/readCommandResult";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
@@ -78,7 +80,7 @@ function runsFromPalette(command: CommandDefinition, context: ArgumentContext): 
   );
 }
 
-export function CommandPalette() {
+function CommandPaletteDialog() {
   const isOpen = useCommandStore((s) => s.isCommandPaletteOpen);
   const searchQuery = useCommandStore((s) => s.searchQuery);
   const setSearchQuery = useCommandStore((s) => s.setSearchQuery);
@@ -346,7 +348,15 @@ export function CommandPalette() {
           // The command shows what it did.
         } else if (result === null || result.status === "ERROR") {
           toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
-        } else {
+        } else if (
+          !(await presentReadResult(
+            command.id,
+            command.title,
+            result,
+            undefined,
+            currentCommandContext(),
+          ))
+        ) {
           toast.success(commandSuccessText(command.title, result));
         }
       } catch (err) {
@@ -591,5 +601,15 @@ export function CommandPalette() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The command palette, and the view that shows a read command's result after it closes. */
+export function CommandPalette() {
+  return (
+    <>
+      <CommandPaletteDialog />
+      <CommandResultView />
+    </>
   );
 }

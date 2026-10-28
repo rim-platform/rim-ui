@@ -29,6 +29,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- List Channels, List Members, Get Recent Messages and List State show their results in a
+  window; before, only a count such as "2 channels found" appeared.
 - Focus the Pane to the Left and Right now move the focus when run from the command palette.
   The palette no longer offers commands that cannot apply: List Channels, List State, Join
   Channel and Navigate to Channel in direct messages, Close Panel with no panel open, and Back
