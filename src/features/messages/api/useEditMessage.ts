@@ -4,7 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessageItem } from "../../../core/types/messages";
-import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
+import { refusePlaintextIfEncrypted } from "../../e2ee/runtime/pins";
 import { editEncrypted } from "../../e2ee/runtime/send";
 import { toPrincipalMentions } from "../../e2ee/utils/content";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
@@ -69,7 +69,7 @@ export function useEditMessageMutation() {
         await editEncrypted(vars.serverId, vars.conversationId, vars.messageId, body, author);
         return null;
       }
-      await refusePlaintextIfPinned(vars.serverId, vars.conversationId);
+      await refusePlaintextIfEncrypted(qc, vars.serverId, vars.conversationId);
       return graphqlClient.request(EDIT_MESSAGE, {
         input: {
           serverId: vars.serverId,

@@ -12,7 +12,7 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 vi.mock("../../e2ee/runtime/send", () => ({ editEncrypted }));
 vi.mock("../../e2ee/runtime/pins", () => ({
-  refusePlaintextIfPinned: () => Promise.resolve(),
+  refusePlaintextIfEncrypted: () => Promise.resolve(),
 }));
 
 import { queryKeys } from "../../../core/query/keys";

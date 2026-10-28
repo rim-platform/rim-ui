@@ -11,7 +11,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { fetchConversation, findCachedConversation } from "../../conversations/api/useConversation";
 import { fetchThreadRoot } from "../../e2ee/api/e2eeApi";
 import { workspaceMembers } from "../../e2ee/runtime/members";
-import { pinnedEncrypted, refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
+import { pinnedEncrypted, refusePlaintextIfEncrypted } from "../../e2ee/runtime/pins";
 import { sendEncrypted } from "../../e2ee/runtime/send";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import type * as PluginViewModule from "../../e2ee/web/pluginView";
@@ -188,7 +188,7 @@ export async function postAsUser({
     });
   }
 
-  await refusePlaintextIfPinned(workspaceId, conversationId);
+  await refusePlaintextIfEncrypted(queryClient, workspaceId, conversationId);
   if (rootMessageId) {
     const res = await graphqlClient.request<{ replyToMessage: { id: string } }>(
       REPLY_TO_MESSAGE_MUTATION,

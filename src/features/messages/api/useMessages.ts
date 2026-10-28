@@ -15,7 +15,7 @@ import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useConversation } from "../../conversations/api/useConversation";
-import { refusePlaintextIfPinned } from "../../e2ee/runtime/pins";
+import { refusePlaintextIfEncrypted } from "../../e2ee/runtime/pins";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { requestCacheSync } from "../runtime/messageCacheSync";
 import { insertTimelineMessage, messageFromSend, type SentMessage } from "./timelineMessages";
@@ -208,7 +208,7 @@ export function useSendMessageMutation() {
       /** The timeline message this one replies to. */
       parentMessageId?: string;
     }) => {
-      await refusePlaintextIfPinned(vars.workspaceId, vars.conversationId);
+      await refusePlaintextIfEncrypted(qc, vars.workspaceId, vars.conversationId);
       return graphqlClient.request<SendMessageResponse>(SEND_MESSAGE_MUTATION, {
         input: {
           serverId: vars.workspaceId,

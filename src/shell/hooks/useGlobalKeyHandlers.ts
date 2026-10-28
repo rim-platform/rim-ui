@@ -3,12 +3,14 @@ import { useShellStore } from "../state/useShellStore";
 import { toast } from "../../shared/toast";
 import { vimModeEnabled } from "../../features/commands/state/useKeybindProfileStore";
 import { isKeystrokeRecorder } from "../../features/commands/runtime/keybindEngine";
+import { takeTypedWhileSwitching } from "../../features/conversations/state/openDirect";
 
 /**
  * Global keyboard handlers:
  * 1. ESC exits zen mode when active.
  * 2. Printable characters auto-focus the composer, unless the Vim layer is on: there, keys
- *    outside a text field are normal-mode commands and `i` enters insert mode.
+ *    outside a text field are normal-mode commands and `i` enters insert mode. While a direct
+ *    message opens they go to its composer instead, never to the one being left.
  */
 export function useGlobalKeyHandlers() {
   // ESC exits zen mode when active.
@@ -47,6 +49,10 @@ export function useGlobalKeyHandlers() {
       )
         return;
 
+      if (takeTypedWhileSwitching(e.key)) {
+        e.preventDefault();
+        return;
+      }
       const composer = document.querySelector<HTMLTextAreaElement>("[data-composer-input]");
       if (composer) {
         composer.focus();
