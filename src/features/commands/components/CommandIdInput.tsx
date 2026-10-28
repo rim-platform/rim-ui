@@ -31,7 +31,6 @@ export function CommandIdInput({
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const selectingRef = useRef(false);
 
   const filtered = useMemo(() => {
     if (!commands || !value.trim()) return commands ?? [];
@@ -63,7 +62,7 @@ export function CommandIdInput({
         }}
         onBlur={() => {
           setFocused(false);
-          if (!selectingRef.current) setOpen(false);
+          setOpen(false);
         }}
         placeholder={placeholder}
         aria-invalid={shownError ? "true" : undefined}
@@ -78,14 +77,11 @@ export function CommandIdInput({
             <button
               key={cmd.id}
               type="button"
-              onMouseDown={() => {
-                selectingRef.current = true;
-              }}
+              // Keeps the focus in the field, so no error line moves the list before the click.
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                selectingRef.current = false;
                 onChange(cmd.id);
                 setOpen(false);
-                inputRef.current?.focus();
               }}
               className={cn(
                 "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition",
