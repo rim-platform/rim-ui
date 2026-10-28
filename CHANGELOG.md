@@ -22,6 +22,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Fixed
+
+- List Channels, List Members, Get Recent Messages and List State show their results in a
+  window; before, only a count such as "2 channels found" appeared.
+
 ## [0.0.7] - 2026-10-28
 
 ### Added

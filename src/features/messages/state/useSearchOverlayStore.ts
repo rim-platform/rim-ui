@@ -8,7 +8,7 @@ type SearchOverlayState = {
   scope: SearchScope;
   recentSearches: string[];
 
-  openWithScope: (scope: SearchScope) => void;
+  openWithScope: (scope: SearchScope, query?: string) => void;
   close: () => void;
   setQuery: (query: string) => void;
   addRecentSearch: (query: string) => void;
@@ -22,7 +22,7 @@ export const useSearchOverlayStore = create<SearchOverlayState>((set) => ({
   scope: { kind: "all" },
   recentSearches: [],
 
-  openWithScope: (scope) => set({ isOpen: true, query: "", scope }),
+  openWithScope: (scope, query = "") => set({ isOpen: true, query, scope }),
   close: () => set({ isOpen: false, query: "" }),
   setQuery: (query) => set({ query }),
   addRecentSearch: (query) =>
