@@ -80,9 +80,9 @@ describe("hourCycleOptions", () => {
   it("maps each setting to Intl options", () => {
     expect(hourCycleOptions()).toEqual({});
     useClockFormatStore.getState().setClockFormat("12h");
-    expect(hourCycleOptions()).toEqual({ hour12: true });
+    expect(hourCycleOptions()).toEqual({ hourCycle: "h12" });
     useClockFormatStore.getState().setClockFormat("24h");
-    expect(hourCycleOptions()).toEqual({ hour12: false });
+    expect(hourCycleOptions()).toEqual({ hourCycle: "h23" });
   });
 });
 
