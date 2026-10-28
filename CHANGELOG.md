@@ -25,8 +25,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 ### Added
 
 - Messages in a workspace mark the author's role: a crown badge for owners, a shield badge for
-  moderators and a Guest badge for guests. In direct messages the author's handle shows next to their name
-  instead.
+  moderators and a Guest badge for guests. In direct messages the author's handle shows next to
+  their name instead.
 
 ## [0.0.6] - 2026-10-28
 
