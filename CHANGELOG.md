@@ -22,6 +22,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Fixed
+
+- The desktop app's sign-in, sign-up and join screens, and its error screen, now have the title
+  bar with minimize, maximize and close, so the window can be moved and closed there.
+
 ## [0.0.6] - 2026-10-28
 
 ### Added

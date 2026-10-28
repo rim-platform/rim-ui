@@ -132,7 +132,7 @@ export function JoinAuthenticated({
   switch (tokenType) {
     case InviteTokenType.INSTANCE:
       return (
-        <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+        <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
           <div className="w-full max-w-lg text-center space-y-2">
             <p className="text-sm text-rim-danger">
               You already have a RIM account; instance invites are only for new users.
@@ -146,7 +146,7 @@ export function JoinAuthenticated({
     case InviteTokenType.WORKSPACE:
       if (dead) return <InvalidTokenState code="INVALID_TOKEN" />;
       return (
-        <div className="flex min-h-screen items-center justify-center bg-rim-void p-4">
+        <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
           <div className="w-full max-w-lg space-y-6">
             <header className="text-center">
               <BrandHeading />
