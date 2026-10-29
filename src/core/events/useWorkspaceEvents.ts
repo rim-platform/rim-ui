@@ -384,6 +384,9 @@ export function applyWorkspaceEvent(
           };
         },
       );
+      // A timeline read already under way (a ban refetches it) may answer from before the
+      // delete and overwrite the patch above; refetching replaces that read.
+      void qc.invalidateQueries({ queryKey: queryKeys.messages(workspaceId, conversationId) });
       for (const threadId of event.thread_ids) {
         void qc.invalidateQueries({
           queryKey: queryKeys.threadMessages(workspaceId, conversationId, threadId),
