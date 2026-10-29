@@ -14,6 +14,7 @@ import { MessageAttachments } from "./message-item/MessageAttachments";
 import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
 import { EditedMark } from "./message-item/EditedMark";
+import { FoldableText } from "./message-item/FoldableText";
 import { MessageEditForm } from "./message-item/MessageEditForm";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
 import { MessageReactions } from "./message-item/MessageReactions";
@@ -228,22 +229,23 @@ export const MessageItem = memo(function MessageItem({
             />
           </div>
         ) : (
-          <div
-            className={cn(
-              "min-w-0 flex-1",
-              // An edited message's last paragraph flows inline, so the marker follows its text.
-              message.editedAt && "[&>.prose-rim>p:last-child]:inline",
-            )}
-          >
+          <div className="min-w-0 flex-1">
             {replyQuote}
-            <MessageText {...textProps("inline")} />
-            {message.editedAt && (
-              <>
-                {" "}
-                <EditedMark editedAt={message.editedAt} />
-                <br />
-              </>
-            )}
+            <FoldableText
+              messageId={messageId}
+              onToggle={handlers.onFoldToggle}
+              // An edited message's last paragraph flows inline, so the marker follows its text.
+              innerClassName={message.editedAt ? "[&>.prose-rim>p:last-child]:inline" : undefined}
+            >
+              <MessageText {...textProps("inline")} />
+              {message.editedAt && (
+                <>
+                  {" "}
+                  <EditedMark editedAt={message.editedAt} />
+                  <br />
+                </>
+              )}
+            </FoldableText>
             {extras}
             {threadSummary}
           </div>
@@ -262,6 +264,16 @@ export const MessageItem = memo(function MessageItem({
     editedAt: message.editedAt,
     onSaveEdit,
     onCancelEdit,
+  };
+  // Only the text folds, and not while it is being edited or once it is deleted.
+  const content = (variant: MessageTextVariant) => {
+    const body = <MessageContent {...contentProps} {...textProps(variant)} />;
+    if (isDeleted || isEditing) return body;
+    return (
+      <FoldableText messageId={messageId} onToggle={handlers.onFoldToggle}>
+        {body}
+      </FoldableText>
+    );
   };
 
   return (
@@ -294,7 +306,7 @@ export const MessageItem = memo(function MessageItem({
               </span>
               <div className="min-w-0 flex-1">
                 {replyQuote}
-                <MessageContent {...contentProps} {...textProps("compact")} />
+                {content("compact")}
               </div>
             </div>
           ) : (
@@ -303,7 +315,7 @@ export const MessageItem = memo(function MessageItem({
                 {formatShortTime(message.sentAt)}
               </span>
               {replyQuote}
-              <MessageContent {...contentProps} {...textProps("grouped")} />
+              {content("grouped")}
             </div>
           )
         ) : (
@@ -322,7 +334,7 @@ export const MessageItem = memo(function MessageItem({
               bindUserContextMenu={bindUserContextMenu}
             />
             {replyQuote}
-            <MessageContent {...contentProps} {...textProps("full")} />
+            {content("full")}
           </>
         )}
         {!isDeleted && extras}

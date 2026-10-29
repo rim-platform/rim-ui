@@ -560,6 +560,18 @@ describe("MessageItem layouts and editing", () => {
     expect(screen.getByRole("textbox")).toHaveAttribute("data-owns-escape");
   });
 
+  it("does not fold a message being edited", () => {
+    const { container, unmount } = render(<MessageItem {...props()} />);
+    expect(container.querySelector("[data-foldable-text]")).not.toBeNull();
+    unmount();
+
+    const editing = render(
+      <MessageItem view={{ ...props().view, isEditing: true }} handlers={defaultHandlers} />,
+    );
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(editing.container.querySelector("[data-foldable-text]")).toBeNull();
+  });
+
   it("calls onNavigateToForwardedSource with the source conversation and message", () => {
     const onNavigateToForwardedSource = vi.fn();
     render(

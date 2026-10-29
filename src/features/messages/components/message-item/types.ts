@@ -156,6 +156,8 @@ export interface MessageItemHandlers {
   onNavigateToForwardedSource?: (conversationId: string, messageId: string) => void;
   /** Scrolls to and flashes a message of the same conversation (a reply's parent). */
   onJumpToMessage?: (messageId: string) => void;
+  /** Called before a message's text unfolds (`expanding`) or folds again. */
+  onFoldToggle?: (messageId: string, expanding: boolean) => void;
 }
 
 /** Member directory used for mention rendering and reaction tooltips. Stable per member list. */

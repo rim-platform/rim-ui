@@ -48,6 +48,7 @@ import { useHighlightedMessage } from "./timeline/useHighlightedMessage";
 import { useTimelineScroll } from "./timeline/useTimelineScroll";
 import { replyQuoteFor } from "./message-item/replyQuoteView";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
+import { useMessageFoldStore } from "../state/useMessageFoldStore";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import {
@@ -181,22 +182,28 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     window.addEventListener("mouseup", release, true);
     return () => window.removeEventListener("mouseup", release, true);
   }, []);
-  const { virtualizer, scrollContainerRef, topSentinelRef, handleScroll, scrollToIndex } =
-    useTimelineScroll({
-      listKey: conversationId,
-      items,
-      currentUserId,
-      displayDensity,
-      firstNewIndex,
-      hasNextPage: timeline.hasNextPage,
-      isFetchingNextPage: timeline.isFetchingNextPage,
-      fetchNextPage: timeline.fetchNextPage,
-      onScrollPosition,
-      isAtBottomRef,
-      pinnedIndex: editingIndex,
-      hintBarShown: navigationMode,
-      pointerPressRef: pointerEntryRef,
-    });
+  const {
+    virtualizer,
+    scrollContainerRef,
+    topSentinelRef,
+    handleScroll,
+    scrollToIndex,
+    onFoldToggle,
+  } = useTimelineScroll({
+    listKey: conversationId,
+    items,
+    currentUserId,
+    displayDensity,
+    firstNewIndex,
+    hasNextPage: timeline.hasNextPage,
+    isFetchingNextPage: timeline.isFetchingNextPage,
+    fetchNextPage: timeline.fetchNextPage,
+    onScrollPosition,
+    isAtBottomRef,
+    pinnedIndex: editingIndex,
+    hintBarShown: navigationMode,
+    pointerPressRef: pointerEntryRef,
+  });
   const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
@@ -271,6 +278,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       canAddReaction: rights.reaction,
       canStartThread: rights.thread,
       onReply,
+      onFoldToggle,
     }),
     [
       rowHandlers,
@@ -279,6 +287,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       rights.reaction,
       rights.thread,
       onReply,
+      onFoldToggle,
     ],
   );
 
@@ -306,10 +315,18 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       canStartThread: rights.thread,
       canPin: rights.pin,
       onOpenActions: openActionsFor,
+      onFoldToggle,
       firstNewIndex,
       scrollToIndex,
       pointerEntryRef,
     });
+  const selectedId = selectedMessageIndex >= 0 ? items[selectedMessageIndex]?.id : undefined;
+  const selectedFoldable = useMessageFoldStore((s) =>
+    selectedId ? s.foldable.has(selectedId) : false,
+  );
+  const selectedExpanded = useMessageFoldStore((s) =>
+    selectedId ? s.expanded.has(selectedId) : false,
+  );
 
   if (!conversationId) {
     return (
@@ -336,6 +353,13 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   }
 
   const selectedMsg = selectedMessageIndex >= 0 ? items[selectedMessageIndex] : null;
+  // A message being edited shows its edit form, which does not fold.
+  const foldState =
+    selectedFoldable && selectedMessageIndex !== editingIndex
+      ? selectedExpanded
+        ? "expanded"
+        : "folded"
+      : null;
 
   return (
     <div
@@ -499,6 +523,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
             canReply={canReply}
             canThread={rights.thread || Boolean(selectedMsg?.rootThreadId)}
             canPin={rights.pin}
+            foldState={foldState}
           />
         )}
       </div>

@@ -46,6 +46,8 @@ interface NavigationHintsProps {
   canThread: boolean;
   /** Whether `p` pins here. */
   canPin: boolean;
+  /** Whether the selected message's text is folded or unfolded; null when it does not fold. */
+  foldState: "folded" | "expanded" | null;
 }
 
 /** Action hints bar shown in NAVIGATE mode. */
@@ -57,6 +59,7 @@ export function NavigationHints({
   canReply,
   canThread,
   canPin,
+  foldState,
 }: NavigationHintsProps) {
   return (
     <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex justify-center pb-1">
@@ -77,6 +80,9 @@ export function NavigationHints({
             {canPin && <Hint keys="p" label="Pin" />}
             <Hint keys="c" label="Copy" />
             <Hint keys="f" label="Forward" />
+            {foldState && (
+              <Hint keys="o" label={foldState === "folded" ? "Show more" : "Show less"} />
+            )}
             {isSelectedOwnMessage && (
               <span>
                 <kbd className="font-mono">d</kbd>{" "}
