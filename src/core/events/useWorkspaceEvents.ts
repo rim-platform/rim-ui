@@ -205,7 +205,8 @@ export function applyWorkspaceEvent(
   if (
     event.type === "NewMessage" ||
     event.type === "MessageUpdated" ||
-    event.type === "MessageDeleted"
+    event.type === "MessageDeleted" ||
+    event.type === "MessageFlagChanged"
   ) {
     requestCacheSync(workspaceId, [event.conversation_id]);
   }

@@ -9,6 +9,7 @@ import {
 } from "../../features/workspaces/state/useRemovalNotices";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { MessageEventData, WorkspaceEvent } from "./types";
+import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 
 let connectedHandler: (() => void) | null = null;
 interface Observer {
@@ -31,6 +32,11 @@ vi.mock("../graphql/wsClient", () => ({
       connectedHandler = null;
     };
   }),
+}));
+
+vi.mock("../../features/messages/runtime/messageCacheSync", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/messages/runtime/messageCacheSync")>()),
+  requestCacheSync: vi.fn(),
 }));
 
 vi.mock("../../shared/toast", () => ({
@@ -709,6 +715,13 @@ describe("useWorkspaceEvents message flags", () => {
 
     applyWorkspaceEvent(flagChanged("r-1", false), qc, "ws-1");
     expect(threadItem(qc)).toMatchObject({ id: "r-1", flagged: false });
+  });
+
+  it("MessageFlagChanged asks the message cache to sync the conversation", () => {
+    const qc = cachedConversation();
+    vi.mocked(requestCacheSync).mockClear();
+    applyWorkspaceEvent(flagChanged("m-1", true), qc, "ws-1");
+    expect(requestCacheSync).toHaveBeenCalledWith("ws-1", ["c-1"]);
   });
 
   it("MessageFlagChanged refetches the timeline, the pins and the conversation's threads", () => {
