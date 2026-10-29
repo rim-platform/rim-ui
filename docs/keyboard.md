@@ -108,5 +108,6 @@ field or plugin frame. The status bar shows the mode.
 | `Esc`, `Ctrl+[` | Leave the text field for its pane                            |
 
 The timeline keeps its own message keys (`r` to reply, `t` for the thread, `e`, `p` to pin, `d`,
-`c`, `f`) in both modes; `r`, `t` and `p` only where the conversation lets you.
+`c`, `f`, `o` to show more or less of a folded message) in both modes; `r`, `t` and `p` only
+where the conversation lets you.
 In the thread pane <kbd>e</kbd> edits your reply whose row has the focus, else your newest reply.

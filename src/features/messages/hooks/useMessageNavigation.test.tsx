@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders as render } from "../../../test/utils";
 import { callsTo } from "../../conversations/__fixtures__/conversations";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useMessageFoldStore } from "../state/useMessageFoldStore";
 import { useMessageNavigation } from "./useMessageNavigation";
 
 const requestMock = vi.hoisted(() => vi.fn());
@@ -233,5 +234,63 @@ describe("useMessageNavigation reply and thread keys", () => {
     await user.keyboard("p");
 
     expect(callsTo(requestMock, "mutation PinMessage")).toEqual([]);
+  });
+});
+
+function FoldHarness({
+  onFoldToggle,
+}: {
+  onFoldToggle: (messageId: string, expanding: boolean) => void;
+}) {
+  const { handleMessageListKeyDown } = useMessageNavigation({
+    items: [{ id: "m-1", text: "hi", authorId: "u-2" }],
+    conversationId: "c-1",
+    workspaceId: "w-1",
+    currentUserId: "u-1",
+    editingMessageId: null,
+    setEditingMessageId: vi.fn(),
+    openThread: vi.fn(),
+    onDeleteMessage: vi.fn(),
+    onForwardMessage: vi.fn(),
+    onFoldToggle,
+    scrollToIndex: vi.fn(),
+    pointerEntryRef: { current: null },
+  });
+  return (
+    <div role="listbox" aria-label="Messages" tabIndex={0} onKeyDown={handleMessageListKeyDown} />
+  );
+}
+
+describe("useMessageNavigation fold key", () => {
+  afterEach(() => {
+    useMessageFoldStore.setState({ foldable: new Set(), expanded: new Set() });
+  });
+
+  it("o toggles the fold of a foldable selected message", async () => {
+    const user = userEvent.setup();
+    const onFoldToggle = vi.fn();
+    useMessageFoldStore.getState().setFoldable("m-1", true);
+    render(<FoldHarness onFoldToggle={onFoldToggle} />);
+    enterNavigate();
+
+    await user.keyboard("o");
+    expect(onFoldToggle).toHaveBeenLastCalledWith("m-1", true);
+    expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(true);
+
+    await user.keyboard("o");
+    expect(onFoldToggle).toHaveBeenLastCalledWith("m-1", false);
+    expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(false);
+  });
+
+  it("o does nothing on a message that does not fold", async () => {
+    const user = userEvent.setup();
+    const onFoldToggle = vi.fn();
+    render(<FoldHarness onFoldToggle={onFoldToggle} />);
+    enterNavigate();
+
+    await user.keyboard("o");
+
+    expect(onFoldToggle).not.toHaveBeenCalled();
+    expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMes
 import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
+import { useMessageFoldStore } from "../state/useMessageFoldStore";
 
 interface MessageNavItem {
   id: string;
@@ -31,6 +32,8 @@ interface UseMessageNavigationOptions {
   canPin?: boolean;
   /** Open the actions menu of a message, as a right click on it does. */
   onOpenActions?: (messageId: string) => void;
+  /** Called before `o` unfolds (`expanding`) or folds a message's text again. */
+  onFoldToggle?: (messageId: string, expanding: boolean) => void;
   /** Index of the first new message after the watermark, or -1 if no divider. */
   firstNewIndex?: number;
   /**
@@ -66,6 +69,7 @@ export function useMessageNavigation({
   canStartThread = true,
   canPin = true,
   onOpenActions,
+  onFoldToggle,
   firstNewIndex = -1,
   scrollToIndex,
   pointerEntryRef,
@@ -306,6 +310,15 @@ export function useMessageNavigation({
           onForwardMessage({ id: msg.id, text: msg.text ?? "" });
           break;
         }
+        // o shows more or less of a message whose tall text folds.
+        case "o": {
+          const fold = useMessageFoldStore.getState();
+          if (!fold.foldable.has(msg.id)) break;
+          e.preventDefault();
+          onFoldToggle?.(msg.id, !fold.expanded.has(msg.id));
+          fold.toggleExpanded(msg.id);
+          break;
+        }
         case "/": {
           e.preventDefault();
           useSearchOverlayStore
@@ -331,6 +344,7 @@ export function useMessageNavigation({
       canStartThread,
       canPin,
       onOpenActions,
+      onFoldToggle,
       workspaceId,
       conversationId,
       firstNewIndex,

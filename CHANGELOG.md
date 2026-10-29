@@ -22,6 +22,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Added
+
+- A message whose text is taller than about 16 lines shows its first lines with Show more, and
+  Show less folds it again; in NAVIGATE, o does the same for the selected message. Long logs and
+  text art no longer fill the timeline.
+
 ## [0.0.8] - 2026-10-28
 
 ### Changed

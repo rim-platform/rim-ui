@@ -182,6 +182,7 @@ import { makeConversation } from "../../conversations/__fixtures__/conversations
 import { MessageTimeline } from "./MessageTimeline";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
+import { useMessageFoldStore } from "../state/useMessageFoldStore";
 import { MARK_SEEN_DELAY_MS } from "./timeline/useMarkSeen";
 
 // --- Layout harness -------------------------------------------------------
@@ -241,6 +242,13 @@ function isList(el: HTMLElement): boolean {
 
 /** Heights of rows that grew after their first measurement, by message id. */
 const rowHeights = new Map<string, number>();
+/** Full heights of messages' foldable text blocks, by message id; 0 when absent. */
+const textHeights = new Map<string, number>();
+
+/** Whether `el` is the text block a FoldableText measures. */
+function isFoldableTextBlock(el: HTMLElement): boolean {
+  return el.parentElement?.parentElement?.hasAttribute("data-foldable-text") ?? false;
+}
 
 /** The live observers, with the rows each one watches. */
 const observers = new Set<{
@@ -307,6 +315,10 @@ function installLayout() {
       get(this: HTMLElement) {
         if (isList(this)) return VIEWPORT;
         if (this.hasAttribute("data-index")) return rowHeights.get(messageIdOf(this) ?? "") ?? ROW;
+        if (isFoldableTextBlock(this)) {
+          const id = this.closest("[data-message-id]")?.getAttribute("data-message-id") ?? "";
+          return textHeights.get(id) ?? 0;
+        }
         return 0;
       },
     },
@@ -479,6 +491,7 @@ afterEach(() => {
   cleanup();
   uninstallLayout();
   rowHeights.clear();
+  textHeights.clear();
   observers.clear();
   smoothScroll.animate = false;
   vi.clearAllMocks();
@@ -1302,5 +1315,37 @@ describe("MessageTimeline — role badge and handle by space", () => {
 
     expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
     expect(screen.getByText("@alice:rim-platform.org")).toBeInTheDocument();
+  });
+});
+
+describe("MessageTimeline — folded messages", () => {
+  beforeEach(() => {
+    messageItem.real = true;
+  });
+
+  afterEach(() => {
+    useMessageFoldStore.setState({ foldable: new Set(), expanded: new Set() });
+  });
+
+  it("expanding a folded row keeps its top where it was", async () => {
+    textHeights.set("m-010", 400);
+    setMessages(range(0, 20));
+    render(<MessageTimeline />);
+    await settle();
+
+    // Away from the end, with the folded row's top 20px above the viewport.
+    const top = PADDING + 10 * ROW + 20;
+    act(() => messageList().scrollTo({ top }));
+    await settle();
+    expect(rowViewportOffset("m-010")).toBe(-20);
+
+    const row = document.querySelector<HTMLElement>('[data-message-id="m-010"]')!;
+    fireEvent.click(within(row).getByRole("button", { name: "Show more" }));
+    growRow("m-010", ROW + 200);
+    await settle();
+
+    expect(within(row).getByRole("button", { name: "Show less" })).toBeInTheDocument();
+    expect(messageList().scrollTop).toBe(top);
+    expect(rowViewportOffset("m-010")).toBe(-20);
   });
 });

@@ -155,6 +155,8 @@ export function useTimelineScroll({
   // The scroll corrections the virtualizer makes for measured rows since the last scroll event,
   // so that handleScroll does not take a correction toward the start for the user scrolling away.
   const pendingCorrectionRef = useRef(0);
+  // The row whose text is unfolding: its next size change keeps its top where it is.
+  const foldExpandIdRef = useRef<string | null>(null);
 
   const scrollToEnd = useCallback(
     (behavior: "auto" | "smooth" = "auto") => {
@@ -170,8 +172,13 @@ export function useTimelineScroll({
   // shrinking rows (e.g. a freshly prepended page) under-corrects. Compare
   // against the offset from the last scroll event instead: both sides then
   // describe the same layout. A row that changes size while the list follows its
-  // end keeps the end in view, unless a pointer press is held on the list.
+  // end keeps the end in view, unless a pointer press is held on the list. A row whose text
+  // unfolds grows downward from where it is.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    if (item.key === foldExpandIdRef.current) {
+      foldExpandIdRef.current = null;
+      return false;
+    }
     const adjust =
       item.start < (instance.scrollOffset ?? 0) ||
       (followEndRef.current && pointerPressRef.current === null);
@@ -194,6 +201,13 @@ export function useTimelineScroll({
     isAtBottomRef.current = atBottom;
     onScrollPosition?.(atBottom);
   }, [isAtBottomRef, onScrollPosition]);
+
+  /** Before a row's text unfolds: keep that row's top still and stop following the end. */
+  const onFoldToggle = useCallback((messageId: string, expanding: boolean) => {
+    if (!expanding) return;
+    foldExpandIdRef.current = messageId;
+    followEndRef.current = false;
+  }, []);
 
   const scrollToIndex = useCallback(
     (index: number, align: "auto" | "center" = "auto") => {
@@ -329,5 +343,6 @@ export function useTimelineScroll({
     topSentinelRef,
     handleScroll,
     scrollToIndex,
+    onFoldToggle,
   };
 }
