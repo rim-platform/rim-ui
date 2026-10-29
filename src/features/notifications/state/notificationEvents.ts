@@ -47,6 +47,11 @@ export function handleReadStateUpdated(qc: QueryClient, workspaceId: string): vo
   invalidateUnreadNotificationCount(qc, workspaceId);
 }
 
+/** Messages were deleted in bulk: the server dropped their unread entries, so refetch the count and the lists. */
+export function handleMessagesDeleted(qc: QueryClient, workspaceId: string): void {
+  invalidateNotificationInbox(qc, workspaceId);
+}
+
 /**
  * The viewer left or was removed from a conversation or the workspace: entries they can no
  * longer read change (`conversation`/`message` turn null), so refetch the count and the lists.

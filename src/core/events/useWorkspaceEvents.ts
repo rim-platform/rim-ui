@@ -40,6 +40,7 @@ import {
   handleMemberRoleChanged,
 } from "../../features/workspaces/state/memberEvents";
 import {
+  handleMessagesDeleted,
   handleNotificationDue,
   handleReadStateUpdated,
   handleViewerMembershipChange,
@@ -206,6 +207,7 @@ export function applyWorkspaceEvent(
     event.type === "NewMessage" ||
     event.type === "MessageUpdated" ||
     event.type === "MessageDeleted" ||
+    event.type === "MessagesDeleted" ||
     event.type === "MessageFlagChanged"
   ) {
     requestCacheSync(workspaceId, [event.conversation_id]);
@@ -361,6 +363,42 @@ export function applyWorkspaceEvent(
           },
         );
       }
+      break;
+    }
+
+    case "MessagesDeleted": {
+      const conversationId = event.conversation_id;
+      const gone = new Set(event.message_ids);
+      qc.setQueryData<InfiniteData<MessagesPage>>(
+        queryKeys.messages(workspaceId, conversationId),
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((m) =>
+                gone.has(m.id) ? { ...m, isDeleted: true, text: "" } : m,
+              ),
+            })),
+          };
+        },
+      );
+      for (const threadId of event.thread_ids) {
+        void qc.invalidateQueries({
+          queryKey: queryKeys.threadMessages(workspaceId, conversationId, threadId),
+        });
+      }
+      if (event.thread_ids.length > 0) {
+        void qc.invalidateQueries({ queryKey: ["threadByRoot", workspaceId, conversationId] });
+        void qc.invalidateQueries({ queryKey: ["threadReplyCount", workspaceId, conversationId] });
+      }
+      // A bulk delete usually removes spam that sits in pins, search hits, unread counts and
+      // mention notifications, all of which the server already dropped.
+      void qc.invalidateQueries({ queryKey: ["pinnedMessages", workspaceId, conversationId] });
+      void qc.invalidateQueries({ queryKey: ["searchMessages", workspaceId] });
+      void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
+      handleMessagesDeleted(qc, workspaceId);
       break;
     }
 

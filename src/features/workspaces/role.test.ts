@@ -4,6 +4,7 @@ import {
   ServerMemberRoleGql,
   assignableRoles,
   canCreateChannel,
+  canDeleteMemberMessages,
   canModerate,
   canTarget,
   canTargetMember,
@@ -47,27 +48,27 @@ describe("role ladder helpers", () => {
   });
 });
 
-describe("canTarget mirrors the server's targeting rules", () => {
-  // [actor, target, allowed]
-  const matrix: [ServerMemberRoleGql | undefined, ServerMemberRoleGql, boolean][] = [
-    [OWNER, OWNER, false],
-    [OWNER, MODERATOR, true],
-    [OWNER, MEMBER, true],
-    [OWNER, GUEST, true],
-    [MODERATOR, OWNER, false],
-    [MODERATOR, MODERATOR, false],
-    [MODERATOR, MEMBER, true],
-    [MODERATOR, GUEST, true],
-    [MEMBER, OWNER, false],
-    [MEMBER, MODERATOR, false],
-    [MEMBER, MEMBER, false],
-    [MEMBER, GUEST, false],
-    [GUEST, MEMBER, false],
-    [GUEST, GUEST, false],
-    [undefined, MEMBER, false],
-  ];
+/** The targeting rules as [actor, target, allowed]. */
+const TARGET_MATRIX: [ServerMemberRoleGql | undefined, ServerMemberRoleGql, boolean][] = [
+  [OWNER, OWNER, false],
+  [OWNER, MODERATOR, true],
+  [OWNER, MEMBER, true],
+  [OWNER, GUEST, true],
+  [MODERATOR, OWNER, false],
+  [MODERATOR, MODERATOR, false],
+  [MODERATOR, MEMBER, true],
+  [MODERATOR, GUEST, true],
+  [MEMBER, OWNER, false],
+  [MEMBER, MODERATOR, false],
+  [MEMBER, MEMBER, false],
+  [MEMBER, GUEST, false],
+  [GUEST, MEMBER, false],
+  [GUEST, GUEST, false],
+  [undefined, MEMBER, false],
+];
 
-  it.each(matrix)("%s -> %s: %s", (actor, target, allowed) => {
+describe("canTarget mirrors the server's targeting rules", () => {
+  it.each(TARGET_MATRIX)("%s -> %s: %s", (actor, target, allowed) => {
     expect(canTarget(actor, target)).toBe(allowed);
   });
 
@@ -84,6 +85,47 @@ describe("canTarget mirrors the server's targeting rules", () => {
     );
     expect(
       canTargetMember({ userId: undefined, role: OWNER }, { userId: "u2", role: MEMBER }),
+    ).toBe(false);
+  });
+});
+
+describe("canDeleteMemberMessages", () => {
+  it.each(TARGET_MATRIX)("%s -> member %s: %s", (actor, target, allowed) => {
+    expect(
+      canDeleteMemberMessages({ userId: "me", role: actor }, { userId: "u2", role: target }),
+    ).toBe(allowed);
+  });
+
+  it("lets an Owner or a Moderator target a former member, and nobody else", () => {
+    const gone = { userId: "u-gone", isFormerMember: true };
+    expect(canDeleteMemberMessages({ userId: "me", role: OWNER }, gone)).toBe(true);
+    expect(canDeleteMemberMessages({ userId: "me", role: MODERATOR }, gone)).toBe(true);
+    expect(canDeleteMemberMessages({ userId: "me", role: MEMBER }, gone)).toBe(false);
+    expect(canDeleteMemberMessages({ userId: "me", role: GUEST }, gone)).toBe(false);
+    expect(canDeleteMemberMessages({ userId: "me", role: undefined }, gone)).toBe(false);
+    expect(canDeleteMemberMessages({ userId: "me", role: OWNER }, { userId: "u-gone" })).toBe(
+      false,
+    );
+  });
+
+  it("never targets yourself or with an unknown viewer", () => {
+    expect(
+      canDeleteMemberMessages({ userId: "me", role: OWNER }, { userId: "me", role: MEMBER }),
+    ).toBe(false);
+    expect(
+      canDeleteMemberMessages(
+        { userId: "me", role: OWNER },
+        { userId: "me", isFormerMember: true },
+      ),
+    ).toBe(false);
+    expect(
+      canDeleteMemberMessages({ userId: null, role: OWNER }, { userId: "u2", role: MEMBER }),
+    ).toBe(false);
+    expect(
+      canDeleteMemberMessages(
+        { userId: undefined, role: MODERATOR },
+        { userId: "u-gone", isFormerMember: true },
+      ),
     ).toBe(false);
   });
 });

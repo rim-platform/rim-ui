@@ -295,9 +295,9 @@ A person has one menu wherever they appear: right-click their name or avatar on 
 **Copy @username**, adds them to or removes them from your contacts, and in a conversation's
 members, to an Owner or Moderator, **Remove from** the conversation. An Owner or Moderator who
 may act on them also gets a **Moderation** section: **Change role**, **Time out** (10 minutes,
-1 hour, 1 day, 1 week or a custom end) or **Clear timeout**, **Kick…** and **Ban…**, each behind its
-confirmation. On yourself the menu has **View profile**, **Set status…**, **Copy @username** and
-**Settings**.
+1 hour, 1 day, 1 week or a custom end) or **Clear timeout**, **Delete messages…**, **Kick…** and
+**Ban…**, each behind its confirmation. On yourself the menu has **View profile**, **Set
+status…**, **Copy @username** and **Settings**.
 
 Right-click a workspace, a conversation or a section heading of the sidebar for its actions;
 the conversation's are also under **…** in its header.

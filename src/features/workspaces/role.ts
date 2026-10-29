@@ -57,6 +57,18 @@ export function canTargetMember(
 }
 
 /**
+ * Whether `actor` may delete `target`'s messages, mirroring the server: {@link canTargetMember}
+ * for a member, and any Owner or Moderator for a former member; never yourself.
+ */
+export function canDeleteMemberMessages(
+  actor: { userId: string | null | undefined; role?: MaybeRole },
+  target: { userId: string; role?: MaybeRole; isFormerMember?: boolean },
+): boolean {
+  if (!actor.userId || actor.userId === target.userId) return false;
+  return target.isFormerMember ? canModerate(actor.role) : canTarget(actor.role, target.role);
+}
+
+/**
  * The roles `actorRole` may give a member who holds `targetRole`, excluding the one they
  * already have. Owner: Moderator, Member or Guest (never Owner). Moderator: Member <-> Guest.
  */
