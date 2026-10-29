@@ -81,7 +81,7 @@ version is refused with a message saying so.
 Escape in the composer, or focusing the message list, enters NAVIGATE: the status bar shows
 NAVIGATE and a bar over the bottom of the timeline lists the keys for the selected message; the
 timeline leaves room for the bar under the newest message. Entering it with the keyboard selects
-the newest message; clicking into the list selects the message clicked, without scrolling.
+the newest message; clicking a message selects it, also while NAVIGATE is on, without scrolling.
 Focusing the composer or a thread's reply box shows COMPOSE.
 
 ## Back from a direct message

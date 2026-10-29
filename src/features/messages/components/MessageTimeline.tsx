@@ -300,26 +300,30 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   );
 
   // Vim-style keyboard navigation for the message list
-  const { selectedMessageIndex, deleteConfirmMessageId, handleMessageListKeyDown } =
-    useMessageNavigation({
-      items,
-      conversationId,
-      workspaceId,
-      currentUserId,
-      editingMessageId,
-      setEditingMessageId,
-      openThread,
-      onDeleteMessage: handleDeleteMessage,
-      onForwardMessage: setForwardMessage,
-      onReply,
-      canStartThread: rights.thread,
-      canPin: rights.pin,
-      onOpenActions: openActionsFor,
-      onFoldToggle,
-      firstNewIndex,
-      scrollToIndex,
-      pointerEntryRef,
-    });
+  const {
+    selectedMessageIndex,
+    deleteConfirmMessageId,
+    handleMessageListKeyDown,
+    selectPressedMessage,
+  } = useMessageNavigation({
+    items,
+    conversationId,
+    workspaceId,
+    currentUserId,
+    editingMessageId,
+    setEditingMessageId,
+    openThread,
+    onDeleteMessage: handleDeleteMessage,
+    onForwardMessage: setForwardMessage,
+    onReply,
+    canStartThread: rights.thread,
+    canPin: rights.pin,
+    onOpenActions: openActionsFor,
+    onFoldToggle,
+    firstNewIndex,
+    scrollToIndex,
+    pointerEntryRef,
+  });
   const selectedId = selectedMessageIndex >= 0 ? items[selectedMessageIndex]?.id : undefined;
   const selectedFoldable = useMessageFoldStore((s) =>
     selectedId ? s.foldable.has(selectedId) : false,
@@ -393,6 +397,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
             pointerEntryRef.current =
               (e.target as Element).closest("[data-message-id]")?.getAttribute("data-message-id") ??
               "";
+            if (pointerEntryRef.current !== "") selectPressedMessage(pointerEntryRef.current);
           }}
           onFocus={() => useShellStore.getState().setNavigationMode(true)}
           onBlur={() => {
