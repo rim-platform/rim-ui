@@ -15,6 +15,8 @@ import type { MessageItemHandlers } from "../../messages/components/MessageItem"
 import { ForwardDialog } from "../../messages/components/ForwardDialog";
 import { useMessageContextMenu } from "../../messages/hooks/useMessageContextMenu";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useClearMessageFlag } from "../../workspaces/api/useModeration";
 import { PostingRestrictedBar } from "../../conversations/components/PostingRestrictedBar";
 import type { MessageItem as MessageItemData } from "../../../core/types/messages";
 import { usePinnedMessages } from "../../messages/api/usePinnedMessages";
@@ -356,6 +358,16 @@ export function ThreadPanel() {
     [openUserMenu],
   );
 
+  const canModerate = useCanModerate(workspaceId ?? undefined);
+  const { mutate: clearMessageFlag } = useClearMessageFlag();
+  const onClearFlag = useCallback(
+    (messageId: string) => {
+      if (!workspaceId || !conversationId) return;
+      clearMessageFlag({ serverId: workspaceId, conversationId, messageId });
+    },
+    [workspaceId, conversationId, clearMessageFlag],
+  );
+
   const handlers = useMemo<MessageItemHandlers>(
     () => ({
       onOpenThread: openThread,
@@ -367,6 +379,8 @@ export function ThreadPanel() {
       onMentionContextMenu,
       onSaveEdit: handleSaveEdit,
       onCancelEdit: handleCancelEdit,
+      canModerate,
+      onClearFlag,
     }),
     [
       openThread,
@@ -378,6 +392,8 @@ export function ThreadPanel() {
       onMentionContextMenu,
       handleSaveEdit,
       handleCancelEdit,
+      canModerate,
+      onClearFlag,
     ],
   );
 

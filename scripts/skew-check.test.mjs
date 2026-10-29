@@ -22,6 +22,25 @@ function schemaWithoutEditTimes() {
   return buildASTSchema(document);
 }
 
+/** The fields of each type the committed schema has beyond a server without `message_flag`. */
+const FLAG_FIELDS = {
+  Message: ["flagged"],
+  MessageReport: ["automatic"],
+  Mutation: ["clearMessageFlag"],
+};
+
+/** The committed schema as a server without the automatic check's flags. */
+function schemaWithoutMessageFlags() {
+  const document = visit(parse(SDL), {
+    ObjectTypeDefinition(node) {
+      const fields = FLAG_FIELDS[node.name.value];
+      if (!fields) return undefined;
+      return { ...node, fields: node.fields?.filter((f) => !fields.includes(f.name.value)) };
+    },
+  });
+  return buildASTSchema(document);
+}
+
 /** The mutations the committed schema has beyond a server without leaving and renaming. */
 const NEWER_MUTATIONS = new Set(["leaveWorkspace", "renameWorkspace"]);
 
@@ -43,14 +62,30 @@ describe("skew check", () => {
     const refused = refusedOperations(schemaWithoutEditTimes(), documents);
     expect(refused.map((r) => r.label).sort()).toEqual([
       "query MessagesWithEdits",
+      "query MessagesWithFlags",
       "query ServerInfo",
       "query ThreadMessagesWithEdits",
+      "query ThreadMessagesWithFlags",
+    ]);
+  });
+
+  it("refuses only the gated flag documents on a server without message_flag", () => {
+    const refused = refusedOperations(schemaWithoutMessageFlags(), documents);
+    expect(refused.map((r) => r.label).sort()).toEqual([
+      "mutation ClearMessageFlag",
+      "query MessageChangesWithFlags",
+      "query MessageReportWithAutomatic",
+      "query MessageReportsWithAutomatic",
+      "query MessagesWithFlags",
+      "query ThreadMessagesWithFlags",
     ]);
   });
 
   it("finds MessagesWithEdits valid on the current schema", () => {
     expect(documents.some((d) => d.text.includes("query MessagesWithEdits("))).toBe(true);
     expect(documents.some((d) => d.text.includes("query ThreadMessagesWithEdits("))).toBe(true);
+    expect(documents.some((d) => d.text.includes("query MessagesWithFlags("))).toBe(true);
+    expect(documents.some((d) => d.text.includes("query ThreadMessagesWithFlags("))).toBe(true);
     expect(refusedOperations(buildASTSchema(parse(SDL)), documents)).toEqual([]);
   });
 

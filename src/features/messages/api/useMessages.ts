@@ -10,7 +10,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import { MESSAGES_QUERY, MESSAGES_WITH_EDITS_QUERY } from "../../../core/graphql/queries";
+import { MESSAGES_DOCUMENTS, MESSAGES_QUERY } from "../../../core/graphql/queries";
 import { MESSAGE_FIELDS } from "../../../graphql/fragments/message";
 import type { MessageItem, MessageCursor, MessagesPage } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -27,7 +27,7 @@ import {
   trackConversation,
 } from "./messageCache";
 import { withServerMetadata } from "./serverMetadata";
-import { MESSAGE_EDITED_AT, serverHasCapability } from "../../updater/api/serverCapabilities";
+import { messageReadDocument } from "../../updater/api/serverCapabilities";
 
 export { MESSAGES_QUERY };
 export type { MessageItem, MessageCursor, MessagesPage };
@@ -150,9 +150,7 @@ export function useConversationMessages(workspaceId?: string, conversationId?: s
       }
 
       try {
-        const document = (await serverHasCapability(MESSAGE_EDITED_AT))
-          ? MESSAGES_WITH_EDITS_QUERY
-          : MESSAGES_QUERY;
+        const document = await messageReadDocument(MESSAGES_DOCUMENTS);
         const res = await graphqlClient.request<MessagesResponse>(document, variables);
         return res.messages;
       } catch (err) {

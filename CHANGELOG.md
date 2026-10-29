@@ -27,6 +27,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A message whose text is taller than about 16 lines shows its first lines with Show more, and
   Show less folds it again; in NAVIGATE, o does the same for the selected message. Long logs and
   text art no longer fill the timeline.
+- Messages the server's automatic check flags (sexual text art) are covered with Show anyway;
+  Owners and Moderators can Clear flag, and the check's reports show as Automatic check in
+  Moderation. Needs a server that lists `message_flag`; older servers work as before.
 
 ### Fixed
 

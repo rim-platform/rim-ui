@@ -101,6 +101,11 @@ export interface MessageItem {
    * report it.
    */
   editedAt?: string | null;
+  /**
+   * Whether the server's automatic check flagged the message and no Owner or Moderator cleared
+   * it; absent (not flagged) when the server does not report it.
+   */
+  flagged?: boolean;
   reactions: MessageReaction[];
   attachments: MessageAttachment[];
   linkPreviews: MessageLinkPreview[];

@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import {
   baseReadHandlers,
@@ -118,6 +121,8 @@ function renderSettings() {
 describe("ModerationSettings", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    queryClient.clear();
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo());
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
   });
@@ -174,6 +179,31 @@ describe("ModerationSettings", () => {
     expect(within(row).queryByRole("button", { name: /Block principal/ })).not.toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: "Delete message" })).not.toBeInTheDocument();
     expect(row).not.toHaveTextContent("Only the reported message is shown");
+  });
+
+  it("names the automatic check as the reporter of its reports", async () => {
+    queryClient.setQueryData(
+      queryKeys.serverInfo,
+      fakeServerInfo({}, { capabilities: ["message_edited_at", "message_flag"] }),
+    );
+    // Replaces the reports handler in place: its needle also matches the gated document.
+    serve({
+      "query MessageReports": () => ({
+        messageReports: {
+          items: [report("r1", { reporterUserId: null, automatic: true }), report("r2")],
+          next: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      }),
+    });
+    renderSettings();
+    const automatic = await screen.findByTestId("report-row-r1");
+    await waitFor(() => expect(screen.getByTestId("report-row-r2")).toHaveTextContent("Alice"));
+    expect(automatic).toHaveTextContent("Automatic check");
+    expect(automatic).toHaveTextContent("a message by Bob");
+    expect(automatic).not.toHaveTextContent("Alice");
+    expect(callsTo(requestMock, "query MessageReportsWithAutomatic(")).toHaveLength(1);
+    expect(callsTo(requestMock, "query MessageReports(")).toHaveLength(0);
   });
 
   it("says when the reported message is not visible to the moderator", async () => {
@@ -272,6 +302,8 @@ describe("ModerationSettings — verified encrypted reports", () => {
 
   beforeEach(() => {
     requestMock.mockReset();
+    queryClient.clear();
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo());
     fetchMock.mockReset();
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();

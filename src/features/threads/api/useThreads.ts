@@ -6,7 +6,7 @@ import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { encryptedStoreAccount, readCachedThread } from "../../messages/api/messageCache";
 import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
-import { MESSAGE_EDITED_AT, serverHasCapability } from "../../updater/api/serverCapabilities";
+import { messageReadDocument } from "../../updater/api/serverCapabilities";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
   query ThreadByRootMessage($serverId: ID!, $conversationId: ID!, $rootMessageId: ID!) {
@@ -81,6 +81,28 @@ const THREAD_MESSAGES_WITH_EDITS_QUERY = gql`
   ${MESSAGE_WITH_REACTIONS}
 `;
 
+/** The same with `Message.editedAt` and `Message.flagged`, for a server that lists `message_flag`. */
+const THREAD_MESSAGES_WITH_FLAGS_QUERY = gql`
+  query ThreadMessagesWithFlags(${THREAD_MESSAGES_VARIABLES}) {
+    threadMessages(${THREAD_MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+        editedAt
+        flagged
+      }
+      ${THREAD_MESSAGES_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** A thread's replies documents, for `messageReadDocument`. */
+const THREAD_MESSAGES_DOCUMENTS = {
+  plain: THREAD_MESSAGES_QUERY,
+  withEdits: THREAD_MESSAGES_WITH_EDITS_QUERY,
+  withFlags: THREAD_MESSAGES_WITH_FLAGS_QUERY,
+};
+
 interface ThreadDetail {
   id: string;
   serverId: string;
@@ -135,6 +157,8 @@ interface ThreadMessageItem {
    * report it.
    */
   editedAt?: string | null;
+  /** Whether the server's automatic check flagged the message; absent when not reported. */
+  flagged?: boolean;
   reactions: ThreadMessageReaction[];
   linkPreviews: ThreadMessageLinkPreview[];
 }
@@ -202,9 +226,7 @@ export function useThreadMessages(
           pageInfo: { hasNext: false, hasPrev: false },
         };
       }
-      const document = (await serverHasCapability(MESSAGE_EDITED_AT))
-        ? THREAD_MESSAGES_WITH_EDITS_QUERY
-        : THREAD_MESSAGES_QUERY;
+      const document = await messageReadDocument(THREAD_MESSAGES_DOCUMENTS);
       const res = await graphqlClient.request<ThreadMessagesResponse>(document, {
         serverId: workspaceId!,
         conversationId: conversationId!,

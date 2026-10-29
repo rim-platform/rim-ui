@@ -59,6 +59,21 @@ describe("areMessageItemPropsEqual", () => {
     ).toBe(true);
   });
 
+  it("re-renders when flagged changes", () => {
+    const base = makeProps();
+    const flagged = makeProps({ message: { ...base.view.message, flagged: true } });
+    expect(areMessageItemPropsEqual(base, flagged)).toBe(false);
+    expect(
+      areMessageItemPropsEqual(
+        flagged,
+        makeProps({ message: { ...flagged.view.message, flagged: false } }),
+      ),
+    ).toBe(false);
+    expect(
+      areMessageItemPropsEqual(flagged, makeProps({ message: { ...flagged.view.message } })),
+    ).toBe(true);
+  });
+
   it("re-renders when inThreadPane changes", () => {
     expect(areMessageItemPropsEqual(makeProps(), makeProps({ inThreadPane: true }))).toBe(false);
   });

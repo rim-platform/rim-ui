@@ -24,6 +24,7 @@ import {
   messageFromEvent,
 } from "../../features/messages/api/timelineMessages";
 import { handleE2eeEvent } from "../../features/e2ee/runtime/e2eeRuntime";
+import { setMessageFlagged } from "./messageFlag";
 import { hostOf } from "../../features/relay/state/useRelayStore";
 import { applyWorkspaceName } from "../../features/workspaces/state/workspaceName";
 import { useContactStore } from "../../features/relay/contacts/useContactStore";
@@ -311,6 +312,21 @@ export function applyWorkspaceEvent(
           },
         );
       }
+      break;
+    }
+
+    case "MessageFlagChanged": {
+      setMessageFlagged(qc, workspaceId, event.conversation_id, event.message_id, event.flagged);
+      void qc.invalidateQueries({
+        queryKey: queryKeys.messages(workspaceId, event.conversation_id),
+      });
+      void qc.invalidateQueries({
+        queryKey: ["pinnedMessages", workspaceId, event.conversation_id],
+      });
+      // The event names no thread: every cached thread of the conversation may hold it.
+      void qc.invalidateQueries({
+        queryKey: ["threadMessages", workspaceId, event.conversation_id],
+      });
       break;
     }
 

@@ -8,7 +8,13 @@ vi.mock("../../../core/graphql/client", () => ({
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
-import { hasCapability, MESSAGE_EDITED_AT, serverHasCapability } from "./serverCapabilities";
+import {
+  hasCapability,
+  MESSAGE_EDITED_AT,
+  MESSAGE_FLAG,
+  messageReadDocument,
+  serverHasCapability,
+} from "./serverCapabilities";
 
 describe("hasCapability", () => {
   it("is true only for a capability the server info lists", () => {
@@ -47,5 +53,25 @@ describe("serverHasCapability", () => {
   it("serverHasCapability is false when the server info cannot be read", async () => {
     requestMock.mockRejectedValue(new TypeError("Failed to fetch"));
     await expect(serverHasCapability(MESSAGE_EDITED_AT)).resolves.toBe(false);
+  });
+});
+
+describe("messageReadDocument", () => {
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  const documents = { plain: "plain", withEdits: "edits", withFlags: "flags" };
+
+  it("picks the newest document the server's capabilities allow", async () => {
+    const cases = [
+      { capabilities: [MESSAGE_EDITED_AT, MESSAGE_FLAG], document: "flags" },
+      { capabilities: [MESSAGE_EDITED_AT], document: "edits" },
+      { capabilities: [], document: "plain" },
+    ];
+    for (const { capabilities, document } of cases) {
+      queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
+      await expect(messageReadDocument(documents)).resolves.toBe(document);
+    }
   });
 });

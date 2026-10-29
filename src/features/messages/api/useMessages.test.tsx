@@ -79,14 +79,20 @@ describe("useConversationMessages", () => {
     await waitFor(() => expect(result.current.hasNextPage).toBe(false));
   });
 
-  it("asks for editedAt only when the server lists message_edited_at", async () => {
-    for (const capabilities of [["message_edited_at"], []]) {
+  it("asks for flagged with message_flag, editedAt with message_edited_at", async () => {
+    const cases = [
+      { capabilities: ["message_edited_at", "message_flag"], operation: "MessagesWithFlags" },
+      { capabilities: ["message_edited_at"], operation: "MessagesWithEdits" },
+      { capabilities: [], operation: "Messages" },
+    ];
+    for (const { capabilities, operation } of cases) {
       queryClient.clear();
       requestMock.mockReset();
       routeRequests(requestMock, {
         "query ServerInfo {": () => ({
           serverInfo: { ...fakeServerInfo(), capabilities },
         }),
+        "query MessagesWithFlags(": () => page(false),
         "query MessagesWithEdits(": () => page(false),
         "query Messages(": () => page(false),
       });
@@ -99,12 +105,10 @@ describe("useConversationMessages", () => {
       const operations = requestMock.mock.calls.map(
         ([document]) => /query (\w+)/.exec(String(document))?.[1],
       );
-      expect(operations).toEqual([
-        "ServerInfo",
-        capabilities.length > 0 ? "MessagesWithEdits" : "Messages",
-      ]);
+      expect(operations).toEqual(["ServerInfo", operation]);
       const sent = String(requestMock.mock.calls[1][0]);
       expect(sent.includes("editedAt")).toBe(capabilities.length > 0);
+      expect(sent.includes("flagged")).toBe(capabilities.includes("message_flag"));
       unmount();
     }
   });
