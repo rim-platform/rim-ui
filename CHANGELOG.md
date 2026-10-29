@@ -28,6 +28,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Show less folds it again; in NAVIGATE, o does the same for the selected message. Long logs and
   text art no longer fill the timeline.
 
+### Fixed
+
+- With a message selected, Ctrl+C copies the text you highlighted instead of the whole message,
+  and Ctrl, Alt or Cmd with a letter (Ctrl+R, Ctrl+P, …) no longer runs the timeline's reply, pin
+  or other message keys.
+
 ## [0.0.8] - 2026-10-28
 
 ### Changed

@@ -309,3 +309,55 @@ describe("useMessageNavigation fold key", () => {
     expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(false);
   });
 });
+
+describe("useMessageNavigation keys with modifiers", () => {
+  it("leaves Ctrl+C to the browser", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+    const prevented: boolean[] = [];
+    const record = (e: KeyboardEvent) => prevented.push(e.defaultPrevented);
+    document.addEventListener("keydown", record);
+    render(<KeysHarness openThread={vi.fn()} />);
+    enterNavigate();
+
+    await user.keyboard("{Control>}c{/Control}");
+    document.removeEventListener("keydown", record);
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(prevented).toContain(false);
+    expect(prevented).not.toContain(true);
+  });
+
+  it("still copies the selected message on plain c", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+    render(<KeysHarness openThread={vi.fn()} />);
+    enterNavigate();
+
+    await user.keyboard("c");
+
+    expect(writeText).toHaveBeenCalledWith("hi");
+  });
+
+  it("does not start a reply on Ctrl+R", async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    render(<KeysHarness onReply={onReply} openThread={vi.fn()} />);
+    enterNavigate();
+
+    await user.keyboard("{Control>}r{/Control}");
+
+    expect(onReply).not.toHaveBeenCalled();
+  });
+
+  it("does not pin on Meta+P", async () => {
+    const user = userEvent.setup();
+    requestMock.mockReset();
+    render(<KeysHarness openThread={vi.fn()} />);
+    enterNavigate();
+
+    await user.keyboard("{Meta>}p{/Meta}");
+
+    expect(callsTo(requestMock, "mutation PinMessage")).toEqual([]);
+  });
+});
