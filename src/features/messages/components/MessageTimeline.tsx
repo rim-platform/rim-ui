@@ -353,7 +353,13 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   }
 
   const selectedMsg = selectedMessageIndex >= 0 ? items[selectedMessageIndex] : null;
-  const foldState = selectedFoldable ? (selectedExpanded ? "expanded" : "folded") : null;
+  // A message being edited shows its edit form, which does not fold.
+  const foldState =
+    selectedFoldable && selectedMessageIndex !== editingIndex
+      ? selectedExpanded
+        ? "expanded"
+        : "folded"
+      : null;
 
   return (
     <div

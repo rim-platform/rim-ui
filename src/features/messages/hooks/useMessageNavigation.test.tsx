@@ -239,15 +239,17 @@ describe("useMessageNavigation reply and thread keys", () => {
 
 function FoldHarness({
   onFoldToggle,
+  editingMessageId = null,
 }: {
   onFoldToggle: (messageId: string, expanding: boolean) => void;
+  editingMessageId?: string | null;
 }) {
   const { handleMessageListKeyDown } = useMessageNavigation({
     items: [{ id: "m-1", text: "hi", authorId: "u-2" }],
     conversationId: "c-1",
     workspaceId: "w-1",
     currentUserId: "u-1",
-    editingMessageId: null,
+    editingMessageId,
     setEditingMessageId: vi.fn(),
     openThread: vi.fn(),
     onDeleteMessage: vi.fn(),
@@ -279,6 +281,19 @@ describe("useMessageNavigation fold key", () => {
 
     await user.keyboard("o");
     expect(onFoldToggle).toHaveBeenLastCalledWith("m-1", false);
+    expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(false);
+  });
+
+  it("o does nothing on a message being edited", async () => {
+    const user = userEvent.setup();
+    const onFoldToggle = vi.fn();
+    useMessageFoldStore.getState().setFoldable("m-1", true);
+    render(<FoldHarness onFoldToggle={onFoldToggle} editingMessageId="m-1" />);
+    enterNavigate();
+
+    await user.keyboard("o");
+
+    expect(onFoldToggle).not.toHaveBeenCalled();
     expect(useMessageFoldStore.getState().expanded.has("m-1")).toBe(false);
   });
 

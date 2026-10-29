@@ -313,7 +313,7 @@ export function useMessageNavigation({
         // o shows more or less of a message whose tall text folds.
         case "o": {
           const fold = useMessageFoldStore.getState();
-          if (!fold.foldable.has(msg.id)) break;
+          if (msg.id === editingMessageId || !fold.foldable.has(msg.id)) break;
           e.preventDefault();
           onFoldToggle?.(msg.id, !fold.expanded.has(msg.id));
           fold.toggleExpanded(msg.id);
