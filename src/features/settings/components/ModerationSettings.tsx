@@ -30,6 +30,8 @@ import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { JoinRequestsSection } from "../../workspaces/components/JoinRequestsSection";
 import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
+import { FlaggedCover } from "../../messages/components/message-item/FlaggedCover";
+import { FoldableText } from "../../messages/components/message-item/FoldableText";
 import { EncryptedReportView } from "./EncryptedReportView";
 
 interface ModerationSettingsProps {
@@ -373,9 +375,21 @@ function ReportRow({
         )
       ) : report.messageReadable || singleMessage ? (
         <>
-          <blockquote className="whitespace-pre-wrap break-words border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
-            {report.messageText ?? <span className="italic">This message was deleted</span>}
-          </blockquote>
+          {report.automatic && report.messageText !== null ? (
+            // The automatic check reports text art: covered like the flagged message in the
+            // timeline, folded when tall, and kept unwrapped so the drawing keeps its lines.
+            <FlaggedCover messageId={report.messageId} canModerate={false}>
+              <FoldableText messageId={report.messageId}>
+                <blockquote className="overflow-x-auto whitespace-pre border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
+                  {report.messageText}
+                </blockquote>
+              </FoldableText>
+            </FlaggedCover>
+          ) : (
+            <blockquote className="whitespace-pre-wrap break-words border-l-2 border-rim-line pl-2 text-sm text-rim-text-muted">
+              {report.messageText ?? <span className="italic">This message was deleted</span>}
+            </blockquote>
+          )}
           {singleMessage && report.messageText !== null && (
             <p className="text-xs text-rim-text-faint">
               Only the reported message is shown, not the rest of the conversation.

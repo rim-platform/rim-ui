@@ -240,6 +240,34 @@ describe("ModerationSettings", () => {
     expect(callsTo(requestMock, "query MessageReports(")).toHaveLength(0);
   });
 
+  it("covers the text the automatic check reported until Show anyway", async () => {
+    queryClient.setQueryData(
+      queryKeys.serverInfo,
+      fakeServerInfo({}, { capabilities: ["message_edited_at", "message_flag"] }),
+    );
+    serve({
+      "query MessageReports": () => ({
+        messageReports: {
+          items: [report("r1", { reporterUserId: null, automatic: true }), report("r2")],
+          next: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      }),
+    });
+    renderSettings();
+    const automatic = await screen.findByTestId("report-row-r1");
+    await waitFor(() => expect(automatic).toHaveTextContent("Automatic check"));
+    expect(automatic).toHaveTextContent("Hidden: the automatic check flagged this message.");
+    expect(automatic).not.toHaveTextContent("text of r1");
+    expect(within(automatic).queryByRole("button", { name: "Clear flag" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(automatic).getByRole("button", { name: "Show anyway" }));
+    expect(automatic).toHaveTextContent("text of r1");
+    expect(within(automatic).getByText("text of r1")).toHaveClass("whitespace-pre");
+    // A member's report is never covered.
+    expect(screen.getByTestId("report-row-r2")).not.toHaveTextContent("Hidden:");
+  });
+
   it("says when the reported message is not visible to the moderator", async () => {
     serve();
     renderSettings();

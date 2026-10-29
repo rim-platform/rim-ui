@@ -798,6 +798,13 @@ describe("useWorkspaceEvents bulk message deletion", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["threadReplyCount", "ws-1", "c-1"] });
   });
 
+  it("MessagesDeleted refetches the timeline so an older read cannot bring the messages back", () => {
+    const qc = cachedTimeline();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(messagesDeleted(["m-1"]), qc, "ws-1");
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.messages("ws-1", "c-1") });
+  });
+
   it("MessagesDeleted without threads leaves the thread queries alone", () => {
     const qc = cachedTimeline();
     const spy = vi.spyOn(qc, "invalidateQueries");

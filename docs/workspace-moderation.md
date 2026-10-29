@@ -45,8 +45,9 @@ not covered.
 The workspace's Owner and Moderators also get **Clear flag**, on the cover and on the label: it
 clears the flag for everyone, and the message shows uncovered for every reader as soon as the
 server announces it. Each flag the check sets files a report, which Settings → Moderation lists
-with **Automatic check** as the reporter. Against an older server nothing is covered and the
-reports list is unchanged.
+with **Automatic check** as the reporter. The reported text is covered there too, with **Show
+anyway**, and once shown it keeps its lines unwrapped and folds when tall, so the drawing reads
+as drawn. Against an older server nothing is covered and the reports list is unchanged.
 
 # Deleting a person's messages
 
