@@ -43,7 +43,8 @@ interface UseMessageNavigationOptions {
   scrollToIndex: (index: number) => void;
   /**
    * The message a pointer press on the list landed on (`""` for none) while that press gives the
-   * list focus; entering NAVIGATE then selects it, or the newest message, without scrolling.
+   * list focus; entering NAVIGATE then keeps the selection the press made, or selects the newest
+   * message when nothing is selected, without scrolling.
    */
   pointerEntryRef: React.RefObject<string | null>;
 }
@@ -122,19 +123,26 @@ export function useMessageNavigation({
     }
   }, [conversationId, setEditingMessageId]);
 
-  // Auto-select newest message when entering navigation mode
+  /** Selects the message a pointer press landed on, without scrolling. */
+  const selectPressedMessage = useCallback(
+    (messageId: string) => {
+      if (!items.some((m) => m.id === messageId)) return;
+      setSelectedMessageId(messageId);
+      setDeleteConfirmMessageId(null);
+    },
+    [items],
+  );
+
+  // Select the newest message when entering navigation mode with nothing selected; a pointer
+  // entry does not scroll, and a message already selected, by the press or before, stays.
   useEffect(() => {
     const unsub = useShellStore.subscribe((state, prev) => {
       if (state.navigationMode && !prev.navigationMode) {
         if (selectedMessageIndex === -1 && items.length > 0) {
           const pressed = pointerEntryRef.current;
-          if (pressed !== null) {
-            setSelectedMessageId(
-              items.some((m) => m.id === pressed) ? pressed : items[items.length - 1].id,
-            );
-          } else {
-            selectIndex(items.length - 1);
-          }
+          if (pressed === null) selectIndex(items.length - 1);
+          // A press on a message selects it itself; one on empty list space takes the newest.
+          else if (pressed === "") setSelectedMessageId(items[items.length - 1].id);
         }
       }
     });
@@ -360,5 +368,6 @@ export function useMessageNavigation({
     selectedMessageIndex,
     deleteConfirmMessageId,
     handleMessageListKeyDown,
+    selectPressedMessage,
   };
 }

@@ -33,6 +33,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - With a message selected, Ctrl+C copies the text you highlighted instead of the whole message,
   and Ctrl, Alt or Cmd with a letter (Ctrl+R, Ctrl+P, …) no longer runs the timeline's reply, pin
   or other message keys.
+- Clicking a message in the timeline selects it, also while NAVIGATE is on; before, the highlight
+  stayed on the first message clicked.
 
 ## [0.0.8] - 2026-10-28
 

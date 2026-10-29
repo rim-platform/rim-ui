@@ -1046,6 +1046,57 @@ describe("MessageTimeline keyboard", () => {
     expect(messageList().scrollTop).toBe(100);
   });
 
+  it("clicking another message moves the selection", async () => {
+    setMessages(range(0, 5));
+    render(<MessageTimeline />);
+    await settle();
+    const a = document.querySelector<HTMLElement>('[data-message-id="m-001"]')!;
+    const b = document.querySelector<HTMLElement>('[data-message-id="m-002"]')!;
+    fireEvent.mouseDown(a);
+    act(() => messageList().focus());
+    await settle();
+    expect(a.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.mouseDown(b);
+    await settle();
+    expect(b.getAttribute("aria-selected")).toBe("true");
+    expect(a.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("clicking back into the list selects the clicked message, not the previous one", async () => {
+    setMessages(range(0, 5));
+    render(<MessageTimeline />);
+    await settle();
+    const a = document.querySelector<HTMLElement>('[data-message-id="m-001"]')!;
+    const b = document.querySelector<HTMLElement>('[data-message-id="m-002"]')!;
+    fireEvent.mouseDown(a);
+    act(() => messageList().focus());
+    await settle();
+    act(() => messageList().blur());
+    act(() => useShellStore.setState({ navigationMode: false }));
+    await settle();
+
+    fireEvent.mouseDown(b);
+    act(() => messageList().focus());
+    await settle();
+    expect(b.getAttribute("aria-selected")).toBe("true");
+    expect(a.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("a click on empty list space keeps the selection", async () => {
+    setMessages(range(0, 5));
+    render(<MessageTimeline />);
+    await settle();
+    const a = document.querySelector<HTMLElement>('[data-message-id="m-001"]')!;
+    fireEvent.mouseDown(a);
+    act(() => messageList().focus());
+    await settle();
+
+    fireEvent.mouseDown(messageList());
+    await settle();
+    expect(a.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("keeps its place at the bottom while a pointer press focuses the list", async () => {
     setMessages(range(0, 20));
     render(<MessageTimeline />);
