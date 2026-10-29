@@ -3,9 +3,11 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { DELETE_MEMBER_MESSAGES } from "../../updater/api/serverCapabilities";
 import {
   callsTo,
   graphqlError,
@@ -42,15 +44,32 @@ function serve(viewerRole: ServerMemberRoleGql, extra: Record<string, () => unkn
     }),
     "mutation KickMember": () => ({ kickMember: true }),
     "mutation BanMember": () => ({ banMember: { userId: "u-alice", expiresAt: null } }),
+    "query MemberMessageCounts": () => ({
+      memberMessageCounts: {
+        readable: { messages: 38, channels: 3 },
+        unjoinedPrivate: { messages: 4, channels: 1 },
+      },
+    }),
+    "mutation DeleteMemberMessages": () => ({
+      deleteMemberMessages: { deleted: 42, channels: 4, hasMore: false },
+    }),
     ...extra,
   });
 }
 
 const alice: ModeratedMember = { userId: "u-alice", displayName: "Alice", role: MEMBER };
 
-/** Renders the dialog of `moderation`; a role change waits for the viewer's role. */
-async function renderDialog(viewerRole: ServerMemberRoleGql, moderation: MemberModeration) {
+/**
+ * Renders the dialog of `moderation` against a server that lists `capabilities`; a role change
+ * waits for the viewer's role.
+ */
+async function renderDialog(
+  viewerRole: ServerMemberRoleGql,
+  moderation: MemberModeration,
+  capabilities?: string[],
+) {
   const qc = createTestQueryClient();
+  qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
   const onClose = vi.fn();
   render(
     <QueryClientProvider client={qc}>
@@ -233,5 +252,252 @@ describe("MemberModerationDialog", () => {
         { serverId: "ws-1", userId: "u-alice", reason: null, expiresAt: null },
       ]),
     );
+  });
+});
+
+/** The operation names of the mutations sent, in order. */
+function mutationOrder(): string[] {
+  return requestMock.mock.calls
+    .map(([document]) => /mutation (\w+)/.exec(String(document))?.[1])
+    .filter((name): name is string => Boolean(name));
+}
+
+/** Serves the counts of every period as `readable` and `unjoinedPrivate`. */
+function countsOf(readable: [number, number], unjoinedPrivate: [number, number]) {
+  return () => ({
+    memberMessageCounts: {
+      readable: { messages: readable[0], channels: readable[1] },
+      unjoinedPrivate: { messages: unjoinedPrivate[0], channels: unjoinedPrivate[1] },
+    },
+  });
+}
+
+const PRIVATE_LABEL = "Also private channels you're not in: 4 messages in 1 channel";
+
+describe("MemberModerationDialog message deletion", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
+    useAuthStore.setState({ session: { userId: "me" } });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ session: null });
+    vi.useRealTimers();
+  });
+
+  const banAlice: MemberModeration = { action: "ban", member: alice };
+  const deleteAlice: MemberModeration = { action: "delete-messages", member: alice };
+  const withDeletion = [DELETE_MEMBER_MESSAGES];
+
+  it("offers no message deletion when banning on a server without delete_member_messages", async () => {
+    serve(OWNER);
+    await renderDialog(OWNER, banAlice);
+    expect(screen.getByRole("dialog", { name: "Ban Alice?" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Last hour" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Don't delete" })).not.toBeInTheDocument();
+    expect(callsTo(requestMock, "query MemberMessageCounts")).toHaveLength(0);
+  });
+
+  it("bans without deleting or counting by default", async () => {
+    serve(OWNER);
+    const { onClose } = await renderDialog(OWNER, banAlice, withDeletion);
+    expect(screen.getByRole("radio", { name: "Don't delete" })).toBeChecked();
+    expect(screen.getByRole("group", { name: "Delete their messages from:" })).toBeInTheDocument();
+    fireEvent.click(confirmButton("Ban"));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(mutationOrder()).toEqual(["BanMember"]);
+    expect(callsTo(requestMock, "query MemberMessageCounts")).toHaveLength(0);
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith("Banned Alice");
+  });
+
+  it("counts the chosen period and names the total on the confirm button", async () => {
+    serve(OWNER);
+    await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Last 24 hours" }));
+
+    expect(await screen.findByText("38 messages in 3 channels")).toBeInTheDocument();
+    expect(callsTo(requestMock, "query MemberMessageCounts")).toEqual([
+      { serverId: "ws-1", userId: "u-alice", since: "2026-10-04T10:00:00.000Z" },
+    ]);
+    expect(screen.getByRole("checkbox", { name: PRIVATE_LABEL })).toBeChecked();
+    expect(confirmButton("Ban and delete 42 messages")).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: PRIVATE_LABEL }));
+    expect(confirmButton("Ban and delete 38 messages")).toBeEnabled();
+  });
+
+  it("hides the private channels checkbox when they hold nothing", async () => {
+    serve(OWNER, { "query MemberMessageCounts": countsOf([38, 3], [0, 0]) });
+    await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Last 7 days" }));
+
+    expect(await screen.findByText("38 messages in 3 channels")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(confirmButton("Ban and delete 38 messages")).toBeEnabled();
+  });
+
+  it("bans first, then deletes until none remain, and says how many", async () => {
+    let round = 0;
+    serve(OWNER, {
+      "mutation DeleteMemberMessages": () => {
+        round += 1;
+        return {
+          deleteMemberMessages:
+            round === 1
+              ? { deleted: 1000, channels: 3, hasMore: true }
+              : { deleted: 42, channels: 4, hasMore: false },
+        };
+      },
+    });
+    const { onClose } = await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Last 24 hours" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ban and delete 42 messages" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(mutationOrder()).toEqual(["BanMember", "DeleteMemberMessages", "DeleteMemberMessages"]);
+    for (const vars of callsTo(requestMock, "mutation DeleteMemberMessages")) {
+      expect(vars).toEqual({
+        serverId: "ws-1",
+        userId: "u-alice",
+        since: "2026-10-04T10:00:00.000Z",
+        includeUnjoinedPrivate: true,
+      });
+    }
+    expect(toast.success).toHaveBeenCalledWith("Banned Alice");
+    expect(toast.success).toHaveBeenCalledWith("Deleted 1042 messages");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("says nothing to delete and only bans when the period is empty", async () => {
+    serve(OWNER, { "query MemberMessageCounts": countsOf([0, 0], [0, 0]) });
+    const { onClose } = await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Everything" }));
+
+    expect(await screen.findByText("Nothing to delete.")).toBeInTheDocument();
+    fireEvent.click(confirmButton("Ban"));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(mutationOrder()).toEqual(["BanMember"]);
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith("Banned Alice");
+  });
+
+  it("says the ban went through when deleting fails", async () => {
+    serve(OWNER, {
+      "mutation DeleteMemberMessages": () => {
+        throw graphqlError("FORBIDDEN", "permission denied");
+      },
+    });
+    const { onClose } = await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Last hour" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ban and delete 42 messages" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(toast.error).toHaveBeenCalledWith(
+      "Banned Alice, but deleting their messages failed: permission denied",
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("deletes nothing when the ban fails", async () => {
+    serve(OWNER, {
+      "mutation BanMember": () => {
+        throw graphqlError("FORBIDDEN", "permission denied");
+      },
+    });
+    const { onClose } = await renderDialog(OWNER, banAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Last hour" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ban and delete 42 messages" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
+    expect(confirmButton("Retry")).toBeInTheDocument();
+    expect(mutationOrder()).toEqual(["BanMember"]);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("the delete messages dialog starts on the last hour and deletes what it counted", async () => {
+    serve(MODERATOR);
+    const { onClose } = await renderDialog(MODERATOR, deleteAlice, withDeletion);
+    expect(screen.getByRole("dialog", { name: "Delete Alice's messages?" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Last hour" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Don't delete" })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 42 messages" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(callsTo(requestMock, "query MemberMessageCounts")[0]).toEqual({
+      serverId: "ws-1",
+      userId: "u-alice",
+      since: "2026-10-05T09:00:00.000Z",
+    });
+    expect(callsTo(requestMock, "mutation DeleteMemberMessages")).toEqual([
+      {
+        serverId: "ws-1",
+        userId: "u-alice",
+        since: "2026-10-05T09:00:00.000Z",
+        includeUnjoinedPrivate: true,
+      },
+    ]);
+    expect(toast.success).toHaveBeenCalledWith("Deleted 42 messages");
+  });
+
+  it("the delete messages dialog reads naturally for a person with no name left", async () => {
+    serve(MODERATOR);
+    await renderDialog(
+      MODERATOR,
+      { action: "delete-messages", member: { ...alice, displayName: "", isFormerMember: true } },
+      withDeletion,
+    );
+    expect(screen.getByRole("dialog", { name: "Delete their messages?" })).toBeInTheDocument();
+    expect(screen.getByText(/^Their messages in this workspace's channels/)).toBeInTheDocument();
+  });
+
+  it("the delete messages dialog cannot confirm with nothing to delete", async () => {
+    serve(MODERATOR, { "query MemberMessageCounts": countsOf([0, 0], [0, 0]) });
+    await renderDialog(MODERATOR, deleteAlice, withDeletion);
+
+    expect(await screen.findByText("Nothing to delete.")).toBeInTheDocument();
+    expect(confirmButton("Delete messages")).toBeDisabled();
+  });
+
+  it("the delete messages dialog sends no since for everything", async () => {
+    serve(MODERATOR);
+    const { onClose } = await renderDialog(MODERATOR, deleteAlice, withDeletion);
+    fireEvent.click(screen.getByRole("radio", { name: "Everything" }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query MemberMessageCounts")).toContainEqual({
+        serverId: "ws-1",
+        userId: "u-alice",
+        since: null,
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 42 messages" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(callsTo(requestMock, "mutation DeleteMemberMessages")).toEqual([
+      { serverId: "ws-1", userId: "u-alice", since: null, includeUnjoinedPrivate: true },
+    ]);
+  });
+
+  it("the delete messages dialog shows the failure with Retry", async () => {
+    serve(MODERATOR, {
+      "mutation DeleteMemberMessages": () => {
+        throw graphqlError("FORBIDDEN", "permission denied");
+      },
+    });
+    const { onClose } = await renderDialog(MODERATOR, deleteAlice, withDeletion);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 42 messages" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
+    expect(confirmButton("Retry")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

@@ -15,8 +15,10 @@ import { conversationLabel } from "../../conversations/utils";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
-import { useRelayStore } from "../../relay/state/useRelayStore";
+import { useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { StatusDropdown } from "../../settings/components/StatusDropdown";
+import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServerRole } from "../api/useMyServerRole";
 import { useClearTimeoutMutation } from "../api/useModeration";
 import { useServerMembers } from "../api/useServerMembers";
@@ -26,7 +28,13 @@ import {
   type MemberModeration,
   type ModeratedMember,
 } from "../components/MemberModerationDialogs";
-import { ServerMemberRoleGql, assignableRoles, canTargetMember, roleLabel } from "../role";
+import {
+  ServerMemberRoleGql,
+  assignableRoles,
+  canDeleteMemberMessages,
+  canTargetMember,
+  roleLabel,
+} from "../role";
 import { TIMEOUT_PRESETS, isTimeoutActive } from "../timeout";
 import { ProfileCard } from "../components/ProfileCard";
 import { useMemberLookup } from "./useMemberLookup";
@@ -95,8 +103,10 @@ type Overlay =
  * On someone else: View profile, Send message, Copy @username, Add to contacts or Remove from
  * contacts, Remove from the conversation (from its members panel), then for an Owner or
  * Moderator who may act on them a Moderation section with Change role, Time out or Clear
- * timeout, Kick and Ban. On the viewer: View profile, Set status, Copy @username and Settings.
- * Items the viewer cannot use are left out; the server re-checks every action.
+ * timeout, Delete messages (on a server that deletes a person's messages), Kick and Ban. On a
+ * former member an Owner or Moderator gets only Delete messages there. On the viewer: View
+ * profile, Set status, Copy @username and Settings. Items the viewer cannot use are left out;
+ * the server re-checks every action.
  */
 export function useUserContextMenu({
   workspaceId,
@@ -113,6 +123,8 @@ export function useUserContextMenu({
   const { addContact } = useAddMemberContact();
   const removeContact = useRemoveContact();
   const clearTimeoutMutation = useClearTimeoutMutation();
+  const { info: serverInfo } = useServerInfo();
+  const inDirectSpace = useIsDirectSpace(workspaceId);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const getItems = (target: UserMenuTarget, anchor: Element): DropdownMenuItem[] => {
@@ -203,8 +215,27 @@ export function useUserContextMenu({
       displayName: name,
       role: info.role,
       timeoutUntil: info.timeoutUntil,
+      isFormerMember: info.isFormerMember,
     };
-    if (!canTargetMember({ userId: viewerId, role: viewerRole }, moderated)) return items;
+    const offersDeletion =
+      hasCapability(serverInfo, DELETE_MEMBER_MESSAGES) &&
+      !inDirectSpace &&
+      canDeleteMemberMessages({ userId: viewerId, role: viewerRole }, moderated);
+    const deleteItem: DropdownMenuItem = {
+      id: "delete-messages",
+      label: "Delete messages…",
+      danger: true,
+      onSelect: () =>
+        setOverlay({
+          kind: "moderation",
+          moderation: { action: "delete-messages", member: moderated },
+        }),
+    };
+    if (!canTargetMember({ userId: viewerId, role: viewerRole }, moderated)) {
+      return offersDeletion
+        ? [...items, { ...deleteItem, separatorBefore: true, sectionBefore: "Moderation" }]
+        : items;
+    }
 
     const moderate = (moderation: MemberModeration) =>
       setOverlay({ kind: "moderation", moderation });
@@ -259,6 +290,7 @@ export function useUserContextMenu({
         ],
       });
     }
+    if (offersDeletion) moderation.push(deleteItem);
     moderation.push(
       {
         id: "kick",

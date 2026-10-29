@@ -55,6 +55,24 @@ function schemaWithoutLeaveAndRename() {
   return buildASTSchema(document);
 }
 
+/** The fields of each type the committed schema has beyond a server without `delete_member_messages`. */
+const MEMBER_MESSAGE_FIELDS = {
+  Query: ["memberMessageCounts"],
+  Mutation: ["deleteMemberMessages"],
+};
+
+/** The committed schema as a server without counting and deleting a person's messages. */
+function schemaWithoutMemberMessageDeletion() {
+  const document = visit(parse(SDL), {
+    ObjectTypeDefinition(node) {
+      const fields = MEMBER_MESSAGE_FIELDS[node.name.value];
+      if (!fields) return undefined;
+      return { ...node, fields: node.fields?.filter((f) => !fields.includes(f.name.value)) };
+    },
+  });
+  return buildASTSchema(document);
+}
+
 describe("skew check", () => {
   const documents = collectDocuments();
 
@@ -94,6 +112,14 @@ describe("skew check", () => {
     expect(refused.map((r) => r.label).sort()).toEqual([
       "mutation LeaveWorkspace",
       "mutation RenameWorkspace",
+    ]);
+  });
+
+  it("refuses only the member message deletion documents on a server without delete_member_messages", () => {
+    const refused = refusedOperations(schemaWithoutMemberMessageDeletion(), documents);
+    expect(refused.map((r) => r.label).sort()).toEqual([
+      "mutation DeleteMemberMessages",
+      "query MemberMessageCounts",
     ]);
   });
 });

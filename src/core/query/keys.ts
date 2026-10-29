@@ -17,6 +17,8 @@ export const queryKeys = {
   // Moderation: active bans, and message reports filtered by status (null = all), with the
   // authors' principal ids when an instance operator reads the direct space's reports.
   serverBans: (serverId?: string) => ["serverBans", serverId] as const,
+  memberMessageCounts: (serverId?: string, userId?: string, period?: string) =>
+    ["memberMessageCounts", serverId, userId, period] as const,
   messageReports: (serverId?: string, status?: string | null, withAuthorPrincipal = false) =>
     ["messageReports", serverId, status ?? null, withAuthorPrincipal] as const,
   // One report with its verified encrypted content; under the reports root so a resolve

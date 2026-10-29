@@ -60,6 +60,18 @@ export type WorkspaceEvent =
       thread_id: string | null;
     }
   /**
+   * Several of one person's messages in one channel deleted at once by an Owner or a Moderator;
+   * `thread_ids` are the distinct threads of the deleted replies. One event per channel.
+   */
+  | {
+      type: "MessagesDeleted";
+      workspace_id: string;
+      conversation_id: string;
+      conversation_type: string;
+      message_ids: string[];
+      thread_ids: string[];
+    }
+  /**
    * The automatic text art check flagged a message (`flagged` true), or an Owner, a Moderator or
    * a later check cleared its flag.
    */

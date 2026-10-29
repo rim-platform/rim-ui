@@ -4,10 +4,13 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import {
   PageDir,
+  type DeletedMemberMessages,
+  type MemberMessageCounts,
   type MessageReportStatus,
   type MutationBanMemberArgs,
   type MutationClearMessageFlagArgs,
   type MutationClearTimeoutArgs,
+  type MutationDeleteMemberMessagesArgs,
   type MutationKickMemberArgs,
   type MutationDeleteMessageArgs,
   type MutationReportEncryptedMessageArgs,
@@ -16,6 +19,7 @@ import {
   type MutationSetMemberRoleArgs,
   type MutationTimeoutMemberArgs,
   type MutationUnbanMemberArgs,
+  type QueryMemberMessageCountsArgs,
   type ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
@@ -23,6 +27,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { setMessageFlagged } from "../../../core/events/messageFlag";
 import { toast } from "../../../shared/toast";
 import { MESSAGE_FLAG, serverHasCapability } from "../../updater/api/serverCapabilities";
+import { countOf, periodSince, type DeletePeriod } from "../memberMessages";
 
 /**
  * Moderation calls: member role changes, kick, ban, timeout, reports. Every mutation is
@@ -232,6 +237,41 @@ const MESSAGE_REPORT_WITH_AUTOMATIC = gql`
 const CLEAR_MESSAGE_FLAG = gql`
   mutation ClearMessageFlag($serverId: ID!, $conversationId: ID!, $messageId: ID!) {
     clearMessageFlag(serverId: $serverId, conversationId: $conversationId, messageId: $messageId)
+  }
+`;
+
+const MEMBER_MESSAGE_COUNTS = gql`
+  query MemberMessageCounts($serverId: ID!, $userId: ID!, $since: DateTime) {
+    memberMessageCounts(serverId: $serverId, userId: $userId, since: $since) {
+      readable {
+        messages
+        channels
+      }
+      unjoinedPrivate {
+        messages
+        channels
+      }
+    }
+  }
+`;
+
+const DELETE_MEMBER_MESSAGES = gql`
+  mutation DeleteMemberMessages(
+    $serverId: ID!
+    $userId: ID!
+    $since: DateTime
+    $includeUnjoinedPrivate: Boolean!
+  ) {
+    deleteMemberMessages(
+      serverId: $serverId
+      userId: $userId
+      since: $since
+      includeUnjoinedPrivate: $includeUnjoinedPrivate
+    ) {
+      deleted
+      channels
+      hasMore
+    }
   }
 `;
 
@@ -526,5 +566,93 @@ export function useClearMessageFlag() {
       toast.success("Flag cleared");
     },
     onError: (err) => toast.error(graphqlErrorMessage(err, "Could not clear the flag")),
+  });
+}
+
+/**
+ * Most `deleteMemberMessages` calls one deletion makes (1000 each) before it stops and says more
+ * remain.
+ */
+export const MAX_DELETE_ROUNDS = 50;
+
+/** What one deletion of a person's messages did. */
+export interface MemberMessagesDeleted {
+  /** Messages deleted over every call. */
+  deleted: number;
+  /** Whether matching messages remain after the last call. */
+  hasMore: boolean;
+}
+
+/** A person's message counts, with the `since` they were asked for. */
+export interface MemberMessageCountsResult {
+  counts: MemberMessageCounts;
+  /** The bound the counts were asked with, which the delete then sends. */
+  since: string | null;
+}
+
+/**
+ * Deletes a person's messages, calling `deleteMemberMessages` again while more remain, at most
+ * {@link MAX_DELETE_ROUNDS} times; stops early when a call deletes nothing.
+ *
+ * @returns How many were deleted, and whether more remain.
+ * @throws The first call's error unchanged; a later call's error as an `Error` that names how
+ * many were already deleted.
+ */
+export async function deleteAllMemberMessages(
+  vars: MutationDeleteMemberMessagesArgs,
+): Promise<MemberMessagesDeleted> {
+  let deleted = 0;
+  try {
+    for (let round = 0; round < MAX_DELETE_ROUNDS; round += 1) {
+      const res = (
+        await graphqlClient.request<{ deleteMemberMessages: DeletedMemberMessages }>(
+          DELETE_MEMBER_MESSAGES,
+          vars,
+        )
+      ).deleteMemberMessages;
+      deleted += res.deleted;
+      if (!res.hasMore || res.deleted === 0) return { deleted, hasMore: res.hasMore };
+    }
+  } catch (err) {
+    if (deleted === 0) throw err;
+    throw new Error(
+      `Deleted ${countOf(deleted, "message")}, then: ${graphqlErrorMessage(err, "the rest could not be deleted")}`,
+      { cause: err },
+    );
+  }
+  return { deleted, hasMore: true };
+}
+
+/**
+ * How many of a person's messages a delete over `period` would reach; not fetched for `none`,
+ * never cached once no dialog shows it.
+ */
+export function useMemberMessageCounts(serverId: string, userId: string, period: DeletePeriod) {
+  return useQuery({
+    queryKey: queryKeys.memberMessageCounts(serverId, userId, period),
+    enabled: period !== "none",
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<MemberMessageCountsResult> => {
+      const since = periodSince(period);
+      const res = await graphqlClient.request<{ memberMessageCounts: MemberMessageCounts }>(
+        MEMBER_MESSAGE_COUNTS,
+        { serverId, userId, since } satisfies QueryMemberMessageCountsArgs,
+      );
+      return { counts: res.memberMessageCounts, since };
+    },
+  });
+}
+
+/** Deletes a person's messages with {@link deleteAllMemberMessages}, then drops their counts. */
+export function useDeleteMemberMessages() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deleteAllMemberMessages,
+    onSettled: (_data, _error, vars) => {
+      void qc.invalidateQueries({ queryKey: ["memberMessageCounts", vars.serverId, vars.userId] });
+    },
   });
 }

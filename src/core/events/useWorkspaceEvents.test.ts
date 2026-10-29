@@ -734,6 +734,99 @@ describe("useWorkspaceEvents message flags", () => {
   });
 });
 
+describe("useWorkspaceEvents bulk message deletion", () => {
+  const key = queryKeys.messages("ws-1", "c-1");
+
+  /** A client holding c-1's timeline with m-1, m-2 and m-3. */
+  function cachedTimeline(): QueryClient {
+    const qc = new QueryClient();
+    qc.setQueryData(key, {
+      pages: [
+        {
+          items: ["m-1", "m-2", "m-3"].map((id) => ({
+            id,
+            text: `text of ${id}`,
+            isDeleted: false,
+            sentAt: "x",
+          })),
+          next: null,
+          prev: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      ],
+      pageParams: [null],
+    });
+    return qc;
+  }
+
+  function messagesDeleted(messageIds: string[], threadIds: string[] = []): WorkspaceEvent {
+    return {
+      type: "MessagesDeleted",
+      workspace_id: "ws-1",
+      conversation_id: "c-1",
+      conversation_type: "channel",
+      message_ids: messageIds,
+      thread_ids: threadIds,
+    };
+  }
+
+  function timeline(qc: QueryClient) {
+    return qc.getQueryData<{ pages: { items: Record<string, unknown>[] }[] }>(key)?.pages[0].items;
+  }
+
+  it("MessagesDeleted marks the listed timeline messages deleted and leaves the others", () => {
+    const qc = cachedTimeline();
+    applyWorkspaceEvent(messagesDeleted(["m-1", "m-3", "r-9"]), qc, "ws-1");
+    expect(timeline(qc)).toEqual([
+      { id: "m-1", text: "", isDeleted: true, sentAt: "x" },
+      { id: "m-2", text: "text of m-2", isDeleted: false, sentAt: "x" },
+      { id: "m-3", text: "", isDeleted: true, sentAt: "x" },
+    ]);
+  });
+
+  it("MessagesDeleted refetches each listed thread, the thread roots and the reply counts", () => {
+    const qc = cachedTimeline();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(messagesDeleted(["r-1", "r-2"], ["t-1", "t-2"]), qc, "ws-1");
+    expect(spy).toHaveBeenCalledWith({
+      queryKey: queryKeys.threadMessages("ws-1", "c-1", "t-1"),
+    });
+    expect(spy).toHaveBeenCalledWith({
+      queryKey: queryKeys.threadMessages("ws-1", "c-1", "t-2"),
+    });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["threadByRoot", "ws-1", "c-1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["threadReplyCount", "ws-1", "c-1"] });
+  });
+
+  it("MessagesDeleted without threads leaves the thread queries alone", () => {
+    const qc = cachedTimeline();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(messagesDeleted(["m-1"]), qc, "ws-1");
+    const roots = spy.mock.calls.map(([filters]) => filters?.queryKey?.[0]);
+    expect(roots).not.toContain("threadMessages");
+    expect(roots).not.toContain("threadByRoot");
+    expect(roots).not.toContain("threadReplyCount");
+  });
+
+  it("MessagesDeleted asks the message cache to sync the conversation", () => {
+    const qc = cachedTimeline();
+    vi.mocked(requestCacheSync).mockClear();
+    applyWorkspaceEvent(messagesDeleted(["m-1"]), qc, "ws-1");
+    expect(requestCacheSync).toHaveBeenCalledWith("ws-1", ["c-1"]);
+  });
+
+  it("MessagesDeleted refetches the pins, search results, unread counts and the notification inbox", () => {
+    const qc = cachedTimeline();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(messagesDeleted(["m-1"]), qc, "ws-1");
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["pinnedMessages", "ws-1", "c-1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["searchMessages", "ws-1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.unreadCounts("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.unreadNotificationCount("ws-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["notifications", "ws-1"] });
+  });
+});
+
 describe("useWorkspaceEvents thread reply counts", () => {
   beforeEach(() => {
     subscribeObserver = null;

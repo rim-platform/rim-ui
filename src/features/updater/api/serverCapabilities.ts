@@ -17,6 +17,9 @@ export const WORKSPACE_LEAVE = "workspace_leave";
 /** The capability of a server with `renameWorkspace`. */
 export const WORKSPACE_RENAME = "workspace_rename";
 
+/** The capability of a server with `memberMessageCounts`, `deleteMemberMessages` and the `MessagesDeleted` event. */
+export const DELETE_MEMBER_MESSAGES = "delete_member_messages";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

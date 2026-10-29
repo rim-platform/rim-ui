@@ -663,6 +663,16 @@ export type DeleteWorkspaceStateInput = {
   serverId: Scalars['ID']['input'];
 };
 
+/** The outcome of one `deleteMemberMessages` call. */
+export type DeletedMemberMessages = {
+  /** Channels those messages were in. */
+  channels: Scalars['Int']['output'];
+  /** Messages deleted by this call. */
+  deleted: Scalars['Int']['output'];
+  /** Whether matching messages remain; call again to delete them. */
+  hasMore: Scalars['Boolean']['output'];
+};
+
 export type DeviceKey = {
   addedAt: Scalars['DateTime']['output'];
   certificate: SignedStatement;
@@ -1309,6 +1319,17 @@ export type MarkAsReadInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+/**
+ * How many of a person's messages in the workspace's channels `deleteMemberMessages` would
+ * reach with the same `since`.
+ */
+export type MemberMessageCounts = {
+  /** In public channels and the private channels the caller is a member of. */
+  readable: MessageTally;
+  /** In private channels the caller is not a member of; counts only, never the channels. */
+  unjoinedPrivate: MessageTally;
+};
+
 /** A member's timeout: until `until` they can read but not write in the workspace. */
 export type MemberTimeout = {
   createdAt: Scalars['DateTime']['output'];
@@ -1521,6 +1542,12 @@ export enum MessageReportStatus {
   RESOLVED = 'RESOLVED'
 }
 
+/** A count of a person's messages and of the channels they are in. */
+export type MessageTally = {
+  channels: Scalars['Int']['output'];
+  messages: Scalars['Int']['output'];
+};
+
 export type MlsCommit = {
   createdAt: Scalars['DateTime']['output'];
   /** The epoch the Commit was created in; the group moved to the next. */
@@ -1708,6 +1735,17 @@ export type Mutation = {
   deleteCustomEmoji: Scalars['Boolean']['output'];
   deleteKeybind: Scalars['Boolean']['output'];
   deleteMacro: Scalars['Boolean']['output'];
+  /**
+   * Delete a person's messages in the workspace's channels, thread replies included, sent at
+   * or after `since` (all of them when null); private channels the caller is not in only
+   * with `includeUnjoinedPrivate`. Owner/Moderator, with the targeting rules of `kickMember`;
+   * works for a former member. Never touches DMs, groups, the direct space, encrypted or
+   * archived conversations. Deletes at most 1000 messages per call: call again while
+   * `hasMore`. Each channel gets one `MessagesDeleted` event; audited
+   * (`admin.delete_member_messages`) when any was deleted. Listed in
+   * `serverInfo.capabilities` as `delete_member_messages`.
+   */
+  deleteMemberMessages: DeletedMemberMessages;
   deleteMessage: Scalars['Boolean']['output'];
   /**
    * Delete a pipeline. Allowed for its creator and for an Owner or Moderator of its
@@ -2400,6 +2438,14 @@ export type MutationDeleteKeybindArgs = {
 
 export type MutationDeleteMacroArgs = {
   macroId: Scalars['ID']['input'];
+};
+
+
+export type MutationDeleteMemberMessagesArgs = {
+  includeUnjoinedPrivate: Scalars['Boolean']['input'];
+  serverId: Scalars['ID']['input'];
+  since?: InputMaybe<Scalars['DateTime']['input']>;
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -3186,6 +3232,7 @@ export type PipelineTriggerInput = {
 
 export enum PipelineTriggerKindGql {
   MEMBER_JOINED = 'MEMBER_JOINED',
+  /** A message was deleted one at a time; a bulk delete (`deleteMemberMessages`) fires none. */
   MESSAGE_DELETED = 'MESSAGE_DELETED',
   MESSAGE_UPDATED = 'MESSAGE_UPDATED',
   NEW_MESSAGE = 'NEW_MESSAGE',
@@ -3428,6 +3475,14 @@ export type Query = {
   listAuditLog: AuditLogPage;
   macroByName?: Maybe<MacroDef>;
   me: User;
+  /**
+   * How many of a person's messages in the workspace's channels, sent at or after `since`
+   * (all of them when null), `deleteMemberMessages` would reach: in channels the caller reads,
+   * and in private channels the caller is not in (numbers only). Owner/Moderator; the
+   * targeting rules of `kickMember`, and works for a former member. Listed in
+   * `serverInfo.capabilities` as `delete_member_messages`.
+   */
+  memberMessageCounts: MemberMessageCounts;
   message: Message;
   /**
    * The message change feed: for each conversation, the messages created, edited or deleted
@@ -3708,6 +3763,13 @@ export type QueryListAuditLogArgs = {
 export type QueryMacroByNameArgs = {
   name: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryMemberMessageCountsArgs = {
+  serverId: Scalars['ID']['input'];
+  since?: InputMaybe<Scalars['DateTime']['input']>;
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -4317,7 +4379,10 @@ export type ServerInfo = {
   /**
    * API additions this server has that an older server lacks, by name: `message_edited_at`
    * (`Message.editedAt`), `workspace_leave` (`leaveWorkspace`), `workspace_rename`
-   * (`renameWorkspace`). A client ignores names it does not know.
+   * (`renameWorkspace`), `message_flag` (`Message.flagged`, `MessageReport.automatic`,
+   * `clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
+   * `deleteMemberMessages`, the `MessagesDeleted` event). A client ignores names it does not
+   * know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**

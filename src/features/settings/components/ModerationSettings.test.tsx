@@ -7,6 +7,7 @@ import { fakeServerInfo } from "../../../test/serverInfo";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import { DELETE_MEMBER_MESSAGES } from "../../updater/api/serverCapabilities";
 import {
   baseReadHandlers,
   callsTo,
@@ -100,6 +101,12 @@ function serve(extra: Record<string, (vars: Record<string, unknown>) => unknown>
       messageReports: vars.cursor ? secondPage : firstPage,
     }),
     "mutation UnbanMember": () => ({ unbanMember: true }),
+    "query MemberMessageCounts": () => ({
+      memberMessageCounts: {
+        readable: { messages: 5, channels: 2 },
+        unjoinedPrivate: { messages: 0, channels: 0 },
+      },
+    }),
     "mutation ResolveReport": (vars) => ({
       resolveReport: { id: vars.reportId, status: vars.outcome },
     }),
@@ -108,8 +115,12 @@ function serve(extra: Record<string, (vars: Record<string, unknown>) => unknown>
   routeRequests(requestMock, Object.assign(handlers, extra));
 }
 
-function renderSettings() {
+/** Renders the settings; with `capabilities`, against a server that lists them. */
+function renderSettings(capabilities?: string[]) {
   const qc = createTestQueryClient();
+  if (capabilities) {
+    qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
+  }
   render(
     <QueryClientProvider client={qc}>
       <ModerationSettings serverId="ws-1" />
@@ -158,6 +169,29 @@ describe("ModerationSettings", () => {
       ]),
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Unbanned Carol"));
+  });
+
+  it("offers Delete messages… for a banned person on a server that deletes member messages", async () => {
+    serve();
+    renderSettings([DELETE_MEMBER_MESSAGES]);
+    const carol = await screen.findByTestId("ban-row-u-carol");
+    fireEvent.click(within(carol).getByRole("button", { name: "Delete Carol's messages" }));
+
+    expect(screen.getByRole("dialog", { name: "Delete Carol's messages?" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Last hour" })).toBeChecked();
+    expect(await screen.findByText("5 messages in 2 channels")).toBeInTheDocument();
+    expect(callsTo(requestMock, "query MemberMessageCounts")[0]).toMatchObject({
+      serverId: "ws-1",
+      userId: "u-carol",
+    });
+  });
+
+  it("offers no Delete messages… in the bans list on an older server", async () => {
+    serve();
+    renderSettings([]);
+    const carol = await screen.findByTestId("ban-row-u-carol");
+    expect(within(carol).queryByRole("button", { name: /messages/ })).not.toBeInTheDocument();
+    expect(within(carol).getByRole("button", { name: "Unban Carol" })).toBeInTheDocument();
   });
 
   it("asks for open reports by default and shows reporter, reason and message", async () => {

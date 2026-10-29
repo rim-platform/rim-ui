@@ -10,6 +10,8 @@ import { personName } from "../../../shared/utils/handles";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { MessageReportStatus, ReportOutcome } from "../../../core/graphql/generated/schema-types";
+import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import {
   useDeleteReportedMessageMutation,
@@ -20,6 +22,10 @@ import {
   type MessageReportRow,
   type ServerBanRow,
 } from "../../workspaces/api/useModeration";
+import {
+  MemberModerationDialog,
+  type ModeratedMember,
+} from "../../workspaces/components/MemberModerationDialogs";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { JoinRequestsSection } from "../../workspaces/components/JoinRequestsSection";
@@ -32,9 +38,10 @@ interface ModerationSettingsProps {
 
 /**
  * Settings → Workspace → Moderation (Owner/Moderator): open join requests with Accept and
- * Decline (in a workspace that can have a public link), active bans with Unban, and message
- * reports with Resolve / Dismiss, including the verified content of reported encrypted
- * messages. The server answers `FORBIDDEN` to anyone else and that message is shown here.
+ * Decline (in a workspace that can have a public link), active bans with Unban (and Delete
+ * messages on a server that deletes a person's messages), and message reports with Resolve /
+ * Dismiss, including the verified content of reported encrypted messages. The server answers
+ * `FORBIDDEN` to anyone else and that message is shown here.
  */
 export function ModerationSettings({ serverId }: ModerationSettingsProps) {
   const canModerate = useCanModerate(serverId ?? undefined);
@@ -66,6 +73,8 @@ function BansList({ serverId }: { serverId: string }) {
   const { data: bans, isPending, isError, error } = useServerBans(serverId);
   const unban = useUnbanMemberMutation();
   const qc = useQueryClient();
+  const offersDeletion = hasCapability(useServerInfo().info, DELETE_MEMBER_MESSAGES);
+  const [deleting, setDeleting] = useState<ModeratedMember | null>(null);
 
   function banName(ban: ServerBanRow): string {
     return ban.user ? personName(ban.user, ban.userId, null) : "this person";
@@ -118,6 +127,19 @@ function BansList({ serverId }: { serverId: string }) {
                     {ban.expiresAt ? `Expires ${formatTime(ban.expiresAt)}` : "Never expires"}
                   </p>
                 </div>
+                {offersDeletion && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Delete ${name}'s messages`}
+                    onClick={() =>
+                      setDeleting({ userId: ban.userId, displayName: name, isFormerMember: true })
+                    }
+                  >
+                    Delete messages…
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="secondary"
@@ -132,6 +154,13 @@ function BansList({ serverId }: { serverId: string }) {
             );
           })}
         </ul>
+      )}
+      {deleting && (
+        <MemberModerationDialog
+          workspaceId={serverId}
+          moderation={{ action: "delete-messages", member: deleting }}
+          onClose={() => setDeleting(null)}
+        />
       )}
     </div>
   );

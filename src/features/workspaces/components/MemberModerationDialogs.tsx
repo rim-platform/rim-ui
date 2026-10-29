@@ -1,15 +1,21 @@
 import { useRef, useState } from "react";
 
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
+import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServerRole } from "../api/useMyServerRole";
 import {
   useBanMemberMutation,
   useKickMemberMutation,
   useSetMemberRoleMutation,
   useTimeoutMemberMutation,
+  type MemberMessagesDeleted,
 } from "../api/useModeration";
+import { useMemberMessageDeletion } from "../hooks/useMemberMessageDeletion";
+import { countOf, deletedText } from "../memberMessages";
 import { assignableRoles, roleLabel, type ServerMemberRoleGql } from "../role";
 import {
   BAN_EXPIRY_PRESETS,
@@ -17,6 +23,7 @@ import {
   futureIsoFromLocalInput,
   isoInSeconds,
 } from "../timeout";
+import { DeleteMessagesFields } from "./DeleteMessagesFields";
 import { ModerationDialog, ReasonField } from "./ModerationDialog";
 
 export interface ModeratedMember {
@@ -24,6 +31,8 @@ export interface ModeratedMember {
   displayName: string;
   role?: ServerMemberRoleGql | null;
   timeoutUntil?: string | null;
+  /** Whether the person has left the workspace; their role is then unknown. */
+  isFormerMember?: boolean;
 }
 
 /** The duration choice of the timeout dialog that reveals a date and time input. */
@@ -37,11 +46,13 @@ export type MemberModeration =
   | { action: "role"; member: ModeratedMember; role: ServerMemberRoleGql }
   | { action: "timeout"; member: ModeratedMember; preset: string }
   | { action: "kick"; member: ModeratedMember }
-  | { action: "ban"; member: ModeratedMember };
+  | { action: "ban"; member: ModeratedMember }
+  | { action: "delete-messages"; member: ModeratedMember };
 
 /**
  * The confirmation dialog of a moderation action on a member, with the menu's choice already
- * made: change role, time out, kick or ban. The server re-checks that the viewer may act.
+ * made: change role, time out, kick, ban or delete their messages. The server re-checks that the
+ * viewer may act.
  */
 export function MemberModerationDialog({
   workspaceId,
@@ -76,6 +87,8 @@ export function MemberModerationDialog({
       return <KickDialog workspaceId={workspaceId} member={member} onClose={onClose} />;
     case "ban":
       return <BanDialog workspaceId={workspaceId} member={member} onClose={onClose} />;
+    case "delete-messages":
+      return <DeleteMessagesDialog workspaceId={workspaceId} member={member} onClose={onClose} />;
   }
 }
 
@@ -296,6 +309,10 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
   const [expiry, setExpiry] = useState(NEVER);
   const [custom, setCustom] = useState("");
   const banMember = useBanMemberMutation();
+  const offersDeletion = hasCapability(useServerInfo().info, DELETE_MEMBER_MESSAGES);
+  const deletion = useMemberMessageDeletion(workspaceId, member.userId, "none");
+  const deleted = useRef<MemberMessagesDeleted | null>(null);
+  const deleteError = useRef<unknown>(null);
 
   const customExpiry = expiry === CUSTOM_DURATION ? futureIsoFromLocalInput(custom) : null;
 
@@ -311,19 +328,37 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       title={`Ban ${member.displayName}?`}
       description={`${member.displayName} will be removed from the workspace and cannot rejoin, even with an invite, until the ban ends or is lifted.`}
       tone="danger"
-      confirmLabel="Ban"
-      confirmDisabled={expiry === CUSTOM_DURATION && !customExpiry}
+      confirmLabel={
+        deletion.total > 0 ? `Ban and delete ${countOf(deletion.total, "message")}` : "Ban"
+      }
+      confirmDisabled={(expiry === CUSTOM_DURATION && !customExpiry) || !deletion.ready}
       errorFallback="Could not ban the member"
-      onConfirm={() =>
-        banMember.mutateAsync({
+      onConfirm={async () => {
+        deleted.current = null;
+        deleteError.current = null;
+        await banMember.mutateAsync({
           serverId: workspaceId,
           userId: member.userId,
           reason: trimmedOrNull(reason),
           expiresAt: computeExpiry(),
-        })
-      }
+        });
+        if (deletion.total === 0) return;
+        // A ban that went through never offers Retry: a failed delete is reported on its own.
+        try {
+          deleted.current = await deletion.run();
+        } catch (err) {
+          deleteError.current = err;
+        }
+      }}
       onDone={() => {
-        toast.success(`Banned ${member.displayName}`);
+        if (deleteError.current) {
+          toast.error(
+            `Banned ${member.displayName}, but deleting their messages failed: ${graphqlErrorMessage(deleteError.current, "the server refused")}`,
+          );
+        } else {
+          toast.success(`Banned ${member.displayName}`);
+          if (deleted.current) toast.success(deletedText(deleted.current));
+        }
         onClose();
       }}
       onClose={onClose}
@@ -339,6 +374,40 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
         customValue={custom}
         onCustomChange={setCustom}
       />
+      {offersDeletion && (
+        <DeleteMessagesFields deletion={deletion} legend="Delete their messages from:" offerNone />
+      )}
+    </ModerationDialog>
+  );
+}
+
+/** Deletes a person's messages over a chosen period, starting on the last hour. */
+function DeleteMessagesDialog({ workspaceId, member, onClose }: ActionDialogProps) {
+  const deletion = useMemberMessageDeletion(workspaceId, member.userId, "1h");
+  const result = useRef<MemberMessagesDeleted | null>(null);
+  // A former member may have no name left to show.
+  const whose = member.displayName ? `${member.displayName}'s` : "their";
+
+  return (
+    <ModerationDialog
+      title={`Delete ${whose} messages?`}
+      description={`${whose.charAt(0).toUpperCase()}${whose.slice(1)} messages in this workspace's channels, thread replies included, are deleted for everyone. Direct messages, groups, and encrypted or archived channels are left alone.`}
+      tone="danger"
+      confirmLabel={
+        deletion.total > 0 ? `Delete ${countOf(deletion.total, "message")}` : "Delete messages"
+      }
+      confirmDisabled={deletion.total === 0}
+      errorFallback="Could not delete the messages"
+      onConfirm={async () => {
+        result.current = await deletion.run();
+      }}
+      onDone={() => {
+        if (result.current) toast.success(deletedText(result.current));
+        onClose();
+      }}
+      onClose={onClose}
+    >
+      <DeleteMessagesFields deletion={deletion} legend="Delete messages from:" offerNone={false} />
     </ModerationDialog>
   );
 }

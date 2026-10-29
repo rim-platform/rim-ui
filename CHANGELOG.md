@@ -30,6 +30,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Messages the server's automatic check flags (sexual text art) are covered with Show anyway;
   Owners and Moderators can Clear flag, and the check's reports show as Automatic check in
   Moderation. Needs a server that lists `message_flag`; older servers work as before.
+- Owners and Moderators can delete a person's messages in the workspace's channels from the last
+  hour, 24 hours, 7 days or all of them: with Delete messages… in the person's menu or in
+  Settings → Moderation → Bans, or while banning them. The dialog counts the messages first and
+  lists private channels you are not in apart, so they can be left out. Needs a server that lists
+  `delete_member_messages`; older servers work as before.
 
 ### Fixed
 

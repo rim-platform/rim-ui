@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { fakeServerInfo } from "../../../test/serverInfo";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { DELETE_MEMBER_MESSAGES } from "../../updater/api/serverCapabilities";
 import {
   callsTo,
   currentUser,
@@ -44,6 +46,13 @@ interface Alice {
 
 function serve(viewerRole: ServerMemberRoleGql, alice: Alice = {}) {
   routeRequests(requestMock, {
+    // Before "query Me", which is a prefix of it.
+    "query MemberMessageCounts": () => ({
+      memberMessageCounts: {
+        readable: { messages: 3, channels: 1 },
+        unjoinedPrivate: { messages: 0, channels: 0 },
+      },
+    }),
     "query Me": () => ({ me: currentUser }),
     "query ServerMembers": () => ({
       serverMembers: workspaceMembers.map((m) =>
@@ -94,11 +103,14 @@ function Person({
   );
 }
 
+/** Renders a person against a server that lists `capabilities`, once the menu's reads are in. */
 async function renderPerson(
   viewerRole: ServerMemberRoleGql,
   props: Partial<Parameters<typeof Person>[0]> = {},
+  capabilities?: string[],
 ) {
   const qc = createTestQueryClient();
+  qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
   render(
     <QueryClientProvider client={qc}>
       <Person userId="u-alice" {...props} />
@@ -225,6 +237,69 @@ describe("useUserContextMenu", () => {
       "aria-checked",
       "false",
     );
+  });
+
+  it("offers Delete messages… before Kick and Ban on a server that deletes member messages", async () => {
+    serve(OWNER);
+    await renderPerson(OWNER, {}, [DELETE_MEMBER_MESSAGES]);
+    expect(openMenu()).toEqual([
+      "View profile",
+      "Send message",
+      "Copy @username",
+      "Change role",
+      "Time out",
+      "Delete messages…",
+      "Kick…",
+      "Ban…",
+    ]);
+    expect(screen.getByRole("menuitem", { name: "Delete messages…" })).toHaveClass(
+      "text-rim-danger",
+    );
+  });
+
+  it.each(matrix)(
+    "viewer %s on target %s with the capability: Delete messages… %s",
+    async (viewer, target, shown) => {
+      serve(viewer, { role: target });
+      await renderPerson(viewer, {}, [DELETE_MEMBER_MESSAGES]);
+      const items = openMenu();
+      if (shown) expect(items).toContain("Delete messages…");
+      else expect(items).not.toContain("Delete messages…");
+    },
+  );
+
+  it("offers no Delete messages… on a server without the capability", async () => {
+    serve(OWNER);
+    await renderPerson(OWNER);
+    expect(openMenu()).not.toContain("Delete messages…");
+  });
+
+  it("offers an Owner or a Moderator only Delete messages… on a former member", async () => {
+    for (const viewer of [OWNER, MODERATOR]) {
+      serve(viewer);
+      await renderPerson(viewer, { userId: "u-gone" }, [DELETE_MEMBER_MESSAGES]);
+      expect(openMenu()).toEqual(["View profile", "Send message", "Delete messages…"]);
+      expect(screen.getByText("Moderation")).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it("offers a member nothing to moderate on a former member", async () => {
+    serve(MEMBER);
+    await renderPerson(MEMBER, { userId: "u-gone" }, [DELETE_MEMBER_MESSAGES]);
+    expect(openMenu()).toEqual(["View profile", "Send message"]);
+    expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
+  });
+
+  it("opens the delete messages dialog on the last hour", async () => {
+    serve(MODERATOR);
+    await renderPerson(MODERATOR, {}, [DELETE_MEMBER_MESSAGES]);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete messages…" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Delete Alice's messages?" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Last hour" })).toBeChecked();
+    await waitFor(() => expect(callsTo(requestMock, "query MemberMessageCounts")).toHaveLength(1));
   });
 
   it("offers a moderator only Member and Guest for a guest", async () => {
