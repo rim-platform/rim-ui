@@ -6,6 +6,7 @@ import {
   PageDir,
   type MessageReportStatus,
   type MutationBanMemberArgs,
+  type MutationClearMessageFlagArgs,
   type MutationClearTimeoutArgs,
   type MutationKickMemberArgs,
   type MutationDeleteMessageArgs,
@@ -18,6 +19,10 @@ import {
   type ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { setMessageFlagged } from "../../../core/events/messageFlag";
+import { toast } from "../../../shared/toast";
+import { MESSAGE_FLAG, serverHasCapability } from "../../updater/api/serverCapabilities";
 
 /**
  * Moderation calls: member role changes, kick, ban, timeout, reports. Every mutation is
@@ -122,24 +127,26 @@ const MESSAGE_REPORT_ROW_FIELDS = gql`
   }
 `;
 
-const MESSAGE_REPORTS = gql`
-  query MessageReports(
+/** The variables of a page of reports. */
+const MESSAGE_REPORTS_VARIABLES = `
     $serverId: ID!
     $status: MessageReportStatus
     $dir: PageDir!
     $cursor: MessageReportCursorInput
     $limit: Int!
-  ) {
-    messageReports(
+`;
+
+/** The arguments of `messageReports` in a page of reports. */
+const MESSAGE_REPORTS_ARGUMENTS = `
       serverId: $serverId
       status: $status
       dir: $dir
       cursor: $cursor
       limit: $limit
-    ) {
-      items {
-        ...MessageReportRowFields
-      }
+`;
+
+/** A page of reports' cursor and page info. */
+const MESSAGE_REPORTS_PAGE_INFO = `
       next {
         createdAt
         reportId
@@ -148,6 +155,29 @@ const MESSAGE_REPORTS = gql`
         hasNext
         hasPrev
       }
+`;
+
+const MESSAGE_REPORTS = gql`
+  query MessageReports(${MESSAGE_REPORTS_VARIABLES}) {
+    messageReports(${MESSAGE_REPORTS_ARGUMENTS}) {
+      items {
+        ...MessageReportRowFields
+      }
+      ${MESSAGE_REPORTS_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_REPORT_ROW_FIELDS}
+`;
+
+/** The same with `MessageReport.automatic`, for a server that lists `message_flag`. */
+const MESSAGE_REPORTS_WITH_AUTOMATIC = gql`
+  query MessageReportsWithAutomatic(${MESSAGE_REPORTS_VARIABLES}) {
+    messageReports(${MESSAGE_REPORTS_ARGUMENTS}) {
+      items {
+        ...MessageReportRowFields
+        automatic
+      }
+      ${MESSAGE_REPORTS_PAGE_INFO}
     }
   }
   ${MESSAGE_REPORT_ROW_FIELDS}
@@ -159,32 +189,13 @@ const MESSAGE_REPORTS = gql`
  * keeps working against a server without the field.
  */
 const DIRECT_SPACE_MESSAGE_REPORTS = gql`
-  query DirectSpaceMessageReports(
-    $serverId: ID!
-    $status: MessageReportStatus
-    $dir: PageDir!
-    $cursor: MessageReportCursorInput
-    $limit: Int!
-  ) {
-    messageReports(
-      serverId: $serverId
-      status: $status
-      dir: $dir
-      cursor: $cursor
-      limit: $limit
-    ) {
+  query DirectSpaceMessageReports(${MESSAGE_REPORTS_VARIABLES}) {
+    messageReports(${MESSAGE_REPORTS_ARGUMENTS}) {
       items {
         ...MessageReportRowFields
         messageAuthorPrincipalId
       }
-      next {
-        createdAt
-        reportId
-      }
-      pageInfo {
-        hasNext
-        hasPrev
-      }
+      ${MESSAGE_REPORTS_PAGE_INFO}
     }
   }
   ${MESSAGE_REPORT_ROW_FIELDS}
@@ -199,24 +210,28 @@ const REPORT_ENCRYPTED_MESSAGE = gql`
 const MESSAGE_REPORT = gql`
   query MessageReport($serverId: ID!, $reportId: ID!) {
     messageReport(serverId: $serverId, reportId: $reportId) {
-      id
-      conversationId
-      messageId
-      reporterUserId
-      reason
-      status
-      resolvedBy
-      resolvedAt
-      createdAt
-      messageReadable
-      messageText
-      messageAuthorId
-      messageSentAt
-      frankingVerifiedAt
-      frankedSenderDeviceId
-      frankedContentExpiresAt
+      ...MessageReportRowFields
       frankedContent
     }
+  }
+  ${MESSAGE_REPORT_ROW_FIELDS}
+`;
+
+/** The same with `MessageReport.automatic`, for a server that lists `message_flag`. */
+const MESSAGE_REPORT_WITH_AUTOMATIC = gql`
+  query MessageReportWithAutomatic($serverId: ID!, $reportId: ID!) {
+    messageReport(serverId: $serverId, reportId: $reportId) {
+      ...MessageReportRowFields
+      frankedContent
+      automatic
+    }
+  }
+  ${MESSAGE_REPORT_ROW_FIELDS}
+`;
+
+const CLEAR_MESSAGE_FLAG = gql`
+  mutation ClearMessageFlag($serverId: ID!, $conversationId: ID!, $messageId: ID!) {
+    clearMessageFlag(serverId: $serverId, conversationId: $conversationId, messageId: $messageId)
   }
 `;
 
@@ -253,7 +268,10 @@ export interface MessageReportRow {
   id: string;
   conversationId: string;
   messageId: string;
-  reporterUserId: string;
+  /** The member who filed the report; null for a report the automatic check filed. */
+  reporterUserId: string | null;
+  /** Whether the automatic check filed the report; absent from a server without `message_flag`. */
+  automatic?: boolean;
   reason: string;
   status: MessageReportStatus;
   resolvedBy: string | null;
@@ -422,10 +440,13 @@ export function useMessageReport(serverId: string, reportId: string | null) {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ messageReport: MessageReportDetail }>(
-        MESSAGE_REPORT,
-        { serverId, reportId: reportId! },
-      );
+      const document = (await serverHasCapability(MESSAGE_FLAG))
+        ? MESSAGE_REPORT_WITH_AUTOMATIC
+        : MESSAGE_REPORT;
+      const res = await graphqlClient.request<{ messageReport: MessageReportDetail }>(document, {
+        serverId,
+        reportId: reportId!,
+      });
       return res.messageReport;
     },
   });
@@ -460,16 +481,18 @@ export function useMessageReports(
     enabled: Boolean(id) && enabled,
     initialPageParam: null as MessageReportPage["next"],
     queryFn: async ({ pageParam }) => {
-      const res = await graphqlClient.request<{ messageReports: MessageReportPage }>(
-        withAuthorPrincipal ? DIRECT_SPACE_MESSAGE_REPORTS : MESSAGE_REPORTS,
-        {
-          serverId: id!,
-          status,
-          dir: PageDir.AFTER,
-          cursor: pageParam,
-          limit: REPORTS_PAGE_SIZE,
-        },
-      );
+      const document = withAuthorPrincipal
+        ? DIRECT_SPACE_MESSAGE_REPORTS
+        : (await serverHasCapability(MESSAGE_FLAG))
+          ? MESSAGE_REPORTS_WITH_AUTOMATIC
+          : MESSAGE_REPORTS;
+      const res = await graphqlClient.request<{ messageReports: MessageReportPage }>(document, {
+        serverId: id!,
+        status,
+        dir: PageDir.AFTER,
+        cursor: pageParam,
+        limit: REPORTS_PAGE_SIZE,
+      });
       return res.messageReports;
     },
     getNextPageParam: (lastPage) => (lastPage.pageInfo.hasNext ? lastPage.next : null),
@@ -486,5 +509,22 @@ export function useResolveReportMutation() {
       ),
     onSuccess: (_data, vars) =>
       qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
+  });
+}
+
+/**
+ * An Owner or Moderator clears the automatic check's flag on a message: the message shows
+ * uncovered for everyone, and "Flag cleared" or the server's refusal is said in a toast.
+ */
+export function useClearMessageFlag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: MutationClearMessageFlagArgs) =>
+      graphqlClient.request<{ clearMessageFlag: boolean }>(CLEAR_MESSAGE_FLAG, vars),
+    onSuccess: (_data, vars) => {
+      setMessageFlagged(qc, vars.serverId, vars.conversationId, vars.messageId, false);
+      toast.success("Flag cleared");
+    },
+    onError: (err) => toast.error(graphqlErrorMessage(err, "Could not clear the flag")),
   });
 }

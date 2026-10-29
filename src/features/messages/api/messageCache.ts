@@ -28,6 +28,7 @@ import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { isWebAccount, webStoreAccount } from "../../e2ee/web/webAccount";
+import { MESSAGE_FLAG, serverHasCapability } from "../../updater/api/serverCapabilities";
 
 /** Whose cache: the server the app talks to and the signed-in user on it. */
 export interface CacheAccount {
@@ -76,19 +77,49 @@ export function isServerUnreachable(err: unknown): boolean {
 
 // ─── Change feed ────────────────────────────────────────────────────────────
 
-export const MESSAGE_CHANGES_QUERY = gql`
-  query MessageChanges($input: MessageChangesInput!) {
-    messageChanges(input: $input) {
+/** A conversation's page of the feed, without its changes. */
+const MESSAGE_CHANGES_PAGE_FIELDS = `
       conversationId
       status
       cursor
       hasMore
-      changes {
+`;
+
+/** One change's fields beside its message. */
+const MESSAGE_CHANGE_FIELDS = `
         kind
         version
         editedAt
+`;
+
+export const MESSAGE_CHANGES_QUERY = gql`
+  query MessageChanges($input: MessageChangesInput!) {
+    messageChanges(input: $input) {
+      ${MESSAGE_CHANGES_PAGE_FIELDS}
+      changes {
+        ${MESSAGE_CHANGE_FIELDS}
         message {
           ...MessageWithReactions
+          encryption {
+            ciphertext
+          }
+        }
+      }
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** The same with `Message.flagged`, for a server that lists `message_flag`. */
+export const MESSAGE_CHANGES_WITH_FLAGS_QUERY = gql`
+  query MessageChangesWithFlags($input: MessageChangesInput!) {
+    messageChanges(input: $input) {
+      ${MESSAGE_CHANGES_PAGE_FIELDS}
+      changes {
+        ${MESSAGE_CHANGE_FIELDS}
+        message {
+          ...MessageWithReactions
+          flagged
           encryption {
             ciphertext
           }
@@ -116,10 +147,12 @@ export interface FeedConversationChanges {
 export type ChangeFeed = (input: MessageChangesInput) => Promise<FeedConversationChanges[]>;
 
 export const fetchMessageChanges: ChangeFeed = async (input) => {
-  const res = await graphqlClient.request<{ messageChanges: FeedConversationChanges[] }>(
-    MESSAGE_CHANGES_QUERY,
-    { input },
-  );
+  const document = (await serverHasCapability(MESSAGE_FLAG))
+    ? MESSAGE_CHANGES_WITH_FLAGS_QUERY
+    : MESSAGE_CHANGES_QUERY;
+  const res = await graphqlClient.request<{ messageChanges: FeedConversationChanges[] }>(document, {
+    input,
+  });
   return res.messageChanges;
 };
 

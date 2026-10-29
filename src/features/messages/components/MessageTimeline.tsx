@@ -51,6 +51,8 @@ import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
+import { useCanModerate } from "../../workspaces/api/useMyServerRole";
+import { useClearMessageFlag } from "../../workspaces/api/useModeration";
 import {
   NavigationHints,
   NewMessagesDivider,
@@ -270,6 +272,15 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     },
     [openUserMenu],
   );
+  const canModerate = useCanModerate(workspaceId ?? undefined);
+  const { mutate: clearMessageFlag } = useClearMessageFlag();
+  const onClearFlag = useCallback(
+    (messageId: string) => {
+      if (!workspaceId || !conversationId) return;
+      clearMessageFlag({ serverId: workspaceId, conversationId, messageId });
+    },
+    [workspaceId, conversationId, clearMessageFlag],
+  );
   const handlers = useMemo(
     () => ({
       ...rowHandlers,
@@ -279,6 +290,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       canStartThread: rights.thread,
       onReply,
       onFoldToggle,
+      canModerate,
+      onClearFlag,
     }),
     [
       rowHandlers,
@@ -288,6 +301,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       rights.thread,
       onReply,
       onFoldToggle,
+      canModerate,
+      onClearFlag,
     ],
   );
 

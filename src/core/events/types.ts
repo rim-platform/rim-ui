@@ -59,6 +59,17 @@ export type WorkspaceEvent =
       message_id: string;
       thread_id: string | null;
     }
+  /**
+   * The automatic text art check flagged a message (`flagged` true), or an Owner, a Moderator or
+   * a later check cleared its flag.
+   */
+  | {
+      type: "MessageFlagChanged";
+      workspace_id: string;
+      conversation_id: string;
+      message_id: string;
+      flagged: boolean;
+    }
   | {
       type: "ReactionsUpdated";
       workspace_id: string;

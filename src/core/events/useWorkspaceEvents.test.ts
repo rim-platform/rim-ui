@@ -9,6 +9,7 @@ import {
 } from "../../features/workspaces/state/useRemovalNotices";
 import { queryKeys, VOLATILE_WORKSPACE_KEY_ROOTS } from "../query/keys";
 import type { MessageEventData, WorkspaceEvent } from "./types";
+import { requestCacheSync } from "../../features/messages/runtime/messageCacheSync";
 
 let connectedHandler: (() => void) | null = null;
 interface Observer {
@@ -31,6 +32,11 @@ vi.mock("../graphql/wsClient", () => ({
       connectedHandler = null;
     };
   }),
+}));
+
+vi.mock("../../features/messages/runtime/messageCacheSync", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/messages/runtime/messageCacheSync")>()),
+  requestCacheSync: vi.fn(),
 }));
 
 vi.mock("../../shared/toast", () => ({
@@ -645,6 +651,86 @@ describe("useWorkspaceEvents message edits", () => {
     const qc = timelineWith("2026-10-27T11:00:00Z");
     applyWorkspaceEvent(edited(), qc, "ws-1");
     expect(cached(qc)).toMatchObject({ text: "hi again", editedAt: "2026-10-27T11:00:00Z" });
+  });
+});
+
+describe("useWorkspaceEvents message flags", () => {
+  const key = queryKeys.messages("ws-1", "c-1");
+  const threadKey = queryKeys.threadMessages("ws-1", "c-1", "t-1");
+
+  /** A client holding c-1's timeline with m-1 and thread t-1 with reply r-1. */
+  function cachedConversation(): QueryClient {
+    const qc = new QueryClient();
+    qc.setQueryData(key, {
+      pages: [
+        {
+          items: [{ id: "m-1", text: "art", isDeleted: false, sentAt: "x" }],
+          next: null,
+          prev: null,
+          pageInfo: { hasNext: false, hasPrev: false },
+        },
+      ],
+      pageParams: [null],
+    });
+    qc.setQueryData(threadKey, {
+      items: [{ id: "r-1", text: "reply art", isDeleted: false, sentAt: "x" }],
+      pageInfo: { hasNext: false, hasPrev: false },
+    });
+    return qc;
+  }
+
+  function flagChanged(messageId: string, flagged: boolean): WorkspaceEvent {
+    return {
+      type: "MessageFlagChanged",
+      workspace_id: "ws-1",
+      conversation_id: "c-1",
+      message_id: messageId,
+      flagged,
+    };
+  }
+
+  function timelineItem(qc: QueryClient) {
+    return qc.getQueryData<{ pages: { items: Record<string, unknown>[] }[] }>(key)?.pages[0]
+      .items[0];
+  }
+
+  function threadItem(qc: QueryClient) {
+    return qc.getQueryData<{ items: Record<string, unknown>[] }>(threadKey)?.items[0];
+  }
+
+  it("MessageFlagChanged sets and clears flagged on the cached timeline message", () => {
+    const qc = cachedConversation();
+    applyWorkspaceEvent(flagChanged("m-1", true), qc, "ws-1");
+    expect(timelineItem(qc)).toMatchObject({ id: "m-1", text: "art", flagged: true });
+
+    applyWorkspaceEvent(flagChanged("m-1", false), qc, "ws-1");
+    expect(timelineItem(qc)).toMatchObject({ id: "m-1", flagged: false });
+  });
+
+  it("MessageFlagChanged sets and clears flagged on a cached thread reply", () => {
+    const qc = cachedConversation();
+    applyWorkspaceEvent(flagChanged("r-1", true), qc, "ws-1");
+    expect(threadItem(qc)).toMatchObject({ id: "r-1", flagged: true });
+    expect(timelineItem(qc)?.flagged).toBeUndefined();
+
+    applyWorkspaceEvent(flagChanged("r-1", false), qc, "ws-1");
+    expect(threadItem(qc)).toMatchObject({ id: "r-1", flagged: false });
+  });
+
+  it("MessageFlagChanged asks the message cache to sync the conversation", () => {
+    const qc = cachedConversation();
+    vi.mocked(requestCacheSync).mockClear();
+    applyWorkspaceEvent(flagChanged("m-1", true), qc, "ws-1");
+    expect(requestCacheSync).toHaveBeenCalledWith("ws-1", ["c-1"]);
+  });
+
+  it("MessageFlagChanged refetches the timeline, the pins and the conversation's threads", () => {
+    const qc = cachedConversation();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(flagChanged("m-1", true), qc, "ws-1");
+    expect(spy).toHaveBeenCalledWith({ queryKey: key });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["pinnedMessages", "ws-1", "c-1"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["threadMessages", "ws-1", "c-1"] });
   });
 });
 

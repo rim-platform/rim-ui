@@ -250,7 +250,11 @@ function ReportRow({
   const resolve = useResolveReportMutation();
   const deleteMessage = useDeleteReportedMessageMutation();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const reporter = memberLookup.resolve(report.reporterUserId).displayName;
+  // A report with no reporter was filed by the server's automatic check.
+  const reporter =
+    report.automatic || report.reporterUserId === null
+      ? "Automatic check"
+      : memberLookup.resolve(report.reporterUserId).displayName;
   const principalId = report.messageAuthorPrincipalId ?? null;
   const authorId = report.messageAuthorId;
   // Someone the viewer shares no conversation with is named by their principal, not an id prefix.

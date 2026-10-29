@@ -63,3 +63,25 @@ export const MESSAGES_WITH_EDITS_QUERY = gql`
   }
   ${MESSAGE_WITH_REACTIONS}
 `;
+
+/** The same with `Message.editedAt` and `Message.flagged`, for a server that lists `message_flag`. */
+export const MESSAGES_WITH_FLAGS_QUERY = gql`
+  query MessagesWithFlags(${MESSAGES_VARIABLES}) {
+    messages(${MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+        editedAt
+        flagged
+      }
+      ${MESSAGES_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** The timeline page documents, for `messageReadDocument`. */
+export const MESSAGES_DOCUMENTS = {
+  plain: MESSAGES_QUERY,
+  withEdits: MESSAGES_WITH_EDITS_QUERY,
+  withFlags: MESSAGES_WITH_FLAGS_QUERY,
+};

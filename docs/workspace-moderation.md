@@ -31,3 +31,19 @@ The person is told when their request is accepted or declined, through the direc
 connection, since they are not a member yet; a withdrawn request, or one a ban cancelled, is not
 announced.
 
+
+# Flagged messages
+
+A server that lists `message_flag` in `serverInfo.capabilities` checks the messages it can read
+for sexual text art and flags those that score high. The client covers a flagged message's
+text, attachments and link previews with "Hidden: the automatic check flagged this message."
+and **Show anyway**; the author line, the reply quote, the reactions and the thread summary stay
+visible. Show anyway uncovers the message for this viewer for the rest of the session, under the
+label "Flagged by the automatic check" with **Hide** to cover it again. A message being edited is
+not covered.
+
+The workspace's Owner and Moderators also get **Clear flag**, on the cover and on the label: it
+clears the flag for everyone, and the message shows uncovered for every reader as soon as the
+server announces it. Each flag the check sets files a report, which Settings → Moderation lists
+with **Automatic check** as the reporter. Against an older server nothing is covered and the
+reports list is unchanged.

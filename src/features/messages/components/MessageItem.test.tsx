@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders as render } from "../../../test/utils";
 
@@ -40,6 +40,7 @@ import { formatEditedAt } from "../../../shared/utils/formatTime";
 import { act } from "@testing-library/react";
 import { forceEnUsTimes } from "../../../test/forceEnUsTimes";
 import { useClockFormatStore } from "../../../shared/state/useClockFormatStore";
+import { useFlagRevealStore } from "../state/useFlagRevealStore";
 import { MessageItem } from "./MessageItem";
 import type { MessageItemHandlers, MessageItemMessage } from "./MessageItem";
 
@@ -675,5 +676,73 @@ describe("MessageItem edited marker", () => {
     const { container } = render(<MessageItem {...props()} view={{ ...props().view, ...view }} />);
     expect(screen.getByText("Hello world")).toBeInTheDocument();
     expect(container.querySelector("[data-edited-text]")).toBeNull();
+  });
+});
+
+describe("MessageItem flagged cover", () => {
+  const linkPreviews = [
+    {
+      id: "lp-1",
+      url: "https://example.com",
+      title: "Example Site",
+      description: null,
+      imageUrl: null,
+      siteName: null,
+    },
+  ];
+  const flagged = {
+    ...defaultMessage,
+    flagged: true,
+    linkPreviews,
+    reactions: [{ emoji: "👍", count: 2, reactedByMe: false }],
+  };
+
+  beforeEach(() => {
+    useFlagRevealStore.setState({ revealed: new Set() });
+  });
+
+  it.each(["comfortable", "ultra-compact"] as const)(
+    "covers a flagged message's text and link previews until Show anyway in %s",
+    (displayDensity) => {
+      const base = props({ message: flagged });
+      const { container } = render(
+        <MessageItem {...base} view={{ ...base.view, displayDensity }} />,
+      );
+      expect(container.querySelector("[data-flagged-cover]")).not.toBeNull();
+      expect(screen.queryByText("Hello world")).not.toBeInTheDocument();
+      expect(screen.queryByText("Example Site")).not.toBeInTheDocument();
+      // The reactions stay outside the cover.
+      expect(screen.getByText("👍")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Show anyway" }));
+      expect(screen.getByText("Hello world")).toBeInTheDocument();
+      expect(screen.getByText("Example Site")).toBeInTheDocument();
+    },
+  );
+
+  it("offers Clear flag to a moderator and calls onClearFlag", () => {
+    const onClearFlag = vi.fn();
+    render(
+      <MessageItem
+        {...props({ message: flagged, handlers: { canModerate: true, onClearFlag } })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear flag" }));
+    expect(onClearFlag).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("does not cover a flagged message while it is edited", () => {
+    const base = props({ message: flagged });
+    const { container } = render(
+      <MessageItem {...base} view={{ ...base.view, isEditing: true }} />,
+    );
+    expect(container.querySelector("[data-flagged-cover]")).toBeNull();
+    expect(screen.getByRole("textbox")).toHaveValue("Hello world");
+  });
+
+  it("does not cover an unflagged message", () => {
+    const { container } = render(<MessageItem {...props()} />);
+    expect(container.querySelector("[data-flagged-cover]")).toBeNull();
+    expect(screen.getByText("Hello world")).toBeInTheDocument();
   });
 });

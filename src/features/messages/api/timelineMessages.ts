@@ -27,6 +27,8 @@ export function messageFromEvent(msg: MessageEventData): MessageItem {
     isDeleted: msg.is_deleted,
     sentAt: msg.sent_at,
     editedAt: msg.edited_at ?? null,
+    // The check runs after the message is stored: a flag arrives as `MessageFlagChanged`.
+    flagged: false,
     reactions: [],
     attachments: [],
     linkPreviews: [],

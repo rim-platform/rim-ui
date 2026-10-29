@@ -35,6 +35,8 @@ export interface MessageItemMessage {
    * report it.
    */
   editedAt?: string | null;
+  /** Whether the server's automatic check flagged the message; absent when not flagged. */
+  flagged?: boolean;
   threadId?: string | null;
   rootThreadId?: string | null;
   isPinned?: boolean;
@@ -158,6 +160,10 @@ export interface MessageItemHandlers {
   onJumpToMessage?: (messageId: string) => void;
   /** Called before a message's text unfolds (`expanding`) or folds again. */
   onFoldToggle?: (messageId: string, expanding: boolean) => void;
+  /** Whether the viewer is the workspace's Owner or a Moderator (Clear flag on a flagged message). */
+  canModerate?: boolean;
+  /** Clears the automatic check's flag on a message. */
+  onClearFlag?: (messageId: string) => void;
 }
 
 /** Member directory used for mention rendering and reaction tooltips. Stable per member list. */

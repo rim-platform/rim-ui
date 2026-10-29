@@ -53,13 +53,19 @@ describe("useThreadMessages", () => {
     return createElement(QueryClientProvider, { client: qc }, children);
   }
 
-  it("asks for editedAt only when the server lists message_edited_at", async () => {
-    for (const capabilities of [["message_edited_at"], []]) {
+  it("asks for flagged with message_flag, editedAt with message_edited_at", async () => {
+    const cases = [
+      { capabilities: ["message_edited_at", "message_flag"], operation: "ThreadMessagesWithFlags" },
+      { capabilities: ["message_edited_at"], operation: "ThreadMessagesWithEdits" },
+      { capabilities: [], operation: "ThreadMessages" },
+    ];
+    for (const { capabilities, operation } of cases) {
       queryClient.clear();
       requestMock.mockReset();
       const replies = { items: [], pageInfo: { hasNext: false, hasPrev: false } };
       routeRequests(requestMock, {
         "query ServerInfo {": () => ({ serverInfo: { ...fakeServerInfo(), capabilities } }),
+        "query ThreadMessagesWithFlags(": () => ({ threadMessages: replies }),
         "query ThreadMessagesWithEdits(": () => ({ threadMessages: replies }),
         "query ThreadMessages(": () => ({ threadMessages: replies }),
       });
@@ -72,10 +78,7 @@ describe("useThreadMessages", () => {
       const operations = requestMock.mock.calls.map(
         ([document]) => /query (\w+)/.exec(String(document))?.[1],
       );
-      expect(operations).toEqual([
-        "ServerInfo",
-        capabilities.length > 0 ? "ThreadMessagesWithEdits" : "ThreadMessages",
-      ]);
+      expect(operations).toEqual(["ServerInfo", operation]);
       unmount();
     }
   });

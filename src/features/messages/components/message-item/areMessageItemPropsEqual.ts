@@ -61,6 +61,7 @@ function sameMessage(a: MessageItemMessage, b: MessageItemMessage): boolean {
     a.authorId === b.authorId &&
     a.sentAt === b.sentAt &&
     a.editedAt === b.editedAt &&
+    a.flagged === b.flagged &&
     a.threadId === b.threadId &&
     a.rootThreadId === b.rootThreadId &&
     a.isPinned === b.isPinned &&

@@ -1629,6 +1629,12 @@ type Message {
 	"""
 	forwardedFrom: Message
 	isDeleted: Boolean!
+	"""
+	Whether the automatic text art check flagged the message and no Owner or Moderator has
+	cleared it. False for a deleted message. Listed in `serverInfo.capabilities` as
+	`message_flag`.
+	"""
+	flagged: Boolean!
 	sentAt: DateTime!
 	"""
 	When the text last changed, the value `MessageChange.editedAt` carries; null for a
@@ -1769,7 +1775,10 @@ type MessageReport {
 	serverId: ID!
 	conversationId: ID!
 	messageId: ID!
-	reporterUserId: ID!
+	"""
+	The member who filed the report; null for a report the automatic text art check filed.
+	"""
+	reporterUserId: ID
 	reason: String!
 	status: MessageReportStatus!
 	resolvedBy: ID
@@ -1806,6 +1815,11 @@ type MessageReport {
 	dismissed; null while it is open.
 	"""
 	frankedContentExpiresAt: DateTime
+	"""
+	Whether the automatic text art check filed the report rather than a member. Listed in
+	`serverInfo.capabilities` as `message_flag`.
+	"""
+	automatic: Boolean!
 }
 
 input MessageReportCursorInput {
@@ -2131,6 +2145,13 @@ type Mutation {
 	an instance operator). Audited (`admin.resolve_report`).
 	"""
 	resolveReport(serverId: ID!, reportId: ID!, outcome: ReportOutcome!): MessageReport!
+	"""
+	Clear the automatic text art check's flag on a message (Owner/Moderator); true when the
+	message is not flagged afterwards, whether or not it was. Audited
+	(`admin.clear_message_flag`) when a flag was cleared. Listed in `serverInfo.capabilities`
+	as `message_flag`.
+	"""
+	clearMessageFlag(serverId: ID!, conversationId: ID!, messageId: ID!): Boolean!
 	"""
 	Replace the viewer's notification settings in the workspace (default level, keywords,
 	daily do-not-disturb window, digest, reactions). Keywords: at most 20, each 2 to 40
@@ -3911,8 +3932,8 @@ One optional feature and whether it works here.
 type ServerFeatureInfo {
 	"""
 	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars` or `plugin_link_fetch`. A client
-	ignores a name it does not know.
+	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`
+	or `text_art_check`. A client ignores a name it does not know.
 	"""
 	key: String!
 	state: ServerFeatureState!

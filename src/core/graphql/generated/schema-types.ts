@@ -1335,6 +1335,12 @@ export type Message = {
    * plaintext messages.
    */
   encryption?: Maybe<MessageEncryption>;
+  /**
+   * Whether the automatic text art check flagged the message and no Owner or Moderator has
+   * cleared it. False for a deleted message. Listed in `serverInfo.capabilities` as
+   * `message_flag`.
+   */
+  flagged: Scalars['Boolean']['output'];
   /** The forwarded message; null when the viewer cannot read its conversation or it is gone. */
   forwardedFrom?: Maybe<Message>;
   forwardedFromMessageId?: Maybe<Scalars['ID']['output']>;
@@ -1448,6 +1454,11 @@ export type MessagePage = {
  * shown to every moderator; its content (`frankedContent`) only by `messageReport`.
  */
 export type MessageReport = {
+  /**
+   * Whether the automatic text art check filed the report rather than a member. Listed in
+   * `serverInfo.capabilities` as `message_flag`.
+   */
+  automatic: Scalars['Boolean']['output'];
   conversationId: Scalars['ID']['output'];
   createdAt: Scalars['DateTime']['output'];
   /**
@@ -1478,7 +1489,8 @@ export type MessageReport = {
   messageSentAt?: Maybe<Scalars['DateTime']['output']>;
   messageText?: Maybe<Scalars['String']['output']>;
   reason: Scalars['String']['output'];
-  reporterUserId: Scalars['ID']['output'];
+  /** The member who filed the report; null for a report the automatic text art check filed. */
+  reporterUserId?: Maybe<Scalars['ID']['output']>;
   resolvedAt?: Maybe<Scalars['DateTime']['output']>;
   resolvedBy?: Maybe<Scalars['ID']['output']>;
   serverId: Scalars['ID']['output'];
@@ -1663,6 +1675,13 @@ export type Mutation = {
   cancelDeviceLink: Scalars['Boolean']['output'];
   /** One key package per device waiting to be added; devices with none usable are left out. */
   claimMlsKeyPackages: Array<ClaimedKeyPackage>;
+  /**
+   * Clear the automatic text art check's flag on a message (Owner/Moderator); true when the
+   * message is not flagged afterwards, whether or not it was. Audited
+   * (`admin.clear_message_flag`) when a flag was cleared. Listed in `serverInfo.capabilities`
+   * as `message_flag`.
+   */
+  clearMessageFlag: Scalars['Boolean']['output'];
   /** End a member's timeout early. Returns whether one was in force. Audited. */
   clearTimeout: Scalars['Boolean']['output'];
   /** Called by the new device right after its first `loginWithKey`. */
@@ -2275,6 +2294,13 @@ export type MutationCancelDeviceLinkArgs = {
 
 export type MutationClaimMlsKeyPackagesArgs = {
   input: ClaimMlsKeyPackagesInput;
+};
+
+
+export type MutationClearMessageFlagArgs = {
+  conversationId: Scalars['ID']['input'];
+  messageId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
 };
 
 
@@ -4255,8 +4281,8 @@ export type ServerBan = {
 export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars` or `plugin_link_fetch`. A client
-   * ignores a name it does not know.
+   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`
+   * or `text_art_check`. A client ignores a name it does not know.
    */
   key: Scalars['String']['output'];
   /** Why an unavailable feature is unavailable; null otherwise. */

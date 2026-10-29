@@ -14,6 +14,7 @@ import { MessageAttachments } from "./message-item/MessageAttachments";
 import { EncryptedAttachments } from "../../e2ee/components/EncryptedAttachments";
 import { DeletedMessageText, MessageContent, MessageText } from "./message-item/MessageBody";
 import { EditedMark } from "./message-item/EditedMark";
+import { FlaggedCover } from "./message-item/FlaggedCover";
 import { FoldableText } from "./message-item/FoldableText";
 import { MessageEditForm } from "./message-item/MessageEditForm";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
@@ -69,6 +70,8 @@ export const MessageItem = memo(function MessageItem({
     onCancelEdit,
     bindUserContextMenu,
     onMentionContextMenu,
+    canModerate = false,
+    onClearFlag,
   } = handlers;
 
   const isDeleted = message.isDeleted === true;
@@ -81,6 +84,8 @@ export const MessageItem = memo(function MessageItem({
   const hideAuthorLine = isGrouped && !isFirstInGroup;
   const hasAttachments = (message.attachments?.length ?? 0) > 0;
   const hasReactions = message.reactions?.some((r) => r.count > 0) ?? false;
+  // The text, attachments and link previews of a flagged message stay covered until shown.
+  const isCovered = message.flagged === true && !isDeleted && !isEditing;
 
   const messageId = message.id;
   const messageText = message.text ?? "";
@@ -109,7 +114,7 @@ export const MessageItem = memo(function MessageItem({
     workspaceId: message.serverId,
   });
 
-  const extras = (
+  const media = (
     <>
       {hasAttachments &&
         (message.e2ee && message.serverId && message.conversationId ? (
@@ -128,18 +133,28 @@ export const MessageItem = memo(function MessageItem({
           />
         ))}
       <MessageLinkPreviews previews={message.linkPreviews} />
-      {hasReactions && (
-        <MessageReactions
-          messageId={messageId}
-          serverId={message.serverId}
-          reactions={message.reactions}
-          onToggleReaction={onToggleReaction}
-          canAddReaction={canAddReaction}
-          resolveMember={members?.resolve}
-        />
-      )}
     </>
   );
+  const reactions = hasReactions ? (
+    <MessageReactions
+      messageId={messageId}
+      serverId={message.serverId}
+      reactions={message.reactions}
+      onToggleReaction={onToggleReaction}
+      canAddReaction={canAddReaction}
+      resolveMember={members?.resolve}
+    />
+  ) : null;
+  // `text` with the media under it, behind the cover when the message is flagged.
+  const covered = (text: React.ReactNode) =>
+    isCovered ? (
+      <FlaggedCover messageId={messageId} canModerate={canModerate} onClearFlag={onClearFlag}>
+        {text}
+        {media}
+      </FlaggedCover>
+    ) : (
+      text
+    );
 
   const replyQuote =
     replyTo && !isDeleted ? <ReplyQuote quote={replyTo} onJump={handlers.onJumpToMessage} /> : null;
@@ -231,22 +246,25 @@ export const MessageItem = memo(function MessageItem({
         ) : (
           <div className="min-w-0 flex-1">
             {replyQuote}
-            <FoldableText
-              messageId={messageId}
-              onToggle={handlers.onFoldToggle}
-              // An edited message's last paragraph flows inline, so the marker follows its text.
-              innerClassName={message.editedAt ? "[&>.prose-rim>p:last-child]:inline" : undefined}
-            >
-              <MessageText {...textProps("inline")} />
-              {message.editedAt && (
-                <>
-                  {" "}
-                  <EditedMark editedAt={message.editedAt} />
-                  <br />
-                </>
-              )}
-            </FoldableText>
-            {extras}
+            {covered(
+              <FoldableText
+                messageId={messageId}
+                onToggle={handlers.onFoldToggle}
+                // An edited message's last paragraph flows inline, so the marker follows its text.
+                innerClassName={message.editedAt ? "[&>.prose-rim>p:last-child]:inline" : undefined}
+              >
+                <MessageText {...textProps("inline")} />
+                {message.editedAt && (
+                  <>
+                    {" "}
+                    <EditedMark editedAt={message.editedAt} />
+                    <br />
+                  </>
+                )}
+              </FoldableText>,
+            )}
+            {!isCovered && media}
+            {reactions}
             {threadSummary}
           </div>
         )}
@@ -269,10 +287,10 @@ export const MessageItem = memo(function MessageItem({
   const content = (variant: MessageTextVariant) => {
     const body = <MessageContent {...contentProps} {...textProps(variant)} />;
     if (isDeleted || isEditing) return body;
-    return (
+    return covered(
       <FoldableText messageId={messageId} onToggle={handlers.onFoldToggle}>
         {body}
-      </FoldableText>
+      </FoldableText>,
     );
   };
 
@@ -337,7 +355,12 @@ export const MessageItem = memo(function MessageItem({
             {content("full")}
           </>
         )}
-        {!isDeleted && extras}
+        {!isDeleted && (
+          <>
+            {!isCovered && media}
+            {reactions}
+          </>
+        )}
         {threadSummary}
       </div>
       {hoverActions}
