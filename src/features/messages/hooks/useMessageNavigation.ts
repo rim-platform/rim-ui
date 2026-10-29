@@ -176,6 +176,10 @@ export function useMessageNavigation({
         return;
       }
 
+      // The timeline's keys are plain keys: with Ctrl, Alt or Meta the key belongs to the browser
+      // or to keybinds (Ctrl+C copies the selected text).
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
       // All other keys require navigation mode to be active
       if (!navMode) return;
 
