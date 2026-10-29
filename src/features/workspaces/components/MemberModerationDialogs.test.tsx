@@ -448,6 +448,17 @@ describe("MemberModerationDialog message deletion", () => {
     expect(toast.success).toHaveBeenCalledWith("Deleted 42 messages");
   });
 
+  it("the delete messages dialog reads naturally for a person with no name left", async () => {
+    serve(MODERATOR);
+    await renderDialog(
+      MODERATOR,
+      { action: "delete-messages", member: { ...alice, displayName: "", isFormerMember: true } },
+      withDeletion,
+    );
+    expect(screen.getByRole("dialog", { name: "Delete their messages?" })).toBeInTheDocument();
+    expect(screen.getByText(/^Their messages in this workspace's channels/)).toBeInTheDocument();
+  });
+
   it("the delete messages dialog cannot confirm with nothing to delete", async () => {
     serve(MODERATOR, { "query MemberMessageCounts": countsOf([0, 0], [0, 0]) });
     await renderDialog(MODERATOR, deleteAlice, withDeletion);

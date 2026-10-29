@@ -651,7 +651,8 @@ export function useDeleteMemberMessages() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: deleteAllMemberMessages,
-    onSettled: (_data, _error, vars) =>
-      qc.invalidateQueries({ queryKey: ["memberMessageCounts", vars.serverId, vars.userId] }),
+    onSettled: (_data, _error, vars) => {
+      void qc.invalidateQueries({ queryKey: ["memberMessageCounts", vars.serverId, vars.userId] });
+    },
   });
 }

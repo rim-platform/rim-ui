@@ -385,11 +385,13 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
 function DeleteMessagesDialog({ workspaceId, member, onClose }: ActionDialogProps) {
   const deletion = useMemberMessageDeletion(workspaceId, member.userId, "1h");
   const result = useRef<MemberMessagesDeleted | null>(null);
+  // A former member may have no name left to show.
+  const whose = member.displayName ? `${member.displayName}'s` : "their";
 
   return (
     <ModerationDialog
-      title={`Delete ${member.displayName}'s messages?`}
-      description={`${member.displayName}'s messages in this workspace's channels, thread replies included, are deleted for everyone. Direct messages, groups, and encrypted or archived channels are left alone.`}
+      title={`Delete ${whose} messages?`}
+      description={`${whose.charAt(0).toUpperCase()}${whose.slice(1)} messages in this workspace's channels, thread replies included, are deleted for everyone. Direct messages, groups, and encrypted or archived channels are left alone.`}
       tone="danger"
       confirmLabel={
         deletion.total > 0 ? `Delete ${countOf(deletion.total, "message")}` : "Delete messages"

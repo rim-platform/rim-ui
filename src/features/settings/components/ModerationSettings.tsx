@@ -40,7 +40,8 @@ interface ModerationSettingsProps {
  * Settings → Workspace → Moderation (Owner/Moderator): open join requests with Accept and
  * Decline (in a workspace that can have a public link), active bans with Unban (and Delete
  * messages on a server that deletes a person's messages), and message reports with Resolve /
- * Dismiss, including the verified content of reported encrypted messages. The server answers `FORBIDDEN` to anyone else and that message is shown here.
+ * Dismiss, including the verified content of reported encrypted messages. The server answers
+ * `FORBIDDEN` to anyone else and that message is shown here.
  */
 export function ModerationSettings({ serverId }: ModerationSettingsProps) {
   const canModerate = useCanModerate(serverId ?? undefined);
