@@ -745,6 +745,24 @@ input DeleteWorkspaceStateInput {
 	scope: WorkspaceStateScopeGql!
 }
 
+"""
+The outcome of one `deleteMemberMessages` call.
+"""
+type DeletedMemberMessages {
+	"""
+	Messages deleted by this call.
+	"""
+	deleted: Int!
+	"""
+	Channels those messages were in.
+	"""
+	channels: Int!
+	"""
+	Whether matching messages remain; call again to delete them.
+	"""
+	hasMore: Boolean!
+}
+
 type DeviceKey {
 	"""
 	The client-chosen device id from the certificate.
@@ -1601,6 +1619,21 @@ input MarkAsReadInput {
 }
 
 """
+How many of a person's messages in the workspace's channels `deleteMemberMessages` would
+reach with the same `since`.
+"""
+type MemberMessageCounts {
+	"""
+	In public channels and the private channels the caller is a member of.
+	"""
+	readable: MessageTally!
+	"""
+	In private channels the caller is not a member of; counts only, never the channels.
+	"""
+	unjoinedPrivate: MessageTally!
+}
+
+"""
 A member's timeout: until `until` they can read but not write in the workspace.
 """
 type MemberTimeout {
@@ -1846,6 +1879,14 @@ enum MessageReportStatus {
 	OPEN
 	RESOLVED
 	DISMISSED
+}
+
+"""
+A count of a person's messages and of the channels they are in.
+"""
+type MessageTally {
+	messages: Int!
+	channels: Int!
 }
 
 type MlsCommit {
@@ -2152,6 +2193,17 @@ type Mutation {
 	as `message_flag`.
 	"""
 	clearMessageFlag(serverId: ID!, conversationId: ID!, messageId: ID!): Boolean!
+	"""
+	Delete a person's messages in the workspace's channels, thread replies included, sent at
+	or after `since` (all of them when null); private channels the caller is not in only
+	with `includeUnjoinedPrivate`. Owner/Moderator, with the targeting rules of `kickMember`;
+	works for a former member. Never touches DMs, groups, the direct space, encrypted or
+	archived conversations. Deletes at most 1000 messages per call: call again while
+	`hasMore`. Each channel gets one `MessagesDeleted` event; audited
+	(`admin.delete_member_messages`) when any was deleted. Listed in
+	`serverInfo.capabilities` as `delete_member_messages`.
+	"""
+	deleteMemberMessages(serverId: ID!, userId: ID!, since: DateTime, includeUnjoinedPrivate: Boolean!): DeletedMemberMessages!
 	"""
 	Replace the viewer's notification settings in the workspace (default level, keywords,
 	daily do-not-disturb window, digest, reactions). Keywords: at most 20, each 2 to 40
@@ -2985,6 +3037,9 @@ input PipelineTriggerInput {
 enum PipelineTriggerKindGql {
 	NEW_MESSAGE
 	MESSAGE_UPDATED
+	"""
+	A message was deleted one at a time; a bulk delete (`deleteMemberMessages`) fires none.
+	"""
 	MESSAGE_DELETED
 	REACTIONS_UPDATED
 	MEMBER_JOINED
@@ -3307,6 +3362,14 @@ type Query {
 	`frankedContent`, and records that the moderator viewed it (`e2ee.report_viewed`).
 	"""
 	messageReport(serverId: ID!, reportId: ID!): MessageReport!
+	"""
+	How many of a person's messages in the workspace's channels, sent at or after `since`
+	(all of them when null), `deleteMemberMessages` would reach: in channels the caller reads,
+	and in private channels the caller is not in (numbers only). Owner/Moderator; the
+	targeting rules of `kickMember`, and works for a former member. Listed in
+	`serverInfo.capabilities` as `delete_member_messages`.
+	"""
+	memberMessageCounts(serverId: ID!, userId: ID!, since: DateTime): MemberMessageCounts!
 	"""
 	The viewer's notification settings in the workspace (defaults until first saved).
 	"""
@@ -4036,7 +4099,10 @@ type ServerInfo {
 	"""
 	API additions this server has that an older server lacks, by name: `message_edited_at`
 	(`Message.editedAt`), `workspace_leave` (`leaveWorkspace`), `workspace_rename`
-	(`renameWorkspace`). A client ignores names it does not know.
+	(`renameWorkspace`), `message_flag` (`Message.flagged`, `MessageReport.automatic`,
+	`clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
+	`deleteMemberMessages`, the `MessagesDeleted` event). A client ignores names it does not
+	know.
 	"""
 	capabilities: [String!]!
 }
