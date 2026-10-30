@@ -35,6 +35,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Settings → Moderation → Bans, or while banning them. The dialog counts the messages first and
   lists private channels you are not in apart, so they can be left out. Needs a server that lists
   `delete_member_messages`; older servers work as before.
+- Settings → About this server names the content checks among the server's features: Text art
+  check and Profile picture check, each enabled, switched off, or not set up.
 
 ### Fixed
 

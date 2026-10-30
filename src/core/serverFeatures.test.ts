@@ -22,6 +22,12 @@ describe("server feature names", () => {
     expect(featureOffMessage("attachments")).toBe("Attachments are switched off on this server");
     expect(featureOffMessage("avatars")).toBe("Profile pictures are switched off on this server");
     expect(featureUnavailableMessage("email")).toBe("Email is not set up on this server");
+    expect(featureOffMessage("text_art_check")).toBe(
+      "Text art check is switched off on this server",
+    );
+    expect(featureUnavailableMessage("avatar_check")).toBe(
+      "Profile picture check is not set up on this server",
+    );
   });
 });
 

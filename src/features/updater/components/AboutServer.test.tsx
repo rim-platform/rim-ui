@@ -105,6 +105,11 @@ describe("AboutServerFeatures", () => {
       wrapper: withServerInfo({
         attachments: ServerFeatureState.DISABLED,
         email: { state: ServerFeatureState.UNAVAILABLE, reason: "SMTP is not configured" },
+        text_art_check: ServerFeatureState.DISABLED,
+        avatar_check: {
+          state: ServerFeatureState.UNAVAILABLE,
+          reason: "RIM_AVATAR_CHECK_URL is unset",
+        },
       }),
     });
 
@@ -119,6 +124,8 @@ describe("AboutServerFeatures", () => {
       "AI commandsOn",
       "Profile picturesOn",
       "Plugin link installationOn",
+      "Text art checkSwitched off",
+      "Profile picture checkNot set upRIM_AVATAR_CHECK_URL is unset",
     ]);
   });
 
