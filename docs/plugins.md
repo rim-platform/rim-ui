@@ -47,19 +47,24 @@ README lists the plugin's commands and the ways to install it.
 | Plugin | What it does | Kind | Permissions it asks for | Repository |
 |---|---|---|---|---|
 | Poll | Runs a quick poll in the open conversation; the poll and every vote are messages | Sandboxed | `ui.panel`, `chat.read`, `chat.write`; optionally `chat.read.encrypted` and `chat.write.encrypted` | [plugin-poll](https://github.com/rim-platform/plugin-poll) |
-| GitHub Pull Requests | Lists the open pull requests of up to 10 public GitHub repositories | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com` and `avatars.githubusercontent.com` | [plugin-github-prs](https://github.com/rim-platform/plugin-github-prs) |
+| GitHub Pull Requests | Lists the open pull requests of up to 10 GitHub repositories; public repositories without a token | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com` and `avatars.githubusercontent.com` | [plugin-github-prs](https://github.com/rim-platform/plugin-github-prs) |
 | Kubernetes Pods | Lists a namespace's pods, shows and follows a container's logs, restarts a pod after you confirm | Runs on this computer | `ui.panel`, `ui.notify` | [plugin-k8s-pods](https://github.com/rim-platform/plugin-k8s-pods) |
-| Releases | Watches the GitHub releases of up to 10 public repositories and posts them into a conversation when asked | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com`, `chat.write` | [plugin-releases](https://github.com/rim-platform/plugin-releases) |
+| Releases | Watches GitHub releases and posts one into an unencrypted conversation when asked | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com`, `chat.write` | [plugin-releases](https://github.com/rim-platform/plugin-releases) |
 
 - **Poll** needs the two encrypted permissions to work in encrypted DMs and groups; without them
   it works in plaintext channels only. On the web it reads messages only in a browser set up as
   a [linked device](web-linked-device.md).
-- **GitHub Pull Requests** and **Releases** use no token, so they see public repositories only.
-  GitHub allows 60 requests an hour per IP address without one.
+- **GitHub Pull Requests** and **Releases** can use an optional GitHub token on desktop, kept
+  in the secret vault. Without one, including in the web app, they see public repositories only
+  and share GitHub’s unauthenticated rate limit. Pull Requests can read selected private
+  repositories when its token permits it; their titles and authors appear in the panel. For
+  Releases, use a public-only token: posting a release shares its details with everyone in the
+  conversation. Each plugin’s README explains the token permissions.
 - **Kubernetes Pods** needs the desktop app, Node.js 22 or newer and `kubectl`, which it runs
   with your own kubeconfig. Four of its commands can be called by the AI agent once approved in
-  Settings → Plugin AI; **Pods: Restart pod** is dangerous, so it runs only after you confirm,
-  also when the agent asks for it. It suggests <kbd>Ctrl+Alt+P</kbd> for **Pods: Refresh**.
+  Settings → Plugin AI; **Pods: Restart pod** is dangerous, so the agent can only propose it.
+  Run it manually from the plugin and confirm that run. It suggests <kbd>Ctrl+Alt+P</kbd> for
+  **Pods: Refresh**.
 
 ## Installing
 
