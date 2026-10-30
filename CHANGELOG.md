@@ -40,6 +40,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- The plugin guide explains optional desktop GitHub tokens and the visibility of private
+  repository data in the Pull Requests and Releases plugins.
 - With a message selected, Ctrl+C copies the text you highlighted instead of the whole message,
   and Ctrl, Alt or Cmd with a letter (Ctrl+R, Ctrl+P, …) no longer runs the timeline's reply, pin
   or other message keys.
