@@ -14,7 +14,7 @@ sqlite = ["dep:rusqlite"]
 [dependencies]
 # Exact pins: group state written by one release must load in the next, so every upgrade is its
 # own change that reruns the storage and vector tests.
-openmls = "=0.9.1"
+openmls = "=0.9.2"
 # The post-quantum suites are enabled on the traits and the provider, not on `openmls`: its
 # feature also names `openmls_sqlite_storage?/…`, which makes cargo count that crate's `rusqlite`
 # 0.37 in the `links = "sqlite3"` check against the app's `rusqlite` 0.40.
