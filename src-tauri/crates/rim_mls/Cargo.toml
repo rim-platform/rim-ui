@@ -49,7 +49,7 @@ rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"]
 # The named fallback provider, and the second implementation the cross-provider tests compare.
 openmls_rust_crypto = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
 # The HPKE and KEM backends the two providers link, driven directly by the known-answer tests.
-hpke-rs-crypto = "=0.7.0"
+hpke-rs-crypto = "=0.8.0"
 hpke-rs-libcrux = "=0.7.0"
 hpke-rs-rust-crypto = { version = "=0.7.0", features = ["experimental"] }
 libcrux-ml-kem = "=0.0.10"
