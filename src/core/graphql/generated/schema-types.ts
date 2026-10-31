@@ -4343,8 +4343,8 @@ export type ServerBan = {
 export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
-   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`
-   * or `text_art_check`. A client ignores a name it does not know.
+   * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`,
+   * `text_art_check` or `avatar_check`. A client ignores a name it does not know.
    */
   key: Scalars['String']['output'];
   /** Why an unavailable feature is unavailable; null otherwise. */
