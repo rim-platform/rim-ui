@@ -22,6 +22,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-31
+
 ### Added
 
 - A message whose text is taller than about 16 lines shows its first lines with Show more, and
@@ -29,7 +31,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   text art no longer fill the timeline.
 - Messages the server's automatic check flags (sexual text art) are covered with Show anyway;
   Owners and Moderators can Clear flag, and the check's reports show as Automatic check in
-  Moderation, with the reported text covered the same way. Needs a server that lists `message_flag`; older servers work as before.
+  Moderation, with the reported text covered the same way. Needs a server that lists
+  `message_flag`; older servers work as before.
 - Owners and Moderators can delete a person's messages in the workspace's channels from the last
   hour, 24 hours, 7 days or all of them: with Delete messages… in the person's menu or in
   Settings → Moderation → Bans, or while banning them. The dialog counts the messages first and
@@ -978,7 +981,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.8...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.9...HEAD
+[0.0.9]: https://github.com/rim-platform/rim-ui/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/rim-platform/rim-ui/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/rim-platform/rim-ui/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/rim-platform/rim-ui/compare/v0.0.5...v0.0.6
