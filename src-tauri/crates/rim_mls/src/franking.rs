@@ -1,7 +1,7 @@
 //! Message franking: the sender's commitment to a message's content, and the server's receipt
 //! over it (computed here too, so the client and the server tests share one implementation).
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use uuid::Uuid;
 
@@ -10,7 +10,8 @@ const RECEIPT_CONTEXT: &[u8] = b"rim.e2ee.franking-receipt.v1\0";
 
 fn hmac_sha256(key: &[u8; 32], parts: &[&[u8]]) -> [u8; 32] {
     // HMAC-SHA256 takes keys of any length; a 32-byte key cannot fail.
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).expect("HMAC takes any key length");
+    let mut mac =
+        <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC takes any key length");
     for part in parts {
         mac.update(part);
     }
