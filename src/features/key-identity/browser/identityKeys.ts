@@ -76,7 +76,7 @@ interface Draft {
   inception: Statement;
   certificate: Statement;
   /** The kit's entropy until the person confirms they saved the kit; `null` after. */
-  recoveryEntropy: Uint8Array | null;
+  recoveryEntropy: Uint8Array<ArrayBuffer> | null;
 }
 
 const drafts = new Map<string, Draft>();
@@ -272,7 +272,10 @@ export async function discardEnrollment(draftId: string): Promise<void> {
 
 // ─── The recovery kit ───────────────────────────────────────────────────────
 
-async function kitText(principalId: string, entropy: Uint8Array): Promise<RecoveryKitText> {
+async function kitText(
+  principalId: string,
+  entropy: Uint8Array<ArrayBuffer>,
+): Promise<RecoveryKitText> {
   return {
     principalId,
     recoveryKit: await formatKit(principalId, entropy),

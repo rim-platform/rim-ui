@@ -34,7 +34,7 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
+        manualChunks(id: string) {
           // GraphQL runtime — stable, rarely changes, benefits from separate cache entry
           if (
             id.includes("node_modules/graphql/") ||

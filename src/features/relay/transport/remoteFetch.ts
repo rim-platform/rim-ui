@@ -36,13 +36,13 @@ export class RelayFailure extends Error {
 /** A host's verified answer. */
 export interface RemoteResponse {
   status: number;
-  body: Uint8Array;
+  body: Uint8Array<ArrayBuffer>;
   contentType: string | null;
 }
 
 export interface RemoteRequest {
   method: "GET" | "POST";
-  body?: Uint8Array;
+  body?: Uint8Array<ArrayBuffer>;
   contentType?: string;
 }
 

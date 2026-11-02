@@ -104,7 +104,10 @@ function usablePublicKey(key: Uint8Array): boolean {
  * (Ed25519 implied); version 2 spells `<algorithm>:<base64url>`, the algorithm 1 to 32
  * characters of `a-z`, `0-9` and `-`. Any other version is refused.
  */
-function splitTagged(text: string, version: number): { algorithm: string; bytes: Uint8Array } {
+function splitTagged(
+  text: string,
+  version: number,
+): { algorithm: string; bytes: Uint8Array<ArrayBuffer> } {
   const malformed = () => new StatementError("a key or signature is malformed");
   if (version === 1) {
     const bytes = unb64(text);
@@ -145,8 +148,8 @@ export async function verify(
   publicKey: string,
   version: number,
 ): Promise<boolean> {
-  let key: { algorithm: string; bytes: Uint8Array };
-  let signature: { algorithm: string; bytes: Uint8Array };
+  let key: { algorithm: string; bytes: Uint8Array<ArrayBuffer> };
+  let signature: { algorithm: string; bytes: Uint8Array<ArrayBuffer> };
   try {
     key = splitTagged(publicKey, 2);
     signature = splitTagged(statement.signature, version);

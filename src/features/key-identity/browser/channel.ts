@@ -37,10 +37,10 @@ export class LinkChannelError extends Error {
 
 /** A parsed link code: `rim-link:1:<link id>:<secret>:<endpoint>`. Holds the secret. */
 export interface LinkCode {
-  linkId: Uint8Array;
+  linkId: Uint8Array<ArrayBuffer>;
   /** The link id as its 22 characters of base64url. */
   linkIdText: string;
-  secret: Uint8Array;
+  secret: Uint8Array<ArrayBuffer>;
   endpoint: string;
 }
 
@@ -49,7 +49,11 @@ function notACode(): LinkChannelError {
 }
 
 /** Decode `text` strictly to exactly `length` bytes from exactly `textLength` characters. */
-function decodeExact(text: string, textLength: number, length: number): Uint8Array | null {
+function decodeExact(
+  text: string,
+  textLength: number,
+  length: number,
+): Uint8Array<ArrayBuffer> | null {
   if (text.length !== textLength) return null;
   const bytes = unb64(text);
   return bytes && bytes.length === length ? bytes : null;
@@ -66,7 +70,7 @@ function validEndpoint(endpoint: string): boolean {
 }
 
 /** A link id from its 22-character text. */
-export function parseLinkId(text: string): Uint8Array {
+export function parseLinkId(text: string): Uint8Array<ArrayBuffer> {
   const linkId = decodeExact(text, LINK_ID_TEXT_LEN, 16);
   if (!linkId) throw new LinkChannelError("the server's link id is malformed");
   return linkId;
@@ -152,7 +156,7 @@ async function channelKey(code: LinkCode, direction: Direction): Promise<CryptoK
 }
 
 /** `rim.device-link.v1\0<direction>\0<link id text>`. */
-export function aad(linkIdText: string, direction: Direction): Uint8Array {
+export function aad(linkIdText: string, direction: Direction): Uint8Array<ArrayBuffer> {
   return concat(AAD_LABEL, utf8(`${direction}\0${linkIdText}`));
 }
 
@@ -166,8 +170,8 @@ export interface Sealed {
 export async function sealWithNonce(
   code: LinkCode,
   direction: Direction,
-  plaintext: Uint8Array,
-  nonce: Uint8Array,
+  plaintext: Uint8Array<ArrayBuffer>,
+  nonce: Uint8Array<ArrayBuffer>,
 ): Promise<Sealed> {
   if (plaintext.length === 0 || plaintext.length > MAX_PLAINTEXT[direction]) {
     throw new LinkChannelError(`the link ${direction} is too large`);
@@ -181,7 +185,11 @@ export async function sealWithNonce(
 }
 
 /** Seal `plaintext` under a random nonce. Each side seals one plaintext per link. */
-export function seal(code: LinkCode, direction: Direction, plaintext: Uint8Array): Promise<Sealed> {
+export function seal(
+  code: LinkCode,
+  direction: Direction,
+  plaintext: Uint8Array<ArrayBuffer>,
+): Promise<Sealed> {
   return sealWithNonce(
     code,
     direction,
@@ -249,7 +257,7 @@ export interface Offer {
 export type OpenedOffer = Omit<Offer, "platform"> & { platform: string };
 
 /** The offer as sealed: fields in the order that fixes its bytes. */
-export function offerPlaintext(offer: Offer): Uint8Array {
+export function offerPlaintext(offer: Offer): Uint8Array<ArrayBuffer> {
   return utf8(
     JSON.stringify({
       v: LINK_VERSION,
@@ -295,7 +303,10 @@ export function parseOffer(plaintext: Uint8Array): OpenedOffer {
 }
 
 /** The old device's answer as sealed: the certificate exactly as sent to `addDeviceKey`. */
-export function answerPlaintext(certificate: { payload: string; signature: string }): Uint8Array {
+export function answerPlaintext(certificate: {
+  payload: string;
+  signature: string;
+}): Uint8Array<ArrayBuffer> {
   return utf8(
     JSON.stringify({
       v: LINK_VERSION,

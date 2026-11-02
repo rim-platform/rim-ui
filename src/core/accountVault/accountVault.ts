@@ -227,7 +227,7 @@ export async function sealValue(value: unknown, aad: string): Promise<SealedValu
   return sealedOf(iv, ct);
 }
 
-async function openBytes(sealed: SealedValue, aad: string): Promise<Uint8Array> {
+async function openBytes(sealed: SealedValue, aad: string): Promise<Uint8Array<ArrayBuffer>> {
   const key = storeKey();
   const plain = await crypto.subtle.decrypt(
     params(fromB64(sealed.iv, "a sealed value's nonce"), aad),
