@@ -27,6 +27,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - The Linux AppImage installs plugins from a Git URL and runs local plugins: the programs it
   starts (git, a plugin's process and its post-install steps) no longer load the AppImage's own
   libraries, which made git fail with "version `OPENSSL_3.5.0' not found".
+- Installing a plugin from a Git URL no longer fails with "plugin already exists" when a folder
+  of an earlier install is left in the plugins folder that Manage plugins does not list; the
+  leftover moves to the trash and the plugin installs.
 
 ## [0.0.10] - 2026-11-03
 

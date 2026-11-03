@@ -190,16 +190,28 @@ pub fn detect_manifest(clone_dir: &Path) -> Result<PluginManifest, GitInstallErr
 ///
 /// # Errors
 ///
-/// Returns [`GitInstallError::AlreadyExists`] when the plugin's directory
-/// exists, and [`GitInstallError::Io`] when the move fails.
+/// As [`finalize_install_into`].
 pub fn finalize_install(clone_dir: &Path, plugin_id: &str) -> Result<PathBuf, GitInstallError> {
-    let final_dir = plugins_dir().join(plugin_id);
+    finalize_install_into(&plugins_dir(), clone_dir, plugin_id)
+}
 
-    if final_dir.exists() {
-        return Err(GitInstallError::AlreadyExists(plugin_id.to_string()));
-    }
+/// Moves a cloned plugin from staging into `<plugins_root>/<plugin_id>` and
+/// returns that path. The caller refuses an id that is installed, so a folder
+/// already there belongs to no installed plugin: it goes to the trash first.
+///
+/// # Errors
+///
+/// Returns [`GitInstallError::Io`] for an unsafe id, when the folder already
+/// there can be neither trashed nor deleted, or when the move fails.
+fn finalize_install_into(
+    plugins_root: &Path,
+    clone_dir: &Path,
+    plugin_id: &str,
+) -> Result<PathBuf, GitInstallError> {
+    let final_dir = plugins_root.join(plugin_id);
 
-    std::fs::create_dir_all(plugins_dir())?;
+    trash::delete_later(plugins_root, plugin_id)?;
+    std::fs::create_dir_all(plugins_root)?;
 
     // Move from staging to final location
     std::fs::rename(clone_dir, &final_dir).or_else(|_| {
@@ -823,14 +835,38 @@ mod tests {
     }
 
     #[test]
-    fn already_exists_rejected() {
+    fn a_leftover_folder_of_no_installed_plugin_is_replaced() {
         let tmp = tempfile::TempDir::new().unwrap();
         let plugins = tmp.path().join("plugins");
-        let existing = plugins.join("dev.example.test");
-        std::fs::create_dir_all(&existing).unwrap();
+        let leftover = plugins.join("dev.example.test");
+        std::fs::create_dir_all(&leftover).unwrap();
+        std::fs::write(leftover.join("old.txt"), "old").unwrap();
+        let staging = tmp.path().join("staging");
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("new.txt"), "new").unwrap();
 
-        // finalize_install writes to the global plugins_dir, so it is not called
-        // here; install_from_git checks collisions through existing_plugin_ids.
+        let installed = finalize_install_into(&plugins, &staging, "dev.example.test").unwrap();
+
+        assert_eq!(installed, leftover);
+        assert_eq!(
+            std::fs::read_to_string(installed.join("new.txt")).unwrap(),
+            "new"
+        );
+        assert!(!installed.join("old.txt").exists());
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn a_fresh_install_needs_no_leftover_folder() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plugins = tmp.path().join("plugins");
+        let staging = tmp.path().join("staging");
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("new.txt"), "new").unwrap();
+
+        let installed = finalize_install_into(&plugins, &staging, "dev.example.test").unwrap();
+
+        assert!(installed.join("new.txt").exists());
     }
 
     // ── the update path runs install validation ──
