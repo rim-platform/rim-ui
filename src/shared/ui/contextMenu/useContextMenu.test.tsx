@@ -277,14 +277,14 @@ describe("useContextMenu", () => {
 
 describe("useContextMenu refresh", () => {
   function LiveRow({ getItems }: { getItems: () => DropdownMenuItem[] }) {
-    const contextMenu = useContextMenu();
-    useEffect(() => contextMenu.refresh(getItems), [contextMenu.refresh, getItems]);
+    const { bind, refresh, menu } = useContextMenu();
+    useEffect(() => refresh(getItems), [refresh, getItems]);
     return (
       <>
-        <div data-testid="live" tabIndex={0} {...contextMenu.bind(getItems, { label: "live" })}>
+        <div data-testid="live" tabIndex={0} {...bind(getItems, { label: "live" })}>
           live
         </div>
-        {contextMenu.menu}
+        {menu}
       </>
     );
   }
