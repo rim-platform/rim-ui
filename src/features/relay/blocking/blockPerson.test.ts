@@ -123,6 +123,7 @@ describe("blockPerson", () => {
     expect(keys).toContainEqual(queryKeys.myBlockedPrincipals);
     expect(keys).toContainEqual(queryKeys.relayContacts);
     expect(keys).toContainEqual(["conversations"]);
+    expect(keys).toContainEqual(["dmRequests"]);
   });
 
   it("leaves the open conversation alone when the block hid another", async () => {

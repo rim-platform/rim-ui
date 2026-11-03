@@ -13,7 +13,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel } from "../../conversations/utils";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
-import { blockTargetOf } from "../../relay/blocking/blockPerson";
+import { blockTargetOf, isBlockedPrincipal } from "../../relay/blocking/blockPerson";
 import { askToBlock } from "../../relay/blocking/useBlockPersonStore";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
@@ -196,7 +196,7 @@ export function useUserContextMenu({
                 toast.error(graphqlErrorMessage(err, `Could not remove ${name} from contacts`)),
             }),
         });
-      } else {
+      } else if (!isBlockedPrincipal(principalId)) {
         items.push({
           id: "add-contact",
           label: "Add to contacts",

@@ -42,11 +42,16 @@ export function blockTargetOf(userId: string, spaceId?: string | null): BlockTar
     ?.find((m) => m.userId === userId);
   const principalId = member?.principalId;
   if (!member || !principalId || principalId === relay.account?.principalId) return null;
-  const blocked = queryClient.getQueryData<BlockedPrincipalView[]>(queryKeys.myBlockedPrincipals);
-  if (blocked?.some((b) => b.principalId === principalId)) return null;
+  if (isBlockedPrincipal(principalId)) return null;
   const name =
     useContactStore.getState().aliases[principalId] || member.displayName || member.username;
   return { principalId, name };
+}
+
+/** Whether the account has blocked `principalId`, by its cached list of blocked people. */
+export function isBlockedPrincipal(principalId: string): boolean {
+  const blocked = queryClient.getQueryData<BlockedPrincipalView[]>(queryKeys.myBlockedPrincipals);
+  return blocked?.some((b) => b.principalId === principalId) ?? false;
 }
 
 /** The Block… action for `userId`, or `undefined` when {@link blockTargetOf} names nobody. */
@@ -83,7 +88,7 @@ function difference(from: Lists, other: Lists): Lists {
 }
 
 /**
- * Refetch every conversation list, the unread counts and the notifications. Returns the ids
+ * Refetch every conversation list, the unread counts, the notifications and the DM requests. Returns the ids
  * that left each list of a space this server hosts (`gone`) and those that came back (`back`).
  * Spaces bound on other servers are left to `useBlockedConversationsRuntime`.
  */
@@ -96,6 +101,7 @@ export async function refreshAfterBlockChange(
     void qc.invalidateQueries({ queryKey: ["unreadCounts"] });
     void qc.invalidateQueries({ queryKey: ["unreadNotificationCount"] });
     void qc.invalidateQueries({ queryKey: ["notifications"] });
+    void qc.invalidateQueries({ queryKey: ["dmRequests"] });
     const after = snapshotLists(qc);
     const gone = difference(before, after);
     const back = difference(after, before);

@@ -213,6 +213,7 @@ describe("useUserContextMenu", () => {
       await seeded({ principalId: "rimp1_alice" });
       queryClient.setQueryData(queryKeys.myBlockedPrincipals, [{ principalId: "rimp1_alice" }]);
       expect(openMenu()).not.toContain("Block…");
+      expect(openMenu()).not.toContain("Add to contacts");
       cleanup();
 
       queryClient.clear();
