@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 
 import { readSealedItem, writeSealedItem } from "../../../core/accountVault/sealedStorage";
 import { unlockTestVault } from "../../../test/accountVault";
@@ -7,7 +7,11 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { removalAccountKey, useRemovalNotices } from "../state/useRemovalNotices";
 import { RemovalNotices } from "./RemovalNotices";
 
+const myServers = vi.hoisted(() => ({ data: [] as { id: string; name: string }[] }));
+vi.mock("../api/useMyServers", () => ({ useMyServers: () => myServers }));
+
 beforeEach(async () => {
+  myServers.data = [];
   // The notices are kept sealed with the unlocked account's other values.
   await unlockTestVault();
   useRemovalNotices.setState({ accounts: {} });
@@ -50,4 +54,16 @@ it("shows reasons only for the signed-in account and renders them as text", () =
   );
   expect(screen.getByText("Reason: <script>alert(1)</script>")).toBeInTheDocument();
   expect(container.querySelector("script")).toBeNull();
+});
+
+it("drops the notice once the viewer is a member of that workspace again", () => {
+  useRemovalNotices
+    .getState()
+    .add(removalAccountKey("alice"), { workspaceId: "w2", workspaceName: "W2", cause: "kick" });
+  const { rerender } = render(<RemovalNotices />);
+  expect(screen.getByText("You were removed from W2")).toBeInTheDocument();
+  myServers.data = [{ id: "w2", name: "W2" }];
+  rerender(<RemovalNotices />);
+  expect(screen.queryByText("You were removed from W2")).not.toBeInTheDocument();
+  expect(useRemovalNotices.getState().accounts[removalAccountKey("alice")]).toEqual([]);
 });

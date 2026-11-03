@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
@@ -271,5 +272,36 @@ describe("useContextMenu", () => {
       act(() => vi.advanceTimersByTime(LONG_PRESS_MS * 2));
       expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("useContextMenu refresh", () => {
+  function LiveRow({ getItems }: { getItems: () => DropdownMenuItem[] }) {
+    const contextMenu = useContextMenu();
+    useEffect(() => contextMenu.refresh(getItems), [contextMenu.refresh, getItems]);
+    return (
+      <>
+        <div data-testid="live" tabIndex={0} {...contextMenu.bind(getItems, { label: "live" })}>
+          live
+        </div>
+        {contextMenu.menu}
+      </>
+    );
+  }
+
+  it("rebuilds the open menu's items on refresh, keeping it open", () => {
+    const first = () => itemsNamed("Mute");
+    const second = () => itemsNamed("Mute", "Leave");
+    const { rerender } = render(<LiveRow getItems={first} />);
+    fireEvent.contextMenu(screen.getByTestId("live"));
+    expect(screen.queryByRole("menuitem", { name: "Leave" })).not.toBeInTheDocument();
+    const menu = screen.getByRole("menu");
+    rerender(<LiveRow getItems={second} />);
+    expect(screen.getByRole("menuitem", { name: "Mute" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Leave" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(menu);
+    rerender(<LiveRow getItems={() => []} />);
+    expect(screen.getByRole("menuitem", { name: "Mute" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Leave" })).toBeInTheDocument();
   });
 });

@@ -41,7 +41,10 @@ export interface MemberLookupSources {
   inDirectSpace: boolean;
 }
 
-/** People of a space by user id, named as the viewer sees them; see `useMemberLookup`. */
+/**
+ * People of a space by user id, named as the viewer sees them; see `useMemberLookup`. In the
+ * direct space nobody has a role.
+ */
 export function buildMemberLookup({
   me,
   members,
@@ -78,7 +81,7 @@ export function buildMemberLookup({
           username: member.username,
           handle: handles[member.userId] ?? null,
           handleView: null,
-          role: member.memberRole,
+          role: inDirectSpace ? undefined : member.memberRole,
           timeoutUntil: member.timeoutUntil ?? null,
           isCurrentUser: false,
           avatarUrl: member.avatarUrl,
@@ -88,7 +91,7 @@ export function buildMemberLookup({
         });
       } else {
         const existing = map.get(member.userId)!;
-        existing.role = member.memberRole;
+        existing.role = inDirectSpace ? undefined : member.memberRole;
         existing.timeoutUntil = member.timeoutUntil ?? null;
         existing.joinedAt = member.joinedAt;
         if (member.avatarUrl) {
