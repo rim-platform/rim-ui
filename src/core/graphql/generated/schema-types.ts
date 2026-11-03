@@ -460,6 +460,21 @@ export enum ConversationChangesStatus {
   RESET = 'RESET'
 }
 
+/** Someone an Owner or Moderator removed from a channel. */
+export type ConversationMemberRemoval = {
+  conversationId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  removedAt: Scalars['DateTime']['output'];
+  /** Who removed them (null if the account no longer exists). */
+  removedBy?: Maybe<User>;
+  /** The Owner or Moderator who removed them. */
+  removedById: Scalars['ID']['output'];
+  /** The person removed (null if the account no longer exists). */
+  user?: Maybe<User>;
+  /** The person removed. */
+  userId: Scalars['ID']['output'];
+};
+
 /** The changes of one conversation after the requested cursor, oldest first. */
 export type ConversationMessageChanges = {
   changes: Array<MessageChange>;
@@ -3424,6 +3439,12 @@ export type Query = {
   /** The caller's contacts, oldest first. */
   contacts: Array<Contact>;
   conversation: Conversation;
+  /**
+   * A channel's latest removals (someone removed by an Owner or Moderator), newest first:
+   * at most `limit`, 50 by default and at most 100. Empty for a group or DM. Errors as for
+   * `conversation`. Listed in `serverInfo.capabilities` as `conversation_member_removals`.
+   */
+  conversationMemberRemovals: Array<ConversationMemberRemoval>;
   customEmojis: Array<CustomEmoji>;
   /**
    * One of the signed-in account's device links: its state, expiry and, once the new device
@@ -3697,6 +3718,13 @@ export type QueryCommandsArgs = {
 
 export type QueryConversationArgs = {
   conversationId: Scalars['ID']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryConversationMemberRemovalsArgs = {
+  conversationId: Scalars['ID']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
   serverId: Scalars['ID']['input'];
 };
 
@@ -4381,8 +4409,10 @@ export type ServerInfo = {
    * (`Message.editedAt`), `workspace_leave` (`leaveWorkspace`), `workspace_rename`
    * (`renameWorkspace`), `message_flag` (`Message.flagged`, `MessageReport.automatic`,
    * `clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
-   * `deleteMemberMessages`, the `MessagesDeleted` event). A client ignores names it does not
-   * know.
+   * `deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
+   * (`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
+   * `conversation_member_removals` (`conversationMemberRemovals`). A client ignores names it
+   * does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**
@@ -4500,6 +4530,11 @@ export type ServerMember = {
   principalId?: Maybe<Scalars['String']['output']>;
   serverId: Scalars['ID']['output'];
   statusText?: Maybe<Scalars['String']['output']>;
+  /**
+   * The reason the moderator gave for the timeout, on the viewer's own entry only while it
+   * is in force; null for every other member and when no reason was given.
+   */
+  timeoutReason?: Maybe<Scalars['String']['output']>;
   /** End of the member's timeout while one is in force, else null. */
   timeoutUntil?: Maybe<Scalars['DateTime']['output']>;
   userId: Scalars['ID']['output'];

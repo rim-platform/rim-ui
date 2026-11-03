@@ -204,9 +204,12 @@ export function retryAfterSeconds(err: unknown): number | undefined {
   return typeof seconds === "number" && Number.isFinite(seconds) ? seconds : undefined;
 }
 
-/** The one wording for a timeout, shared by the composer banner and every error toast. */
-export function timedOutMessage(until: string): string {
-  return `You are timed out until ${formatTime(until)}`;
+/**
+ * The one wording for a timeout, shared by the composer banner and every error toast, followed
+ * by the moderator's reason when there is one.
+ */
+export function timedOutMessage(until: string, reason?: string | null): string {
+  return `You are timed out until ${formatTime(until)}${reason ? `: ${reason}` : ""}`;
 }
 
 /**

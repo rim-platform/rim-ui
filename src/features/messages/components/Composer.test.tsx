@@ -17,6 +17,7 @@ import {
 import { serverInfoQueryClient, type FakeFeatures } from "../../../test/serverInfo";
 import { limitsQueryClient } from "../../../test/limits";
 import { queryKeys } from "../../../core/query/keys";
+import { applyWorkspaceEvent } from "../../../core/events/useWorkspaceEvents";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { toast } from "../../../shared/toast/useToastStore";
 import { NETWORK_ERROR_MESSAGE, timedOutMessage } from "../../../core/graphql/errors";
@@ -429,6 +430,58 @@ describe("Composer — slow mode and timeouts", () => {
 
     expect(await screen.findByTestId("timed-out-banner")).toHaveTextContent(timedOutMessage(until));
     expect(screen.getByRole("textbox")).toBeDisabled();
+  });
+
+  it("follows the timeout reason and a timeout cleared by an event, without a refetch", async () => {
+    const until = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    serve(makeConversation(), ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({
+        serverMembers: workspaceMembers.map((m) =>
+          m.userId === "me" ? { ...m, timeoutUntil: until } : m,
+        ),
+      }),
+    });
+    const qc = renderComposer();
+    expect(await screen.findByTestId("timed-out-banner")).toHaveTextContent(timedOutMessage(until));
+
+    act(() =>
+      applyWorkspaceEvent(
+        {
+          type: "MemberTimeoutChanged",
+          workspace_id: "ws-1",
+          user_id: "me",
+          until,
+          reason: "flooding",
+        },
+        qc,
+        "ws-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("timed-out-banner")).toHaveTextContent(
+        timedOutMessage(until, "flooding"),
+      ),
+    );
+
+    // The members refetch the event starts never answers: the patch alone unlocks the composer.
+    routeRequests(requestMock, {
+      ...baseReadHandlers,
+      "query ServerMembers": () => new Promise(() => {}),
+    });
+    act(() =>
+      applyWorkspaceEvent(
+        {
+          type: "MemberTimeoutChanged",
+          workspace_id: "ws-1",
+          user_id: "me",
+          until: null,
+        },
+        qc,
+        "ws-1",
+      ),
+    );
+    await waitFor(() => expect(screen.queryByTestId("timed-out-banner")).not.toBeInTheDocument());
+    expect(screen.getByRole("textbox")).not.toBeDisabled();
   });
 
   it("ignores a timeout that has already ended", async () => {

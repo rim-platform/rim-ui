@@ -16,7 +16,7 @@ interface E2eeNoticeRowProps {
   onRestored?: () => void;
 }
 
-function Line({ children }: { children: React.ReactNode }) {
+export function NoticeLine({ children }: { children: React.ReactNode }) {
   return (
     <div className="my-2 flex items-center gap-3 text-xs text-rim-text-muted" role="note">
       <div className="h-px flex-1 bg-rim-line" />
@@ -48,27 +48,27 @@ export function E2eeNoticeRow({ notice, nameOf, deviceNameOf, onRestored }: E2ee
 
   if (notice.kind === "encryptedFrom") {
     return (
-      <Line>
+      <NoticeLine>
         <Lock className="h-3 w-3" aria-hidden />
         Messages from here on are end-to-end encrypted
-      </Line>
+      </NoticeLine>
     );
   }
   if (notice.kind === "member") {
     const Icon = notice.change === "added" ? UserPlus : UserMinus;
     return (
-      <Line>
+      <NoticeLine>
         <Icon className="h-3 w-3" aria-hidden />
         {nameOf(notice.principalId)} was {notice.change}
-      </Line>
+      </NoticeLine>
     );
   }
   if (notice.kind === "reset") {
     return (
-      <Line>
+      <NoticeLine>
         <RotateCcw className="h-3 w-3" aria-hidden />
         Encryption was reset by {nameOf(notice.principalId)}&apos;s {deviceNameOf(notice.deviceId)}
-      </Line>
+      </NoticeLine>
     );
   }
 
@@ -97,7 +97,7 @@ export function E2eeNoticeRow({ notice, nameOf, deviceNameOf, onRestored }: E2ee
   }
 
   return (
-    <Line>
+    <NoticeLine>
       <span>
         Earlier messages were sent before this device joined
         {notice.count > 1 ? ` (${notice.count})` : ""}
@@ -112,6 +112,6 @@ export function E2eeNoticeRow({ notice, nameOf, deviceNameOf, onRestored }: E2ee
           {restoring ? "Restoring…" : "Restore from history archive"}
         </button>
       )}
-    </Line>
+    </NoticeLine>
   );
 }

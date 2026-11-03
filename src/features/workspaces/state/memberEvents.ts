@@ -7,8 +7,10 @@ import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import type { ServerMember } from "../api/useServerMembers";
 import { parseEventRole } from "../role";
 import { useMemberDirectoryStore } from "./useMemberDirectoryStore";
+import { useTimeoutStore } from "./useTimeoutStore";
 import { useWorkspaceStore } from "./useWorkspaceStore";
 
 /**
@@ -168,6 +170,28 @@ export function handleMemberBanChanged(qc: QueryClient, workspaceId: string): vo
   invalidateAuthors(qc, workspaceId);
   void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
   void qc.invalidateQueries({ queryKey: queryKeys.serverBans(workspaceId) });
+}
+
+/**
+ * A member's timeout was set or cleared: patch their entry in the member directory at once, so
+ * the composer and the timeout markers follow without a reload, and refetch it. For the viewer,
+ * also store the reason only they receive and drop a timeout noted from a refused write.
+ */
+export function handleMemberTimeoutChanged(
+  qc: QueryClient,
+  workspaceId: string,
+  userId: string,
+  until: string | null,
+  reason?: string | null,
+): void {
+  qc.setQueryData<ServerMember[]>(queryKeys.serverMembers(workspaceId), (old) =>
+    old?.map((m) => (m.userId === userId ? { ...m, timeoutUntil: until } : m)),
+  );
+  if (userId === currentUserId(qc)) {
+    if (until) qc.setQueryData(queryKeys.myTimeoutReason(workspaceId, until), reason ?? null);
+    useTimeoutStore.getState().clearTimeout(workspaceId);
+  }
+  void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(workspaceId) });
 }
 
 /** Refresh member pictures, embedded message authors and this account's other sessions. */

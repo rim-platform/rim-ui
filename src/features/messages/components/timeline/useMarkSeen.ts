@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useMarkAsRead } from "../../../conversations/api/useMarkAsRead";
 import { useUnreadStore } from "../../../conversations/state/useUnreadStore";
+import { isTimelineNotice } from "../../../e2ee/utils/timeline";
 
 /** How long the viewer stays at the bottom before the server is told; also coalesces bursts. */
 export const MARK_SEEN_DELAY_MS = 1000;
@@ -10,6 +11,7 @@ interface SeenItem {
   sentAt: string;
   authorId: string;
   e2eeNotice?: unknown;
+  membershipNotice?: unknown;
 }
 
 interface UseMarkSeenOptions {
@@ -36,7 +38,7 @@ interface SeenState {
 function newestMessage(items: SeenItem[], isLensActive: boolean): SeenItem | null {
   if (isLensActive) return null;
   for (let i = items.length - 1; i >= 0; i--) {
-    if (!items[i].e2eeNotice) return items[i];
+    if (!isTimelineNotice(items[i])) return items[i];
   }
   return null;
 }
@@ -53,7 +55,7 @@ function hasUnseen(state: SeenState, readUpTo: string | null): boolean {
   for (let i = state.items.length - 1; i >= 0; i--) {
     const item = state.items[i];
     if (Date.parse(item.sentAt) <= readUpToMs) return false;
-    if (!item.e2eeNotice && item.authorId !== state.currentUserId) return true;
+    if (!isTimelineNotice(item) && item.authorId !== state.currentUserId) return true;
   }
   return false;
 }

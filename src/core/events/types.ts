@@ -143,6 +143,17 @@ export type WorkspaceEvent =
     }
   | { type: "MemberBanChanged"; workspace_id: string; user_id: string }
   /**
+   * A member was timed out until `until`, or their timeout was cleared early (`until` null).
+   * Same visibility as `MemberLeft`; only the member's own delivery carries `reason`.
+   */
+  | {
+      type: "MemberTimeoutChanged";
+      workspace_id: string;
+      user_id: string;
+      until: string | null;
+      reason?: string | null;
+    }
+  /**
    * A member's role changed. `role` is the lowercase name: `owner`, `moderator`, `member` or
    * `guest`. Same visibility as `MemberLeft`.
    */

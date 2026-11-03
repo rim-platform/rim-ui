@@ -13,6 +13,9 @@ export const queryKeys = {
     ["identityBackupStatus", principalId, keySeq] as const,
   myServers: () => ["myServers"] as const,
   serverMembers: (serverId?: string) => ["serverMembers", serverId] as const,
+  // The reason given for the viewer's timeout ending at `until`.
+  myTimeoutReason: (workspaceId?: string, until?: string | null) =>
+    ["myTimeoutReason", workspaceId, until ?? null] as const,
   server: (serverId?: string) => ["server", serverId] as const,
   // Moderation: active bans, and message reports filtered by status (null = all), with the
   // authors' principal ids when an instance operator reads the direct space's reports.
@@ -61,6 +64,9 @@ export const queryKeys = {
   // One conversation by id: the open conversation's header, composer gate and members panel.
   conversation: (workspaceId?: string, conversationId?: string) =>
     ["conversation", workspaceId, conversationId] as const,
+  // A channel's latest removals, shown as lines in its timeline.
+  conversationMemberRemovals: (workspaceId?: string, conversationId?: string) =>
+    ["conversationMemberRemovals", workspaceId, conversationId] as const,
   // Keyed by workspace too: the list is fetched with the active workspace as context.
   commands: (surface?: string, workspaceId?: string) => ["commands", surface, workspaceId] as const,
   resolvedKeybinds: (workspaceId?: string) => ["resolvedKeybinds", workspaceId] as const,
@@ -163,6 +169,7 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "messages",
   "conversations",
   "conversation",
+  "conversationMemberRemovals",
   "channels",
   "threadByRoot",
   "threadMessages",
@@ -175,6 +182,7 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "mutedConversations",
   "workspacePresence",
   "serverMembers",
+  "myTimeoutReason",
   "server",
   "serverBans",
   "messageReports",

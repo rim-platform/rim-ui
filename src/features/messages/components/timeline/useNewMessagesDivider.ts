@@ -9,7 +9,7 @@ import type { MessagesPage } from "../../api/useMessages";
 interface UseNewMessagesDividerOptions {
   workspaceId: string | null;
   conversationId: string | null;
-  items: { sentAt: string }[];
+  items: { sentAt: string; membershipNotice?: unknown }[];
   isLensActive: boolean;
   /** Whether the user is currently at the bottom of the list (owned by the scroll hook). */
   isAtBottomRef: React.RefObject<boolean>;
@@ -37,7 +37,7 @@ export function useNewMessagesDivider({
   // Index of the first new message (after watermark). -1 means no divider.
   const firstNewIndex = useMemo(() => {
     if (!watermark || isLensActive || items.length === 0) return -1;
-    return items.findIndex((m) => m.sentAt > watermark);
+    return items.findIndex((m) => !m.membershipNotice && m.sentAt > watermark);
   }, [watermark, isLensActive, items]);
 
   const [dividerFading, setDividerFading] = useState(false);

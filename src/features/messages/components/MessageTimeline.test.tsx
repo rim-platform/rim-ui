@@ -139,6 +139,12 @@ vi.mock("../../conversations/api/useConversation", async (importOriginal) => ({
   useConversation: () => ({ data: dmRequest.conversation }),
 }));
 
+// A channel's removals, as the removals query answers them.
+const removalsState = vi.hoisted(() => ({ removals: [] as unknown[] }));
+vi.mock("../../conversations/api/useMemberRemovals", () => ({
+  useMemberRemovals: () => ({ data: removalsState.removals }),
+}));
+
 // --- Render-counting MessageItem spy --------------------------------------
 // Wraps a counting component in the real memo comparator so a count only
 // increments when the real MessageItem would have re-rendered.
@@ -502,6 +508,7 @@ afterEach(() => {
   useReplyTargetStore.setState({ targets: {} });
   dmRequest.pending = false;
   dmRequest.conversation = undefined;
+  removalsState.removals = [];
 });
 
 describe("MessageTimeline handler stability", () => {
@@ -1398,5 +1405,53 @@ describe("MessageTimeline — folded messages", () => {
     expect(within(row).getByRole("button", { name: "Show less" })).toBeInTheDocument();
     expect(messageList().scrollTop).toBe(top);
     expect(rowViewportOffset("m-010")).toBe(-20);
+  });
+});
+
+describe("MessageTimeline — removal lines", () => {
+  const removal = (removedAt: string) => ({
+    id: "r-1",
+    userId: "bob",
+    removedById: "alice",
+    removedAt,
+    user: { id: "bob", username: "bob", displayName: null },
+    removedBy: { id: "alice", username: "alice", displayName: null },
+  });
+
+  beforeEach(() => {
+    dmRequest.conversation = makeConversation({
+      id: "conv-1",
+      conversationType: ConversationTypeEnum.CHANNEL,
+    });
+  });
+
+  it("shows who was removed between the messages sent before and after it", () => {
+    setMessages(range(0, 3));
+    removalsState.removals = [removal(makeMessage(1).sentAt)];
+    render(<MessageTimeline />);
+
+    const line = screen.getByText("bob was removed by alice");
+    const rows = [...document.querySelectorAll("[data-index]")];
+    const at = (text: string) => rows.findIndex((row) => row.contains(screen.getByText(text)));
+    expect(at("message 0")).toBeLessThan(rows.findIndex((row) => row.contains(line)));
+    expect(rows.findIndex((row) => row.contains(line))).toBeLessThan(at("message 1"));
+  });
+
+  it("marks the newest message read, not the line after it", async () => {
+    const short = range(0, 3);
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 });
+    setMessages(short);
+    removalsState.removals = [removal("2026-01-02T00:00:00.000Z")];
+    render(<MessageTimeline />);
+    await settle();
+    await act(() => new Promise((resolve) => setTimeout(resolve, MARK_SEEN_DELAY_MS)));
+
+    expect(screen.getByText("bob was removed by alice")).toBeInTheDocument();
+    expect(markAsRead.mutate).toHaveBeenCalledWith({
+      conversationId: "conv-1",
+      workspaceId: "ws-1",
+      readAt: short[2].sentAt,
+    });
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
   });
 });
