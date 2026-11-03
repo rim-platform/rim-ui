@@ -266,6 +266,7 @@ pub fn merge_upstream_args() -> Vec<OsString> {
 /// A `git` command with the hardened environment applied.
 pub fn git_command() -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("git");
+    crate::host_env::restore_host_env(&mut cmd);
     for (key, value) in HARDENED_GIT_ENV {
         cmd.env(key, value);
     }

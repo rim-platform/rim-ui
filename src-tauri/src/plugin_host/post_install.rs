@@ -171,7 +171,9 @@ where
 /// spawned or exits with failure.
 pub async fn run_steps(steps: Vec<PostInstallStep>) -> Result<(), GitInstallError> {
     for step in steps {
-        let output = tokio::process::Command::new(&step.program)
+        let mut cmd = tokio::process::Command::new(&step.program);
+        crate::host_env::restore_host_env(&mut cmd);
+        let output = cmd
             .args(&step.args)
             .current_dir(&step.working_dir)
             .stdin(std::process::Stdio::null())
