@@ -22,6 +22,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-11-03
+
 ### Added
 
 - A timed-out member sees it at once: the composer locks with "You are timed out until 20:37:
@@ -1042,7 +1044,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.9...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.10...HEAD
+[0.0.10]: https://github.com/rim-platform/rim-ui/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/rim-platform/rim-ui/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/rim-platform/rim-ui/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/rim-platform/rim-ui/compare/v0.0.6...v0.0.7
