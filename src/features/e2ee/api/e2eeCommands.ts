@@ -405,7 +405,7 @@ export async function decryptAttachment(
   account: CacheAccount,
   messageId: string,
   blobSha256: string,
-  blob: Uint8Array,
+  blob: Uint8Array<ArrayBuffer>,
 ): Promise<Uint8Array> {
   if (isWebAccount(account)) {
     const [{ webMessageStore }, { decryptFile }] = await Promise.all([

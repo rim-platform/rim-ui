@@ -73,7 +73,7 @@ export const NEEDS_RECOVERY_EXPLANATION =
 /** The 16 bytes of a typed recovery phrase, or the reason it was refused. */
 export async function readPhrase(
   text: string,
-): Promise<{ entropy: Uint8Array } | { error: string }> {
+): Promise<{ entropy: Uint8Array<ArrayBuffer> } | { error: string }> {
   try {
     return { entropy: await parseRecoveryPhrase(text) };
   } catch (err) {

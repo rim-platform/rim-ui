@@ -53,7 +53,7 @@ function bounded(statement: Statement, max: number, what: string): void {
 }
 
 /** base64url(SHA-256(bytes)). */
-export async function sha256Text(bytes: Uint8Array): Promise<string> {
+export async function sha256Text(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return b64(await sha256(bytes));
 }
 
@@ -533,7 +533,7 @@ export interface ResponseExpectation {
   /** The device-request payload text the request carried. */
   requestPayload: string;
   status: number;
-  body: Uint8Array;
+  body: Uint8Array<ArrayBuffer>;
 }
 
 /**

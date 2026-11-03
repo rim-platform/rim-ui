@@ -81,7 +81,7 @@ export interface BrowserKeyRecord {
    */
   pendingIdentity?: StoredKey & { seq: number };
   /** The recovery kit's 16 entropy bytes, kept only until the person confirms the kit is saved. */
-  recoveryEntropy?: Uint8Array;
+  recoveryEntropy?: Uint8Array<ArrayBuffer>;
   /** Whether the person confirmed they saved the recovery kit; set where `identity` was created. */
   kitConfirmed?: boolean;
   /** The confirmed keys an unconfirmed recovery replaced, put back if the server refuses it. */
@@ -137,7 +137,7 @@ interface StoredRecord {
   deviceKey?: CryptoKey;
   identity?: StoredKey;
   pendingIdentity?: StoredKey & { seq: number };
-  recoveryEntropy?: Uint8Array;
+  recoveryEntropy?: Uint8Array<ArrayBuffer>;
   replaced?: StoredRecord;
 }
 

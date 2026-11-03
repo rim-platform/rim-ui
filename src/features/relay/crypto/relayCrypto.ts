@@ -49,7 +49,7 @@ export interface ResponseCheck {
   host: string;
   requestPayload: string;
   status: number;
-  body: Uint8Array;
+  body: Uint8Array<ArrayBuffer>;
 }
 
 /** What a verified profile card says, as both platforms answer it. */
