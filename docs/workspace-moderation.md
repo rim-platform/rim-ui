@@ -26,7 +26,7 @@ timeout or when it ends, without a reload, and the timeout marker in member list
 When an Owner or Moderator removes someone from a channel, the channel shows a line where it
 happened: "Bob was removed by Alice" ("You were removed by Alice" for the person removed, "Bob
 was removed by you" for the moderator). Leaving a channel, groups, and removals from the
-workspace show no line. The channel keeps the latest 50 removals.
+workspace show no line. A channel shows its latest 50 removals.
 
 Both need a server that lists `member_timeout_changed` and `conversation_member_removals` in its
 capabilities; against an older server the banner shows without the reason and only after a
