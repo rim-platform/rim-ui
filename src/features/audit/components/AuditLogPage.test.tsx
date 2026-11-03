@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
@@ -48,6 +48,8 @@ function makeEntry(overrides: {
   initiator?: string;
   actorUserId?: string;
   argsRedacted?: unknown;
+  sensitivity?: string;
+  dangerous?: boolean;
 }) {
   return {
     actorUserId: overrides.actorUserId ?? "user-1",
@@ -55,8 +57,8 @@ function makeEntry(overrides: {
     commandId: overrides.commandId,
     initiator: overrides.initiator ?? "user",
     argsRedacted: overrides.argsRedacted ?? {},
-    sensitivity: "LOW",
-    dangerous: false,
+    sensitivity: overrides.sensitivity ?? "safe",
+    dangerous: overrides.dangerous ?? false,
     confirmationKind: "none",
     typedVerb: overrides.typedVerb ?? null,
     outcome: overrides.outcome ?? AuditOutcomeGql.SUCCESS,
@@ -343,6 +345,49 @@ describe("AuditLogPage", () => {
 
     const row = screen.getByTestId("audit-row-a-null");
     expect(row.querySelector("[data-testid='typed-verb-chip']")).toHaveTextContent("—");
+  });
+
+  it("labels a pipe's row Pipe", async () => {
+    requestMock.mockResolvedValueOnce(
+      makePage([
+        makeEntry({ id: "a-pipe", commandId: "chat.mark_as_read | admin.kick", typedVerb: null }),
+      ]),
+    );
+
+    renderWithProviders(<AuditLogPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("chat.mark_as_read | admin.kick")).toBeInTheDocument(),
+    );
+
+    const row = screen.getByTestId("audit-row-a-pipe");
+    expect(row.querySelector("[data-testid='typed-verb-chip']")).toHaveTextContent("Pipe");
+  });
+
+  it("shows each row's sensitivity and marks a dangerous one", async () => {
+    requestMock.mockResolvedValueOnce(
+      makePage([
+        makeEntry({
+          id: "r-danger",
+          commandId: "admin.kick",
+          sensitivity: "mutating",
+          dangerous: true,
+        }),
+        makeEntry({ id: "r-safe", commandId: "chat.read", sensitivity: "safe" }),
+      ]),
+    );
+
+    renderWithProviders(<AuditLogPage />);
+
+    await waitFor(() => expect(screen.getByText("admin.kick")).toBeInTheDocument());
+
+    const first = within(screen.getByTestId("audit-row-r-danger")).getByTestId("audit-risk");
+    expect(first).toHaveTextContent("Mutating");
+    expect(within(first).getByLabelText("Dangerous command")).toBeInTheDocument();
+
+    const second = within(screen.getByTestId("audit-row-r-safe")).getByTestId("audit-risk");
+    expect(second).toHaveTextContent("Safe");
+    expect(within(second).queryByLabelText("Dangerous command")).toBeNull();
   });
 
   it("renders empty state when no entries", async () => {
