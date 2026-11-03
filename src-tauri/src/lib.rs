@@ -2,6 +2,7 @@ mod account_lock;
 mod agent_proxy;
 mod e2ee;
 mod history_archive;
+pub(crate) mod host_env;
 mod identity_backup;
 mod key_identity;
 mod keybind_profile;

@@ -58,6 +58,7 @@ impl PluginProcess {
         }
 
         let mut command = Command::new(&entrypoint_path);
+        crate::host_env::restore_host_env(&mut command);
         command
             .current_dir(plugin_dir)
             .stdin(Stdio::piped())
