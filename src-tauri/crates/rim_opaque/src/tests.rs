@@ -313,19 +313,17 @@ fn a_rewrap_opens_the_old_unlock_key_and_with_it_the_old_wrap() {
 
 #[test]
 fn the_ksf_is_argon2id_with_the_agreed_cost() {
-    let input = [7u8; 64];
-    let mut expected = [0u8; 64];
-    argon2::Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        argon2::Params::new(65536, 3, 4, None).unwrap(),
-    )
-    .hash_password_into(&input, &[0; 16], &mut expected)
-    .unwrap();
+    // Computed independently with the reference implementation, libargon2's
+    // `argon2id_hash_raw` (t = 3, m = 65536 KiB, p = 4, 16 zero bytes of salt).
+    let input: [u8; 64] = std::array::from_fn(|i| i as u8);
     let out = opaque_ke::ksf::Ksf::hash(
         &RimKsf::default(),
         generic_array::GenericArray::<u8, generic_array::typenum::U64>::clone_from_slice(&input),
     )
     .unwrap();
-    assert_eq!(out.as_slice(), expected);
+    let hex = out.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    assert_eq!(hex, KSF_OUTPUT);
 }
+
+const KSF_OUTPUT: &str = "763c05e205e6d06f9d49921578c5fc314590d8016bd8ccc98049f3da265fad5d\
+                          4a27e85aaac6ac1de7cf2aeda7b8c767de0ff4e5db3ff8421d9bb3e8effb279b";

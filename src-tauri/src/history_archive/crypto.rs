@@ -236,4 +236,16 @@ mod tests {
         };
         assert!(passphrase_key("x", b"saltsaltsaltsalt", huge).is_err());
     }
+
+    #[test]
+    fn passphrase_key_at_the_default_cost_is_the_reference_argon2id_output() {
+        // Computed independently with the reference implementation, libargon2's
+        // `argon2id_hash_raw` (t = 3, m = 65536 KiB, p = 1, 32 bytes out).
+        let salt: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let key = passphrase_key("correct horse battery staple", &salt, KdfCost::DEFAULT).unwrap();
+        assert_eq!(
+            hex::encode(*key),
+            "0d1a3c6523c8f06e4e0af9c515aa5b5448cfebd6838f2d52c3d8b6ef8ddc3c2e"
+        );
+    }
 }
