@@ -52,6 +52,13 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   covers the person menu, and no hover card opens while a menu is open.
 - Moving through the composer's / suggestions with the arrow keys keeps the selected command in
   view, and the suggestions' descriptions are left-aligned.
+- A workspace's menu on the rail, opened before its role loaded, fills in Browse channels…,
+  Create channel…, Leave workspace… and the rest once it loads, instead of staying with Pause
+  notifications and Assign keybind… only.
+- "You were removed from <workspace>" and "You were banned from <workspace>" go away when you
+  are a member of that workspace again.
+- The profile card and the @mention card in a DM or group show no workspace role, instead of
+  "Role: Guest" for people who are members of your workspaces.
 - Error toasts close by themselves after 10 seconds, and stay while the pointer is on them.
   Toasts now sit at the bottom right above the composer, so they no longer cover buttons such
   as New Macro or Send.
