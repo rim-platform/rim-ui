@@ -6,7 +6,7 @@ import { cn } from "../../../shared/ui/cn";
 import { useCountdown } from "../hooks/useCountdown";
 
 /** Above the composer while the viewer is timed out; the composer is disabled meanwhile. */
-export function TimedOutBanner({ until }: { until: string }) {
+export function TimedOutBanner({ until, reason }: { until: string; reason?: string | null }) {
   return (
     <div
       role="status"
@@ -14,7 +14,7 @@ export function TimedOutBanner({ until }: { until: string }) {
       className="mb-2 flex items-center gap-2 rounded-lg border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-sm text-rim-warm"
     >
       <Clock className="h-4 w-4 shrink-0" />
-      <span>{timedOutMessage(until)}</span>
+      <span>{timedOutMessage(until, reason)}</span>
     </div>
   );
 }

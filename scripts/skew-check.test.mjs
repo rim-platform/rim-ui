@@ -73,6 +73,18 @@ function schemaWithoutMemberMessageDeletion() {
   return buildASTSchema(document);
 }
 
+/** The committed schema without the listed fields, given as `{ TypeName: ["field", ...] }`. */
+function schemaWithoutFields(fieldsByType) {
+  const document = visit(parse(SDL), {
+    ObjectTypeDefinition(node) {
+      const fields = fieldsByType[node.name.value];
+      if (!fields) return undefined;
+      return { ...node, fields: node.fields?.filter((f) => !fields.includes(f.name.value)) };
+    },
+  });
+  return buildASTSchema(document);
+}
+
 describe("skew check", () => {
   const documents = collectDocuments();
 
@@ -120,6 +132,20 @@ describe("skew check", () => {
     expect(refused.map((r) => r.label).sort()).toEqual([
       "mutation DeleteMemberMessages",
       "query MemberMessageCounts",
+    ]);
+  });
+
+  it("refuses only the timeout reason query on a server without ServerMember.timeoutReason", () => {
+    const schema = schemaWithoutFields({ ServerMember: ["timeoutReason"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query MyTimeoutReason",
+    ]);
+  });
+
+  it("refuses only the removals query on a server without Query.conversationMemberRemovals", () => {
+    const schema = schemaWithoutFields({ Query: ["conversationMemberRemovals"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query ConversationMemberRemovals",
     ]);
   });
 });

@@ -268,6 +268,7 @@ function TimeoutDialog({
         onCustomChange={setCustom}
       />
       <ReasonField id="timeout-reason" value={reason} onChange={setReason} />
+      <p className="text-xs text-rim-text-muted">The member will see this reason.</p>
     </ModerationDialog>
   );
 }

@@ -9,6 +9,7 @@
  */
 
 import type { MessageAuthor, MessageItem } from "../../../core/types/messages";
+import type { MemberRemoval } from "../../conversations/api/useMemberRemovals";
 import type { MembershipEvent, Reset } from "../api/e2eeCommands";
 import { toUserMentions } from "./content";
 
@@ -18,9 +19,14 @@ export type E2eeNotice =
   | { kind: "reset"; incarnation: number; principalId: string | null; deviceId: string | null }
   | { kind: "member"; change: "added" | "removed"; principalId: string };
 
-/** A timeline item: a message, or one of the encryption notices between messages. */
+/** A membership line between a channel's messages. */
+export type MembershipNotice = { kind: "removed"; removal: MemberRemoval };
+
+/** A timeline item: a message, or one of the notice lines between messages. */
 export interface TimelineMessage extends MessageItem {
   e2eeNotice?: E2eeNotice;
+  /** A line saying who was removed from the channel, in place of a message. */
+  membershipNotice?: MembershipNotice;
   /** A plaintext message sent before the conversation was encrypted. */
   beforeEncryption?: boolean;
 }
@@ -61,7 +67,8 @@ function position(incarnation: number, epoch: number): number {
   return incarnation * 2 ** 32 + epoch;
 }
 
-function notice(id: string, sentAt: string, e2eeNotice: E2eeNotice): TimelineMessage {
+/** A timeline row that is not a message, at `sentAt`: the base of every notice line. */
+export function timelineNotice(id: string, sentAt: string): TimelineMessage {
   return {
     id,
     serverId: "",
@@ -79,8 +86,19 @@ function notice(id: string, sentAt: string, e2eeNotice: E2eeNotice): TimelineMes
     reactions: [],
     attachments: [],
     linkPreviews: [],
-    e2eeNotice,
   };
+}
+
+function notice(id: string, sentAt: string, e2eeNotice: E2eeNotice): TimelineMessage {
+  return { ...timelineNotice(id, sentAt), e2eeNotice };
+}
+
+/** Whether a timeline item is a notice line rather than a message. */
+export function isTimelineNotice(item: {
+  e2eeNotice?: unknown;
+  membershipNotice?: unknown;
+}): boolean {
+  return Boolean(item.e2eeNotice || item.membershipNotice);
 }
 
 export function isPlaceholder(message: MessageItem): boolean {

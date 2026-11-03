@@ -152,6 +152,13 @@ describe("TIMED_OUT and RATE_LIMITED error extensions", () => {
     expect(timedOutMessage(until)).toMatch(/^You are timed out until /);
   });
 
+  it("follows the timed-out message with the moderator's reason when there is one", () => {
+    expect(timedOutMessage(until, "flooding")).toBe(`${timedOutMessage(until)}: flooding`);
+    for (const reason of [undefined, null, ""]) {
+      expect(timedOutMessage(until, reason)).toBe(timedOutMessage(until));
+    }
+  });
+
   it("words a RATE_LIMITED failure with the seconds to wait, rounded up", () => {
     expect(graphqlErrorMessage(slowMode, "fallback")).toBe("Slow down: try again in 12 s");
     const fractional = withExtensions("x", { code: RATE_LIMITED, retryAfterSeconds: 0.2 });

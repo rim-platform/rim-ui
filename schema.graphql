@@ -502,6 +502,31 @@ enum ConversationChangesStatus {
 }
 
 """
+Someone an Owner or Moderator removed from a channel.
+"""
+type ConversationMemberRemoval {
+	id: ID!
+	conversationId: ID!
+	"""
+	The person removed.
+	"""
+	userId: ID!
+	"""
+	The Owner or Moderator who removed them.
+	"""
+	removedById: ID!
+	removedAt: DateTime!
+	"""
+	The person removed (null if the account no longer exists).
+	"""
+	user: User
+	"""
+	Who removed them (null if the account no longer exists).
+	"""
+	removedBy: User
+}
+
+"""
 The changes of one conversation after the requested cursor, oldest first.
 """
 type ConversationMessageChanges {
@@ -3280,6 +3305,12 @@ type Query {
 	conversation(serverId: ID!, conversationId: ID!): Conversation!
 	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
 	channels(serverId: ID!, dir: PageDir!, cursor: ChannelCursorInput, limit: Int!, filter: ChannelListFilter): ChannelPage!
+	"""
+	A channel's latest removals (someone removed by an Owner or Moderator), newest first:
+	at most `limit`, 50 by default and at most 100. Empty for a group or DM. Errors as for
+	`conversation`. Listed in `serverInfo.capabilities` as `conversation_member_removals`.
+	"""
+	conversationMemberRemovals(serverId: ID!, conversationId: ID!, limit: Int): [ConversationMemberRemoval!]!
 	messages(serverId: ID!, conversationId: ID!, dir: PageDir!, cursor: MessageCursorInput, limit: Int!, includeDeleted: Boolean!): MessagePage!
 	"""
 	Full-text search over the messages of a workspace the caller can read. `input.query`
@@ -4101,8 +4132,10 @@ type ServerInfo {
 	(`Message.editedAt`), `workspace_leave` (`leaveWorkspace`), `workspace_rename`
 	(`renameWorkspace`), `message_flag` (`Message.flagged`, `MessageReport.automatic`,
 	`clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
-	`deleteMemberMessages`, the `MessagesDeleted` event). A client ignores names it does not
-	know.
+	`deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
+	(`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
+	`conversation_member_removals` (`conversationMemberRemovals`). A client ignores names it
+	does not know.
 	"""
 	capabilities: [String!]!
 }
@@ -4194,6 +4227,11 @@ type ServerMember {
 	End of the member's timeout while one is in force, else null.
 	"""
 	timeoutUntil: DateTime
+	"""
+	The reason the moderator gave for the timeout, on the viewer's own entry only while it
+	is in force; null for every other member and when no reason was given.
+	"""
+	timeoutReason: String
 	"""
 	The member's key identity (`rimp1_…`), once enrolled; null for a password-only account.
 	"""

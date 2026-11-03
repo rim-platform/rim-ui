@@ -18,6 +18,8 @@ import { MessageItem } from "./MessageItem";
 import { useMessageContextMenu } from "../hooks/useMessageContextMenu";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
+import { useMemberRemovals } from "../../conversations/api/useMemberRemovals";
+import { MembershipNoticeRow } from "./MembershipNoticeRow";
 import { EncryptionNotices } from "../../e2ee/components/EncryptionNotices";
 import { LockMark } from "../../e2ee/components/LockMark";
 import { ConversationContinuity } from "../../relay/components/ConversationContinuity";
@@ -31,7 +33,11 @@ import {
   usePrincipalNames,
 } from "../../e2ee/hooks/useE2eeConversation";
 import { invalidateTimeline } from "../../e2ee/runtime/groups";
-import type { EncryptionContext, TimelineMessage } from "../../e2ee/utils/timeline";
+import {
+  isTimelineNotice,
+  type EncryptionContext,
+  type TimelineMessage,
+} from "../../e2ee/utils/timeline";
 import { useConversation } from "../../conversations/api/useConversation";
 import { useDmRequestPending } from "../../conversations/api/useDmRequestPending";
 import { directPeerId } from "../../conversations/utils";
@@ -119,7 +125,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   );
   const deviceNameOf = useDeviceNames((resets ?? []).map((r) => r.principalId));
 
-  const timeline = useTimelineItems(workspaceId, conversationId, encryption);
+  const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
+  const { data: removals } = useMemberRemovals(workspaceId, conversationId, isChannel);
+  const timeline = useTimelineItems(workspaceId, conversationId, encryption, removals);
   const items: TimelineMessage[] = timeline.items;
   useBanExpiry(
     workspaceId,
@@ -130,7 +138,9 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   // What the viewer sent while their DM waits as a request.
   const sentCount = useMemo(
     () =>
-      pendingPeerId ? items.filter((m) => !m.e2eeNotice && m.authorId === currentUserId).length : 0,
+      pendingPeerId
+        ? items.filter((m) => !isTimelineNotice(m) && m.authorId === currentUserId).length
+        : 0,
     [pendingPeerId, items, currentUserId],
   );
   const { isLensActive, activeLens } = timeline;
@@ -228,7 +238,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     (messageId: string) => {
       const source = replySourceRef.current;
       const msg = source.itemsById.get(messageId);
-      if (!conversationId || !msg || msg.isDeleted || msg.e2eeNotice) return;
+      if (!conversationId || !msg || msg.isDeleted || isTimelineNotice(msg)) return;
       useReplyTargetStore.getState().start(conversationId, {
         messageId,
         authorId: msg.authorId,
@@ -447,6 +457,25 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
             >
               {virtualizer.getVirtualItems().map((row) => {
                 const msg = items[row.index];
+                if (msg.membershipNotice) {
+                  return (
+                    <div
+                      key={row.key}
+                      data-index={row.index}
+                      ref={virtualizer.measureElement}
+                      className="absolute left-0 top-0 w-full"
+                      style={{ transform: `translateY(${row.start}px)` }}
+                    >
+                      <MembershipNoticeRow
+                        notice={msg.membershipNotice}
+                        currentUserId={currentUserId}
+                        nameOf={(userId, user) =>
+                          authorNameOf({ author: user }, memberLookup.resolve(userId))
+                        }
+                      />
+                    </div>
+                  );
+                }
                 if (msg.e2eeNotice && workspaceId) {
                   return (
                     <div

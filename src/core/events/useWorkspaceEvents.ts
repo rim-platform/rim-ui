@@ -4,6 +4,7 @@ import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   handleMemberBanChanged,
   handleMemberProfileUpdated,
+  handleMemberTimeoutChanged,
 } from "../../features/workspaces/state/memberEvents";
 import { useRecentActivityStore } from "../../features/conversations/state/useRecentActivityStore";
 import { useBlockedConversations } from "../../features/relay/state/useBlockedConversations";
@@ -478,6 +479,10 @@ export function applyWorkspaceEvent(
 
     case "MemberBanChanged":
       handleMemberBanChanged(qc, workspaceId);
+      break;
+
+    case "MemberTimeoutChanged":
+      handleMemberTimeoutChanged(qc, workspaceId, event.user_id, event.until, event.reason);
       break;
 
     case "MemberRoleChanged":

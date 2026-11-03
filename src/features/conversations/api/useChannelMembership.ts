@@ -92,6 +92,9 @@ export function invalidateConversationQueries(
   qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
   qc.invalidateQueries({ queryKey: queryKeys.conversations(serverId) });
   qc.invalidateQueries({ queryKey: queryKeys.conversation(serverId, conversationId) });
+  qc.invalidateQueries({
+    queryKey: queryKeys.conversationMemberRemovals(serverId, conversationId),
+  });
 }
 
 /** Join a public, unarchived channel. */

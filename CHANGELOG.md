@@ -24,6 +24,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A timed-out member sees it at once: the composer locks with "You are timed out until 20:37:
+  <reason>" when a moderator times them out, and unlocks when the timeout is cleared or ends,
+  without a reload. The reason shows after a reload too. Needs a server that lists
+  `member_timeout_changed`.
+- A channel shows a line where an Owner or Moderator removed someone: "Bob was removed by
+  Alice". Needs a server that lists `conversation_member_removals`.
 - **Block…** in the person menu (right-click a name or avatar), the hover card, the profile card
   and a DM's menu, also for someone whose DM or group you already accepted. It asks first, then
   removes them from your contacts and hides your DMs with them and the groups they started until

@@ -115,6 +115,14 @@ describe("RelayStreamProcessor", () => {
     expect(streams).toEqual([`c:${CONV}`, "w"]);
   });
 
+  it("accepts a timeout change on this person's own stream and on the space's", async () => {
+    const { processor, deps } = setup();
+    const event = { type: "MemberTimeoutChanged", user_id: ME, until: null };
+    await processor.push(await item(`u:${ME}`, 1, event));
+    await processor.push(await item("w", 1, event));
+    expect(vi.mocked(deps.apply).mock.calls.map((call) => call[3])).toEqual([`u:${ME}`, "w"]);
+  });
+
   it("drops an event signed by another key, on the wrong stream, or for another space", async () => {
     const { processor, applied, deps } = setup();
     await processor.push(await item(`c:${CONV}`, 1, { type: "NewMessage" }, { seed: 30 }));

@@ -40,6 +40,7 @@ import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-typ
 import { slowModeWaitMessage } from "../../conversations/api/useSlowMode";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { useMyTimeout } from "../../workspaces/hooks/useMyTimeout";
+import { useMyTimeoutReason } from "../../workspaces/hooks/useMyTimeoutReason";
 import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import { useSlowModeStore } from "../state/useSlowModeStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
@@ -224,6 +225,7 @@ function MessageComposer(props: ComposerProps) {
   // A timed-out viewer reads but cannot write; slow mode spaces out members' messages
   // (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);
+  const timedOutReason = useMyTimeoutReason(workspaceId, timedOutUntil);
   const offline = useOfflineStore((s) => s.offline);
   const isModerator = useCanModerate(workspaceId);
   const slowModeSeconds = conversation?.slowModeSeconds ?? 0;
@@ -711,7 +713,7 @@ function MessageComposer(props: ComposerProps) {
         isDragOver && "bg-rim-accent/5 ring-2 ring-inset ring-rim-accent/30",
       )}
     >
-      {timedOutUntil && <TimedOutBanner until={timedOutUntil} />}
+      {timedOutUntil && <TimedOutBanner until={timedOutUntil} reason={timedOutReason} />}
       {offline && !timedOutUntil && <OfflineComposerNotice />}
       <SlowModeIndicator
         seconds={slowModeSeconds}

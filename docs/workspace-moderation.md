@@ -17,6 +17,22 @@ still require an invitation.
 Deploy the corresponding server update before this client. Older servers reject the new
 message-author ban fields, so message queries require a server that provides them.
 
+# Timeouts and removals from a channel
+
+A timed-out member's open app learns of it at once: the composer locks and says "You are timed
+out until 20:37: <reason>", or without the reason when the moderator gave none. Only the member
+sees the reason; the timeout dialog says so. The composer unlocks when a moderator clears the
+timeout or when it ends, without a reload, and the timeout marker in member lists follows.
+
+When an Owner or Moderator removes someone from a channel, the channel shows a line where it
+happened: "Bob was removed by Alice" ("You were removed by Alice" for the person removed, "Bob
+was removed by you" for the moderator). Leaving a channel, groups, and removals from the
+workspace show no line. A channel shows its latest 50 removals.
+
+Both need a server that lists `member_timeout_changed` and `conversation_member_removals` in its
+capabilities; against an older server the banner shows without the reason and only after a
+reload, and channels show no removal lines.
+
 # Join requests
 
 A workspace whose public link is set to **Ask to join** collects requests. Settings → Moderation
