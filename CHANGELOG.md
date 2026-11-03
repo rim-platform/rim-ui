@@ -70,6 +70,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Use your recovery phrase, after too many wrong passwords, no longer sends a sign-in with an
   empty password.
 
+### Security
+
+- The desktop app's openssl, serde_with and rand crates are updated past the versions GitHub's
+  advisories list (openssl 0.10.82, serde_with 3.24, rand 0.8.8 and 0.9.5).
+
 ## [0.0.9] - 2026-10-31
 
 ### Added
