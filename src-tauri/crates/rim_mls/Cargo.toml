@@ -53,7 +53,7 @@ hpke-rs-crypto = "=0.7.0"
 hpke-rs-libcrux = "=0.7.0"
 hpke-rs-rust-crypto = { version = "=0.7.0", features = ["experimental"] }
 libcrux-ml-kem = "=0.0.10"
-ml-kem = { version = "=0.3.2", features = ["hazmat"] }
+ml-kem = { version = "=0.3.3", features = ["hazmat"] }
 hex = "0.4"
 uuid = { version = "1", features = ["v4", "v7"] }
 
