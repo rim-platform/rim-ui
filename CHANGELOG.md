@@ -75,6 +75,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   and a command left without keys stays listed with No key and Set key.
 - Use your recovery phrase, after too many wrong passwords, no longer sends a sign-in with an
   empty password.
+- The Audit log shows each entry's sensitivity (Safe, Sensitive, Mutating, Restricted) and marks
+  dangerous commands, and a pipe's entry is labelled Pipe instead of "—".
 
 ### Security
 

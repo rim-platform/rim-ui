@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  X,
+} from "lucide-react";
 
 import { cn } from "../../../shared/ui/cn";
 import { formatTime } from "../../../shared/utils/formatTime";
@@ -68,8 +75,31 @@ function outcomeBadgeClass(outcome: AuditOutcomeGql): string {
   }
 }
 
-/** The columns shared by the header and the rows: Verb, Outcome, Who, Command, Initiator, Time. */
-const ROW_GRID = "grid grid-cols-[80px_168px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
+/**
+ * The columns shared by the header and the rows: Verb, Outcome, Risk, Who, Command, Initiator,
+ * Time.
+ */
+const ROW_GRID = "grid grid-cols-[80px_168px_112px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
+
+/** Chip classes per sensitivity tier the server records. */
+const SENSITIVITY_BADGE: Record<string, string> = {
+  safe: "bg-rim-panel-soft text-rim-text-muted",
+  sensitive: "bg-rim-accent/10 text-rim-accent",
+  mutating: "bg-rim-warm/15 text-rim-warm",
+  restricted: "bg-rim-danger/15 text-rim-danger",
+};
+
+const SENSITIVITY_LABEL: Record<string, string> = {
+  safe: "Safe",
+  sensitive: "Sensitive",
+  mutating: "Mutating",
+  restricted: "Restricted",
+};
+
+/** Whether an audit row is a pipe: no verb of its own and a `a | b` expression as its command. */
+function isPipeEntry(entry: Pick<AuditLogEntry, "typedVerb" | "commandId">): boolean {
+  return !entry.typedVerb && entry.commandId.includes(" | ");
+}
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -104,6 +134,7 @@ function SkeletonRow() {
     <li className="flex items-center gap-3 border-b border-rim-line px-4 py-3">
       <div className="h-4 w-16 animate-pulse rounded bg-rim-panel-soft" />
       <div className="h-4 w-20 animate-pulse rounded bg-rim-panel-soft" />
+      <div className="h-4 w-16 animate-pulse rounded bg-rim-panel-soft" />
       <div className="h-4 flex-1 animate-pulse rounded bg-rim-panel-soft" />
       <div className="h-4 w-24 animate-pulse rounded bg-rim-panel-soft" />
       <div className="h-4 w-32 animate-pulse rounded bg-rim-panel-soft" />
@@ -130,11 +161,15 @@ function AuditRow({ entry, nameOf }: AuditRowProps) {
       <span
         className={cn(
           "rounded px-1.5 py-0.5 text-center text-[10px] font-bold uppercase leading-none",
-          entry.typedVerb ? VERB_BADGE[entry.typedVerb] : "bg-rim-panel-soft text-rim-text-faint",
+          entry.typedVerb
+            ? VERB_BADGE[entry.typedVerb]
+            : isPipeEntry(entry)
+              ? "bg-rim-accent/10 text-rim-accent"
+              : "bg-rim-panel-soft text-rim-text-faint",
         )}
         data-testid="typed-verb-chip"
       >
-        {entry.typedVerb ? VERB_LABEL[entry.typedVerb] : "—"}
+        {entry.typedVerb ? VERB_LABEL[entry.typedVerb] : isPipeEntry(entry) ? "Pipe" : "—"}
       </span>
 
       {/* Outcome chip */}
@@ -146,6 +181,29 @@ function AuditRow({ entry, nameOf }: AuditRowProps) {
         title={entry.outcome}
       >
         {entry.outcome}
+      </span>
+
+      {/* Sensitivity and the dangerous marker */}
+      <span className="flex items-center gap-1" data-testid="audit-risk">
+        {SENSITIVITY_BADGE[entry.sensitivity] && (
+          <span
+            className={cn(
+              "truncate rounded px-2 py-0.5 text-center text-[10px] font-medium uppercase",
+              SENSITIVITY_BADGE[entry.sensitivity],
+            )}
+          >
+            {SENSITIVITY_LABEL[entry.sensitivity]}
+          </span>
+        )}
+        {entry.dangerous && (
+          <AlertTriangle
+            className="h-3 w-3 shrink-0 text-rim-danger"
+            role="img"
+            aria-label="Dangerous command"
+          >
+            <title>Dangerous command</title>
+          </AlertTriangle>
+        )}
       </span>
 
       {/* Who acted, and on whom */}
@@ -362,6 +420,7 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
         >
           <span>Verb</span>
           <span>Outcome</span>
+          <span>Risk</span>
           <span>Who</span>
           <span>Command</span>
           <span>Initiator</span>

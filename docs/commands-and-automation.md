@@ -50,6 +50,10 @@ otherwise. A restricted command first asks you to type its verb, as in `Type "de
 confirm`. A confirmation expires; the app then says "Confirmation expired. Run the command
 again."
 
+The **Audit log** shows each entry's sensitivity, marks dangerous commands with a warning sign,
+and labels a pipe's entry **Pipe**; a pipe is recorded with the strictest sensitivity of its
+stages.
+
 **Capabilities.** A command declares what it needs, such as `chat.write` or
 `admin.manage_members`, and the server lists only the commands your role in the workspace may
 run; a plugin's command acts only within the permissions you granted the plugin.
