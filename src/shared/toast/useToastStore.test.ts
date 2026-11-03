@@ -92,11 +92,11 @@ describe("toast convenience helpers", () => {
     expect(t.title).toBe("Saved");
   });
 
-  it("toast.error adds an error toast that is persistent", () => {
+  it("toast.error adds an error toast that closes by itself", () => {
     toast.error("Failed");
     const t = useToastStore.getState().toasts[0];
     expect(t.variant).toBe("error");
-    expect(t.persistent).toBe(true);
+    expect(t.persistent).toBe(false);
   });
 
   it("toast.dismiss marks a toast as dismissing", () => {
@@ -133,8 +133,15 @@ describe("toast convenience helpers", () => {
     expect(t.duration).toBe(6000);
   });
 
-  it("toast.error has no duration (persistent)", () => {
+  it("toast.error closes after 10 seconds by default", () => {
     toast.error("Oops");
+    const t = useToastStore.getState().toasts[0];
+    expect(t.duration).toBe(10000);
+    expect(t.persistent).toBe(false);
+  });
+
+  it("toast.error stays when asked to be persistent", () => {
+    toast.error("Down", { persistent: true });
     const t = useToastStore.getState().toasts[0];
     expect(t.persistent).toBe(true);
     expect(t.duration).toBeUndefined();
