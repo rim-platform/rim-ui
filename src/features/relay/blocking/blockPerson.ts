@@ -17,8 +17,8 @@ import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { blockPrincipal, type BlockedPrincipalView } from "../api/relayApi";
 import { useContactStore } from "../contacts/useContactStore";
-import { noteBlockedHere } from "../runtime/useBlockedConversationsRuntime";
 import { useRelayStore } from "../state/useRelayStore";
+import { noteBlockedHere } from "./blockedHere";
 import { askToBlock } from "./useBlockPersonStore";
 
 /** Someone the account can block: their principal id and the name the app shows for them. */

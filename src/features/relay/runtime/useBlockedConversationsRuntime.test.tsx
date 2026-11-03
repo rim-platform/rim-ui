@@ -37,7 +37,8 @@ vi.mock("../../messages/runtime/messageCacheSync", () => ({ requestCacheSync }))
 vi.mock("./relayRuntime", () => ({ relayProcessor: () => ({ reconcileSpace }) }));
 vi.mock("../../../shared/toast", () => ({ toast: { info: toastInfo } }));
 
-import { noteBlockedHere, useBlockedConversationsRuntime } from "./useBlockedConversationsRuntime";
+import { noteBlockedHere } from "../blocking/blockedHere";
+import { useBlockedConversationsRuntime } from "./useBlockedConversationsRuntime";
 
 const aliceBlocked = {
   principalId: "rimp1_alice",
