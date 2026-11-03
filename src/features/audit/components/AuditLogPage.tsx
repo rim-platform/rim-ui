@@ -75,7 +75,10 @@ function outcomeBadgeClass(outcome: AuditOutcomeGql): string {
   }
 }
 
-/** The columns shared by the header and the rows: Verb, Outcome, Risk, Who, Command, Initiator, Time. */
+/**
+ * The columns shared by the header and the rows: Verb, Outcome, Risk, Who, Command, Initiator,
+ * Time.
+ */
 const ROW_GRID = "grid grid-cols-[80px_168px_112px_minmax(0,1fr)_minmax(0,1fr)_96px_140px] gap-3";
 
 /** Chip classes per sensitivity tier the server records. */
@@ -94,7 +97,7 @@ const SENSITIVITY_LABEL: Record<string, string> = {
 };
 
 /** Whether an audit row is a pipe: no verb of its own and a `a | b` expression as its command. */
-export function isPipeEntry(entry: Pick<AuditLogEntry, "typedVerb" | "commandId">): boolean {
+function isPipeEntry(entry: Pick<AuditLogEntry, "typedVerb" | "commandId">): boolean {
   return !entry.typedVerb && entry.commandId.includes(" | ");
 }
 

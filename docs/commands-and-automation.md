@@ -41,10 +41,6 @@ run waits for your confirmation:
 | Mutating | Posting, creating a channel, reacting, workspace state, notification settings | Runs | Needs your confirmation |
 | Restricted | High-impact changes, such as deleting a message | Asks, and you type its verb | Needs your confirmation |
 
-The **Audit log** shows each entry's sensitivity, marks dangerous commands with a warning sign,
-and labels a pipe's entry **Pipe**; a pipe is recorded with the strictest sensitivity of its
-stages.
-
 A command can also be marked dangerous, such as kicking, banning or changing someone's role. It
 always asks first, whoever runs it, and the palette tags it **dangerous**. The confirmation
 dialog reads "Confirm:" and the command's title, is drawn in red for a dangerous command and says
@@ -53,6 +49,10 @@ anyway** for a mutating command, **I understand — execute** for a restricted o
 otherwise. A restricted command first asks you to type its verb, as in `Type "delete" to
 confirm`. A confirmation expires; the app then says "Confirmation expired. Run the command
 again."
+
+The **Audit log** shows each entry's sensitivity, marks dangerous commands with a warning sign,
+and labels a pipe's entry **Pipe**; a pipe is recorded with the strictest sensitivity of its
+stages.
 
 **Capabilities.** A command declares what it needs, such as `chat.write` or
 `admin.manage_members`, and the server lists only the commands your role in the workspace may
