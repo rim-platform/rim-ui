@@ -65,17 +65,17 @@ export interface RecoveryKey {
 // ─── Version 2: the recovery phrase ─────────────────────────────────────────
 
 /** Fresh entropy for a recovery phrase. */
-export function generateEntropy(): Uint8Array {
+export function generateEntropy(): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(PHRASE_ENTROPY_LEN));
 }
 
 /** The 4 checksum bits BIP39 appends to 128 bits of entropy: SHA-256's first 4 bits. */
-async function checksum(entropy: Uint8Array): Promise<number> {
+async function checksum(entropy: Uint8Array<ArrayBuffer>): Promise<number> {
   return (await sha256(entropy))[0] >> 4;
 }
 
 /** The 12 words of the phrase for `entropy`, in order. */
-export async function phraseWords(entropy: Uint8Array): Promise<string[]> {
+export async function phraseWords(entropy: Uint8Array<ArrayBuffer>): Promise<string[]> {
   if (entropy.length !== PHRASE_ENTROPY_LEN) {
     throw new RecoveryKitError("a recovery phrase holds 16 bytes");
   }
@@ -89,7 +89,10 @@ export async function phraseWords(entropy: Uint8Array): Promise<string[]> {
 }
 
 /** The whole version 2 kit text shown to the person. */
-export async function formatKit(principalId: string, entropy: Uint8Array): Promise<string> {
+export async function formatKit(
+  principalId: string,
+  entropy: Uint8Array<ArrayBuffer>,
+): Promise<string> {
   const words = await phraseWords(entropy);
   return `RIM recovery kit (v2)\nAccount id: ${principalId}\nRecovery phrase: ${words.join(" ")}\n`;
 }
@@ -107,7 +110,7 @@ function withoutNumbering(token: string): string {
  * phrase that is not 12 words, names the first word that is not in the word list, and refuses
  * one whose checksum fails. Returns the 16 bytes it spells.
  */
-export async function parseRecoveryPhrase(text: string): Promise<Uint8Array> {
+export async function parseRecoveryPhrase(text: string): Promise<Uint8Array<ArrayBuffer>> {
   const words: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     const lower = line.trim().toLowerCase();
@@ -160,7 +163,7 @@ export async function parseRecoveryPhrase(text: string): Promise<Uint8Array> {
 }
 
 /** The recovery key's 32-byte seed for a phrase's entropy: HKDF-SHA256, as the kit defines. */
-async function phraseSeed(entropy: Uint8Array): Promise<Uint8Array> {
+async function phraseSeed(entropy: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   const ikm = await crypto.subtle.importKey("raw", entropy, "HKDF", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "HKDF", hash: "SHA-256", salt: PHRASE_SALT, info: PHRASE_INFO },
@@ -194,7 +197,7 @@ async function keyFromSeed(seed: Uint8Array): Promise<RecoveryKey> {
 }
 
 /** The recovery key a phrase's entropy stands for. */
-export async function phraseRecoveryKey(entropy: Uint8Array): Promise<RecoveryKey> {
+export async function phraseRecoveryKey(entropy: Uint8Array<ArrayBuffer>): Promise<RecoveryKey> {
   return keyFromSeed(await phraseSeed(entropy));
 }
 
@@ -209,7 +212,7 @@ export async function phraseRecoveryKey(entropy: Uint8Array): Promise<RecoveryKe
 export async function signPasswordReset(
   endpoint: string,
   principalId: string,
-  entropy: Uint8Array,
+  entropy: Uint8Array<ArrayBuffer>,
   challenge: { challengeId: string; nonce: string },
 ): Promise<Statement> {
   const { privateKey } = await phraseRecoveryKey(entropy);

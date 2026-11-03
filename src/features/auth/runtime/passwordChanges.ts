@@ -71,7 +71,7 @@ export async function changePassword(
 /** A `password-reset` statement signed by the recovery key of the phrase's `entropy`. */
 function signReset(
   principalId: string,
-  entropy: Uint8Array,
+  entropy: Uint8Array<ArrayBuffer>,
   challenge: { challengeId: string; nonce: string },
 ): Promise<SignedStatementInput> {
   const endpoint = getGraphqlEndpoint();
@@ -96,7 +96,7 @@ function signReset(
  */
 export async function resetPassword(
   principalId: string,
-  entropy: Uint8Array,
+  entropy: Uint8Array<ArrayBuffer>,
   password: string,
 ): Promise<void> {
   const challenge = await passwordResetChallenge(principalId);

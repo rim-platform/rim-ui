@@ -121,6 +121,8 @@ describe("Vim layer modes", () => {
     mount('<iframe title="plugin"></iframe>');
     const frame = document.querySelector("iframe")!;
     frame.focus();
+    // Browsers fire focusin at a frame element that takes focus; jsdom does not.
+    frame.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await settle();
     expect(useVimStore.getState().mode).toBe("insert");
     expect(press(":", {}, frame).defaultPrevented).toBe(false);

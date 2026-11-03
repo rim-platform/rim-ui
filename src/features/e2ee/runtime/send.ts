@@ -178,7 +178,10 @@ async function deliver(
  * Download an attachment's blob as stored on the server (still encrypted): from this server,
  * or through the relay from the host of a space elsewhere.
  */
-export async function downloadBlob(workspaceId: string, attachmentId: string): Promise<Uint8Array> {
+export async function downloadBlob(
+  workspaceId: string,
+  attachmentId: string,
+): Promise<Uint8Array<ArrayBuffer>> {
   const path = `/api/attachments/${attachmentId}/download`;
   const host = hostOf(workspaceId);
   if (host) {

@@ -22,7 +22,7 @@ export function b64(bytes: Uint8Array): string {
  * Decode unpadded base64url strictly: no padding, no other characters, no impossible length,
  * and the unused trailing bits zero. `null` when `text` breaks any rule.
  */
-export function unb64(text: string): Uint8Array | null {
+export function unb64(text: string): Uint8Array<ArrayBuffer> | null {
   if (text.length % 4 === 1) return null;
   const out = new Uint8Array(Math.floor((text.length * 6) / 8));
   let bits = 0;
@@ -59,11 +59,11 @@ export function base32(bytes: Uint8Array): string {
   return out;
 }
 
-export function utf8(text: string): Uint8Array {
+export function utf8(text: string): Uint8Array<ArrayBuffer> {
   return new Uint8Array(new TextEncoder().encode(text));
 }
 
-export function concat(...parts: Uint8Array[]): Uint8Array {
+export function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const part of parts) {
@@ -77,6 +77,6 @@ export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }
 
-export async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
+export async function sha256(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
 }

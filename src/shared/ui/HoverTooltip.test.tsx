@@ -34,9 +34,10 @@ describe("HoverTooltip", () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
+    // The computed max width: the viewport less 8px on each side.
     expect(screen.getByRole("tooltip")).toHaveStyle({
       left: `${expected}px`,
-      maxWidth: "calc(100vw - 16px)",
+      maxWidth: `${window.innerWidth - 16}px`,
     });
   });
 

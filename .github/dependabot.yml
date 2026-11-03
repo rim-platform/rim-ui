@@ -7,6 +7,10 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1; drop this entry when it supports newer.
+      - dependency-name: typescript
+        versions: [">=6.1"]
 
   - package-ecosystem: npm
     directory: /sdk/plugin-sdk
@@ -23,6 +27,26 @@ updates:
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # openmls_libcrux_crypto 0.4.0, the newest, requires hpke-rs 0.7 (see
+      # src-tauri/.cargo/audit.toml); the test backends follow it.
+      - dependency-name: hpke-rs-crypto
+        versions: [">= 0.8"]
+      - dependency-name: hpke-rs-libcrux
+        versions: [">= 0.8"]
+      - dependency-name: hpke-rs-rust-crypto
+        versions: [">= 0.8"]
+      # opaque-ke 4.0 uses digest 0.10; drop with opaque-ke 4.1. rim_opaque passes
+      # GenericArray to its Ksf trait and Sha512 to its TripleDh and derives with
+      # Hkdf<Sha256>; the app's own SHA-256, HMAC and HKDF stay on the same generation.
+      - dependency-name: generic-array
+        versions: [">= 1"]
+      - dependency-name: sha2
+        versions: [">= 0.11"]
+      - dependency-name: hkdf
+        versions: [">= 0.13"]
+      - dependency-name: hmac
+        versions: [">= 0.13"]
 
   - package-ecosystem: github-actions
     directory: /

@@ -249,7 +249,7 @@ function RecoverAccountForm({
   }
 
   /** The phrase's 16 bytes, or `null` for an older kit's `RK1-` key, which has none. */
-  async function entropyOf(text: string): Promise<Uint8Array | null> {
+  async function entropyOf(text: string): Promise<Uint8Array<ArrayBuffer> | null> {
     try {
       return await parseRecoveryPhrase(text);
     } catch {

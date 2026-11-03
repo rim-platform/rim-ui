@@ -94,7 +94,10 @@ export async function encryptFile(
 }
 
 /** Check a downloaded blob's hash, decrypt it, and check the size the entry states. */
-export async function decryptFile(entry: AttachmentEntry, blob: Uint8Array): Promise<Uint8Array> {
+export async function decryptFile(
+  entry: AttachmentEntry,
+  blob: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array> {
   const expected = unb64(entry.blobSha256);
   const secret = unb64(entry.secret);
   if (!expected || !secret || secret.length !== 32) {
