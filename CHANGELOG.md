@@ -22,6 +22,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Added
+
+- **Block…** in the person menu (right-click a name or avatar), the hover card, the profile card
+  and a DM's menu, also for someone whose DM or group you already accepted. It asks first, then
+  removes them from your contacts and hides your DMs with them and the groups they started until
+  you unblock them in Settings → Direct messages.
+
+### Changed
+
+- After a block or an unblock the conversation lists refresh at once, and an open conversation
+  the block hid closes. **Unblock** says that a conversation they started comes back as a request
+  when they next write in it.
+
 ### Fixed
 
 - A member removed from a workspace that is not open is told "You are no longer a member of

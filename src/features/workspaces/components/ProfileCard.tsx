@@ -1,5 +1,6 @@
 import { UserHoverCardPortal } from "../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
+import { blockActionFor } from "../../relay/blocking/blockPerson";
 import { useAuthorPresence } from "../../messages/components/message-item/useAuthorPresence";
 import { useMemberLookup } from "../hooks/useMemberLookup";
 
@@ -33,6 +34,16 @@ export function ProfileCard({
       onSendDm={() => {
         onClose();
         void openDirectWithMember(userId);
+      }}
+      blockAction={() => {
+        const block = blockActionFor(userId, workspaceId);
+        return (
+          block &&
+          (() => {
+            onClose();
+            block();
+          })
+        );
       }}
       anchorRect={anchorRect}
       onDismiss={onClose}

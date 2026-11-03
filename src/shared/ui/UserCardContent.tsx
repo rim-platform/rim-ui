@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { Copy, MessageCircle, Pencil } from "lucide-react";
+import { Copy, MessageCircle, Pencil, UserX } from "lucide-react";
 
 import { activeBan } from "../utils/banStatus";
 import type { AuthorBan } from "../utils/banStatus";
@@ -29,6 +29,11 @@ export interface UserCardContentProps {
   isCurrentUser?: boolean;
   /** Opens the direct message with this person; without it the card offers no Send DM. */
   onSendDm?: () => void;
+  /**
+   * Called as the card renders: the Block… action for this person, or undefined when they
+   * cannot be blocked from here.
+   */
+  blockAction?: () => (() => void) | undefined;
 }
 
 export function UserCardContent({
@@ -46,7 +51,9 @@ export function UserCardContent({
   presenceStatus,
   isCurrentUser,
   onSendDm,
+  blockAction,
 }: UserCardContentProps) {
+  const onBlock = isCurrentUser ? undefined : blockAction?.();
   const resolvedDisplayName = displayName ?? username;
   const shownHandle = handle === undefined ? viewHandle(username, null, null) : handle;
   const copied = shownHandle?.copied;
@@ -122,7 +129,7 @@ export function UserCardContent({
       {/* Actions */}
       <>
         <hr className="border-rim-line my-3" />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isCurrentUser ? (
             <button
               type="button"
@@ -151,6 +158,16 @@ export function UserCardContent({
                 >
                   <Copy className="h-3 w-3" />
                   Copy {shownHandle.shown}
+                </button>
+              )}
+              {onBlock && (
+                <button
+                  type="button"
+                  onClick={onBlock}
+                  className="flex items-center gap-1.5 rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text-muted transition hover:text-rim-danger"
+                >
+                  <UserX className="h-3 w-3" />
+                  Block…
                 </button>
               )}
             </>

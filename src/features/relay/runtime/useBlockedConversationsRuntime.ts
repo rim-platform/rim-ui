@@ -23,6 +23,7 @@ import {
 import { blockedPrincipalOf, useBlockedConversations } from "../state/useBlockedConversations";
 import { useRelayStore } from "../state/useRelayStore";
 import { relayProcessor } from "./relayRuntime";
+import { blockedHereJustNow } from "../blocking/blockedHere";
 
 /** How often the blocked list is read again while the app is in front. */
 const BLOCKED_POLL_MS = 120_000;
@@ -72,7 +73,7 @@ function closeHidden(spaceId: string, conversationId: string, principalId: strin
   } else {
     useShellStore.getState().setSelectedConversationId(null);
   }
-  if (onScreen) {
+  if (onScreen && !blockedHereJustNow(principalId)) {
     toast.info("Conversation hidden", {
       id: `blocked-conversation:${conversationId}`,
       description: `You blocked ${blockedPersonName(spaceId, principalId)}. It comes back when you unblock them in Settings → Direct messages.`,

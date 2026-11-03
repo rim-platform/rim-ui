@@ -10,6 +10,7 @@ import {
 } from "../../../../shared/ui/contextMenu/useContextMenu";
 import { UserHoverCardPortal } from "../../../../shared/ui/UserHoverCardPortal";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
+import { blockActionFor } from "../../../relay/blocking/blockPerson";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import { EditedMark } from "./EditedMark";
 import { MessageEditForm } from "./MessageEditForm";
@@ -134,6 +135,11 @@ export const MessageText = memo(function MessageText({
           member?.isFormerMember || activeBan(member?.ban)
             ? undefined
             : () => void openDirectWithMember(mentionCard.userId)
+        }
+        blockAction={
+          member?.isCurrentUser || member?.isFormerMember
+            ? undefined
+            : () => blockActionFor(mentionCard.userId)
         }
         anchorRect={mentionCard.rect}
         onMouseEnter={handleMentionCardEnter}

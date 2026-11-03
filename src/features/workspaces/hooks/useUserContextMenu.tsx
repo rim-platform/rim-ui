@@ -13,6 +13,8 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel } from "../../conversations/utils";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
+import { blockTargetOf, isBlockedPrincipal } from "../../relay/blocking/blockPerson";
+import { askToBlock } from "../../relay/blocking/useBlockPersonStore";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
 import { useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
@@ -101,7 +103,8 @@ type Overlay =
  * a row of a members panel or of the member directory.
  *
  * On someone else: View profile, Send message, Copy @username, Add to contacts or Remove from
- * contacts, Remove from the conversation (from its members panel), then for an Owner or
+ * contacts, Block… (someone with a principal id not blocked yet), Remove from the conversation
+ * (from its members panel), then for an Owner or
  * Moderator who may act on them a Moderation section with Change role, Time out or Clear
  * timeout, Delete messages (on a server that deletes a person's messages), Kick and Ban. On a
  * former member an Owner or Moderator gets only Delete messages there. On the viewer: View
@@ -193,13 +196,23 @@ export function useUserContextMenu({
                 toast.error(graphqlErrorMessage(err, `Could not remove ${name} from contacts`)),
             }),
         });
-      } else {
+      } else if (!isBlockedPrincipal(principalId)) {
         items.push({
           id: "add-contact",
           label: "Add to contacts",
           onSelect: () => void addContact(principalId, name),
         });
       }
+    }
+
+    const blockTarget = blockTargetOf(userId, workspaceId);
+    if (blockTarget) {
+      items.push({
+        id: "block",
+        label: "Block…",
+        danger: true,
+        onSelect: () => askToBlock(blockTarget),
+      });
     }
 
     if (conversation && onRemoveFromConversation) {

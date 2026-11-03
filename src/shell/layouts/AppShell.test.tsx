@@ -148,6 +148,9 @@ vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
+vi.mock("../../features/relay/components/BlockPersonDialog", () => ({
+  BlockPersonDialog: () => null,
+}));
 vi.mock("../../features/limits/components/ProbationBanner", () => ({
   ProbationBanner: () => null,
 }));

@@ -10,6 +10,7 @@ import {
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -243,11 +244,16 @@ describe("ConversationList — conversation context menus", () => {
     });
     const { qc } = await renderList();
     await waitFor(() => expect(qc.getQueryData(queryKeys.relayContacts)).toBeDefined());
+    queryClient.setQueryData(
+      queryKeys.serverMembers("ws-1"),
+      qc.getQueryData(queryKeys.serverMembers("ws-1")),
+    );
     fireEvent.contextMenu(rowButton("Alice"));
     expect(menuLabels()).toEqual([
       "Notifications: All messages",
       "Remove from contacts",
       "Assign keybind…",
+      "Block…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove from contacts" }));
     await waitFor(() =>

@@ -2,6 +2,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 
 import { isSchemaRefusal } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
+import { refreshAfterBlockChange } from "../blocking/blockPerson";
 import { useRelayStore } from "../state/useRelayStore";
 import { fetchBlockedPrincipals, unblockPrincipal } from "./relayApi";
 
@@ -19,11 +20,14 @@ export function useBlockedPrincipals() {
   return useQuery({ ...blockedPrincipalsQuery, enabled: relayOn });
 }
 
-/** Lifts a block at once; the list of blocked people refreshes after it. */
+/** Lifts a block at once; the blocked list and the conversation lists refresh after it. */
 export function useUnblockPrincipal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (principalId: string) => unblockPrincipal(principalId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals });
+      await refreshAfterBlockChange(qc);
+    },
   });
 }

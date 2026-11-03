@@ -13,7 +13,7 @@ export function BlockConfirmDialog({
   return (
     <ConfirmActionDialog
       title={`Block ${name}?`}
-      description="You won't get their requests, and conversations they started stay hidden until you unblock them. They won't be told. You can unblock them in Settings → Direct messages."
+      description="You won't get their messages or requests, and your DMs with them and the groups they started stay hidden until you unblock them. They are removed from your contacts and won't be told. You can unblock them in Settings → Direct messages."
       confirmLabel="Block"
       danger
       onConfirm={onConfirm}

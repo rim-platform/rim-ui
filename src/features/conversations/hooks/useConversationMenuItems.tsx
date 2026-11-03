@@ -18,6 +18,8 @@ import {
 } from "../../commands/state/useQuickAccessStore";
 import { useDeviceReadyForEncryption } from "../../e2ee/hooks/useE2eeConversation";
 import { useConversationNotificationItems } from "../../notifications/hooks/useConversationNotificationItems";
+import { blockTargetOf } from "../../relay/blocking/blockPerson";
+import { askToBlock } from "../../relay/blocking/useBlockPersonStore";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
 import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
@@ -87,7 +89,8 @@ type PendingDialog = {
  * - A group: Mark as read, Notifications, Members, Add people… (also in Direct messages),
  *   Assign keybind…, Leave group….
  * - A DM: Mark as read, Notifications, Add to contacts or Remove from contacts (while the
- *   relay is on), Assign keybind….
+ *   relay is on), Assign keybind…, Block… (its other person, while the relay is on and they
+ *   are not blocked).
  *
  * @param workspaceId The workspace the list or header shows, whose role gates the moderation
  *   and whose notification settings and mutes stay loaded. A conversation's actions go to its
@@ -294,6 +297,8 @@ export function useConversationMenuItems(workspaceId: string | null): {
         );
       }
 
+      const blockTarget = peer ? blockTargetOf(peer.userId, serverId) : null;
+
       // The agent runs in the desktop app only.
       if (header && detectPlatform() === "desktop" && conversation.encryptedAt) {
         const allowed = conversationId in useAgentEncryptedStore.getState().allowed;
@@ -374,6 +379,16 @@ export function useConversationMenuItems(workspaceId: string | null): {
             if (confirm) setPending({ kind: "leave", conversation });
             else leave(conversation);
           },
+        });
+      }
+
+      if (isDm && blockTarget) {
+        items.push({
+          id: "block",
+          label: "Block…",
+          danger: true,
+          separatorBefore: true,
+          onSelect: () => askToBlock(blockTarget),
         });
       }
 

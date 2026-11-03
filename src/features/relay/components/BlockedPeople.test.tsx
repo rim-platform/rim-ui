@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { renderWithProviders } from "../../../test/utils";
 import { useToastStore } from "../../../shared/toast";
@@ -106,9 +108,33 @@ describe("BlockedPeople", () => {
     await waitFor(() =>
       expect(useToastStore.getState().toasts[0]?.title).toBe("Unblocked Dave D."),
     );
-    expect(useToastStore.getState().toasts[0]?.description).toBe("They can message you again.");
+    expect(useToastStore.getState().toasts[0]?.description).toBe(
+      "They can message you again. A conversation they started comes back as a request when they next write in it.",
+    );
     await waitFor(() => expect(screen.queryByText("Dave D.")).not.toBeInTheDocument());
     expect(screen.getByText("erin")).toBeInTheDocument();
+  });
+
+  it("refreshes the conversation lists after an unblock", async () => {
+    routeRequests(requestMock, {
+      "query MyBlockedPrincipals": () => ({ myBlockedPrincipals: [DAVE] }),
+      "mutation UnblockPrincipal": () => ({ unblockPrincipal: true }),
+    });
+    const qc = new QueryClient();
+    const queryFn = vi.fn(async () => ({
+      items: [],
+      pageInfo: { hasNext: false, hasPrev: false },
+    }));
+    await qc.prefetchQuery({ queryKey: ["conversations", "home"], queryFn });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={qc}>
+        <BlockedPeople />
+      </QueryClientProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Unblock Dave D." }));
+    await waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2));
   });
 
   it("says when nobody is blocked", async () => {

@@ -24,6 +24,8 @@ interface UserHoverCardPortalProps {
   isCurrentUser?: boolean;
   /** Opens the direct message with this person. */
   onSendDm?: () => void;
+  /** The Block… action, asked for as the card opens; see `UserCardContent`. */
+  blockAction?: () => (() => void) | undefined;
   anchorRect: DOMRect;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -46,6 +48,7 @@ export function UserHoverCardPortal({
   presenceStatus,
   isCurrentUser,
   onSendDm,
+  blockAction,
   anchorRect,
   onMouseEnter,
   onMouseLeave,
@@ -126,6 +129,7 @@ export function UserHoverCardPortal({
         presenceStatus={presenceStatus}
         isCurrentUser={isCurrentUser}
         onSendDm={onSendDm}
+        blockAction={blockAction}
       />
     </div>,
     document.body,

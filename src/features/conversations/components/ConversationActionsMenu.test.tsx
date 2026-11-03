@@ -19,10 +19,13 @@ import {
   graphqlError,
   makeConversation,
   routeRequests,
+  workspaceMembers,
 } from "../__fixtures__/conversations";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { queryClient } from "../../../core/query/queryClient";
+import { useBlockPersonStore } from "../../relay/blocking/useBlockPersonStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
@@ -208,6 +211,59 @@ describe("ConversationActionsMenu — role gating", () => {
       ServerMemberRoleGql.OWNER,
     );
     expect(menuLabels()).toEqual(["Notifications: All messages", "Members", "Assign keybind…"]);
+  });
+
+  describe("Block…", () => {
+    const withPrincipals = workspaceMembers.map((m) => ({
+      ...m,
+      principalId: `rimp1_${m.username}`,
+    }));
+
+    async function openWithRelay(conversation: ConversationSummary) {
+      useRelayStore
+        .getState()
+        .setStarted(
+          { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
+          { endpoint: "e", userId: "me", principalId: "rimp1_me", deviceId: "d1" },
+          [],
+        );
+      useBlockPersonStore.getState().close();
+      serve(ServerMemberRoleGql.MEMBER);
+      await openMenu(conversation, ServerMemberRoleGql.MEMBER, async (qc) => {
+        qc.setQueryData(queryKeys.relayContacts, []);
+        for (const client of [qc, queryClient]) {
+          client.setQueryData(queryKeys.serverMembers("ws-1"), withPrincipals);
+        }
+      });
+    }
+
+    it("offers Block… last on a DM and asks before blocking its other person", async () => {
+      await openWithRelay(
+        makeConversation({
+          conversationType: ConversationTypeEnum.DIRECT,
+          title: null,
+          memberIds: ["me", "u-alice"],
+        }),
+      );
+      const labels = menuLabels();
+      expect(labels[labels.length - 1]).toBe("Block…");
+      fireEvent.click(screen.getByRole("menuitem", { name: "Block…" }));
+      expect(useBlockPersonStore.getState().target).toEqual({
+        principalId: "rimp1_alice",
+        name: "Alice",
+      });
+    });
+
+    it("offers no Block… on a group", async () => {
+      await openWithRelay(
+        makeConversation({
+          conversationType: ConversationTypeEnum.GROUP,
+          title: "Team",
+          memberIds: ["me", "u-alice", "u-bob"],
+        }),
+      );
+      expect(menuLabels()).not.toContain("Block…");
+    });
   });
 
   it("offers Add people and a confirmed Leave group for a group", async () => {

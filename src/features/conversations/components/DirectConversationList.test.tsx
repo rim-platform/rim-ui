@@ -13,6 +13,9 @@ const relayApi = vi.hoisted(() => ({
   fetchConversationPredecessor: vi.fn(),
   fetchDmRequests: vi.fn(),
   fetchContacts: vi.fn(),
+  fetchBlockedPrincipals: vi.fn(),
+  blockPrincipal: vi.fn(),
+  unblockPrincipal: vi.fn(),
 }));
 vi.mock("../api/useInboxConversations", () => inbox);
 vi.mock("../../relay/api/relayApi", () => relayApi);
