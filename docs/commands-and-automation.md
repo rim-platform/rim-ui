@@ -97,9 +97,9 @@ stages, all of them commands the server runs. A stage that runs only in the app 
 before it is sent: "Pipe stage \<n\>: \<title\> runs only in this app, so it cannot be part of a
 pipe." When a stage is dangerous, the confirmation ("Confirm: Run pipe") is drawn in red and
 names it: "Includes a dangerous command: \<title\>." While the chain runs, "Executing pipe: stage
-1/\<n\>..." shows; a chain that asks for a confirmation shows it only after **Run anyway**. The palette then shows each stage's
-result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd> in an empty search reopens the
-last stage, and <kbd>Esc</kbd> clears the chain.
+1/\<n\>..." shows; a chain that asks for a confirmation shows it only after **Run anyway**. The
+palette then shows each stage's result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd>
+in an empty search reopens the last stage, and <kbd>Esc</kbd> clears the chain.
 
 ## Keybinds
 
