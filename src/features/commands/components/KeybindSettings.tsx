@@ -32,7 +32,7 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
-import { listedKeybinds, slotHolders } from "../runtime/effectiveKeybinds";
+import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
 import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
@@ -106,14 +106,34 @@ function noCommandModifier(event: React.KeyboardEvent): boolean {
  *
  * @param holder - The first binding the save would displace; a workspace keybind cannot be.
  * @param title - The holder's command title.
+ * @param keystroke - The recorded keys.
+ * @param keepsOtherKeys - Whether the holder's command is still bound on other keys afterwards.
  */
-function ConflictNote({ holder, title }: { holder: ResolvedKeybind; title: string }) {
-  return holder.source === "WORKSPACE" ? (
-    <p className="text-[11px] text-rim-danger">
-      Already used by {title}, a workspace keybind — choose other keys.
+function ConflictNote({
+  holder,
+  title,
+  keystroke,
+  keepsOtherKeys,
+}: {
+  holder: ResolvedKeybind;
+  title: string;
+  keystroke: string;
+  keepsOtherKeys: boolean;
+}) {
+  if (holder.source === "WORKSPACE") {
+    return (
+      <p className="text-[11px] text-rim-danger">
+        {keystroke} is used by {title}, a workspace keybind. Choose other keys.
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] text-rim-warm">
+      {keystroke} is used by {title}.{" "}
+      {keepsOtherKeys
+        ? `Saving moves it here; ${title} keeps its other keys.`
+        : `Saving moves it here and leaves ${title} without a key.`}
     </p>
-  ) : (
-    <p className="text-[11px] text-rim-warm">Already used by {title} — saving will reassign it.</p>
   );
 }
 
@@ -224,6 +244,23 @@ export function KeybindSettings() {
     });
   }, [keybinds, searchQuery, commandTitleMap]);
 
+  // Commands whose default keys a binding took, listed with no key
+  const unbound = useMemo(
+    () =>
+      unboundCommands(deviceKeybinds, serverKeybinds, profile).filter((c) =>
+        commandOfferedHere(c.commandId),
+      ),
+    [deviceKeybinds, serverKeybinds, profile],
+  );
+  const filteredUnbound = useMemo(() => {
+    if (!searchQuery.trim()) return unbound;
+    const q = searchQuery.toLowerCase();
+    return unbound.filter((c) => {
+      const title = commandTitleMap.get(c.commandId) ?? c.commandId;
+      return title.toLowerCase().includes(q) || c.commandId.toLowerCase().includes(q);
+    });
+  }, [unbound, searchQuery, commandTitleMap]);
+
   // Group keybinds by category
   const categorizedKeybinds = useMemo(() => {
     const groups = new Map<CategoryKey, ResolvedKeybind[]>();
@@ -275,14 +312,19 @@ export function KeybindSettings() {
     );
   }
 
-  /** The note under keys that `conflicts` hold, naming the binding that matters most. */
-  function conflictNote(conflicts: ResolvedKeybind[]) {
+  /** The note under the recorded `keystroke` that `conflicts` hold, naming the binding that matters most. */
+  function conflictNote(conflicts: ResolvedKeybind[], keystroke: string) {
     const holder = conflicts.find((kb) => kb.source === "WORKSPACE") ?? conflicts[0];
     if (!holder) return null;
+    const keepsOtherKeys = keybinds.some(
+      (kb) => kb.commandId === holder.commandId && !conflicts.some((c) => c.id === kb.id),
+    );
     return (
       <ConflictNote
         holder={holder}
         title={commandTitleMap.get(holder.commandId) ?? holder.commandId}
+        keystroke={keystroke}
+        keepsOtherKeys={keepsOtherKeys}
       />
     );
   }
@@ -317,15 +359,13 @@ export function KeybindSettings() {
   }
 
   /**
-   * Opens the add form prefilled with a default binding's keys, command and context, so saving
-   * it makes a binding of the user's own that takes the default's place.
-   *
-   * @param kb - The default row being overridden.
+   * Opens the add form prefilled with `keystroke`, `commandId` and `context`: an override of a
+   * default's keys, or, with no keys, the first keys of a command left without any.
    */
-  function startOverride(kb: ResolvedKeybind) {
-    setNewKeystroke(kb.keystroke);
-    setNewCommandId(kb.commandId);
-    setNewContext(kb.context);
+  function openCreateForm(keystroke: string, commandId: string, context: KeybindContext) {
+    setNewKeystroke(keystroke);
+    setNewCommandId(commandId);
+    setNewContext(context);
     setShowCreate(true);
   }
 
@@ -447,7 +487,7 @@ export function KeybindSettings() {
         <p className="text-[11px] text-rim-text-muted">
           New keys: <kbd className="font-mono">{pendingRecord.keystroke}</kbd>
         </p>
-        {conflictNote(conflicts)}
+        {conflictNote(conflicts, pendingRecord.keystroke)}
         <div className="flex gap-2">
           <button
             onClick={() => confirmPendingRecord(kb, pendingRecord.keystroke)}
@@ -552,7 +592,7 @@ export function KeybindSettings() {
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent placeholder:text-rim-text-muted"
               readOnly
             />
-            {conflictNote(createConflicts)}
+            {conflictNote(createConflicts, newKeystroke)}
           </div>
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Command</label>
@@ -614,7 +654,10 @@ export function KeybindSettings() {
       {/* Categorized keybind sections */}
       {CATEGORIES.map((cat) => {
         const items = categorizedKeybinds.get(cat.key) ?? [];
-        if (items.length === 0) return null;
+        const unboundItems = filteredUnbound.filter(
+          (c) => categorizeKeybind(c.commandId) === cat.key,
+        );
+        if (items.length + unboundItems.length === 0) return null;
         const isCollapsed = collapsedSections.has(cat.key);
 
         return (
@@ -631,7 +674,7 @@ export function KeybindSettings() {
                 )}
               />
               <span>{cat.label}</span>
-              <span className="text-rim-text-faint">({items.length})</span>
+              <span className="text-rim-text-faint">({items.length + unboundItems.length})</span>
             </button>
 
             {!isCollapsed && (
@@ -758,7 +801,7 @@ export function KeybindSettings() {
                           {KEYBIND_CONTEXT_LABELS[kb.context]}
                         </span>
                         <button
-                          onClick={() => startOverride(kb)}
+                          onClick={() => openCreateForm(kb.keystroke, kb.commandId, kb.context)}
                           className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-rim-accent transition hover:bg-rim-accent/10"
                           title="Make a binding of your own on these keys"
                           aria-label={`Override ${kb.keystroke} ${title}`}
@@ -857,13 +900,38 @@ export function KeybindSettings() {
                     </Fragment>
                   );
                 })}
+                {unboundItems.map((c) => {
+                  const title = commandTitleMap.get(c.commandId) ?? c.commandId;
+                  return (
+                    <div
+                      key={`unbound-${c.commandId}`}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-rim-text-muted"
+                    >
+                      <kbd className="shrink-0 rounded border border-dashed border-rim-line px-1.5 py-0.5 font-mono text-[11px] text-rim-text-faint">
+                        No key
+                      </kbd>
+                      <span className="flex-1 truncate">{title}</span>
+                      <span className="shrink-0 text-[10px] text-rim-text-muted">
+                        {KEYBIND_CONTEXT_LABELS[c.context]}
+                      </span>
+                      <button
+                        onClick={() => openCreateForm("", c.commandId, c.context)}
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-rim-accent transition hover:bg-rim-accent/10"
+                        title="Give this command keys of its own"
+                        aria-label={`Set a key for ${title}`}
+                      >
+                        Set key
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         );
       })}
 
-      {filteredKeybinds.length === 0 && (
+      {filteredKeybinds.length + filteredUnbound.length === 0 && (
         <p className="text-xs text-rim-text-muted py-4 text-center">
           {searchQuery ? "No keybinds match your search." : "No keybinds configured."}
         </p>

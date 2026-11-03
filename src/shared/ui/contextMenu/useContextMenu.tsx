@@ -62,6 +62,12 @@ interface ContextMenuController {
     getItems: ContextMenuItems,
     options?: ContextMenuOptions,
   ) => boolean;
+  /**
+   * Builds the open menu's items again from `getItems`, keeping its place and focus, for a
+   * menu whose items depend on data that may load while it is open. An empty list leaves the
+   * menu as it is; nothing happens while no menu of this controller is open.
+   */
+  refresh: (getItems: ContextMenuItems) => void;
   close: () => void;
 }
 
@@ -203,6 +209,14 @@ export function useContextMenu(): ContextMenuController {
     [show],
   );
 
+  const refresh = useCallback((getItems: ContextMenuItems) => {
+    setOpen((current) => {
+      if (!current) return current;
+      const items = getItems();
+      return items.length === 0 ? current : { ...current, items };
+    });
+  }, []);
+
   const openAt = useCallback(
     (
       position: { x: number; y: number },
@@ -287,5 +301,5 @@ export function useContextMenu(): ContextMenuController {
     />
   ) : null;
 
-  return { menu, bind, openFromEvent, openUnder, openAt, close };
+  return { menu, bind, openFromEvent, openUnder, openAt, refresh, close };
 }

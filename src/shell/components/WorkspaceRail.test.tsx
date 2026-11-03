@@ -357,6 +357,36 @@ describe("WorkspaceRail — workspace context menu", () => {
     });
   });
 
+  it("fills in an open menu when the workspace's role arrives", async () => {
+    serve(ServerMemberRoleGql.MEMBER, false, 0, undefined, [WORKSPACE_LEAVE]);
+    const routed = requestMock.getMockImplementation()!;
+    let answerRole!: () => void;
+    requestMock.mockImplementation((document: unknown, ...rest: unknown[]) => {
+      if (String(document).includes("query Server(")) {
+        return new Promise((resolve) => {
+          answerRole = () =>
+            resolve({ server: { id: "ws-2", name: "Beta", viewerRole: "MEMBER" } });
+        });
+      }
+      return routed(document, ...rest);
+    });
+    renderWithQuery(<WorkspaceRail />);
+    const beta = screen.getByRole("button", { name: /^Beta/ });
+    fireEvent.mouseEnter(beta);
+    fireEvent.contextMenu(beta);
+    expect(menuLabels()).toEqual(["Pause notifications", "Assign keybind…"]);
+    await act(async () => answerRole());
+    await waitFor(() =>
+      expect(menuLabels()).toEqual([
+        "Pause notifications",
+        "Browse channels…",
+        "Create channel…",
+        "Assign keybind…",
+        "Leave workspace…",
+      ]),
+    );
+  });
+
   it("offers the owner Rename workspace and no Leave", async () => {
     serve(ServerMemberRoleGql.OWNER, false, 0, undefined, [WORKSPACE_LEAVE, WORKSPACE_RENAME]);
     await openBetaMenuWithCapabilities();

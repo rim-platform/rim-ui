@@ -116,6 +116,32 @@ describe("useMemberLookup", () => {
     expect(info.isCurrentUser).toBe(false);
   });
 
+  it("gives nobody a workspace role in the direct space", () => {
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
+    vi.mocked(useServerMembers).mockReturnValue({
+      data: [
+        {
+          userId: "u-bob",
+          username: "bob",
+          memberRole: ServerMemberRoleGql.GUEST,
+          joinedAt: "2025-01-01T00:00:00Z",
+          avatarUrl: null,
+          statusText: null,
+          bio: null,
+          displayName: "Bob",
+        },
+      ],
+    } as ReturnType<typeof useServerMembers>);
+    useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "direct" } });
+
+    const { result: direct } = renderHook(() => useMemberLookup("direct"));
+    expect(direct.current.resolve("u-bob").role).toBeUndefined();
+    const { result: workspace } = renderHook(() => useMemberLookup("ws-1"));
+    expect(workspace.current.resolve("u-bob").role).toBe(ServerMemberRoleGql.GUEST);
+  });
+
   it("prefers current user entry but enriches with member data", () => {
     vi.mocked(useCurrentUser).mockReturnValue({
       data: {
