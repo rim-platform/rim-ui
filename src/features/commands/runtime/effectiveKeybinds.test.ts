@@ -17,6 +17,7 @@ import {
   listedKeybinds,
   resolveEffectiveKeybinds,
   slotHolders,
+  unboundCommands,
   useEffectiveKeybinds,
 } from "./effectiveKeybinds";
 import { matchKeybind } from "./keybindEngine";
@@ -173,6 +174,38 @@ describe("listedKeybinds", () => {
     const listed = listedKeybinds([], server, BUILT_IN_PROFILES.minimal);
 
     expect(listed.filter((kb) => kb.keystroke === "Ctrl+K")).toEqual([server[0]]);
+  });
+});
+
+describe("unboundCommands", () => {
+  const userOnCtrlK = keybind({
+    id: "user-k",
+    keystroke: "Ctrl+K",
+    commandId: "chat.mark_all_as_read",
+    source: "USER",
+  });
+
+  it("lists a default's command whose keys a binding of the user's took", () => {
+    const server = [keybind({ keystroke: "Ctrl+K" }), userOnCtrlK];
+
+    expect(unboundCommands([], server, BUILT_IN_PROFILES.minimal)).toEqual([
+      { commandId: "workspace.open_command_palette", context: "GLOBAL" },
+    ]);
+  });
+
+  it("leaves out a command still bound on other keys, or overridden on the same keys", () => {
+    const withOtherKeys = [
+      keybind({ keystroke: "Ctrl+K" }),
+      keybind({ id: "kb-p", keystroke: "Ctrl+P" }),
+      userOnCtrlK,
+    ];
+    expect(unboundCommands([], withOtherKeys, BUILT_IN_PROFILES.minimal)).toEqual([]);
+
+    const overridden = [
+      keybind({ keystroke: "Ctrl+K" }),
+      keybind({ id: "user-same", keystroke: "Ctrl+K", source: "USER" }),
+    ];
+    expect(unboundCommands([], overridden, BUILT_IN_PROFILES.minimal)).toEqual([]);
   });
 });
 

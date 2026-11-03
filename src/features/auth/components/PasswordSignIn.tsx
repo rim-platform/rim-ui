@@ -235,7 +235,12 @@ export function PasswordSignInForm({
             >
               <p>{error}</p>
               {locked && (
-                <Button size="sm" variant="secondary" onClick={() => setResetting(true)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setResetting(true)}
+                >
                   Use your recovery phrase
                 </Button>
               )}

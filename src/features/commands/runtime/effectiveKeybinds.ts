@@ -86,6 +86,41 @@ export function listedKeybinds(
   return [...own, ...defaults.filter((kb) => !taken.has(slot(kb)))];
 }
 
+/** A command whose default keys a binding above took, and that no listed binding runs. */
+export interface UnboundCommand {
+  commandId: string;
+  /** The context of its first default whose keys were taken. */
+  context: KeybindContext;
+}
+
+/**
+ * The commands Settings → Keybinds lists with no key: a default of theirs (the active
+ * profile's or the server's) lost its keys to a binding of this device, the user or the
+ * workspace, and no listed binding runs them. Each command once, in default order.
+ */
+export function unboundCommands(
+  device: readonly ResolvedKeybind[],
+  server: readonly ResolvedKeybind[] | undefined,
+  profile: KeybindProfile,
+): UnboundCommand[] {
+  const serverKeybinds = server ?? [];
+  const own = [...device, ...serverKeybinds.filter((kb) => kb.source !== "DEFAULT")];
+  const taken = new Set(own.map(slot));
+  const defaults = resolveEffectiveKeybinds(
+    [],
+    serverKeybinds.filter((kb) => kb.source === "DEFAULT"),
+    profile,
+  );
+  const bound = new Set(listedKeybinds(device, server, profile).map((kb) => kb.commandId));
+  const result: UnboundCommand[] = [];
+  for (const kb of defaults) {
+    if (!taken.has(slot(kb)) || bound.has(kb.commandId)) continue;
+    if (result.some((c) => c.commandId === kb.commandId)) continue;
+    result.push({ commandId: kb.commandId, context: kb.context });
+  }
+  return result;
+}
+
 /** The keybinds in force on this device right now, leaving out commands this app does not offer. */
 export function useEffectiveKeybinds(): ResolvedKeybind[] {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);

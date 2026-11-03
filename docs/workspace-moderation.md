@@ -1,7 +1,8 @@
 # Workspace removals and bans
 
 A removal notice shows the workspace name, cause, end date and reason sent for this account.
-It remains visible across reloads until dismissed, scoped to the server and signed-in account.
+It remains visible across reloads until dismissed, or until you are a member of that workspace
+again, scoped to the server and signed-in account.
 Moderators are told that the member will see the reason they enter.
 
 Message authors retain their readable names. Active bans have a muted marker; hover cards

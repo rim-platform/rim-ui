@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MessagesSquare, Plus } from "lucide-react";
 
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -16,10 +16,7 @@ import {
   type WorkspaceMenuDialog,
 } from "../../features/workspaces/hooks/useWorkspaceMenuItems";
 import { cn } from "../../shared/ui/cn";
-import {
-  useContextMenu,
-  type ContextMenuController,
-} from "../../shared/ui/contextMenu/useContextMenu";
+import { useContextMenu } from "../../shared/ui/contextMenu/useContextMenu";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
@@ -69,7 +66,6 @@ export function WorkspaceRail() {
   );
   const counts = useUnreadStore((s) => s.counts);
   const spaceOf = useUnreadStore((s) => s.spaceOf);
-  const contextMenu = useContextMenu();
   const [dialog, setDialog] = useState<{ kind: WorkspaceMenuDialog; workspaceId: string } | null>(
     null,
   );
@@ -119,7 +115,6 @@ export function WorkspaceRail() {
               unread={unread}
               active={active}
               onSelect={() => setWorkspaceId(server.id)}
-              bindMenu={contextMenu.bind}
               onOpenDialog={(kind) => setDialog({ kind, workspaceId: server.id })}
             />
           );
@@ -139,7 +134,6 @@ export function WorkspaceRail() {
 
         {showCreate && <AddWorkspaceDialog onClose={() => setShowCreate(false)} />}
       </aside>
-      {contextMenu.menu}
       {dialog?.kind === "invite" && (
         <InviteDialog open workspaceId={dialog.workspaceId} onClose={closeDialog} />
       )}
@@ -155,7 +149,8 @@ export function WorkspaceRail() {
 
 /**
  * A workspace's button on the rail, with the workspace's context menu. The role and settings
- * the menu needs load once the pointer, a finger or the focus reaches the button.
+ * the menu needs load once the pointer, a finger or the focus reaches the button, and an open
+ * menu fills in when they arrive.
  */
 function WorkspaceRailButton({
   workspaceId,
@@ -164,7 +159,6 @@ function WorkspaceRailButton({
   unread,
   active,
   onSelect,
-  bindMenu,
   onOpenDialog,
 }: {
   workspaceId: string;
@@ -173,7 +167,6 @@ function WorkspaceRailButton({
   unread: number;
   active: boolean;
   onSelect: () => void;
-  bindMenu: ContextMenuController["bind"];
   onOpenDialog: (dialog: WorkspaceMenuDialog) => void;
 }) {
   const [reached, setReached] = useState(false);
@@ -184,35 +177,41 @@ function WorkspaceRailButton({
     enabled: reached || active,
     onOpenDialog,
   });
-  const menu = bindMenu(getItems, { label: `${label} actions` });
+  const { bind, refresh, menu: openMenu } = useContextMenu();
+  const menu = bind(getItems, { label: `${label} actions` });
+  // The role and settings may arrive while the menu is open: its items follow them.
+  useEffect(() => refresh(getItems), [refresh, getItems]);
 
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={unread > 0 ? `${label} (${unread} unread)` : label}
-      aria-pressed={active}
-      {...menu}
-      onClick={onSelect}
-      onFocus={() => setReached(true)}
-      onTouchStart={(e) => {
-        setReached(true);
-        menu.onTouchStart(e);
-      }}
-      onMouseEnter={() => {
-        setReached(true);
-        useHoverContextStore.getState().setTarget({ kind: "workspace", workspaceId, label });
-      }}
-      onMouseLeave={() => useHoverContextStore.getState().clear()}
-      className={cn(
-        "relative flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold transition",
-        active
-          ? "bg-gradient-to-br from-rim-accent to-rim-accent text-rim-void"
-          : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
-      )}
-    >
-      {name.charAt(0).toUpperCase()}
-      {unread > 0 && <UnreadBadge count={unread} />}
-    </button>
+    <>
+      <button
+        type="button"
+        title={label}
+        aria-label={unread > 0 ? `${label} (${unread} unread)` : label}
+        aria-pressed={active}
+        {...menu}
+        onClick={onSelect}
+        onFocus={() => setReached(true)}
+        onTouchStart={(e) => {
+          setReached(true);
+          menu.onTouchStart(e);
+        }}
+        onMouseEnter={() => {
+          setReached(true);
+          useHoverContextStore.getState().setTarget({ kind: "workspace", workspaceId, label });
+        }}
+        onMouseLeave={() => useHoverContextStore.getState().clear()}
+        className={cn(
+          "relative flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold transition",
+          active
+            ? "bg-gradient-to-br from-rim-accent to-rim-accent text-rim-void"
+            : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
+        )}
+      >
+        {name.charAt(0).toUpperCase()}
+        {unread > 0 && <UnreadBadge count={unread} />}
+      </button>
+      {openMenu}
+    </>
   );
 }

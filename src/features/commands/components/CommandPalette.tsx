@@ -29,10 +29,11 @@ import {
 } from "../runtime/commandArguments";
 import { commandSuccessText } from "../runtime/commandResultText";
 import { currentCommandContext } from "../runtime/commandContext";
-import { runWithHumanConfirmation } from "../runtime/humanConfirmation";
+import { CONFIRMATION_REQUIRED, runWithHumanConfirmation } from "../runtime/humanConfirmation";
 import {
   appOnlyStageError,
   pipeConfirmationSubject,
+  pipeExpectsConfirmation,
   readablePipeError,
 } from "../runtime/pipeStages";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
@@ -64,6 +65,9 @@ import type {
   CommandSourceKind,
   CommandResult,
 } from "../types";
+
+/** Id of the toast that shows a running pipe. */
+const PIPE_PROGRESS_TOAST_ID = "pipe-progress";
 
 function sourceIcon(source: CommandSourceKind) {
   switch (source) {
@@ -289,25 +293,29 @@ function CommandPaletteDialog() {
       setPipeSegments([]);
       setPipeExecuting(true);
       const stageCount = allSegments.length;
-      const toastId = toast.info(`Executing pipe: stage 1/${stageCount}...`, {
-        id: "pipe-progress",
-        persistent: true,
-      });
+      const subject = pipeConfirmationSubject(allSegments, commands);
+      const showProgress = () =>
+        toast.info(`Executing pipe: stage 1/${stageCount}...`, {
+          id: PIPE_PROGRESS_TOAST_ID,
+          persistent: true,
+        });
       try {
-        const outcome = await runWithHumanConfirmation(
-          async (confirmation) => {
-            const res = await executeCommandMutation.mutateAsync({
-              commandId: pipeExpression,
-              commandContext: currentCommandContext(),
-              isPipe: true,
-              confirmation,
-            });
-            return res.executeCommand;
-          },
-          pipeConfirmationSubject(allSegments, commands),
-        );
+        const outcome = await runWithHumanConfirmation(async (confirmation) => {
+          // A pipe the server holds for a confirmation shows its progress once it is confirmed.
+          if (confirmation || !pipeExpectsConfirmation(subject)) showProgress();
+          const res = await executeCommandMutation.mutateAsync({
+            commandId: pipeExpression,
+            commandContext: currentCommandContext(),
+            isPipe: true,
+            confirmation,
+          });
+          if (res.executeCommand.status === CONFIRMATION_REQUIRED) {
+            toast.dismiss(PIPE_PROGRESS_TOAST_ID);
+          }
+          return res.executeCommand;
+        }, subject);
         const result = commandResultOf(outcome);
-        toast.dismiss(toastId);
+        toast.dismiss(PIPE_PROGRESS_TOAST_ID);
         if (isCancelledResult(result)) {
           closeCommandPalette();
         } else if (result.pipelineStages && result.pipelineStages.length > 0) {
@@ -329,7 +337,7 @@ function CommandPaletteDialog() {
           }
         }
       } catch (err) {
-        toast.dismiss(toastId);
+        toast.dismiss(PIPE_PROGRESS_TOAST_ID);
         toast.error(
           readablePipeError(graphqlErrorMessage(err, "Pipe execution failed"), knownCommands),
         );

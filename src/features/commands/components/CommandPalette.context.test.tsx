@@ -37,11 +37,17 @@ vi.mock("../runtime/commandDispatcher", () => ({
   targetPickerKind: () => undefined,
 }));
 
-vi.mock("../runtime/humanConfirmation", () => ({
-  runWithHumanConfirmation: async (run: (proof: undefined) => Promise<CommandResult>) => ({
+const confirmation = vi.hoisted(() => ({
+  run: vi.fn(async (send: (proof?: unknown) => Promise<unknown>) => ({
     kind: "completed",
-    result: await run(undefined),
-  }),
+    result: await send(undefined),
+  })),
+}));
+
+vi.mock("../runtime/humanConfirmation", () => ({
+  CONFIRMATION_REQUIRED: "CONFIRMATION_REQUIRED",
+  runWithHumanConfirmation: (...args: unknown[]) =>
+    confirmation.run(...(args as Parameters<typeof confirmation.run>)),
   strictestSensitivity: () => ({}),
 }));
 
@@ -61,6 +67,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { useCommands } from "../api/useCommands";
+import { CANCELLED_PAYLOAD } from "../../plugins/runtime/pluginCommandInfo";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -467,6 +474,101 @@ describe("CommandPalette pipes", () => {
     expect(mutateAsync).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(
       "Pipe stage 1: Toggle Zen Mode runs only in this app, so it cannot be part of a pipe.",
+    );
+  });
+});
+
+describe("CommandPalette pipe progress", () => {
+  const HELD: CommandResult = {
+    status: "CONFIRMATION_REQUIRED",
+    message: "Confirm",
+    payload: null,
+    followUpCommands: [],
+    confirmationRequired: { token: "t", argsHash: "h", expiresAt: "2099-01-01T00:00:00Z" },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serveFilterCommands();
+    mutateAsync.mockResolvedValue({ executeCommand: SUCCESS });
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+  });
+
+  afterEach(() => {
+    act(() => useCommandStore.getState().closeCommandPalette());
+    useWorkspaceStore.getState().clearWorkspaceId();
+    useShellStore.getState().reset();
+    queryClient.clear();
+    vi.mocked(useCommands).mockReturnValue({
+      data: [MARK_AS_READ, LIST_STATE],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+  });
+
+  async function runPipe(text: string) {
+    openPalette();
+    typeInPalette(text);
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    });
+  }
+
+  it("says nothing about running while the confirmation is open, and nothing after Cancel", async () => {
+    let infoWhileOpen = -1;
+    mutateAsync.mockResolvedValueOnce({ executeCommand: HELD });
+    confirmation.run.mockImplementationOnce(async (send) => {
+      await send(undefined);
+      infoWhileOpen = vi.mocked(toast.info).mock.calls.length;
+      return {
+        kind: "completed",
+        result: {
+          status: "ERROR",
+          message: "Cancelled",
+          payload: CANCELLED_PAYLOAD,
+          followUpCommands: [],
+        },
+      };
+    });
+
+    await runPipe("admin.kick user_id=u-2|");
+
+    expect(infoWhileOpen).toBe(0);
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("shows the progress once the confirmation is accepted", async () => {
+    let infoWhileOpen = -1;
+    mutateAsync
+      .mockResolvedValueOnce({ executeCommand: HELD })
+      .mockResolvedValueOnce({ executeCommand: SUCCESS });
+    confirmation.run.mockImplementationOnce(async (send) => {
+      await send(undefined);
+      infoWhileOpen = vi.mocked(toast.info).mock.calls.length;
+      const result = await send({ inBandToken: { token: "t", argsHash: "h" } });
+      return { kind: "completed", result };
+    });
+
+    await runPipe("admin.kick user_id=u-2|");
+
+    expect(infoWhileOpen).toBe(0);
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    expect(toast.info).toHaveBeenCalledWith("Executing pipe: stage 1/1...", {
+      id: "pipe-progress",
+      persistent: true,
+    });
+    expect(toast.dismiss).toHaveBeenCalledWith("pipe-progress");
+  });
+
+  it("shows the progress at once for a pipe that needs no confirmation", async () => {
+    await runPipe("state.list|");
+
+    expect(toast.info).toHaveBeenCalledWith("Executing pipe: stage 1/1...", {
+      id: "pipe-progress",
+      persistent: true,
+    });
+    expect(vi.mocked(toast.info).mock.invocationCallOrder[0]).toBeLessThan(
+      mutateAsync.mock.invocationCallOrder[0],
     );
   });
 });

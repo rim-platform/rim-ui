@@ -15,6 +15,9 @@ import { createTestQueryClient } from "../../test/utils";
 // Mocked as no-ops so this test exercises only the render tree and the
 // SurfaceErrorBoundary wiring around the three panels under test, not the
 // (separately-tested) subscription/query plumbing.
+vi.mock("../../features/workspaces/api/useMyServers", () => ({
+  useMyServers: () => ({ data: [] }),
+}));
 vi.mock("../../features/workspaces/components/JoinDefaultWorkspace", () => ({
   JoinDefaultWorkspace: () => null,
 }));
