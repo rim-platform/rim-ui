@@ -229,10 +229,10 @@ conversation joins your list. Settings > Direct messages decides who reaches you
 Requests sit at the top of Notifications, and the bell counts them. "Requests (n)" also heads the
 conversation list of the workspace they came from, or the Direct messages list for those from
 outside. Each request shows the sender's verified name and fingerprint, with **Accept**, **Read
-first**, **Ignore**, **Block** and **Report**. **Block** asks first; the person is not told.
+first**, **Ignore**, **Block** and **Report**. **Block** asks first; the person is not told. You can also block someone from their menu (right-click their name or avatar), their card, or a DM's **…** menu, also after you accepted their DM or group; blocking removes them from your contacts.
 Settings > Direct messages lists the people you blocked under **Blocked people**, each with
 **Unblock**. Unblocking lets them reach you again: a conversation you blocked them from comes back
-as a new request when they next write in it. While someone is blocked, the conversations they started, DMs and groups on any server, are hidden and raise no notification; unblocking brings them back with everything written in them. **Send message** to someone you blocked asks you to unblock them first. **Read first** opens the conversation without deciding:
+as a new request when they next write in it. While someone is blocked, the conversations they started, DMs and groups on any server, are hidden and raise no notification; after you unblock them, what they started on your server comes back as a request when they next write in it, and what is hosted on another server comes back with everything written in it. **Send message** to someone you blocked asks you to unblock them first. **Read first** opens the conversation without deciding:
 in place of the composer it says who wants to message you, with **Accept**, **Ignore**, **Block**
 and **Report**. You reply once you accept; until then the sender sees nothing from you, not even
 that you read it. The sender sees "Sent as a request; \<name\> has not accepted yet." above their

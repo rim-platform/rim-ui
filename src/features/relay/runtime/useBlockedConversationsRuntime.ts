@@ -27,6 +27,16 @@ import { relayProcessor } from "./relayRuntime";
 /** How often the blocked list is read again while the app is in front. */
 const BLOCKED_POLL_MS = 120_000;
 
+/** How long a block made on this device speaks for itself: its own toast says what it hid. */
+const BLOCKED_HERE_MS = 10_000;
+/** Principals blocked on this device, with when. */
+const blockedHere = new Map<string, number>();
+
+/** Records that this device just blocked `principalId`, so closing what it hid says nothing more. */
+export function noteBlockedHere(principalId: string): void {
+  blockedHere.set(principalId, Date.now());
+}
+
 type BySpace = Record<string, Record<string, string>>;
 
 /** Brings a conversation back from a block up to date: Welcomes, the space, its feed and views. */
@@ -72,7 +82,7 @@ function closeHidden(spaceId: string, conversationId: string, principalId: strin
   } else {
     useShellStore.getState().setSelectedConversationId(null);
   }
-  if (onScreen) {
+  if (onScreen && Date.now() - (blockedHere.get(principalId) ?? 0) > BLOCKED_HERE_MS) {
     toast.info("Conversation hidden", {
       id: `blocked-conversation:${conversationId}`,
       description: `You blocked ${blockedPersonName(spaceId, principalId)}. It comes back when you unblock them in Settings → Direct messages.`,

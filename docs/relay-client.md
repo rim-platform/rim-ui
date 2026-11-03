@@ -23,7 +23,7 @@ as before.
 | `src/features/relay/transport/` | `remoteFetch.ts` (signed requests, verified answers), `requestSeq.ts`, `relayHealth.ts` |
 | `src/features/relay/stream/` | `relayStream.ts` (the queue on the WebSocket), `sequencer.ts`, `streamRules.ts` |
 | `src/features/relay/contacts/` | Contact links, fingerprints, verified identities, aliases, relays seen in invites |
-| `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx`, `components/BlockedPeople.tsx`, `components/BlockConfirmDialog.tsx` | Message requests |
+| `src/features/relay/inbox/autoAccept.ts`, `inbox/requestWorkspace.ts`, `components/DmRequestInbox.tsx`, `components/DmRequestsPage.tsx`, `components/DmRequestsRow.tsx`, `components/BlockedPeople.tsx`, `components/BlockConfirmDialog.tsx`, `components/BlockPersonDialog.tsx`, `blocking/blockPerson.ts`, `blocking/useBlockPersonStore.ts` | Message requests |
 | `src/features/relay/inbox/blockedCreators.ts`, `state/useBlockedConversations.ts`, `runtime/useBlockedConversationsRuntime.ts` | Conversations started by someone blocked |
 | `src/features/dm-policy/` | Who may start a DM: the person's settings, a workspace's policy, the operator's settings in About |
 | `src/features/relay/conversations/` | New DMs and groups in the direct space, successors |
@@ -240,7 +240,13 @@ lists `myBlockedPrincipals` under Blocked people (`components/BlockedPeople.tsx`
 (`unblockPrincipal`), which asks nothing and says they can message you again; the relay clears the
 requests ignored from them, so a conversation blocked from them comes back as a new request with
 their next message (rim-server `docs/relay.md`, "The request inbox"). Conversations the person
-started are hidden while they are blocked (below). A
+started are hidden while they are blocked (below). **Block…** is also in the person menu
+(someone with a principal id, by their space's `serverMembers`), the hover and profile cards, and
+a DM's menu, for anyone not blocked yet, an accepted DM or group included. It asks with the same
+dialog and leaves nothing. It then removes the person from the contacts, and refetches every
+conversation list, the unread counts and the notifications. A conversation this server stopped
+listing is cleared from unread, and closed when it was open; the list opens its first
+conversation. Unblock refreshes the same way and catches up what came back. A
 request from someone on this server invites to one of its own spaces (its direct space or a
 workspace of the account), which is never bound as a remote space: when verifying held items,
 such a space counts as hosted by this server (`localSpaceHost`), so only an invite whose host is
@@ -294,7 +300,8 @@ The blocked list is read again every two minutes while the app is in front, when
 regains focus and when the WebSocket reconnects, so a block or unblock on another device
 applies within that. After an unblock the conversation is listed again and caught up from its
 host: Welcomes processed, the space reconciled (stream heads, lists, change feed), its
-timeline refreshed, so what they wrote meanwhile shows. A creator the member list does not
+timeline refreshed, so what they wrote meanwhile shows. A block made on this device names what it hid in its own toast, so closing an open hidden
+conversation says nothing more for ten seconds. A creator the member list does not
 name (one who left a group, a deleted account) hides nothing. A server that does not know
 `myBlockedPrincipals` hides nothing.
 

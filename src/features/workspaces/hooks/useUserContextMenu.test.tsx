@@ -18,6 +18,8 @@ import {
 } from "../../conversations/__fixtures__/conversations";
 import type { ConversationSummary } from "../../conversations/types";
 import { useKnownHandles } from "../state/useKnownHandles";
+import { queryClient } from "../../../core/query/queryClient";
+import { useBlockPersonStore } from "../../relay/blocking/useBlockPersonStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 
 const requestMock = vi.fn();
@@ -167,6 +169,56 @@ describe("useUserContextMenu", () => {
     await renderPerson(MEMBER);
     expect(openMenu()).toEqual(["View profile", "Send message", "Copy @username"]);
     expect(screen.queryByText("Moderation")).not.toBeInTheDocument();
+  });
+
+  describe("Block…", () => {
+    beforeEach(() => {
+      useRelayStore
+        .getState()
+        .setStarted(
+          { serverId: "rims1_relay", roles: ["host", "relay"], directSpaceId: "direct-1" },
+          { endpoint: "e", userId: "me", principalId: "rimp1_me", deviceId: "d1" },
+          [],
+        );
+      useBlockPersonStore.getState().close();
+      queryClient.clear();
+    });
+
+    async function seeded(alice: Alice, props: Partial<Parameters<typeof Person>[0]> = {}) {
+      serve(MEMBER, alice);
+      const qc = await renderPerson(MEMBER, props);
+      queryClient.setQueryData(
+        queryKeys.serverMembers("ws-1"),
+        qc.getQueryData(queryKeys.serverMembers("ws-1")),
+      );
+      return qc;
+    }
+
+    it("offers Block… on someone with a principal id and asks before blocking", async () => {
+      await seeded({ principalId: "rimp1_alice" });
+      expect(openMenu()).toContain("Block…");
+      fireEvent.click(screen.getByRole("menuitem", { name: "Block…" }));
+      expect(useBlockPersonStore.getState().target).toEqual({
+        principalId: "rimp1_alice",
+        name: "Alice",
+      });
+    });
+
+    it("offers no Block… on someone without a principal id, someone blocked already or the viewer", async () => {
+      await seeded({});
+      expect(openMenu()).not.toContain("Block…");
+      cleanup();
+
+      queryClient.clear();
+      await seeded({ principalId: "rimp1_alice" });
+      queryClient.setQueryData(queryKeys.myBlockedPrincipals, [{ principalId: "rimp1_alice" }]);
+      expect(openMenu()).not.toContain("Block…");
+      cleanup();
+
+      queryClient.clear();
+      await seeded({ principalId: "rimp1_alice" }, { userId: "me" });
+      expect(openMenu()).not.toContain("Block…");
+    });
   });
 
   it("offers the viewer their profile, status, username and settings", async () => {

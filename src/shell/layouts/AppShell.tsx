@@ -73,6 +73,7 @@ import {
   useDirectSpaceRuntime,
   useLocalDirectSpaceId,
 } from "../../features/relay/runtime/useDirectSpaceRuntime";
+import { BlockPersonDialog } from "../../features/relay/components/BlockPersonDialog";
 import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { ProbationBanner } from "../../features/limits/components/ProbationBanner";
 import { AccountDeletionBanner } from "../../features/account-deletion/components/AccountDeletionBanner";
@@ -188,6 +189,7 @@ function UnlockedShell() {
       <OfflineBanner />
       <ConnectionBanner />
       <RelayNotices />
+      <BlockPersonDialog />
       <AccountDeletionBanner />
       <ProbationBanner />
       <RecoveryKitBanner />

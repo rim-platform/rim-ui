@@ -25,7 +25,7 @@ function blockedName(entry: BlockedPrincipalView, aliases: Record<string, string
 /**
  * Settings → Direct messages → Blocked people: the people this account blocked, newest first,
  * each with when and an Unblock that lifts the block at once and says they can message you
- * again. Nothing while the relay is off.
+ * again, and that a conversation they started comes back as a request when they next write in it. Nothing while the relay is off.
  */
 export function BlockedPeople() {
   const headingId = useId();
@@ -40,7 +40,8 @@ export function BlockedPeople() {
     unblock.mutate(entry.principalId, {
       onSuccess: () =>
         toast.success(asSentence(`Unblocked ${name}`), {
-          description: "They can message you again.",
+          description:
+            "They can message you again. A conversation they started comes back as a request when they next write in it.",
         }),
       onError: (err) => toast.error(graphqlErrorMessage(err, `Could not unblock ${name}`)),
     });

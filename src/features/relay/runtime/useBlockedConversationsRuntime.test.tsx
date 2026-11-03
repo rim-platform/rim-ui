@@ -37,7 +37,7 @@ vi.mock("../../messages/runtime/messageCacheSync", () => ({ requestCacheSync }))
 vi.mock("./relayRuntime", () => ({ relayProcessor: () => ({ reconcileSpace }) }));
 vi.mock("../../../shared/toast", () => ({ toast: { info: toastInfo } }));
 
-import { useBlockedConversationsRuntime } from "./useBlockedConversationsRuntime";
+import { noteBlockedHere, useBlockedConversationsRuntime } from "./useBlockedConversationsRuntime";
 
 const aliceBlocked = {
   principalId: "rimp1_alice",
@@ -160,6 +160,17 @@ describe("useBlockedConversationsRuntime", () => {
         description: expect.stringContaining("You blocked Alice."),
       }),
     );
+  });
+
+  it("closes a conversation hidden by a block made here without its own toast", () => {
+    useShellStore.getState().setSelectedConversationId("dm");
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    renderHook(() => useBlockedConversationsRuntime(), { wrapper });
+    noteBlockedHere("rimp1_alice");
+    act(() => useBlockedConversations.getState().setIn("remote-direct", { dm: "rimp1_alice" }));
+    expect(useWorkspaceStore.getState().workspaceId).toBe("home-direct");
+    expect(useShellStore.getState().selectedConversationId).toBeNull();
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 
   it("closes a hidden conversation behind another page without a toast", () => {

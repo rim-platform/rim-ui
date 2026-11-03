@@ -8,6 +8,7 @@ import { cn } from "../../../../shared/ui/cn";
 import { useClockFormatStore } from "../../../../shared/state/useClockFormatStore";
 import { formatTime } from "../../../../shared/utils/formatTime";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
+import { blockActionFor } from "../../../relay/blocking/blockPerson";
 import { LockMark } from "../../../e2ee/components/LockMark";
 import { MessageRoleBadge } from "../../../workspaces/components/MemberBadges";
 import { sameAuthor } from "./areMessageItemPropsEqual";
@@ -50,6 +51,9 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
         author.isFormerMember || activeBan(author.ban)
           ? undefined
           : () => void openDirectWithMember(authorId)
+      }
+      blockAction={
+        author.isCurrentUser || author.isFormerMember ? undefined : () => blockActionFor(authorId)
       }
     >
       {children}

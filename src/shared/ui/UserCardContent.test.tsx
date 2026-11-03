@@ -122,4 +122,22 @@ describe("UserCardContent", () => {
     expect(screen.queryByText(/r_abcdef/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Copy/)).not.toBeInTheDocument();
   });
+
+  it("offers Block… when the card's block action names one, and runs it", () => {
+    const block = vi.fn();
+    render(<UserCardContent {...defaultProps} blockAction={() => block} />);
+    fireEvent.click(screen.getByRole("button", { name: "Block…" }));
+    expect(block).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no Block… on the viewer's own card or without a block action", () => {
+    const { rerender } = render(
+      <UserCardContent {...defaultProps} isCurrentUser blockAction={() => vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: "Block…" })).not.toBeInTheDocument();
+    rerender(<UserCardContent {...defaultProps} blockAction={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "Block…" })).not.toBeInTheDocument();
+    rerender(<UserCardContent {...defaultProps} />);
+    expect(screen.queryByRole("button", { name: "Block…" })).not.toBeInTheDocument();
+  });
 });

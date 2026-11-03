@@ -25,6 +25,8 @@ interface UserHoverCardProps {
   isCurrentUser?: boolean;
   /** Opens the direct message with this person. */
   onSendDm?: () => void;
+  /** The Block… action, asked for as the card opens; see `UserCardContent`. */
+  blockAction?: () => (() => void) | undefined;
   children: ReactElement;
 }
 
@@ -43,6 +45,7 @@ export function UserHoverCard({
   presenceStatus,
   isCurrentUser,
   onSendDm,
+  blockAction,
   children,
 }: UserHoverCardProps) {
   const [visible, setVisible] = useState(false);
@@ -200,6 +203,7 @@ export function UserHoverCard({
               presenceStatus={presenceStatus}
               isCurrentUser={isCurrentUser}
               onSendDm={onSendDm}
+              blockAction={blockAction}
             />
           </div>,
           document.body,
