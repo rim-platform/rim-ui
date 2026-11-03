@@ -58,7 +58,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - "You were removed from <workspace>" and "You were banned from <workspace>" go away when you
   are a member of that workspace again.
 - The profile card and the @mention card in a DM or group show no workspace role, instead of
-  "Role: guest" for people who are members of your workspaces.
+  "Role: Guest" for people who are members of your workspaces.
 
 ## [0.0.9] - 2026-10-31
 
