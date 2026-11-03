@@ -5,6 +5,7 @@ import type { CommandDefinition } from "../types";
 import {
   appOnlyStageError,
   pipeConfirmationSubject,
+  pipeExpectsConfirmation,
   pipeStageCommandId,
   readablePipeError,
 } from "./pipeStages";
@@ -98,5 +99,28 @@ describe("readablePipeError", () => {
     expect(readablePipeError("Pipe execution failed", [TOGGLE_SIDEBAR])).toBe(
       "Pipe execution failed",
     );
+  });
+});
+
+describe("pipeExpectsConfirmation", () => {
+  const subjectOf = (...stages: Stage[]) =>
+    pipeConfirmationSubject(
+      stages.map((s) => s.id),
+      stages,
+    );
+
+  it("expects a confirmation for a dangerous stage", () => {
+    expect(pipeExpectsConfirmation(subjectOf(SEARCH, KICK))).toBe(true);
+  });
+
+  it("expects one for a Restricted stage", () => {
+    const wipe = stage("admin.wipe", "Wipe", { sensitivity: CommandSensitivity.RESTRICTED });
+    expect(pipeExpectsConfirmation(subjectOf(SEARCH, wipe))).toBe(true);
+  });
+
+  it("expects none for safe or mutating stages", () => {
+    const rename = stage("chat.rename", "Rename", { sensitivity: CommandSensitivity.MUTATING });
+    expect(pipeExpectsConfirmation(subjectOf(SEARCH))).toBe(false);
+    expect(pipeExpectsConfirmation(subjectOf(SEARCH, rename))).toBe(false);
   });
 });

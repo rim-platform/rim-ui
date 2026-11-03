@@ -283,7 +283,25 @@ describe("KeybindSettings", () => {
         expect.anything(),
       );
       expect(updateKeybind).not.toHaveBeenCalled();
-      expect(screen.queryByText(/Already used by/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/ is used by /)).not.toBeInTheDocument();
+    });
+
+    it("keeps a command whose keys were taken in the list, with No key and Set key", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [
+          makeKeybind({ id: "kb-default" }),
+          makeKeybind({ id: "kb-user", source: "USER", commandId: "workspace.open_search" }),
+        ],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      expect(within(rowOf("Open Command Palette")).getByText("No key")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Set a key for Open Command Palette" }));
+
+      expect(screen.getByLabelText("Keystroke")).toHaveValue("");
+      expect(screen.getAllByLabelText("Command")[0]).toHaveValue("workspace.open_command_palette");
+      expect(screen.getAllByLabelText("Context")[0]).toHaveValue("GLOBAL");
     });
 
     it("lists the app's own defaults from the active profile", () => {
@@ -376,7 +394,23 @@ describe("KeybindSettings", () => {
       pick("workspace.open_search");
 
       expect(
-        screen.getByText("Already used by Open Command Palette — saving will reassign it."),
+        screen.getByText(
+          "Ctrl+K is used by Open Command Palette. Saving moves it here and leaves Open Command Palette without a key.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("says when the other command keeps other keys", () => {
+      serve([makeKeybind(), makeKeybind({ id: "kb-2", keystroke: "Ctrl+P" })]);
+      render(<KeybindSettings />);
+
+      record("k");
+      pick("workspace.open_search");
+
+      expect(
+        screen.getByText(
+          "Ctrl+K is used by Open Command Palette. Saving moves it here; Open Command Palette keeps its other keys.",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -440,7 +474,9 @@ describe("KeybindSettings", () => {
       record("j");
       pick("workspace.open_search");
       expect(
-        screen.getByText("Already used by Toggle Zen Mode — saving will reassign it."),
+        screen.getByText(
+          "Ctrl+J is used by Toggle Zen Mode. Saving moves it here and leaves Toggle Zen Mode without a key.",
+        ),
       ).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -463,7 +499,7 @@ describe("KeybindSettings", () => {
 
       expect(
         screen.getByText(
-          "Already used by Open Command Palette, a workspace keybind — choose other keys.",
+          "Ctrl+J is used by Open Command Palette, a workspace keybind. Choose other keys.",
         ),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -482,7 +518,9 @@ describe("KeybindSettings", () => {
       fireEvent.keyDown(keys, { key: "j", ctrlKey: true });
 
       expect(
-        screen.getByText("Already used by Open Search — saving will reassign it."),
+        screen.getByText(
+          "Ctrl+J is used by Open Search. Saving moves it here and leaves Open Search without a key.",
+        ),
       ).toBeInTheDocument();
       expect(updateKeybind).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
@@ -491,7 +529,7 @@ describe("KeybindSettings", () => {
       expect(updateKeybind).toHaveBeenCalledWith(
         expect.objectContaining({ keybindId: "kb-user", keystroke: "Ctrl+J" }),
       );
-      expect(screen.queryByText(/Already used by/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/ is used by /)).not.toBeInTheDocument();
     });
   });
 

@@ -21,12 +21,12 @@ export interface Toast {
   dismissing?: boolean;
 }
 
-/** Default auto-dismiss durations per variant (ms). */
-const DEFAULT_DURATIONS: Record<ToastVariant, number | null> = {
+/** Default auto-dismiss durations per variant (ms); an error stays longest. */
+const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
   success: 3000,
   info: 4000,
   warning: 6000,
-  error: null, // persistent by default
+  error: 10000,
 };
 
 const MAX_VISIBLE = 3;
@@ -137,8 +137,7 @@ interface ToastOptions {
 }
 
 function createToast(variant: ToastVariant, title: string, options?: ToastOptions): string {
-  const defaultDuration = DEFAULT_DURATIONS[variant];
-  const persistent = options?.persistent ?? variant === "error";
+  const persistent = options?.persistent ?? false;
 
   return useToastStore.getState().add({
     id: options?.id,
@@ -146,7 +145,7 @@ function createToast(variant: ToastVariant, title: string, options?: ToastOption
     title,
     description: options?.description,
     action: options?.action,
-    duration: persistent ? undefined : (options?.duration ?? defaultDuration ?? undefined),
+    duration: persistent ? undefined : (options?.duration ?? DEFAULT_DURATIONS[variant]),
     persistent,
   });
 }

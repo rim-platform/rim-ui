@@ -160,6 +160,7 @@ describe("DeviceKeySignIn", () => {
     await userEvent.type(screen.getByLabelText(/recovery phrase/i), PHRASE);
     await typeNewPassphrase("a brand new passphrase");
     await userEvent.click(screen.getByRole("button", { name: /set the new password/i }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
 
     expect(changes.resetPassword).toHaveBeenCalledWith(
       "rimp1_alice",
@@ -173,7 +174,18 @@ describe("DeviceKeySignIn", () => {
       { password: "a brand new passphrase", keep: false },
       { recoveryEntropy: entropy, onNeedsRecovery: expect.any(Function) },
     );
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
+  });
+
+  it("opens the recovery phrase without signing in again", async () => {
+    api.signInWithPassword.mockRejectedValueOnce(new PasswordLockedError());
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    await signInAsAlice();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Too many wrong tries");
+    await userEvent.click(screen.getByRole("button", { name: /use your recovery phrase/i }));
+
+    expect(await screen.findByLabelText(/recovery phrase/i)).toBeInTheDocument();
+    expect(api.signInWithPassword).toHaveBeenCalledTimes(1);
   });
 
   it("asks for the recovery phrase when this device's data needs it, or starts empty", async () => {
@@ -387,6 +399,7 @@ describe("RecoverAccount", () => {
     expect(screen.getByRole("radio", { name: /i know my password/i })).toBeChecked();
     await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
 
     expect(api.recoverDeviceKeys).toHaveBeenCalledWith(KIT, ACCOUNT, "Laptop");
     expect(changes.resetPassword).not.toHaveBeenCalled();
@@ -417,6 +430,7 @@ describe("RecoverAccount", () => {
     await userEvent.clear(screen.getByLabelText("Passphrase again"));
     await typeNewPassphrase();
     await userEvent.click(screen.getByRole("button", { name: /^recover account$/i }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
 
     expect(changes.resetPassword).toHaveBeenCalledWith(ACCOUNT, expect.any(Uint8Array), PASSWORD);
     expect(api.recoverDeviceKeys.mock.invocationCallOrder[0]).toBeLessThan(
