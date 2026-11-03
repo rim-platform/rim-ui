@@ -1,3 +1,4 @@
+import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import type { CommandDefinition } from "../types";
 import { runsOnServer } from "./serverRunnable";
 import { strictestSensitivity, type ConfirmationSubject } from "./humanConfirmation";
@@ -39,6 +40,14 @@ export function pipeConfirmationSubject(
     }),
     ...strictestSensitivity(ids, commands),
   };
+}
+
+/**
+ * Whether the server holds a pipe a person started for a confirmation before it runs: when a
+ * stage is dangerous or `Restricted`.
+ */
+export function pipeExpectsConfirmation(subject: ConfirmationSubject): boolean {
+  return subject.dangerous === true || subject.sensitivity === CommandSensitivity.RESTRICTED;
 }
 
 /** The message for pipe stage `stageNumber` (1-based) naming a command that runs only in the app. */

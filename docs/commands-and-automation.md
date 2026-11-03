@@ -96,9 +96,10 @@ same. Each stage's result is merged into the next stage's arguments. A chain has
 stages, all of them commands the server runs. A stage that runs only in the app stops the chain
 before it is sent: "Pipe stage \<n\>: \<title\> runs only in this app, so it cannot be part of a
 pipe." When a stage is dangerous, the confirmation ("Confirm: Run pipe") is drawn in red and
-names it: "Includes a dangerous command: \<title\>." The palette then shows each stage's
-result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd> in an empty search reopens the
-last stage, and <kbd>Esc</kbd> clears the chain.
+names it: "Includes a dangerous command: \<title\>." While the chain runs, "Executing pipe: stage
+1/\<n\>..." shows; a chain that asks for a confirmation shows it only after **Run anyway**. The
+palette then shows each stage's result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd>
+in an empty search reopens the last stage, and <kbd>Esc</kbd> clears the chain.
 
 ## Keybinds
 
@@ -148,9 +149,10 @@ Composer, Message list and so on.
 - **Add keybind** opens a form: press the keys in "Press a key combination...", pick the
   command and the context, then **Save**. The field records any keys, even ones already bound,
   and runs nothing while it has focus; <kbd>Escape</kbd> alone stops recording and keeps the
-  earlier keys. Keys already bound in the chosen context show "Already used by \<command\> —
-  saving will reassign it.", and **Save** moves them to the new command; keys a workspace
-  keybind holds cannot be taken.
+  earlier keys. Keys already bound in the chosen context show "\<keys\> is used by \<command\>.
+  Saving moves it here and leaves \<command\> without a key." (or "…; \<command\> keeps its other
+  keys."), and **Save** moves them to the new command; keys a workspace keybind holds cannot be
+  taken: "\<keys\> is used by \<command\>, a workspace keybind. Choose other keys."
 - On a binding of your own, the pencil changes its command or context, clicking the keys records
   new ones, the switch turns it off, and the bin deletes it after "Delete keybind?". Keys
   recorded there that another binding holds wait under the row with the same note, **Save** and
@@ -159,6 +161,8 @@ Composer, Message list and so on.
   A binding of yours on the same keys and context takes their place: **Override** opens the add
   form with the default's keys, command and context filled in, ready to change and save. A
   profile can free a key altogether.
+  A command whose only keys a binding of yours took stays listed with **No key**; **Set key**
+  opens the add form with that command and context.
 - A second binding of yours on the same keys and context is refused with "keybind already exists
   for this scope/context/keystroke". You can have up to 200.
 - Bindings to plugin commands, to "Open \<panel\>" commands and to the app's own commands, such

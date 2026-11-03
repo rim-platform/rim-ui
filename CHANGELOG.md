@@ -59,6 +59,16 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   are a member of that workspace again.
 - The profile card and the @mention card in a DM or group show no workspace role, instead of
   "Role: Guest" for people who are members of your workspaces.
+- Error toasts close by themselves after 10 seconds, and stay while the pointer is on them.
+  Toasts now sit at the bottom right above the composer, so they no longer cover buttons such
+  as New Macro or Send.
+- A pipe that asks for a confirmation says "Executing pipe" only after Run anyway, and not at
+  all when the confirmation is cancelled.
+- Settings → Keybinds says what saving keys another command holds does to it ("Ctrl+K is used by
+  Open Command Palette. Saving moves it here and leaves Open Command Palette without a key."),
+  and a command left without keys stays listed with No key and Set key.
+- Use your recovery phrase, after too many wrong passwords, no longer sends a sign-in with an
+  empty password.
 
 ## [0.0.9] - 2026-10-31
 
