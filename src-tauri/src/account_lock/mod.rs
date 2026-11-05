@@ -638,6 +638,17 @@ impl AccountLock {
         }
     }
 
+    /// Whether this device holds a keep wrap and a keep key for the account, without opening
+    /// the wrap.
+    pub(crate) fn is_kept(&self, principal_id: &str) -> Result<bool> {
+        check_principal(principal_id)?;
+        let _guard = lock(&self.records);
+        let has_wrap = self
+            .wraps(principal_id)?
+            .is_some_and(|wraps| wraps.keep_wrap.is_some());
+        Ok(has_wrap && self.keep_key(principal_id)?.is_some())
+    }
+
     /// Unlocks an account with its recovery phrase's entropy (base64url of its 16 bytes).
     /// `None` when the account has no recovery wrap here or the phrase does not open it.
     pub(crate) fn unlock_with_recovery(

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import { commandOfferedHere } from "../../agent/agentAvailability";
+import { desktopShellAvailable, QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import { profileKeybinds, type KeybindProfile } from "../profiles/keybindProfile";
@@ -129,8 +130,10 @@ export function useEffectiveKeybinds(): ResolvedKeybind[] {
   const profile = useActiveKeybindProfile();
   return useMemo(
     () =>
-      resolveEffectiveKeybinds(device, server, profile).filter((kb) =>
-        commandOfferedHere(kb.commandId),
+      resolveEffectiveKeybinds(device, server, profile).filter(
+        (kb) =>
+          commandOfferedHere(kb.commandId) &&
+          (kb.commandId !== QUIT_COMMAND_ID || desktopShellAvailable()),
       ),
     [device, server, profile],
   );

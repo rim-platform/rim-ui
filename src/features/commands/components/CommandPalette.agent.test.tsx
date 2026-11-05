@@ -78,4 +78,13 @@ describe("CommandPalette and the AI agent", () => {
     (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     expect(searchPalette("agent")).toContain("Open AI Agent");
   });
+
+  it("does not list Quit RIM on the web", () => {
+    expect(searchPalette("quit")).not.toContain("Quit RIM");
+  });
+
+  it("lists Quit RIM in the desktop app", () => {
+    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    expect(searchPalette("quit")).toContain("Quit RIM");
+  });
 });

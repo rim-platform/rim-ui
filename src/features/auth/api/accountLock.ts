@@ -146,6 +146,15 @@ export function accountUnlockKept(principal: string): Promise<UnlockedAccount | 
 }
 
 /**
+ * Whether this device keeps an account signed in, without opening anything.
+ *
+ * @param principal - The account's principal id.
+ */
+export function accountIsKept(principal: string): Promise<boolean> {
+  return call("account_is_kept", { principal });
+}
+
+/**
  * Unlocks an account with its recovery phrase.
  *
  * @param principal - The account's principal id.

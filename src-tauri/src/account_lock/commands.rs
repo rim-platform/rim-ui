@@ -218,6 +218,15 @@ pub async fn account_unlock_kept(
     .await
 }
 
+/// Whether this device keeps `principal` signed in. Nothing is opened.
+#[tauri::command]
+pub async fn account_is_kept(
+    state: State<'_, AccountLock>,
+    principal: String,
+) -> Result<bool, AccountLockError> {
+    blocking(&state, move |s| s.is_kept(&principal)).await
+}
+
 /// Unlock `principal` with its recovery phrase's 16 bytes (base64url), or null when this
 /// device has no recovery wrap for it or the phrase does not open it.
 #[tauri::command]

@@ -32,6 +32,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/THIRD-PARTY-LICENSES.txt"]
+    "resources": ["resources/THIRD-PARTY-LICENSES.txt"],
+    "linux": {
+      "deb": { "depends": ["libayatana-appindicator3-1"] },
+      "rpm": { "recommends": ["libayatana-appindicator-gtk3"] }
+    }
   }
 }

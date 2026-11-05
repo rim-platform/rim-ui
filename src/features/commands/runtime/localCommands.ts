@@ -1,3 +1,4 @@
+import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import type { CommandDefinition } from "../types";
 
 function localCommand(id: string, title: string, description: string): CommandDefinition {
@@ -65,6 +66,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   ),
   localCommand("workspace.rename", "Rename Workspace…", "Give the open workspace a new name"),
   localCommand("workspace.leave", "Leave Workspace…", "Leave the open workspace"),
+  localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));

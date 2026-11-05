@@ -7,17 +7,20 @@ interface ConfirmActionDialogProps {
   confirmLabel: string;
   danger?: boolean;
   isPending?: boolean;
+  /** Puts the keyboard on the confirm button, so Enter confirms. */
+  focusConfirm?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-/** A small yes/no confirmation for conversation actions (archive, leave). */
+/** A small yes/no confirmation (archive or leave a conversation, quit the app). */
 export function ConfirmActionDialog({
   title,
   description,
   confirmLabel,
   danger = false,
   isPending = false,
+  focusConfirm = false,
   onConfirm,
   onClose,
 }: ConfirmActionDialogProps) {
@@ -32,6 +35,7 @@ export function ConfirmActionDialog({
           type="button"
           variant={danger ? "danger" : "primary"}
           isLoading={isPending}
+          autoFocus={focusConfirm}
           onClick={onConfirm}
         >
           {confirmLabel}

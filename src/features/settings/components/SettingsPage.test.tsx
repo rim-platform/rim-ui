@@ -425,6 +425,25 @@ describe("SettingsPage", () => {
     expect(screen.queryByTestId("profile-settings")).not.toBeInTheDocument();
   });
 
+  describe("Desktop tab", () => {
+    afterEach(() => inDesktopApp(false));
+
+    it("is listed in the desktop app, after Security", () => {
+      inDesktopApp(true);
+      renderSettings();
+      const names = within(screen.getByRole("navigation", { name: "Settings sections" }))
+        .getAllByRole("button")
+        .map((button) => button.textContent);
+      expect(names.indexOf("Desktop")).toBe(names.indexOf("Security") + 1);
+    });
+
+    it("is hidden on the web", () => {
+      inDesktopApp(false);
+      renderSettings();
+      expect(screen.queryByRole("button", { name: "Desktop" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("Workspace tab", () => {
     it("is hidden for an ordinary member, even when deep-linked", () => {
       mockShellState.mainSurface = { kind: "settings", tab: "workspace" };

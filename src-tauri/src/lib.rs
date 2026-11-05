@@ -1,5 +1,6 @@
 mod account_lock;
 mod agent_proxy;
+mod desktop_shell;
 mod e2ee;
 mod history_archive;
 pub(crate) mod host_env;
@@ -76,7 +77,15 @@ pub fn run() {
             app.manage(relay::direct::DirectState::default());
             app.manage(relay::pow::PowState::default());
             app.manage(vault);
+            desktop_shell::setup(app.handle());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == desktop_shell::MAIN_WINDOW {
+                    desktop_shell::on_close_requested(window, api);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             plugin_host::commands::plugin_list,
@@ -240,6 +249,7 @@ pub fn run() {
             account_lock::commands::account_unlock_after_login,
             account_lock::commands::account_unlock_after_signup,
             account_lock::commands::account_unlock_kept,
+            account_lock::commands::account_is_kept,
             account_lock::commands::account_unlock_with_recovery,
             account_lock::commands::account_lock,
             account_lock::commands::account_forget_keep,
@@ -247,6 +257,12 @@ pub fn run() {
             account_lock::commands::account_password_commit,
             account_lock::commands::account_add_recovery_wrap,
             updater::updater_status,
+            desktop_shell::desktop_close_action,
+            desktop_shell::desktop_set_close_action,
+            desktop_shell::desktop_close_ack,
+            desktop_shell::desktop_close_choose,
+            desktop_shell::desktop_quit,
+            desktop_shell::desktop_tray_available,
         ])
         .build(context)
         .expect("error while building tauri application")
@@ -254,6 +270,7 @@ pub fn run() {
             // `run` ends the process without running destructors, so plugin
             // processes are stopped here or they outlive the app.
             if let tauri::RunEvent::Exit = event {
+                log::info!("the app is exiting: stopping plugin processes");
                 if let Some(state) = app.try_state::<plugin_host::PluginHostState>() {
                     tauri::async_runtime::block_on(plugin_host::runtime::stop_all(&state));
                 }

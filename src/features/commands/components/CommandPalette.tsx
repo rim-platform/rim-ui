@@ -55,6 +55,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { releasePaletteFocus } from "../runtime/paletteFocus";
 import { offeredInSituation } from "../runtime/paletteAvailability";
+import { desktopShellAvailable } from "../../desktop-shell/availability";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
@@ -135,7 +136,7 @@ function CommandPaletteDialog() {
   const panelOpen = useMemo(() => hasPanelToClose(), [isOpen]);
 
   const situation = useMemo(
-    () => ({ inDirectSpace, panelOpen, hasDirectOrigin }),
+    () => ({ inDirectSpace, panelOpen, hasDirectOrigin, desktopApp: desktopShellAvailable() }),
     [inDirectSpace, panelOpen, hasDirectOrigin],
   );
 

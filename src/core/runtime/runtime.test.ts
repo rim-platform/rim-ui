@@ -19,6 +19,12 @@ describe("getRuntimeCapabilities", () => {
     expect(caps.identityKeys).toBe(true);
     expect(caps.identityBackup).toBe(true);
     expect(caps.pluginSigning).toBe(true);
+    expect(caps.desktopShell).toBe(true);
+  });
+
+  it("keeps the system tray and the close setting on the desktop", () => {
+    expect(getRuntimeCapabilities("web", "browser", true).desktopShell).toBe(false);
+    expect(getRuntimeCapabilities("mobile").desktopShell).toBe(false);
   });
 
   it("returns limited capabilities for web", () => {

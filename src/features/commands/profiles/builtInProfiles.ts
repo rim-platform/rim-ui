@@ -1,3 +1,4 @@
+import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import {
   PROFILE_FORMAT,
   PROFILE_VERSION,
@@ -42,6 +43,7 @@ export const DEFAULT_BINDINGS: readonly ProfileBinding[] = [
   bind("Escape", "workspace.close_panel"),
   bind("?", "workspace.show_shortcuts"),
   bind("Ctrl+/", "workspace.show_shortcuts"),
+  bind("Ctrl+Q", QUIT_COMMAND_ID),
 ];
 
 /**

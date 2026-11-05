@@ -34,6 +34,8 @@ import { RimMark } from "../../../shared/brand/RimLogo";
 import { OperatorDmPolicy } from "../../dm-policy/components/OperatorDmPolicy";
 import { joinRequestBadge, useJoinRequestCount } from "../../workspaces/api/publicJoinLink";
 import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
+import { desktopShellAvailable } from "../../desktop-shell/availability";
+import { DesktopSettings } from "../../desktop-shell/components/DesktopSettings";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazyWithRetry(() =>
@@ -242,6 +244,7 @@ type SettingsTab =
   | "history"
   | "workspace"
   | "security"
+  | "desktop"
   | "contacts"
   | "account"
   | "workspace-moderation"
@@ -277,6 +280,7 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "profile", label: "Profile", group: "You" },
   { key: "account", label: "Account", group: "You" },
   { key: "security", label: "Security", group: "You" },
+  { key: "desktop", label: "Desktop", group: "You" },
   { key: "contacts", label: "Contacts", group: "You" },
   { key: "messages", label: "Messages", group: "Messaging" },
   { key: "direct-messages", label: "Direct messages", group: "Messaging" },
@@ -336,6 +340,7 @@ export function SettingsPage() {
       (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
       (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
+      (tab.key !== "desktop" || desktopShellAvailable()) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
   const shownTab: SettingsTab =
@@ -460,6 +465,7 @@ export function SettingsPage() {
                   </div>
                 )}
                 {shownTab === "security" && <KeyIdentitySettings />}
+                {shownTab === "desktop" && <DesktopSettings />}
                 {shownTab === "contacts" && <ContactsSettings />}
                 {shownTab === "workspace-moderation" && workspaceId && (
                   <ModerationSettings serverId={workspaceId} />

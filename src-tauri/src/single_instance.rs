@@ -4,7 +4,9 @@
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
-use tauri::{plugin::TauriPlugin, AppHandle, Manager, Runtime};
+use tauri::{plugin::TauriPlugin, Runtime};
+
+use crate::desktop_shell::show_main_window;
 
 /// The id the running copy claims on the D-Bus session bus: `identifier` plus a hash of
 /// `data_dir`, so copies with different data directories run side by side.
@@ -13,27 +15,13 @@ fn instance_id(identifier: &str, data_dir: &Path) -> String {
     format!("{identifier}.d{}", hex::encode(&digest[..8]))
 }
 
-/// Shows, restores and focuses the main window of the running copy.
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
-    log::info!("the app was started again: showing the running window");
-    let Some(window) = app.get_webview_window("main") else {
-        log::warn!("the app was started again, but the main window is gone");
-        return;
-    };
-    let shown = window
-        .unminimize()
-        .and_then(|()| window.show())
-        .and_then(|()| window.set_focus());
-    if let Err(error) = shown {
-        log::warn!("could not show the running window: {error}");
-    }
-}
-
 /// The plugin that enforces one running copy for the app `identifier`. Register it before every
 /// other plugin. Windows ignores the D-Bus id and allows one copy per session.
 pub(crate) fn plugin<R: Runtime>(identifier: &str) -> TauriPlugin<R> {
-    let builder = tauri_plugin_single_instance::Builder::new()
-        .callback(|app, _args, _cwd| show_main_window(app));
+    let builder = tauri_plugin_single_instance::Builder::new().callback(|app, _args, _cwd| {
+        log::info!("the app was started again: showing the running window");
+        show_main_window(app);
+    });
     match dirs::data_dir() {
         Some(data_dir) => builder.dbus_id(instance_id(identifier, &data_dir)),
         None => builder,

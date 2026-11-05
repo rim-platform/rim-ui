@@ -22,6 +22,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Added
+
+- Closing the desktop app's window now asks whether RIM stays running in the system tray or quits,
+  and Settings > Desktop can set the answer. Everyone sees this once, the first time they close the
+  window after updating. Ctrl+Q quits, after a confirmation.
+
 ### Changed
 
 - Notifications now come from all your workspaces, not only the open one, following each

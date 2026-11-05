@@ -33,6 +33,8 @@ export type RuntimeCapabilities = {
   encryptedConversations: boolean;
   /** Checking for, downloading and installing new versions of the app. Desktop only. */
   updater: boolean;
+  /** The system tray and what closing the window does. Desktop only. */
+  desktopShell: boolean;
 };
 
 /**
@@ -88,6 +90,7 @@ export function getRuntimeCapabilities(
       pluginSigning: true,
       encryptedConversations: true,
       updater: true,
+      desktopShell: true,
     };
   }
 
@@ -105,6 +108,7 @@ export function getRuntimeCapabilities(
       pluginSigning: false,
       encryptedConversations: deviceKeyStore === "browser" && webEncryptionReady,
       updater: false,
+      desktopShell: false,
     };
   }
 
@@ -121,5 +125,6 @@ export function getRuntimeCapabilities(
     pluginSigning: false,
     encryptedConversations: false,
     updater: false,
+    desktopShell: false,
   };
 }

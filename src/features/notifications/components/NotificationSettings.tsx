@@ -8,6 +8,7 @@ import { useNotificationSettings } from "../api/useNotificationSettings";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { DeviceSelect } from "../../settings/components/DeviceSelect";
 import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
 import { NotificationRulesForm } from "./NotificationRulesForm";
 import { PauseNotificationsControl } from "./PauseNotificationsControl";
@@ -52,45 +53,6 @@ const SAMPLE = {
   messageText: "The deploy is done",
   encrypted: false,
 };
-
-/** A labelled drop-down row of the device settings. */
-function DeviceSelect<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-  description,
-  disabled,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-  label: string;
-  description: string;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-4 py-3">
-      <span>
-        <span className="block text-sm font-medium text-rim-text">{label}</span>
-        <span className="block text-xs text-rim-text-muted">{description}</span>
-      </span>
-      <select
-        aria-label={label}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value as T)}
-        className="rounded-md border border-rim-line bg-rim-void px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 
 /** Device-local settings: they apply on this device only and are kept in local storage. */
 function DeviceNotificationSettings() {
