@@ -168,6 +168,20 @@ describe("useOfflineReconnect", () => {
     expect(requestMock).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps checking in the desktop app while the window is hidden in the tray", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+    try {
+      requestMock.mockRejectedValue(networkDown());
+      vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+      renderHook(() => useOfflineReconnect(), { wrapper });
+
+      await act(() => vi.advanceTimersByTimeAsync(RETRY_FIRST_MS));
+      expect(requestMock).toHaveBeenCalledTimes(1);
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
   it("re-checks when the WebSocket connects", async () => {
     requestMock.mockResolvedValue({ me: { id: "alice" } });
     renderHook(() => useOfflineReconnect(), { wrapper });

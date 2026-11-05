@@ -5,6 +5,7 @@ import { eventBus } from "../../../core/events/eventBus";
 import { BUS_EVENTS, type NotificationDueBusEvent } from "../../../core/events/busEvents";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { toast } from "../../../shared/toast";
+import { windowHasFocus } from "../../../shared/utils/windowFocus";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
@@ -75,7 +76,7 @@ export function isWatching(conversationId: string): boolean {
   return (
     shell.mainSurface.kind === "conversation" &&
     shell.selectedConversationId === conversationId &&
-    document.hasFocus()
+    windowHasFocus()
   );
 }
 

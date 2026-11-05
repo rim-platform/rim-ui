@@ -2,6 +2,7 @@ import { isPermissionGranted, sendNotification } from "@tauri-apps/plugin-notifi
 
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
+import { windowHasFocus } from "../../../shared/utils/windowFocus";
 
 /** How long a plugin's notification title and body may be, so a panel cannot flood the screen. */
 const MAX_TITLE_LENGTH = 100;
@@ -27,7 +28,7 @@ export async function showPluginNotification(
   const text = clip(body, MAX_BODY_LENGTH);
   toast.info(heading, text ? { description: text } : undefined);
 
-  if (typeof document === "undefined" || document.hasFocus()) return;
+  if (typeof document === "undefined" || windowHasFocus()) return;
   try {
     if (await isPermissionGranted()) sendNotification({ title: heading, body: text });
   } catch (error) {

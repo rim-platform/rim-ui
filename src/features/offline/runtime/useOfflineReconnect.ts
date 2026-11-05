@@ -5,7 +5,8 @@
  * `me` query on a timer, and right away whenever the OS reports the network back, the window is
  * shown again, or the WebSocket connects. The timer starts at 15 seconds and doubles after each
  * check that still finds the server unreachable, up to two minutes; it skips its check while
- * the OS reports no network or the window is hidden. The first answer decides:
+ * the OS reports no network or, in a browser, while the tab is hidden. The desktop app keeps
+ * checking while hidden, since it may be running in the tray. The first answer decides:
  *
  * - the session is still good: leave offline mode and refetch every query, so the sidebar and
  *   timelines replace their saved copies (the WebSocket connect also starts a cache sync);
@@ -20,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { detectPlatform } from "../../../core/runtime/runtime";
 import { isSessionRefused } from "../../../core/graphql/errors";
 import { onWsConnected } from "../../../core/graphql/wsClient";
 import { retryWithBackoff } from "../../../shared/utils/retryWithBackoff";
@@ -70,11 +72,12 @@ export function useOfflineReconnect() {
       return result !== "offline";
     }
 
+    const worthChecking = () => !document.hidden || detectPlatform() === "desktop";
     // The `online` and `visibilitychange` events check as soon as it is worth it.
-    const retry = retryWithBackoff(recheck, () => navigator.onLine && !document.hidden);
+    const retry = retryWithBackoff(recheck, () => navigator.onLine && worthChecking());
     /** The network, the window or the WebSocket came back: check now. */
     const onSignal = () => {
-      if (!document.hidden) retry.now();
+      if (worthChecking()) retry.now();
     };
     window.addEventListener("online", onSignal);
     document.addEventListener("visibilitychange", onSignal);
