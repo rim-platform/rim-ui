@@ -5,6 +5,8 @@ import { eventBus } from "../../../core/events/eventBus";
 import type { WorkspaceEvent } from "../../../core/events/types";
 import { queryKeys } from "../../../core/query/keys";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { isDirectSpace } from "../../relay/state/useRelayStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   invalidateNotificationInbox,
   invalidateUnreadNotificationCount,
@@ -24,11 +26,16 @@ function currentUserId(qc: QueryClient): string | undefined {
 }
 
 /**
- * The server stored a notification for the viewer: refresh that workspace's badge and inbox, then
+ * The server stored a notification for the viewer: refresh that workspace's badges and inbox, then
  * hand it to the renderer (`useNotificationEventHandler`) through the bus.
  */
 export function announceNotificationDue(qc: QueryClient, due: NotificationDueBusEvent): void {
   invalidateNotificationInbox(qc, due.workspaceId);
+  // A workspace that is not open sends no message events here, so its rail badge reads the count.
+  const open = useWorkspaceStore.getState().workspaceId === due.workspaceId;
+  if (!open && !isDirectSpace(due.workspaceId)) {
+    void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(due.workspaceId) });
+  }
   eventBus.emit<NotificationDueBusEvent>(BUS_EVENTS.NOTIFICATION_DUE, due);
 }
 
