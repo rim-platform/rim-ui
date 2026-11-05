@@ -22,6 +22,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Fixed
+
+- Starting the desktop app while it is already running brings the open window forward instead of
+  starting a second copy on the same data.
+
 ## [0.0.11] - 2026-11-03
 
 ### Fixed
