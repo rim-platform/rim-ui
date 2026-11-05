@@ -328,6 +328,9 @@ Settings > Keyboard change them, and [Keyboard](keyboard.md) explains profiles a
 In the desktop app, closing the window asks whether RIM keeps running in the system tray or quits.
 In the tray you keep getting messages and notifications, and the tray icon's menu brings the window
 back. Settings > Desktop changes the answer later. <kbd>Ctrl+Q</kbd> quits, after a confirmation.
+The icon shows a dot, never a number, while you have unread notifications, and its menu offers
+"Restart to update" when an update is ready. Clicking a message notification brings the window back
+and opens that conversation.
 
 Settings > Desktop can also start RIM when you sign in to the computer. It is off by default, and
 the window always opens, so an account that needs its password asks for it right away.

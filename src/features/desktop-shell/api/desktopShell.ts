@@ -1,7 +1,7 @@
 /**
  * The desktop shell's commands (`src-tauri/src/desktop_shell`): what closing the window does,
- * quitting and starting at login. Every call throws its `SafeInvokeError` on failure, and
- * `ipc_unavailable` in the web app.
+ * quitting, the tray icon and starting at login. Every call throws its `SafeInvokeError` on
+ * failure, and `ipc_unavailable` in the web app.
  */
 
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
@@ -27,6 +27,22 @@ export const CLOSE_REQUESTED_EVENT = "desktop://close-requested";
 /** The payload of {@link CLOSE_REQUESTED_EVENT}. */
 export interface CloseRequest {
   id: number;
+}
+
+/** The event that says whether the tray icon shows. */
+export const TRAY_SHOWN_EVENT = "desktop://tray-shown";
+
+/** The payload of {@link TRAY_SHOWN_EVENT}. */
+export interface TrayShown {
+  shown: boolean;
+}
+
+/** The event that hands the page a tray menu choice only it can carry out. */
+export const TRAY_ACTION_EVENT = "desktop://tray-action";
+
+/** The payload of {@link TRAY_ACTION_EVENT}. */
+export interface TrayAction {
+  action: "restart-to-update";
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -76,6 +92,26 @@ export function desktopQuit(): Promise<null> {
 /** @returns Whether this desktop can show the tray icon. */
 export function desktopTrayAvailable(): Promise<boolean> {
   return call("desktop_tray_available");
+}
+
+/**
+ * Tells the desktop app what the tray icon should show.
+ *
+ * @param dot - Whether the icon carries the dot.
+ * @param updateReady - Whether the menu offers "Restart to update".
+ */
+export function desktopSetTrayState(dot: boolean, updateReady: boolean): Promise<null> {
+  return call("desktop_set_tray_state", { dot, updateReady });
+}
+
+/** @returns Whether the tray icon shows now. */
+export function desktopTrayShown(): Promise<boolean> {
+  return call("desktop_tray_shown");
+}
+
+/** Shows, restores and focuses the window. */
+export function desktopShowWindow(): Promise<null> {
+  return call("desktop_show_window");
 }
 
 /** @returns Whether the app starts at login, as the operating system's entry says. */

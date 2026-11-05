@@ -195,6 +195,9 @@ describe("NotificationDue rendering", () => {
         title: "#general",
         body: "Alice: hello @me",
         sound: "Ping",
+        extra: {
+          rimMessage: { workspaceId: "ws-1", conversationId: "c-general", messageId: "m-1" },
+        },
       }),
     );
     // Everything was cached: no request for the message.
@@ -259,6 +262,9 @@ describe("NotificationDue rendering", () => {
       expect(sendNotification).toHaveBeenCalledWith({
         title: "#general",
         body: "New message from Alice",
+        extra: {
+          rimMessage: { workspaceId: "ws-1", conversationId: "c-general", messageId: "m-1" },
+        },
       }),
     );
   });
@@ -280,11 +286,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ message_id: "m-9", reason: "keyword" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "#general",
-        body: "bob: deploy is done",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "#general",
+          body: "bob: deploy is done",
+          sound: "Ping",
+        }),
+      ),
     );
     const contextCalls = requestMock.mock.calls.filter(([doc]) =>
       String(doc).includes("NotificationDueContext"),
@@ -438,11 +446,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ conversation_id: "c-dm", message_id: "m-2", reason: "direct" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "Alice",
-        body: "Alice: hi",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Alice",
+          body: "Alice: hi",
+          sound: "Ping",
+        }),
+      ),
     );
   });
 
@@ -505,11 +515,13 @@ describe("NotificationDue rendering", () => {
       emit(notificationDue({ conversation_id: "c-group", message_id: "m-5", reason: "direct" }));
 
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "Alice and Carol",
-          body: "Alice: hello group",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Alice and Carol",
+            body: "Alice: hello group",
+            sound: "Ping",
+          }),
+        ),
       );
     });
 
@@ -520,11 +532,13 @@ describe("NotificationDue rendering", () => {
       emit(notificationDue({ conversation_id: "c-group", message_id: "m-5", reason: "direct" }));
 
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "Alice and Caz",
-          body: "Alice: hello group",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Alice and Caz",
+            body: "Alice: hello group",
+            sound: "Ping",
+          }),
+        ),
       );
     });
   });
@@ -553,11 +567,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ message_id: "m-3" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "#general",
-        body: "Alice: Release 2.1 is out, @Priya Nair and @Priya Nair, see @member",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "#general",
+          body: "Alice: Release 2.1 is out, @Priya Nair and @Priya Nair, see @member",
+          sound: "Ping",
+        }),
+      ),
     );
   });
 
@@ -602,6 +618,9 @@ describe("NotificationDue rendering", () => {
           title: "#general · Beta",
           body: "Alice: hello @me",
           sound: "Ping",
+          extra: {
+            rimMessage: { workspaceId: "ws-2", conversationId: "c-general", messageId: "m-1" },
+          },
         }),
       );
     });
@@ -645,11 +664,13 @@ describe("NotificationDue rendering", () => {
       const qc = seedOther();
       announceNotificationDue(qc, due("ws-2", "n-1"));
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "RIM",
-          body: "New message",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "RIM",
+            body: "New message",
+            sound: "Ping",
+          }),
+        ),
       );
     });
   });
