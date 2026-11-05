@@ -46,6 +46,11 @@ What the app needs at run time:
   the encrypted message cache and opening offline fail with an error that says so. GNOME and
   KDE desktops run one by default; on a minimal window manager, start `gnome-keyring-daemon` or
   KeePassXC's Secret Service integration.
+- **AppIndicator**, for the tray icon (`libayatana-appindicator3-1` on Debian and Ubuntu,
+  `libayatana-appindicator-gtk3` on Fedora). The packages install it; the AppImage carries it. Your
+  desktop also has to show AppIndicator icons: KDE does, and GNOME needs the AppIndicator extension.
+  Without either, RIM still keeps running when you choose the tray, and starting it again brings the
+  window back.
 - **FUSE 2**, for the AppImage only (`libfuse2` on Debian and Ubuntu up to 22.04, `libfuse2t64`
   on Ubuntu 24.04, `fuse-libs` on Fedora). Without it the AppImage stops with a message about
   FUSE; `./RIM_<version>_amd64.AppImage --appimage-extract-and-run` runs it without.

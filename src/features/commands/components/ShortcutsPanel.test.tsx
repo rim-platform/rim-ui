@@ -53,10 +53,14 @@ describe("ShortcutsPanel", () => {
     render(<ShortcutsPanel />);
     const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     const rows = within(dialog).getAllByRole("definition");
-    // The web app leaves out the AI agent's binding.
+    // The web app leaves out the AI agent's binding and quitting.
     expect(rows).toHaveLength(
-      DEFAULT_BINDINGS.filter((binding) => binding.commandId !== "workspace.open_agent").length,
+      DEFAULT_BINDINGS.filter(
+        (binding) =>
+          binding.commandId !== "workspace.open_agent" && binding.commandId !== "app.quit",
+      ).length,
     );
+    expect(screen.queryByText("Ctrl+Q")).not.toBeInTheDocument();
     expect(within(rowFor("Open command palette")).getByText("Ctrl+K")).toBeInTheDocument();
     expect(within(rowFor("Close the open panel")).getByText("Escape")).toBeInTheDocument();
   });

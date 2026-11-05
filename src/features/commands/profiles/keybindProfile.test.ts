@@ -78,6 +78,16 @@ describe("built-in profiles", () => {
     );
   });
 
+  it("quits on Ctrl+Q in every built-in profile", () => {
+    for (const id of BUILT_IN_PROFILE_IDS) {
+      expect(BUILT_IN_PROFILES[id].bindings, id).toContainEqual({
+        keystroke: "Ctrl+Q",
+        commandId: "app.quit",
+        context: "GLOBAL",
+      });
+    }
+  });
+
   it("offers the shortcuts panel on ? and Ctrl+/", () => {
     for (const keystroke of ["?", "Ctrl+/"]) {
       expect(DEFAULT_BINDINGS).toContainEqual({

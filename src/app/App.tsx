@@ -8,6 +8,8 @@ import { useUpdateSchedule } from "../features/updater/runtime/useUpdateSchedule
 import { useServerApiNotice } from "../features/updater/runtime/useServerApiNotice";
 import { useRuntime } from "../core/runtime/RuntimeProvider";
 import { useNativeContextMenuPolicy } from "../shared/ui/contextMenu/nativeContextMenu";
+import { CloseDialogHost } from "../features/desktop-shell/components/CloseDialogHost";
+import { QuitConfirmHost } from "../features/desktop-shell/components/QuitConfirmHost";
 
 /**
  * Boot-time side-effects, rendered inside `AppProviders`.
@@ -34,6 +36,8 @@ export default function App() {
       <AppProviders>
         <AppBoot />
         <AppRouter />
+        <CloseDialogHost />
+        <QuitConfirmHost />
       </AppProviders>
     </AppErrorBoundary>
   );

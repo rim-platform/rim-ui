@@ -325,6 +325,10 @@ keybind. Search takes filters such as `from:@user` (or a whole handle, `from:@us
 `before:2026-01-01`. The shortcuts panel lists the bindings as they stand; Settings > Keybinds and
 Settings > Keyboard change them, and [Keyboard](keyboard.md) explains profiles and the Vim layer.
 
+In the desktop app, closing the window asks whether RIM keeps running in the system tray or quits.
+In the tray you keep getting messages and notifications, and the tray icon's menu brings the window
+back. Settings > Desktop changes the answer later. <kbd>Ctrl+Q</kbd> quits, after a confirmation.
+
 **Plugins** on the side rail opens a menu of the panels of your running plugins, or **Manage
 plugins** when none has a panel. [Plugins](plugins.md) covers installing and trusting one, and
 [UI shell](ui-shell.md) describes the shell's design.

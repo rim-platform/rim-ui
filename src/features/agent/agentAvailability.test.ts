@@ -11,12 +11,14 @@ describe("agentAvailability", () => {
     expect(agentAvailable()).toBe(false);
     expect(commandOfferedHere("workspace.open_agent")).toBe(false);
     expect(commandOfferedHere("workspace.open_settings")).toBe(true);
+    expect(commandOfferedHere("app.quit")).toBe(false);
   });
 
   it("has the agent and offers its command in the desktop app", () => {
     (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
 
     expect(agentAvailable()).toBe(true);
+    expect(commandOfferedHere("app.quit")).toBe(true);
     expect(commandOfferedHere("workspace.open_agent")).toBe(true);
     expect(commandOfferedHere("workspace.open_settings")).toBe(true);
   });

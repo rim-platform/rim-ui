@@ -151,6 +151,7 @@ function CommandPaletteDialog() {
     const local = LOCAL_COMMANDS.filter(
       (cmd) =>
         !serverIds.has(cmd.id) &&
+        commandOfferedHere(cmd.id) &&
         workspaceCommandOffered(cmd.id) &&
         offeredInSituation(cmd.id, situation),
     );

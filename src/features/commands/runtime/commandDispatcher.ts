@@ -32,6 +32,8 @@ import { cycleRecentActivity } from "./cycleRecentActivity";
 import { confirmConversationCommand } from "./conversationActionGate";
 import { openWorkspaceAction } from "../../workspaces/workspaceActions";
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
+import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
+import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -313,6 +315,9 @@ const localHandlers: Record<
       "ultra-compact": "Ultra Compact",
     };
     toast.info(labels[density] ?? density, { duration: 1500 });
+  },
+  [QUIT_COMMAND_ID]: () => {
+    void requestQuit();
   },
 };
 

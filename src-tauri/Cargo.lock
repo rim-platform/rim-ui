@@ -5030,6 +5030,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+ "zbus 5.14.0",
  "zeroize",
 ]
 

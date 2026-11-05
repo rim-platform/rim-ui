@@ -375,6 +375,35 @@ fn a_kept_account_opens_without_the_server_until_the_keep_is_forgotten() {
 }
 
 #[test]
+fn is_kept_follows_the_keep_without_opening_or_unlocking() {
+    let mut server = Server::new();
+    let (device, _store) = device();
+    assert!(
+        !device.is_kept(PRINCIPAL).unwrap(),
+        "nothing on this device"
+    );
+
+    signup(&mut server, &device, "password", true);
+    device.lock_account(PRINCIPAL);
+    assert!(device.is_kept(PRINCIPAL).unwrap());
+    assert!(
+        device.data_key(PRINCIPAL).is_none(),
+        "asking leaves the account locked"
+    );
+
+    device.forget_keep(PRINCIPAL).unwrap();
+    assert!(!device.is_kept(PRINCIPAL).unwrap());
+}
+
+#[test]
+fn an_account_signed_up_without_keep_is_not_kept() {
+    let mut server = Server::new();
+    let (device, _store) = device();
+    signup(&mut server, &device, "password", false);
+    assert!(!device.is_kept(PRINCIPAL).unwrap());
+}
+
+#[test]
 fn a_keep_wrap_is_bound_to_its_principal() {
     let mut server = Server::new();
     let (device, store) = device();
