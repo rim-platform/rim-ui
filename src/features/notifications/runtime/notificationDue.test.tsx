@@ -599,6 +599,20 @@ describe("NotificationDue rendering", () => {
       await waitFor(() => expect(sendNotification).toHaveBeenCalledTimes(2));
     });
 
+    it("reads the unread count of a workspace that is not open, for its rail badge", () => {
+      const qc = seedOther();
+      const spy = vi.spyOn(qc, "invalidateQueries");
+      announceNotificationDue(qc, due("ws-2", "n-1"));
+      expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.unreadCounts("ws-2") });
+    });
+
+    it("leaves the open workspace's unread count to its message events", () => {
+      const qc = seedOther();
+      const spy = vi.spyOn(qc, "invalidateQueries");
+      announceNotificationDue(qc, due("ws-1", "n-1"));
+      expect(spy).not.toHaveBeenCalledWith({ queryKey: queryKeys.unreadCounts("ws-1") });
+    });
+
     it("shows only New message with no preview, whichever workspace it came from", async () => {
       useNotificationSettingsStore.setState({ preview: "none" });
       const qc = seedOther();
