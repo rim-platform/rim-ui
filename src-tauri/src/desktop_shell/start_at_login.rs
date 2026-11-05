@@ -254,9 +254,8 @@ pub(super) fn set<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), S
 /// Rewrites an enabled entry that starts something other than the running app, so moving an
 /// AppImage and opening it once mends the entry. Does nothing in a dev build, or when the entry
 /// is off, a desktop's own off state included, or already correct, so it keeps what else the file
-/// holds. A failure,
-/// such as a running path that cannot go in an entry, is logged, leaves the entry as it is, and
-/// start-up continues.
+/// holds. A failure, such as a running path that cannot go in an entry, is logged, leaves the entry
+/// as it is, and start-up continues.
 pub(super) fn mend<R: Runtime>(app: &AppHandle<R>) {
     if tauri::is_dev() {
         return;
