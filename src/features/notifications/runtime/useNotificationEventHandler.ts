@@ -110,6 +110,7 @@ export async function renderNotificationDue(
         workspaceId: payload.workspaceId,
         conversationId: payload.conversationId,
         messageId: payload.messageId,
+        threadId: content.threadId,
       });
     } catch {
       // The notification plugin can be unavailable; the inbox still has the entry.

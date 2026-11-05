@@ -22,12 +22,23 @@ vi.mock("../../messages/runtime/messageCacheSync", () => ({
 }));
 vi.mock("./membership", () => ({ syncMembership, cancelMembershipSyncs: vi.fn() }));
 vi.mock("./webReturn", () => ({ returnAfterAbsence }));
+const showMessageNotification = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("../../notifications/runtime/desktopNotification", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../notifications/runtime/desktopNotification")>()),
+  showMessageNotification,
+}));
+vi.mock("./members", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./members")>()),
+  workspaceMembers: vi.fn(() => Promise.resolve([])),
+}));
 vi.mock("./session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session")>()),
   e2eeSession: async () => session,
   resetE2eeSession: vi.fn(),
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import type { MlsSyncNote } from "../../messages/api/messageCache";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { handleE2eeEvent, handleSyncNotes, useE2eeRuntime } from "./e2eeRuntime";
@@ -124,6 +135,46 @@ describe("handleSyncNotes", () => {
       note({ stopped: { kind: "awaitingReadd", incarnation: 1, epoch: 7 } }),
     ]);
     expect(groups.askToBeReadded).not.toHaveBeenCalled();
+  });
+});
+
+describe("keyword notifications", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient.setQueryData(queryKeys.conversation("ws", "c"), {
+      conversationType: "GROUP",
+      effectiveNotificationLevel: "MENTIONS",
+      title: "Team",
+    });
+    queryClient.setQueryData(queryKeys.notificationSettings("ws"), { keywords: ["deploy"] });
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  function decrypted(threadId: string | null) {
+    return {
+      messageId: "m-1",
+      authorId: "u-other",
+      threadId,
+      sentAt: new Date().toISOString(),
+      body: "the deploy is done",
+    };
+  }
+
+  it.each([
+    ["a thread reply, with its thread", "t-1"],
+    ["any other message, with no thread", null],
+  ])("carries the target of %s", async (_name, threadId) => {
+    await handleSyncNotes(session.account, "ws", [note({ decrypted: [decrypted(threadId)] })]);
+    expect(showMessageNotification).toHaveBeenCalledTimes(1);
+    expect(showMessageNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ channelName: "Team" }),
+      expect.anything(),
+      expect.anything(),
+      { workspaceId: "ws", conversationId: "c", messageId: "m-1", threadId },
+    );
   });
 });
 

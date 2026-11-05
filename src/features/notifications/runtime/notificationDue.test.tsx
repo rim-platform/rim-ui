@@ -196,7 +196,12 @@ describe("NotificationDue rendering", () => {
         body: "Alice: hello @me",
         sound: "Ping",
         extra: {
-          rimMessage: { workspaceId: "ws-1", conversationId: "c-general", messageId: "m-1" },
+          rimMessage: {
+            workspaceId: "ws-1",
+            conversationId: "c-general",
+            messageId: "m-1",
+            threadId: null,
+          },
         },
       }),
     );
@@ -263,10 +268,87 @@ describe("NotificationDue rendering", () => {
         title: "#general",
         body: "New message from Alice",
         extra: {
-          rimMessage: { workspaceId: "ws-1", conversationId: "c-general", messageId: "m-1" },
+          rimMessage: {
+            workspaceId: "ws-1",
+            conversationId: "c-general",
+            messageId: "m-1",
+            threadId: null,
+          },
         },
       }),
     );
+  });
+
+  describe("the target a click opens", () => {
+    function lastTarget() {
+      const options = vi.mocked(sendNotification).mock.lastCall?.[0];
+      return typeof options === "object" ? options.extra?.rimMessage : undefined;
+    }
+
+    it("names the thread of a reply held in the cache", async () => {
+      const qc = setup({ seed: false });
+      qc.setQueryData(queryKeys.joinedChannels("ws-1"), {
+        items: [general],
+        pageInfo: { hasNext: false, hasPrev: false },
+      });
+      const messages = cachedMessages();
+      Object.assign(messages.pages[0].items[0], { threadId: "t-1" });
+      qc.setQueryData(queryKeys.messages("ws-1", "c-general"), messages);
+      emit(notificationDue());
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-1",
+        threadId: "t-1",
+      });
+    });
+
+    it("asks the server for the thread of a message it has to load", async () => {
+      requestMock.mockImplementation((document: string) =>
+        String(document).includes("NotificationDueContext")
+          ? Promise.resolve({
+              message: {
+                id: "m-9",
+                threadId: "t-2",
+                authorId: "u-bob",
+                author: { id: "u-bob", username: "bob", displayName: null },
+                text: "in the thread",
+              },
+            })
+          : new Promise(() => {}),
+      );
+      setup();
+      emit(notificationDue({ message_id: "m-9" }));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-9",
+        threadId: "t-2",
+      });
+      const context = requestMock.mock.calls.find(([document]) =>
+        String(document).includes("NotificationDueContext"),
+      );
+      expect(String(context?.[0])).toMatch(/\bthreadId\b/);
+    });
+
+    it("has no thread when the message could not be loaded", async () => {
+      requestMock.mockImplementation((document: string) =>
+        String(document).includes("NotificationDueContext")
+          ? Promise.reject(new Error("offline"))
+          : new Promise(() => {}),
+      );
+      setup();
+      emit(notificationDue({ message_id: "m-9" }));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-9",
+        threadId: null,
+      });
+    });
   });
 
   it("loads only what the caches lack, in one request", async () => {
@@ -619,7 +701,12 @@ describe("NotificationDue rendering", () => {
           body: "Alice: hello @me",
           sound: "Ping",
           extra: {
-            rimMessage: { workspaceId: "ws-2", conversationId: "c-general", messageId: "m-1" },
+            rimMessage: {
+              workspaceId: "ws-2",
+              conversationId: "c-general",
+              messageId: "m-1",
+              threadId: null,
+            },
           },
         }),
       );

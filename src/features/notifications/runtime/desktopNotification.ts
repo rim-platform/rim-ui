@@ -23,6 +23,8 @@ export interface MessageNotificationTarget {
   workspaceId: string;
   conversationId: string;
   messageId: string;
+  /** The thread a reply is in, which opens with it; null for any other message. */
+  threadId: string | null;
 }
 
 const PREVIEW_LENGTH = 100;

@@ -29,6 +29,10 @@ const CLOSE_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long the check for a tray host may take, connecting to the bus included.
 const TRAY_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// How long after showing a hidden window focus is asked for again, on Linux.
+#[cfg(target_os = "linux")]
+const FOCUS_RETRY_DELAY: Duration = Duration::from_millis(100);
+
 const SETTINGS_FILE: &str = "desktop-settings.json";
 
 /// The payload of [`CLOSE_REQUESTED_EVENT`].
@@ -255,7 +259,21 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = shown {
         log::warn!("could not show the main window: {error}");
     }
+    #[cfg(target_os = "linux")]
+    focus_after_showing(window);
     tray::sync_after_showing_window(app);
+}
+
+/// Asks for focus again shortly after a show. On Linux the show is queued, and a request for focus
+/// does nothing while the window is still hidden.
+#[cfg(target_os = "linux")]
+fn focus_after_showing<R: Runtime>(window: tauri::WebviewWindow<R>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(FOCUS_RETRY_DELAY);
+        if let Err(error) = window.set_focus() {
+            log::warn!("could not focus the main window: {error}");
+        }
+    });
 }
 
 /// Whether a host for tray icons is on the session bus: a name owner of the status notifier

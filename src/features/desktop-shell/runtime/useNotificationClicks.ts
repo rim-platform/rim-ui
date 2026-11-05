@@ -18,15 +18,16 @@ interface NotificationAction {
 /** `extra.rimMessage` as a target, or null when it is not one. */
 function targetOf(value: unknown): MessageNotificationTarget | null {
   if (typeof value !== "object" || value === null) return null;
-  const { workspaceId, conversationId, messageId } = value as Record<string, unknown>;
+  const { workspaceId, conversationId, messageId, threadId } = value as Record<string, unknown>;
   if (
     typeof workspaceId !== "string" ||
     typeof conversationId !== "string" ||
-    typeof messageId !== "string"
+    typeof messageId !== "string" ||
+    (typeof threadId !== "string" && threadId !== null && threadId !== undefined)
   ) {
     return null;
   }
-  return { workspaceId, conversationId, messageId };
+  return { workspaceId, conversationId, messageId, threadId: threadId ?? null };
 }
 
 /**
@@ -50,7 +51,7 @@ async function openFromNotification(qc: QueryClient, event: NotificationAction):
     serverId: target.workspaceId,
     conversationId: target.conversationId,
     messageId: target.messageId,
-    threadId: null,
+    threadId: target.threadId,
   });
 }
 

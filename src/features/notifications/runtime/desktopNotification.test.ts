@@ -52,7 +52,12 @@ describe("showMessageNotification", () => {
       messageText: "Hello",
       encrypted: false,
     };
-    const target = { workspaceId: "ws-1", conversationId: "c-1", messageId: "m-1" };
+    const target = {
+      workspaceId: "ws-1",
+      conversationId: "c-1",
+      messageId: "m-1",
+      threadId: "t-1",
+    };
 
     await showMessageNotification(content, FULL, false, target);
     expect(sendNotification).toHaveBeenLastCalledWith({

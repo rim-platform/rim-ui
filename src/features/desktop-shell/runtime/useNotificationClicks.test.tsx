@@ -4,6 +4,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const invoke = vi.hoisted(() => vi.fn());
+const request = vi.hoisted(() => vi.fn());
+vi.mock("../../../core/graphql/client", () => ({
+  graphqlClient: { request },
+}));
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   isTauri: () => true,
@@ -61,6 +65,8 @@ describe("useNotificationClicks", () => {
     useShellStore.setState({
       selectedConversationId: "c-1",
       highlightedMessageId: null,
+      isThreadOpen: false,
+      selectedRootMessageId: null,
       mainSurface: { kind: "settings" } as never,
     });
   });
@@ -68,6 +74,7 @@ describe("useNotificationClicks", () => {
   afterEach(() => {
     delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     invoke.mockReset();
+    request.mockReset();
     plugin.handler = null;
     plugin.unregister.mockClear();
     useAuthStore.setState({ session: null });
@@ -75,6 +82,8 @@ describe("useNotificationClicks", () => {
     useShellStore.setState({
       selectedConversationId: null,
       highlightedMessageId: null,
+      isThreadOpen: false,
+      selectedRootMessageId: null,
       mainSurface: { kind: "conversation" },
     });
   });
@@ -101,12 +110,39 @@ describe("useNotificationClicks", () => {
     expect(useShellStore.getState().highlightedMessageId).toBe("m-5");
   });
 
+  it("opens a thread reply in its thread", async () => {
+    request.mockResolvedValue({ thread: { id: "t-3", rootMessageId: "m-root" } });
+    await mount();
+    await click({ rimMessage: { ...TARGET, threadId: "t-3" } });
+    await waitFor(() => expect(useShellStore.getState().highlightedMessageId).toBe("m-5"));
+    expect(request).toHaveBeenCalledWith(expect.stringContaining("NotificationThreadRoot"), {
+      serverId: "ws-2",
+      conversationId: "c-9",
+      threadId: "t-3",
+    });
+    expect(useShellStore.getState().selectedConversationId).toBe("c-9");
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    expect(useShellStore.getState().selectedRootMessageId).toBe("m-root");
+  });
+
+  it.each([
+    ["a missing thread", TARGET],
+    ["a null thread", { ...TARGET, threadId: null }],
+  ])("opens the message without a thread with %s", async (_name, rimMessage) => {
+    await mount();
+    await click({ rimMessage });
+    expect(request).not.toHaveBeenCalled();
+    expect(useShellStore.getState().highlightedMessageId).toBe("m-5");
+    expect(useShellStore.getState().isThreadOpen).toBe(false);
+  });
+
   it.each([
     ["no target", {}],
     ["a target that is not an object", { rimMessage: "ws-2" }],
     ["a null target", { rimMessage: null }],
     ["a target with a missing id", { rimMessage: { workspaceId: "ws-2", conversationId: "c-9" } }],
     ["a target with an id of the wrong type", { rimMessage: { ...TARGET, messageId: 5 } }],
+    ["a thread of the wrong type", { rimMessage: { ...TARGET, threadId: 7 } }],
     ["no notification", undefined],
   ])("only shows the window with %s", async (_name, extra) => {
     await mount();
