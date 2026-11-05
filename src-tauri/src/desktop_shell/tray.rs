@@ -224,11 +224,11 @@ fn icon_with_dot(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     let radius = f64::from(width.min(height)) * DOT_DIAMETER_SHARE / 2.0;
     let center_x = f64::from(width) - radius;
     let center_y = radius;
-    for (index, pixel) in out.chunks_exact_mut(4).enumerate() {
+    for (index, pixel) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let x = (index % columns) as f64 + 0.5;
         let y = (index / columns) as f64 + 0.5;
         if (x - center_x).powi(2) + (y - center_y).powi(2) <= radius.powi(2) {
-            pixel.copy_from_slice(&DOT_RGBA);
+            *pixel = DOT_RGBA;
         }
     }
     out
