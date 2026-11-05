@@ -7,6 +7,7 @@ use tokio::time::{timeout, Duration};
 /// How long a plugin has to exit on its own once its stdin is closed.
 const EXIT_GRACE: Duration = Duration::from_secs(1);
 /// How long a plugin has to exit after SIGTERM before it is killed.
+#[cfg(unix)]
 const TERM_GRACE: Duration = Duration::from_secs(2);
 /// How many times a spawn is retried while the entrypoint is busy.
 const BUSY_RETRIES: u32 = 8;
@@ -108,24 +109,23 @@ impl PluginProcess {
         self.terminate().await
     }
 
+    /// Kills the process: only Unix has a signal that asks it to stop first.
+    #[cfg(not(unix))]
+    async fn terminate(&mut self) -> Result<(), ProcessError> {
+        let _ = self.child.kill().await;
+        Ok(())
+    }
+
     /// Sends SIGTERM, waits up to [`TERM_GRACE`], then sends SIGKILL.
+    #[cfg(unix)]
     async fn terminate(&mut self) -> Result<(), ProcessError> {
         // The process id, for sending signals.
         let pid = self.child.id();
 
         if let Some(pid) = pid {
             // Send SIGTERM.
-            #[cfg(unix)]
-            {
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
-                }
-            }
-            #[cfg(not(unix))]
-            {
-                // On non-unix, kill directly.
-                let _ = self.child.kill().await;
-                return Ok(());
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
             }
 
             // Wait for a graceful exit, with a timeout.
@@ -205,7 +205,7 @@ pub(crate) fn test_plugins_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src/plugin_host/test_plugins")
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::io::Write;

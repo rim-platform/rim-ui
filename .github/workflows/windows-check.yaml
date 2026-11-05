@@ -36,5 +36,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # A first build takes over ten minutes, so a failed run still saves its work.
+          cache-on-failure: true
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
