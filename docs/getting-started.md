@@ -329,6 +329,9 @@ In the desktop app, closing the window asks whether RIM keeps running in the sys
 In the tray you keep getting messages and notifications, and the tray icon's menu brings the window
 back. Settings > Desktop changes the answer later. <kbd>Ctrl+Q</kbd> quits, after a confirmation.
 
+Settings > Desktop can also start RIM when you sign in to the computer. It is off by default, and
+the window always opens, so an account that needs its password asks for it right away.
+
 **Plugins** on the side rail opens a menu of the panels of your running plugins, or **Manage
 plugins** when none has a panel. [Plugins](plugins.md) covers installing and trusting one, and
 [UI shell](ui-shell.md) describes the shell's design.

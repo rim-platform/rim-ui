@@ -27,6 +27,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Closing the desktop app's window now asks whether RIM stays running in the system tray or quits,
   and Settings > Desktop can set the answer. Everyone sees this once, the first time they close the
   window after updating. Ctrl+Q quits, after a confirmation.
+- The desktop app can start when you sign in to the computer. It is off by default; turn it on in
+  Settings > Desktop.
 
 ### Changed
 

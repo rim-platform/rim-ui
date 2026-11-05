@@ -56,6 +56,8 @@ tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 # One running copy per data directory (src/single_instance.rs).
 tauri-plugin-single-instance = "2"
+# The operating system's start-at-login entry (src/desktop_shell/start_at_login.rs).
+auto-launch = "0.6"
 # In-app updates and the relaunch that applies them. Kept on the same minor as their npm
 # packages and on lines that build against the tauri minor in use.
 tauri-plugin-updater = "~2.14.0"
