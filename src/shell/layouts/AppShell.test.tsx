@@ -94,6 +94,9 @@ vi.mock("../../features/presence/state/usePresenceEventHandler", () => ({
 vi.mock("../../features/messages/state/useTypingEventHandler", () => ({
   useTypingEventHandler: () => {},
 }));
+vi.mock("../../features/notifications/runtime/useNotificationEvents", () => ({
+  useNotificationEvents: () => {},
+}));
 vi.mock("../../features/notifications/runtime/useNotificationEventHandler", () => ({
   useNotificationEventHandler: () => {},
 }));

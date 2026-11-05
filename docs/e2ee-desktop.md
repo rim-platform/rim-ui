@@ -222,6 +222,8 @@ What this device holds the server to, whatever it answers later:
   reads its own store.
   Settings > Notifications > "Hide text of encrypted messages" keeps that text out of desktop
   and browser notifications on this device, which then say only who sent the message.
+  Messages are decrypted for the open workspace, so a notification from another one waits up to
+  four seconds and then reads "Encrypted message".
 
 New DMs and groups are created with `encrypted: true` when the creator has a device set up for
 encryption (`PrincipalDevice.mlsActive`); members who are not ready yet are invited and join when

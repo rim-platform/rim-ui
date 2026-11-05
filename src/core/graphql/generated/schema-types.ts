@@ -3059,6 +3059,29 @@ export type NotificationCursorOutput = {
   notificationId: Scalars['ID']['output'];
 };
 
+/** A notification the server just stored for the viewer, from any workspace on this server. */
+export type NotificationDueEvent = {
+  /** The conversation of the message. */
+  conversationId: Scalars['ID']['output'];
+  /** The message the notification is about. */
+  messageId: Scalars['ID']['output'];
+  /** The stored notification, as in the inbox. */
+  notificationId: Scalars['ID']['output'];
+  /**
+   * True inside the viewer's do-not-disturb window or pause: record it without a toast or a
+   * sound.
+   */
+  quiet: Scalars['Boolean']['output'];
+  /** Who added the reaction; null unless `reason` is `REACTION`. */
+  reactionBy?: Maybe<Scalars['ID']['output']>;
+  /** The emoji of the reaction; null unless `reason` is `REACTION`. */
+  reactionEmoji?: Maybe<Scalars['String']['output']>;
+  /** Why the viewer was notified. */
+  reason: NotificationReason;
+  /** The workspace the notification belongs to. */
+  workspaceId: Scalars['ID']['output'];
+};
+
 /** Which messages of a conversation notify the viewer. */
 export enum NotificationLevel {
   /** Every message. */
@@ -4411,8 +4434,8 @@ export type ServerInfo = {
    * `clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
    * `deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
    * (`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
-   * `conversation_member_removals` (`conversationMemberRemovals`). A client ignores names it
-   * does not know.
+   * `conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
+   * (`notificationEvents`). A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**
@@ -4680,6 +4703,14 @@ export type SubmitMlsCommitInput = {
 };
 
 export type Subscription = {
+  /**
+   * The viewer's notifications from every workspace on this server, as they are stored: the
+   * same decisions as the `NotificationDue` event of `workspaceEvents`, with no other event.
+   * A conversation in the viewer's request inbox, or one they blocked, stays quiet as it does
+   * there. A notification dropped because the subscriber fell behind is still in the inbox.
+   * Listed in `serverInfo.capabilities` as `notification_events`.
+   */
+  notificationEvents: NotificationDueEvent;
   /**
    * Host events queued for the session's device on this relay, above `after` (the device's
    * cursor when omitted), then live ones, as JSON strings:

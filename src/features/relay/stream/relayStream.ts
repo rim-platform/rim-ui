@@ -69,6 +69,24 @@ interface Applicable {
   itemId: string | null;
 }
 
+/** How old a relayed notification may be and still be announced. */
+const NOTIFICATION_FRESH_MS = 5 * 60_000;
+
+/**
+ * The event `hostEvent` carries, as it applies at `now`: a `NotificationDue` that waited longer than
+ * {@link NOTIFICATION_FRESH_MS} in the relay's queue is quiet, so it reaches the inbox and the badge
+ * without a toast or a sound, and a device coming back is not flooded.
+ *
+ * @param hostEvent - A verified host event.
+ * @param now - The current time in milliseconds.
+ */
+function applicableEvent(hostEvent: HostEvent, now: number): WorkspaceEvent {
+  const event = hostEvent.event as unknown as WorkspaceEvent;
+  if (event.type !== "NotificationDue") return event;
+  if (now - Date.parse(hostEvent.issuedAt) <= NOTIFICATION_FRESH_MS) return event;
+  return { ...event, quiet: true };
+}
+
 /** The relay URLs of a card in a `DmInvite`, read without trusting it: they only say where to look. */
 export function cardRelays(card: unknown): string[] {
   try {
@@ -312,7 +330,7 @@ export class RelayStreamProcessor {
       return this.flushAck();
     }
     const applicable: Applicable = {
-      event: event.event as unknown as WorkspaceEvent,
+      event: applicableEvent(event, this.deps.now()),
       spaceId: item.workspaceId,
       host: item.hostServerId,
       stream: event.stream,

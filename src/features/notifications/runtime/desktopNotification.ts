@@ -14,6 +14,8 @@ export interface MessageNotificationContent {
   messageText: string;
   /** Whether the message is end-to-end encrypted. */
   encrypted: boolean;
+  /** The workspace it came from, when that is not the open one. */
+  workspaceName?: string;
 }
 
 const PREVIEW_LENGTH = 100;
@@ -25,7 +27,8 @@ const PREVIEW_LENGTH = 100;
  * @param style - How much to show and what the title names.
  * @returns With `preview: "none"` only "New message" under the app's name; otherwise the
  * title names the conversation, the sender or both, and the body carries the text (prefixed with
- * the sender when the title does not name them) or, without a preview, says who sent it.
+ * the sender when the title does not name them) or, without a preview, says who sent it. The
+ * title ends with the workspace's name when one is given.
  */
 export function formatMessageNotification(
   content: MessageNotificationContent,
@@ -34,12 +37,13 @@ export function formatMessageNotification(
   if (style.preview === "none") return { title: "RIM", body: "New message" };
   const { channelName, authorName } = content;
   const titleNamesSender = style.title !== "conversation";
-  const title =
+  const base =
     style.title === "conversation"
       ? channelName
       : style.title === "sender" || channelName === authorName
         ? authorName
         : `${authorName} in ${channelName}`;
+  const title = content.workspaceName ? `${base} · ${content.workspaceName}` : base;
   const text = content.messageText.slice(0, PREVIEW_LENGTH);
   const showText = style.preview === "full" && !(content.encrypted && style.hideEncryptedText);
   if (showText && text) {

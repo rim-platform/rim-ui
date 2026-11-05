@@ -43,6 +43,7 @@ import { useRecentActivitySeed } from "../../features/conversations/state/useRec
 import { useUnreadEventHandler } from "../../features/conversations/state/useUnreadEventHandler";
 import { usePresenceEventHandler } from "../../features/presence/state/usePresenceEventHandler";
 import { useTypingEventHandler } from "../../features/messages/state/useTypingEventHandler";
+import { useNotificationEvents } from "../../features/notifications/runtime/useNotificationEvents";
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
@@ -155,6 +156,8 @@ function UnlockedShell() {
   useResumeDeviceLinks();
   useRelayRuntime();
   useDirectSpaceRuntime();
+  useNotificationEventHandler();
+  useNotificationEvents();
   useBlockedConversationsRuntime();
   useUnreadEventHandler();
   useRecentActivitySeed();
@@ -222,7 +225,6 @@ function WorkspaceShell() {
   useStatusExpiration();
   usePresenceEventHandler();
   useTypingEventHandler();
-  useNotificationEventHandler(subscribedHere);
 
   const { capabilities } = useRuntime();
   const mainSurface = useShellStore((s) => s.mainSurface);

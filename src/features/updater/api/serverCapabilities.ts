@@ -26,6 +26,9 @@ export const MEMBER_TIMEOUT_CHANGED = "member_timeout_changed";
 /** The capability of a server with `conversationMemberRemovals`. */
 export const CONVERSATION_MEMBER_REMOVALS = "conversation_member_removals";
 
+/** The capability of a server with the `notificationEvents` subscription. */
+export const NOTIFICATION_EVENTS = "notification_events";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

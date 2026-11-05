@@ -62,7 +62,9 @@ import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
 import { useNotificationSettingsStore } from "../state/useNotificationSettingsStore";
-import { useNotificationEventHandler } from "./useNotificationEventHandler";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { announceNotificationDue } from "../state/notificationEvents";
+import { seenRecently, useNotificationEventHandler } from "./useNotificationEventHandler";
 
 const general = makeConversation({ id: "c-general", title: "general" });
 
@@ -141,7 +143,7 @@ function setup({ seed = true }: { seed?: boolean } = {}) {
   renderHook(
     () => {
       useWorkspaceEvents("ws-1");
-      useNotificationEventHandler("ws-1");
+      useNotificationEventHandler();
     },
     { wrapper },
   );
@@ -168,6 +170,7 @@ describe("NotificationDue rendering", () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh)");
     useAuthStore.setState({ session: { userId: "me" } });
     useShellStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useNotificationSettingsStore.setState({
       enabled: true,
       soundEnabled: true,
@@ -541,6 +544,75 @@ describe("NotificationDue rendering", () => {
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
+  describe("a workspace that is not open", () => {
+    function seedOther() {
+      const qc = setup();
+      qc.setQueryData(queryKeys.myServers(), [{ id: "ws-2", name: "Beta", owner: null }]);
+      qc.setQueryData(queryKeys.joinedChannels("ws-2"), {
+        items: [{ ...general, serverId: "ws-2" }],
+        pageInfo: { hasNext: false, hasPrev: false },
+      });
+      qc.setQueryData(queryKeys.messages("ws-2", "c-general"), cachedMessages());
+      return qc;
+    }
+
+    function due(workspaceId: string, notificationId: string) {
+      return {
+        workspaceId,
+        notificationId,
+        conversationId: "c-general",
+        messageId: "m-1",
+        reason: "mention" as const,
+        quiet: false,
+      };
+    }
+
+    it("notifies for a workspace that is not open and names it in the title", async () => {
+      const qc = seedOther();
+      announceNotificationDue(qc, due("ws-2", "n-1"));
+      await waitFor(() =>
+        expect(sendNotification).toHaveBeenCalledWith({
+          title: "#general · Beta",
+          body: "Alice: hello @me",
+          sound: "Ping",
+        }),
+      );
+    });
+
+    it("does not name the open workspace", async () => {
+      setup();
+      emit(notificationDue());
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      const sent = vi.mocked(sendNotification).mock.calls[0][0] as { title: string };
+      expect(sent.title).not.toContain(" · ");
+    });
+
+    it("shows a notification that arrives on two streams once", async () => {
+      const qc = seedOther();
+      announceNotificationDue(qc, due("ws-2", "n-1"));
+      announceNotificationDue(qc, due("ws-2", "n-1"));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(sendNotification).toHaveBeenCalledTimes(1);
+
+      announceNotificationDue(qc, due("ws-2", "n-2"));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalledTimes(2));
+    });
+
+    it("shows only New message with no preview, whichever workspace it came from", async () => {
+      useNotificationSettingsStore.setState({ preview: "none" });
+      const qc = seedOther();
+      announceNotificationDue(qc, due("ws-2", "n-1"));
+      await waitFor(() =>
+        expect(sendNotification).toHaveBeenCalledWith({
+          title: "RIM",
+          body: "New message",
+          sound: "Ping",
+        }),
+      );
+    });
+  });
+
   it("no longer notifies on NewMessage or UserMentioned by itself", async () => {
     setup();
     emit({
@@ -633,5 +705,21 @@ describe("notification cache hygiene on realtime events", () => {
     emit({ type: "MemberLeft", workspace_id: "ws-1", user_id: "me" });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.unreadNotificationCount("ws-1") });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["notifications", "ws-1"] });
+  });
+});
+
+describe("seenRecently", () => {
+  it("is true for a repeat inside the window and false after it", () => {
+    const seen = new Map<string, number>();
+    expect(seenRecently(seen, "n-1", 1000)).toBe(false);
+    expect(seenRecently(seen, "n-1", 5000)).toBe(true);
+    expect(seenRecently(seen, "n-1", 11_000)).toBe(false);
+  });
+
+  it("removes entries past the window", () => {
+    const seen = new Map<string, number>();
+    seenRecently(seen, "old", 0);
+    seenRecently(seen, "new", 20_000);
+    expect([...seen.keys()]).toEqual(["new"]);
   });
 });
