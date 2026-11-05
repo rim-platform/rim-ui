@@ -98,14 +98,17 @@ fn quote_for_entry(path: &str) -> Result<String, String> {
     Ok(path.to_owned())
 }
 
-/// The AppImage the app runs from, if it does.
+/// The AppImage the app runs from, if it does. `APPDIR` is resolved first, because the running
+/// file's path already is and a temporary folder can be reached through a symbolic link.
 #[cfg(target_os = "linux")]
 fn appimage<R: Runtime>(app: &AppHandle<R>) -> Option<OsString> {
     use tauri::Manager;
 
     let env = app.env();
+    let appdir = std::fs::canonicalize(env.appdir.as_deref()?).ok()?;
     let exe = std::env::current_exe().ok()?;
-    running_appimage(env.appimage.as_deref(), env.appdir.as_deref(), &exe).map(OsStr::to_os_string)
+    running_appimage(env.appimage.as_deref(), Some(appdir.as_os_str()), &exe)
+        .map(OsStr::to_os_string)
 }
 
 /// Only Linux has AppImages.
@@ -121,17 +124,55 @@ fn entry_starts(contents: &str, command: &str) -> bool {
     contents.lines().any(|line| line.trim_end() == wanted)
 }
 
-/// Whether the entry on disk already starts `command`. A file that cannot be read does not.
+/// Whether the entry's `contents` say a desktop turned it off.
 #[cfg(target_os = "linux")]
-fn entry_is_current<R: Runtime>(app: &AppHandle<R>, command: &str) -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let file = home
+fn entry_turned_off(contents: &str) -> bool {
+    contents
+        .lines()
+        .map(str::trim_end)
+        .any(|line| line == "Hidden=true" || line == "X-GNOME-Autostart-enabled=false")
+}
+
+/// What the entry's file holds, or nothing when it cannot be read.
+#[cfg(target_os = "linux")]
+fn entry_contents<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let file = dirs::home_dir()?
         .join(".config")
         .join("autostart")
         .join(format!("{}.desktop", app.package_info().name));
-    std::fs::read_to_string(file).is_ok_and(|contents| entry_starts(&contents, command))
+    std::fs::read_to_string(file).ok()
+}
+
+/// Whether the entry is there and no desktop turned it off.
+///
+/// # Errors
+///
+/// A message when the entry cannot be read.
+#[cfg(target_os = "linux")]
+fn entry_is_on<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
+    let enabled = existing_entry(app)?
+        .is_enabled()
+        .map_err(|error| error.to_string())?;
+    Ok(enabled && !entry_contents(app).is_some_and(|contents| entry_turned_off(&contents)))
+}
+
+/// Whether the operating system says the entry is on, which takes in Task Manager's off state on
+/// Windows.
+///
+/// # Errors
+///
+/// A message when the entry cannot be read.
+#[cfg(not(target_os = "linux"))]
+fn entry_is_on<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
+    existing_entry(app)?
+        .is_enabled()
+        .map_err(|error| error.to_string())
+}
+
+/// Whether the entry on disk already starts `command`. A file that cannot be read does not.
+#[cfg(target_os = "linux")]
+fn entry_is_current<R: Runtime>(app: &AppHandle<R>, command: &str) -> bool {
+    entry_contents(app).is_some_and(|contents| entry_starts(&contents, command))
 }
 
 /// Other platforms cannot tell, so the entry is always written again.
@@ -183,17 +224,14 @@ fn entry_for_running_app<R: Runtime>(app: &AppHandle<R>) -> Result<AutoLaunch, S
     entry(app, &running_app_command(app)?)
 }
 
-/// The setting as the operating system's entry says.
+/// The setting as the operating system's entry says, a desktop's own off state included.
 ///
 /// # Errors
 ///
 /// A message when the entry cannot be read.
 pub(super) fn state<R: Runtime>(app: &AppHandle<R>) -> Result<StartAtLogin, String> {
-    let enabled = existing_entry(app)?
-        .is_enabled()
-        .map_err(|error| error.to_string())?;
     Ok(StartAtLogin {
-        enabled,
+        enabled: entry_is_on(app)?,
         app_image: appimage(app).is_some(),
         path_allowed: running_app_command(app).is_ok(),
     })
@@ -215,7 +253,8 @@ pub(super) fn set<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), S
 
 /// Rewrites an enabled entry that starts something other than the running app, so moving an
 /// AppImage and opening it once mends the entry. Does nothing in a dev build, or when the entry
-/// is not enabled or already correct, so it keeps what else the file holds. A failure,
+/// is off, a desktop's own off state included, or already correct, so it keeps what else the file
+/// holds. A failure,
 /// such as a running path that cannot go in an entry, is logged, leaves the entry as it is, and
 /// start-up continues.
 pub(super) fn mend<R: Runtime>(app: &AppHandle<R>) {
@@ -228,10 +267,7 @@ pub(super) fn mend<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn rewrite_if_enabled<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    if existing_entry(app)?
-        .is_enabled()
-        .map_err(|error| error.to_string())?
-    {
+    if entry_is_on(app)? {
         let command = running_app_command(app)?;
         if !entry_is_current(app, &command) {
             entry(app, &command)?
@@ -304,6 +340,33 @@ mod tests {
         assert!(!entry_starts("Exec=\"/a b/rim-ui\" --flag\n", command));
         assert!(!entry_starts("TryExec=\"/a b/rim-ui\"\n", command));
         assert!(!entry_starts("", command));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_desktop_can_turn_an_entry_off() {
+        for line in ["Hidden=true", "X-GNOME-Autostart-enabled=false"] {
+            assert!(
+                entry_turned_off(&format!("[Desktop Entry]\n{line}\nName=RIM\n")),
+                "{line}"
+            );
+            assert!(entry_turned_off(&format!("Name=RIM\n{line}  ")), "{line}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn other_lines_do_not_turn_an_entry_off() {
+        for contents in [
+            "",
+            "[Desktop Entry]\nExec=\"/a/rim-ui\" \n",
+            "Hidden=false\n",
+            "X-GNOME-Autostart-enabled=true\n",
+            "X-Hidden=true\n",
+            "Hidden=true2\n",
+        ] {
+            assert!(!entry_turned_off(contents), "{contents}");
+        }
     }
 
     #[test]
