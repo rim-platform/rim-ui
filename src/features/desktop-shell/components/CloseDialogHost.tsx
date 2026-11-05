@@ -44,14 +44,14 @@ function CloseDialog({
         <span>Don&apos;t ask again (you can change this in Settings &gt; Desktop)</span>
       </label>
       <div className="mt-4 flex justify-end gap-2">
-        <Button type="button" autoFocus onClick={() => onChoose("tray", remember)}>
-          Keep in tray
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
         </Button>
         <Button type="button" variant="secondary" onClick={() => onChoose("quit", remember)}>
           Quit RIM
         </Button>
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
+        <Button type="button" autoFocus onClick={() => onChoose("tray", remember)}>
+          Keep in tray
         </Button>
       </div>
     </Dialog>

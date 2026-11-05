@@ -29,6 +29,7 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { LOCAL_COMMANDS } from "../runtime/localCommands";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
 import { KeybindSettings } from "./KeybindSettings";
@@ -127,9 +128,12 @@ describe("KeybindSettings and plugin commands", () => {
 
   it("offers this app's own commands too and keeps their bindings on this device", async () => {
     const { user, picker } = await openPicker();
-    for (const { title } of LOCAL_COMMANDS) {
+    for (const { id, title } of LOCAL_COMMANDS) {
+      if (id === QUIT_COMMAND_ID) continue;
       expect(within(picker).getByRole("option", { name: title })).toBeInTheDocument();
     }
+    // The web app has no window to quit.
+    expect(within(picker).queryByRole("option", { name: "Quit RIM" })).not.toBeInTheDocument();
     screen.getByRole("textbox", { name: "Keystroke" }).focus();
     await user.keyboard("{Control>}{Alt>}v{/Alt}{/Control}");
     await user.selectOptions(picker, "workspace.toggle_vim_mode");

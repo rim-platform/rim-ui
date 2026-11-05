@@ -5,12 +5,7 @@ import { offeredInSituation, type PaletteSituation } from "./paletteAvailability
 import { releasePaletteFocus } from "./paletteFocus";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 
-const NORMAL: PaletteSituation = {
-  inDirectSpace: false,
-  panelOpen: true,
-  hasDirectOrigin: true,
-  desktopApp: true,
-};
+const NORMAL: PaletteSituation = { inDirectSpace: false, panelOpen: true, hasDirectOrigin: true };
 
 describe("offeredInSituation", () => {
   it("hides the four commands the direct space refuses", () => {
@@ -38,11 +33,6 @@ describe("offeredInSituation", () => {
     const none = { ...NORMAL, hasDirectOrigin: false };
     expect(offeredInSituation("workspace.back_to_workspace", none)).toBe(false);
     expect(offeredInSituation("workspace.back_to_workspace", NORMAL)).toBe(true);
-  });
-
-  it("offers Quit RIM in the desktop app only", () => {
-    expect(offeredInSituation("app.quit", { ...NORMAL, desktopApp: false })).toBe(false);
-    expect(offeredInSituation("app.quit", NORMAL)).toBe(true);
   });
 });
 
