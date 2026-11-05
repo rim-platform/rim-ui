@@ -1,7 +1,8 @@
-//! The desktop shell: what closing the main window does, the setting that decides it, and the
-//! system tray that keeps the app reachable while the window is hidden.
+//! The desktop shell: what closing the main window does, the setting that decides it, the system
+//! tray that keeps the app reachable while the window is hidden, and starting at login.
 
 mod settings;
+mod start_at_login;
 mod tray;
 
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, CloseRequestApi, Emitter, Manager, Runtime, State, Window};
 
 use settings::{CloseAction, DesktopSettings};
+use start_at_login::StartAtLogin;
 
 pub(crate) const MAIN_WINDOW: &str = "main";
 
@@ -133,7 +135,8 @@ impl CloseChoice {
     }
 }
 
-/// Reads the settings into the app's state and shows the tray icon if the setting asks for it.
+/// Reads the settings into the app's state, shows the tray icon if the setting asks for it and
+/// mends the start-at-login entry.
 ///
 /// # Panics
 ///
@@ -145,6 +148,7 @@ pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
         .expect("failed to resolve app config dir");
     app.manage(DesktopShell::load(dir.join(SETTINGS_FILE)));
     tray::sync(app);
+    start_at_login::mend(app);
 }
 
 /// Handles a close request of the main window under the current setting.
@@ -308,6 +312,31 @@ pub async fn desktop_tray_available<R: Runtime>(app: AppHandle<R>) -> bool {
         tokio::time::timeout(TRAY_CHECK_TIMEOUT, check).await,
         Ok(Ok(true))
     )
+}
+
+/// Whether the app starts when the person signs in to this computer. A failure is also logged.
+///
+/// # Errors
+///
+/// A message when the operating system's entry cannot be read.
+#[tauri::command]
+pub fn desktop_start_at_login<R: Runtime>(app: AppHandle<R>) -> Result<StartAtLogin, String> {
+    start_at_login::state(&app)
+        .inspect_err(|error| log::warn!("could not read the start-at-login entry: {error}"))
+}
+
+/// Turns starting at login on or off. A failure is also logged.
+///
+/// # Errors
+///
+/// A message when the operating system's entry cannot be changed.
+#[tauri::command]
+pub fn desktop_set_start_at_login<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    start_at_login::set(&app, enabled)
+        .inspect_err(|error| log::warn!("could not change the start-at-login entry: {error}"))
 }
 
 #[cfg(test)]

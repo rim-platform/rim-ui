@@ -263,6 +263,8 @@ pub fn run() {
             desktop_shell::desktop_close_choose,
             desktop_shell::desktop_quit,
             desktop_shell::desktop_tray_available,
+            desktop_shell::desktop_start_at_login,
+            desktop_shell::desktop_set_start_at_login,
         ])
         .build(context)
         .expect("error while building tauri application")

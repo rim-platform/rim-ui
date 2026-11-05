@@ -1,7 +1,7 @@
 /**
- * The desktop shell's commands (`src-tauri/src/desktop_shell`): what closing the window does and
- * quitting. Every call throws its `SafeInvokeError` on failure, and `ipc_unavailable` in the web
- * app.
+ * The desktop shell's commands (`src-tauri/src/desktop_shell`): what closing the window does,
+ * quitting and starting at login. Every call throws its `SafeInvokeError` on failure, and
+ * `ipc_unavailable` in the web app.
  */
 
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
@@ -11,6 +11,15 @@ export type CloseAction = "ask" | "tray" | "quit";
 
 /** An answer in the close dialog. */
 export type CloseChoice = "tray" | "quit";
+
+/** Starting at login on this computer. */
+export interface StartAtLogin {
+  enabled: boolean;
+  /** Whether the app runs from an AppImage, whose file the person can move. */
+  appImage: boolean;
+  /** Whether an entry can start the app from where it runs now. */
+  pathAllowed: boolean;
+}
 
 /** The event that asks the page to show the close dialog. */
 export const CLOSE_REQUESTED_EVENT = "desktop://close-requested";
@@ -67,4 +76,18 @@ export function desktopQuit(): Promise<null> {
 /** @returns Whether this desktop can show the tray icon. */
 export function desktopTrayAvailable(): Promise<boolean> {
   return call("desktop_tray_available");
+}
+
+/** @returns Whether the app starts at login, as the operating system's entry says. */
+export function desktopStartAtLogin(): Promise<StartAtLogin> {
+  return call("desktop_start_at_login");
+}
+
+/**
+ * Turns starting at login on or off.
+ *
+ * @param enabled - The new state.
+ */
+export function desktopSetStartAtLogin(enabled: boolean): Promise<null> {
+  return call("desktop_set_start_at_login", { enabled });
 }

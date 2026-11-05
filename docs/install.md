@@ -35,6 +35,11 @@ chmod +x RIM_<version>_amd64.AppImage
 ./RIM_<version>_amd64.AppImage
 ```
 
+If you turned on "Start RIM when I sign in to this computer" in Settings > Desktop and then move the
+AppImage, open it once from the new place. That mends the entry, so RIM starts from there next time.
+Not every Linux desktop can start RIM from a path containing any of `$ " ' \` `` ` `` `% * ? [`, so with
+one of those in the path the setting says so and stays off until you move RIM to another folder.
+
 What the app needs at run time:
 
 - **glibc 2.34 or newer**, as on Debian 12, Ubuntu 22.04 and newer releases.
@@ -158,6 +163,10 @@ In the web app, the browser's developer console (F12) shows the client's errors.
    - AppImage: delete the file.
    - Windows: Settings > Apps > Installed apps, RIM, Uninstall. An `.msi` install is removed
      the same way or with `msiexec /x RIM_<version>_x64_en-US.msi`.
+
+   Uninstalling leaves the entry behind if you turned on "Start RIM when I sign in to this
+   computer", and that entry then does nothing. To remove it, turn the setting off in
+   Settings > Desktop first.
 2. Uninstalling leaves your data in place, so a reinstall picks up where you left off. To remove
    it too, delete the folders under [Where the app keeps its data](#where-the-app-keeps-its-data)
    and the log folder ([Logs](#logs)), and the `vault-key-v1` entry from the credential store
