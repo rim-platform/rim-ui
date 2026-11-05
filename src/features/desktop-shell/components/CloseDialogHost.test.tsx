@@ -20,6 +20,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import { RuntimeProvider } from "../../../core/runtime/RuntimeProvider";
+import { useQuitConfirmStore } from "../state/useQuitConfirmStore";
 import { CloseDialogHost } from "./CloseDialogHost";
 
 const NO_TRAY =
@@ -183,6 +184,13 @@ describe("CloseDialogHost", () => {
     await openDialog(2);
     expect(screen.getByRole("checkbox")).toBeChecked();
     expect(commandCalls("desktop_tray_available")).toHaveLength(2);
+  });
+
+  it("takes the place of an open quit confirmation", async () => {
+    useQuitConfirmStore.getState().open({ needsPassword: false });
+    await renderHost();
+    await openDialog();
+    expect(useQuitConfirmStore.getState().request).toBeNull();
   });
 
   it("still asks when the tray check fails", async () => {

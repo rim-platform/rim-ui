@@ -22,6 +22,9 @@ const CLOSE_REQUESTED_EVENT: &str = "desktop://close-requested";
 /// How long the page has to acknowledge a close request before the app quits.
 const CLOSE_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// How long the check for a tray host may take, connecting to the bus included.
+const TRAY_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
+
 const SETTINGS_FILE: &str = "desktop-settings.json";
 
 /// The payload of [`CLOSE_REQUESTED_EVENT`].
@@ -293,15 +296,18 @@ pub fn desktop_quit<R: Runtime>(app: AppHandle<R>) {
 }
 
 /// Whether this desktop can show the tray icon. It runs on the blocking pool, because the bus
-/// call must not hold up the main thread.
+/// call must not hold up the main thread. A check that outlasts [`TRAY_CHECK_TIMEOUT`] counts as
+/// no tray, so a stuck bus cannot keep the close dialog from opening.
 #[tauri::command]
 pub async fn desktop_tray_available<R: Runtime>(app: AppHandle<R>) -> bool {
     if app.state::<DesktopShell>().tray_failed() {
         return false;
     }
-    tauri::async_runtime::spawn_blocking(tray_host_present)
-        .await
-        .unwrap_or(false)
+    let check = tauri::async_runtime::spawn_blocking(tray_host_present);
+    matches!(
+        tokio::time::timeout(TRAY_CHECK_TIMEOUT, check).await,
+        Ok(Ok(true))
+    )
 }
 
 #[cfg(test)]

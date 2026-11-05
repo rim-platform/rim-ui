@@ -14,6 +14,7 @@ import {
   type CloseChoice,
   type CloseRequest,
 } from "../api/desktopShell";
+import { useQuitConfirmStore } from "../state/useQuitConfirmStore";
 import { NO_TRAY_SENTENCE } from "./noTraySentence";
 
 /** The question a close of the window asks. Cancel, Escape and the backdrop save nothing. */
@@ -71,6 +72,7 @@ function CloseRequestListener() {
       });
       if (asking.current) return;
       asking.current = true;
+      useQuitConfirmStore.getState().close();
       desktopTrayAvailable()
         .catch((error: unknown) => {
           logger.warn("[RIM:desktop] could not check for a tray:", error);
