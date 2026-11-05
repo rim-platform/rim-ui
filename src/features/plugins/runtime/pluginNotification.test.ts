@@ -31,6 +31,9 @@ describe("showPluginNotification", () => {
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     await showPluginNotification("Poll", "Closed", "Results are in");
-    expect(sendNotification).toHaveBeenCalledWith({ title: "Poll: Closed", body: "Results are in" });
+    expect(sendNotification).toHaveBeenCalledWith({
+      title: "Poll: Closed",
+      body: "Results are in",
+    });
   });
 });
