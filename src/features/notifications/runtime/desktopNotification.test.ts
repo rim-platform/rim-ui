@@ -165,6 +165,26 @@ describe("formatMessageNotification", () => {
     });
   });
 
+  it("ends the title with the workspace's name, whatever the title names", () => {
+    const other = { ...message, workspaceName: "Beta" };
+    expect(formatMessageNotification(other, FULL).title).toBe("#general · Beta");
+    expect(formatMessageNotification(other, { ...FULL, title: "sender" }).title).toBe(
+      "Alice · Beta",
+    );
+    expect(formatMessageNotification(other, { ...FULL, title: "both" }).title).toBe(
+      "Alice in #general · Beta",
+    );
+  });
+
+  it("shows only New message with no preview, without the workspace's name", () => {
+    expect(
+      formatMessageNotification(
+        { ...message, workspaceName: "Beta" },
+        { ...FULL, preview: "none" },
+      ),
+    ).toEqual({ title: "RIM", body: "New message" });
+  });
+
   it("does not repeat a direct message's sender, who is also its conversation", () => {
     const direct = { ...message, channelName: "Alice" };
     expect(formatMessageNotification(direct, { ...FULL, title: "both" }).title).toBe("Alice");

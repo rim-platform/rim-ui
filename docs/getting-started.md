@@ -272,7 +272,9 @@ under any message requests; **Mark all read** clears them. Settings > Notificati
 notifies you in the workspace and how this device shows it: sound, the **Message preview**
 (sender and text, sender only, or nothing, which hides who and where too), the **Title**
 (the conversation, the sender, or both), and **Hide text of encrypted messages**. An example
-under the settings shows the result.
+under the settings shows the result. You get notifications from all your workspaces, not only
+the open one. One from another workspace ends its title with that workspace's name, and an
+encrypted message there reads "Encrypted message" until you open it.
 
 ## Find your way around
 

@@ -34,7 +34,8 @@ export interface ReactionGroupData {
 }
 
 /** Why a `NotificationDue` was sent; lowercase on the wire (`NotificationReason` in GraphQL). */
-export type NotificationDueReason = "direct" | "mention" | "keyword" | "thread_reply" | "all";
+export type NotificationDueReason =
+  "direct" | "mention" | "keyword" | "thread_reply" | "all" | "reaction";
 
 /** How a join request was closed; lowercase on the wire. */
 export type JoinRequestOutcome = "accepted" | "declined" | "withdrawn" | "cancelled";

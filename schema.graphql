@@ -2828,6 +2828,45 @@ type NotificationCursorOutput {
 }
 
 """
+A notification the server just stored for the viewer, from any workspace on this server.
+"""
+type NotificationDueEvent {
+	"""
+	The workspace the notification belongs to.
+	"""
+	workspaceId: ID!
+	"""
+	The stored notification, as in the inbox.
+	"""
+	notificationId: ID!
+	"""
+	The conversation of the message.
+	"""
+	conversationId: ID!
+	"""
+	The message the notification is about.
+	"""
+	messageId: ID!
+	"""
+	Why the viewer was notified.
+	"""
+	reason: NotificationReason!
+	"""
+	True inside the viewer's do-not-disturb window or pause: record it without a toast or a
+	sound.
+	"""
+	quiet: Boolean!
+	"""
+	The emoji of the reaction; null unless `reason` is `REACTION`.
+	"""
+	reactionEmoji: String
+	"""
+	Who added the reaction; null unless `reason` is `REACTION`.
+	"""
+	reactionBy: ID
+}
+
+"""
 Which messages of a conversation notify the viewer.
 """
 enum NotificationLevel {
@@ -4134,8 +4173,8 @@ type ServerInfo {
 	`clearMessageFlag`), `delete_member_messages` (`memberMessageCounts`,
 	`deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
 	(`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
-	`conversation_member_removals` (`conversationMemberRemovals`). A client ignores names it
-	does not know.
+	`conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
+	(`notificationEvents`). A client ignores names it does not know.
 	"""
 	capabilities: [String!]!
 }
@@ -4418,6 +4457,14 @@ type Subscription {
 	that load fails, including when they are no longer a member.
 	"""
 	workspaceEvents(workspaceId: ID!): String!
+	"""
+	The viewer's notifications from every workspace on this server, as they are stored: the
+	same decisions as the `NotificationDue` event of `workspaceEvents`, with no other event.
+	A conversation in the viewer's request inbox, or one they blocked, stays quiet as it does
+	there. A notification dropped because the subscriber fell behind is still in the inbox.
+	Listed in `serverInfo.capabilities` as `notification_events`.
+	"""
+	notificationEvents: NotificationDueEvent!
 	"""
 	Host events queued for the session's device on this relay, above `after` (the device's
 	cursor when omitted), then live ones, as JSON strings:

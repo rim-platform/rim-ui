@@ -11,7 +11,8 @@ import {
 } from "../api/useNotifications";
 
 /**
- * Realtime handlers for the notification inbox, called from `useWorkspaceEvents`.
+ * Realtime handlers for the notification inbox, called from `useWorkspaceEvents` and
+ * `useNotificationEvents`.
  */
 
 type NotificationDueEvent = Extract<WorkspaceEvent, { type: "NotificationDue" }>;
@@ -23,16 +24,21 @@ function currentUserId(qc: QueryClient): string | undefined {
 }
 
 /**
- * The server stored a notification for the viewer: refresh the badge and the inbox, then hand
- * the event to the desktop renderer (`useNotificationEventHandler`) through the bus.
+ * The server stored a notification for the viewer: refresh that workspace's badge and inbox, then
+ * hand it to the renderer (`useNotificationEventHandler`) through the bus.
  */
+export function announceNotificationDue(qc: QueryClient, due: NotificationDueBusEvent): void {
+  invalidateNotificationInbox(qc, due.workspaceId);
+  eventBus.emit<NotificationDueBusEvent>(BUS_EVENTS.NOTIFICATION_DUE, due);
+}
+
+/** Maps a workspace's `NotificationDue` event to the announcement. */
 export function handleNotificationDue(
   qc: QueryClient,
   workspaceId: string,
   event: NotificationDueEvent,
 ): void {
-  invalidateNotificationInbox(qc, workspaceId);
-  eventBus.emit<NotificationDueBusEvent>(BUS_EVENTS.NOTIFICATION_DUE, {
+  announceNotificationDue(qc, {
     workspaceId,
     notificationId: event.notification_id,
     conversationId: event.conversation_id,

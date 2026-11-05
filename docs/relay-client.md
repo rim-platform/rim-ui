@@ -159,6 +159,10 @@ acknowledged. For each `RelayItem` the app:
 5. applies it through the same handler as `workspaceEvents` (`applyWorkspaceEvent`);
 6. acknowledges (`ackRelayItems`) every item up to the first still held, and stores that cursor.
 
+A `NotificationDue` issued more than five minutes ago applies as quiet: it reaches the inbox and
+the badge with no toast or sound, so a device coming back is not flooded with what the relay
+queued.
+
 `DmRequestReceived` refreshes the request inbox; `QueueOverflow` reconciles the spaces it names;
 `RevocationAcked` refreshes the revocation fan-out (the app reads its acknowledgements from
 `deviceRevocationStatus`, whatever the notice carries). `workspaceEvents` is not opened for a

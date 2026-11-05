@@ -107,6 +107,50 @@ describe("RelayStreamProcessor", () => {
     expect(deps.ack).toHaveBeenLastCalledWith(processor.ackedThrough);
   });
 
+  describe("a relayed notification", () => {
+    const ISSUED = Date.parse("2026-10-09T00:00:00Z");
+
+    function notification(seq: number) {
+      return item(`u:${ME}`, seq, {
+        type: "NotificationDue",
+        user_id: "me",
+        notification_id: `n${seq}`,
+        conversation_id: CONV,
+        message_id: `m${seq}`,
+        reason: "mention",
+        quiet: false,
+      });
+    }
+
+    it("stays as the host sent it while it is fresh", async () => {
+      const { processor, deps } = setup({ now: () => ISSUED + 5 * 60_000 });
+      await processor.push(await notification(1));
+      expect(deps.apply).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "NotificationDue", quiet: false }),
+        SPACE,
+        HOST,
+        `u:${ME}`,
+      );
+    });
+
+    it("is quiet once it waited in the queue, and still applies", async () => {
+      const { processor, deps } = setup({ now: () => ISSUED + 5 * 60_000 + 1 });
+      await processor.push(await notification(1));
+      expect(deps.apply).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "NotificationDue", quiet: true }),
+        SPACE,
+        HOST,
+        `u:${ME}`,
+      );
+    });
+
+    it("leaves other old events alone", async () => {
+      const { processor, applied } = setup({ now: () => ISSUED + 60 * 60_000 });
+      await processor.push(await message(1));
+      expect(applied).toEqual(["m1"]);
+    });
+  });
+
   it("passes each event's stream to apply", async () => {
     const { processor, deps } = setup();
     await processor.push(await message(1));

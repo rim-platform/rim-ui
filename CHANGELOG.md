@@ -22,6 +22,15 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Changed
+
+- Notifications now come from all your workspaces, not only the open one, following each
+  workspace's notification settings, and one from another workspace names it in its title. This
+  needs a server that lists `notification_events` for workspaces on that server; on an older
+  server only the open workspace notifies. An encrypted message in another workspace reads
+  "Encrypted message" until you open it. A notification from a workspace on another server that
+  waited over five minutes while you were away goes to the inbox without popping up.
+
 ### Fixed
 
 - Starting the desktop app while it is already running brings the open window forward instead of
