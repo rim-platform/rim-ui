@@ -1,0 +1,40 @@
+name: Windows Check
+
+# Code behind cfg(windows) is skipped on the Linux runners, so it compiles here. Only compiling:
+# the app is not run, and no installer is built.
+on:
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/windows-check.yaml"
+  push:
+    branches: ["master"]
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/windows-check.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows_check:
+    name: Windows Check (src-tauri)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: src-tauri
+    env:
+      # The vendored OpenSSL (SQLCipher's) configures with Perl. Under bash the first perl is Git's,
+      # which lacks modules OpenSSL's Configure needs; the runner's Strawberry Perl has them.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
