@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
@@ -27,7 +27,7 @@ const START_AT_LOGIN_LABEL = "Start RIM when I sign in to this computer";
 function StartAtLoginRow() {
   const [current, setCurrent] = useState<StartAtLogin | null>(null);
   const [readFailed, setReadFailed] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const saving = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -44,19 +44,21 @@ function StartAtLoginRow() {
     };
   }, []);
 
-  const refused = current !== null && !current.pathAllowed && !current.enabled;
+  const refused = current !== null && !current.pathAllowed;
 
   const change = (enabled: boolean) => {
-    if (current === null) return;
+    if (current === null || saving.current) return;
     setCurrent({ ...current, enabled });
-    setSaving(true);
+    saving.current = true;
     desktopSetStartAtLogin(enabled)
       .catch((error: unknown) => {
         logger.warn("[RIM:desktop] could not save the start-at-login setting:", error);
         setCurrent(current);
         toast.error("The setting could not be saved");
       })
-      .finally(() => setSaving(false));
+      .finally(() => {
+        saving.current = false;
+      });
   };
 
   return (
@@ -70,7 +72,7 @@ function StartAtLoginRow() {
           checked={current?.enabled ?? false}
           onChange={change}
           label={START_AT_LOGIN_LABEL}
-          disabled={current === null || saving || refused}
+          disabled={current === null || (refused && !current.enabled)}
         />
       </div>
       {refused && (

@@ -28,6 +28,18 @@ pub(crate) struct StartAtLogin {
     path_allowed: bool,
 }
 
+/// `appimage` when the running file is inside the AppImage's own mount, `appdir`. A value that
+/// another AppImage's process passed down in the environment does not qualify.
+#[cfg(target_os = "linux")]
+fn running_appimage<'a>(
+    appimage: Option<&'a OsStr>,
+    appdir: Option<&OsStr>,
+    exe: &Path,
+) -> Option<&'a OsStr> {
+    let appdir = appdir.filter(|dir| !dir.is_empty())?;
+    appimage.filter(|_| exe.starts_with(appdir))
+}
+
 /// The path the entry starts: the AppImage when there is one, otherwise `exe`, without the suffix
 /// of a replaced file.
 ///
@@ -86,18 +98,46 @@ fn quote_for_entry(path: &str) -> Result<String, String> {
     Ok(path.to_owned())
 }
 
-/// The value of `APPIMAGE` as the app read it at start.
+/// The AppImage the app runs from, if it does.
 #[cfg(target_os = "linux")]
 fn appimage<R: Runtime>(app: &AppHandle<R>) -> Option<OsString> {
     use tauri::Manager;
 
-    app.env().appimage
+    let env = app.env();
+    let exe = std::env::current_exe().ok()?;
+    running_appimage(env.appimage.as_deref(), env.appdir.as_deref(), &exe).map(OsStr::to_os_string)
 }
 
 /// Only Linux has AppImages.
 #[cfg(not(target_os = "linux"))]
 fn appimage<R: Runtime>(_app: &AppHandle<R>) -> Option<OsString> {
     None
+}
+
+/// Whether the entry's `contents` start `command`.
+#[cfg(target_os = "linux")]
+fn entry_starts(contents: &str, command: &str) -> bool {
+    let wanted = format!("Exec={command}");
+    contents.lines().any(|line| line.trim_end() == wanted)
+}
+
+/// Whether the entry on disk already starts `command`. A file that cannot be read does not.
+#[cfg(target_os = "linux")]
+fn entry_is_current<R: Runtime>(app: &AppHandle<R>, command: &str) -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let file = home
+        .join(".config")
+        .join("autostart")
+        .join(format!("{}.desktop", app.package_info().name));
+    std::fs::read_to_string(file).is_ok_and(|contents| entry_starts(&contents, command))
+}
+
+/// Other platforms cannot tell, so the entry is always written again.
+#[cfg(not(target_os = "linux"))]
+fn entry_is_current<R: Runtime>(_app: &AppHandle<R>, _command: &str) -> bool {
+    false
 }
 
 /// The operating system's entry with `command` as what it starts.
@@ -173,8 +213,9 @@ pub(super) fn set<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), S
     changed.map_err(|error| error.to_string())
 }
 
-/// Rewrites an enabled entry at the running path, so moving an AppImage and opening it once
-/// mends the entry. Does nothing in a dev build, or when the entry is not enabled. A failure,
+/// Rewrites an enabled entry that starts something other than the running app, so moving an
+/// AppImage and opening it once mends the entry. Does nothing in a dev build, or when the entry
+/// is not enabled or already correct, so it keeps what else the file holds. A failure,
 /// such as a running path that cannot go in an entry, is logged, leaves the entry as it is, and
 /// start-up continues.
 pub(super) fn mend<R: Runtime>(app: &AppHandle<R>) {
@@ -191,9 +232,12 @@ fn rewrite_if_enabled<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         .is_enabled()
         .map_err(|error| error.to_string())?
     {
-        entry_for_running_app(app)?
-            .enable()
-            .map_err(|error| error.to_string())?;
+        let command = running_app_command(app)?;
+        if !entry_is_current(app, &command) {
+            entry(app, &command)?
+                .enable()
+                .map_err(|error| error.to_string())?;
+        }
     }
     Ok(())
 }
@@ -201,6 +245,66 @@ fn rewrite_if_enabled<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_appimage_running_from_its_own_mount_is_accepted() {
+        let appimage = OsStr::new("/home/a/RIM.AppImage");
+        assert_eq!(
+            running_appimage(
+                Some(appimage),
+                Some(OsStr::new("/tmp/.mount_RIMabc")),
+                Path::new("/tmp/.mount_RIMabc/usr/bin/rim-ui"),
+            ),
+            Some(appimage)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_appimage_with_no_mount_is_refused() {
+        let appimage = Some(OsStr::new("/opt/Other/Other.AppImage"));
+        let exe = Path::new("/usr/bin/rim-ui");
+        assert_eq!(running_appimage(appimage, None, exe), None);
+        assert_eq!(running_appimage(appimage, Some(OsStr::new("")), exe), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_appimage_whose_mount_does_not_hold_the_running_file_is_refused() {
+        let appimage = Some(OsStr::new("/opt/Other/Other.AppImage"));
+        let exe = Path::new("/usr/bin/rim-ui");
+        let other = Some(OsStr::new("/tmp/.mount_Other"));
+        assert_eq!(running_appimage(appimage, other, exe), None);
+        let similar = Path::new("/tmp/.mount_Other2/usr/bin/rim-ui");
+        assert_eq!(running_appimage(appimage, other, similar), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn no_appimage_stays_no_appimage() {
+        let exe = Path::new("/tmp/.mount_RIMabc/usr/bin/rim-ui");
+        let appdir = Some(OsStr::new("/tmp/.mount_RIMabc"));
+        assert_eq!(running_appimage(None, appdir, exe), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_entry_with_the_command_starts_it() {
+        let contents = "[Desktop Entry]\nExec=\"/a b/rim-ui\" \nX-GNOME-Autostart-enabled=false\n";
+        assert!(entry_starts(contents, "\"/a b/rim-ui\""));
+        assert!(entry_starts("Exec=\"/a b/rim-ui\"", "\"/a b/rim-ui\""));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_entry_with_another_command_does_not_start_it() {
+        let command = "\"/a b/rim-ui\"";
+        assert!(!entry_starts("Exec=/wrong/rim-ui\n", command));
+        assert!(!entry_starts("Exec=\"/a b/rim-ui\" --flag\n", command));
+        assert!(!entry_starts("TryExec=\"/a b/rim-ui\"\n", command));
+        assert!(!entry_starts("", command));
+    }
 
     #[test]
     fn the_entry_starts_the_running_file_without_an_appimage() {

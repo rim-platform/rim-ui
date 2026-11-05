@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -171,7 +171,7 @@ describe("DesktopSettings", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("disables the switch while a change is saving", async () => {
+  it("ignores a second press during a save and keeps the switch enabled", async () => {
     let finish: (value: null) => void = () => {};
     const user = userEvent.setup();
     const toggle = await renderedSwitch();
@@ -182,10 +182,16 @@ describe("DesktopSettings", () => {
         }),
     );
     await user.click(toggle);
-    expect(toggle).toBeDisabled();
+    expect(toggle).toBeEnabled();
     expect(toggle).toBeChecked();
-    finish(null);
-    await waitFor(() => expect(toggle).toBeEnabled());
+    await user.click(toggle);
+    expect(startAtLoginSetCalls()).toEqual([["desktop_set_start_at_login", { enabled: true }]]);
+    expect(toggle).toBeEnabled();
+    expect(toggle).toBeChecked();
+    await act(async () => finish(null));
+    await user.click(toggle);
+    expect(startAtLoginSetCalls()).toHaveLength(2);
+    expect(startAtLoginSetCalls()[1]).toEqual(["desktop_set_start_at_login", { enabled: false }]);
   });
 
   it("puts the switch back and says so when saving fails", async () => {
@@ -227,17 +233,23 @@ describe("DesktopSettings", () => {
     expect(startAtLoginSetCalls()).toEqual([]);
   });
 
+  it("says so and keeps the switch usable when the path is refused and the switch is on", async () => {
+    startAtLogin = { enabled: true, appImage: false, pathAllowed: false };
+    const toggle = await renderedSwitch();
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeEnabled();
+    expect(screen.getByText(REFUSED_SENTENCE)).toBeInTheDocument();
+  });
+
   it("lets an existing entry be turned off from a refused path", async () => {
     startAtLogin = { enabled: true, appImage: false, pathAllowed: false };
     const user = userEvent.setup();
     const toggle = await renderedSwitch();
-    expect(toggle).toBeChecked();
-    expect(screen.queryByText(REFUSED_SENTENCE)).not.toBeInTheDocument();
     await user.click(toggle);
     expect(startAtLoginSetCalls()).toEqual([["desktop_set_start_at_login", { enabled: false }]]);
-    expect(await screen.findByText(REFUSED_SENTENCE)).toBeInTheDocument();
-    expect(toggle).toBeDisabled();
+    await waitFor(() => expect(toggle).toBeDisabled());
     expect(toggle).not.toBeChecked();
+    expect(screen.getByText(REFUSED_SENTENCE)).toBeInTheDocument();
   });
 
   it("shows no refusal for an allowed path", async () => {
