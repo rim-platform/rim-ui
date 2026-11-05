@@ -198,9 +198,21 @@ async function withoutBlockedEntries(serverId: string, count: number): Promise<n
 }
 
 /**
- * Unread notifications of the viewer in the workspace: the side-rail bell badge, without the
- * entries of conversations hidden because someone blocked started them.
+ * Fetches the viewer's unread notifications in the workspace, without the entries of conversations
+ * hidden because someone blocked started them.
+ *
+ * @param serverId - The workspace.
+ * @returns How many there are.
  */
+export async function fetchUnreadNotificationCount(serverId: string): Promise<number> {
+  const res = await graphqlClient.request<{ myUnreadNotificationCount: number }>(
+    MY_UNREAD_NOTIFICATION_COUNT,
+    { serverId },
+  );
+  return withoutBlockedEntries(serverId, res.myUnreadNotificationCount);
+}
+
+/** The side-rail bell badge: {@link fetchUnreadNotificationCount} of the workspace. */
 export function useUnreadNotificationCount(serverId: string | null | undefined) {
   const ws = serverId ?? undefined;
   return useQuery({
@@ -208,13 +220,7 @@ export function useUnreadNotificationCount(serverId: string | null | undefined) 
     enabled: Boolean(ws),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
-    queryFn: async () => {
-      const res = await graphqlClient.request<{ myUnreadNotificationCount: number }>(
-        MY_UNREAD_NOTIFICATION_COUNT,
-        { serverId: ws! },
-      );
-      return withoutBlockedEntries(ws!, res.myUnreadNotificationCount);
-    },
+    queryFn: () => fetchUnreadNotificationCount(ws!),
   });
 }
 

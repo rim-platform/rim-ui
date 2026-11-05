@@ -106,7 +106,12 @@ export async function renderNotificationDue(
 
   if (detectPlatform() === "desktop") {
     try {
-      await showMessageNotification(message, style, device.soundEnabled);
+      await showMessageNotification(message, style, device.soundEnabled, {
+        workspaceId: payload.workspaceId,
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+        threadId: content.threadId,
+      });
     } catch {
       // The notification plugin can be unavailable; the inbox still has the entry.
     }

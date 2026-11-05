@@ -29,6 +29,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   window after updating. Ctrl+Q quits, after a confirmation.
 - The desktop app can start when you sign in to the computer. It is off by default; turn it on in
   Settings > Desktop.
+- The desktop app's tray icon shows a dot while you have unread notifications and offers "Restart
+  to update" when an update is ready. Clicking a message notification opens that conversation.
 
 ### Changed
 

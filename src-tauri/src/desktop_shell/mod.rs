@@ -7,14 +7,16 @@ mod tray;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tauri::image::Image;
 use tauri::{AppHandle, CloseRequestApi, Emitter, Manager, Runtime, State, Window};
 
 use settings::{CloseAction, DesktopSettings};
 use start_at_login::StartAtLogin;
+use tray::TrayState;
 
 pub(crate) const MAIN_WINDOW: &str = "main";
 
@@ -26,6 +28,10 @@ const CLOSE_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// How long the check for a tray host may take, connecting to the bus included.
 const TRAY_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long after showing a hidden window focus is asked for again, on Linux.
+#[cfg(target_os = "linux")]
+const FOCUS_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 const SETTINGS_FILE: &str = "desktop-settings.json";
 
@@ -42,6 +48,13 @@ pub(crate) struct DesktopShell {
     close_requests: AtomicU64,
     last_acknowledged: AtomicU64,
     tray_failed: AtomicBool,
+    /// What the tray icon should show, as the page last reported it.
+    tray_state: Mutex<TrayState>,
+    /// What the built tray icon shows now.
+    tray_applied: Mutex<TrayState>,
+    tray_shown: AtomicBool,
+    /// The window icon with the dot, made on first need.
+    tray_dot_icon: OnceLock<Image<'static>>,
 }
 
 impl DesktopShell {
@@ -54,6 +67,10 @@ impl DesktopShell {
             close_requests: AtomicU64::new(0),
             last_acknowledged: AtomicU64::new(0),
             tray_failed: AtomicBool::new(false),
+            tray_state: Mutex::new(TrayState::default()),
+            tray_applied: Mutex::new(TrayState::default()),
+            tray_shown: AtomicBool::new(false),
+            tray_dot_icon: OnceLock::new(),
         }
     }
 
@@ -95,6 +112,35 @@ impl DesktopShell {
 
     fn mark_tray_failed(&self) {
         self.tray_failed.store(true, Ordering::SeqCst);
+    }
+
+    fn tray_state(&self) -> TrayState {
+        *self
+            .tray_state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn set_tray_state(&self, state: TrayState) {
+        *self
+            .tray_state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = state;
+    }
+
+    fn lock_tray_applied(&self) -> MutexGuard<'_, TrayState> {
+        self.tray_applied
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn tray_shown(&self) -> bool {
+        self.tray_shown.load(Ordering::SeqCst)
+    }
+
+    /// Records whether the icon shows. Returns whether that changed.
+    fn record_tray_shown(&self, shown: bool) -> bool {
+        self.tray_shown.swap(shown, Ordering::SeqCst) != shown
     }
 }
 
@@ -213,7 +259,21 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = shown {
         log::warn!("could not show the main window: {error}");
     }
-    tray::sync(app);
+    #[cfg(target_os = "linux")]
+    focus_after_showing(window);
+    tray::sync_after_showing_window(app);
+}
+
+/// Asks for focus again shortly after a show. On Linux the show is queued, and a request for focus
+/// does nothing while the window is still hidden.
+#[cfg(target_os = "linux")]
+fn focus_after_showing<R: Runtime>(window: tauri::WebviewWindow<R>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(FOCUS_RETRY_DELAY);
+        if let Err(error) = window.set_focus() {
+            log::warn!("could not focus the main window: {error}");
+        }
+    });
 }
 
 /// Whether a host for tray icons is on the session bus: a name owner of the status notifier
@@ -250,7 +310,7 @@ pub fn desktop_close_action(shell: State<'_, DesktopShell>) -> CloseAction {
     shell.close_action()
 }
 
-/// Saves the close setting and updates the tray icon to match.
+/// Saves the close setting and updates the tray icon to match. A failure is also logged.
 ///
 /// # Errors
 ///
@@ -261,7 +321,9 @@ pub fn desktop_set_close_action<R: Runtime>(
     shell: State<'_, DesktopShell>,
     action: CloseAction,
 ) -> Result<(), String> {
-    shell.set_close_action(action)?;
+    shell
+        .set_close_action(action)
+        .inspect_err(|error| log::warn!("could not save the close setting: {error}"))?;
     tray::sync(&app);
     Ok(())
 }
@@ -312,6 +374,31 @@ pub async fn desktop_tray_available<R: Runtime>(app: AppHandle<R>) -> bool {
         tokio::time::timeout(TRAY_CHECK_TIMEOUT, check).await,
         Ok(Ok(true))
     )
+}
+
+/// Stores what the tray icon should show, and applies it when the icon exists. An icon built later
+/// uses it.
+#[tauri::command]
+pub fn desktop_set_tray_state<R: Runtime>(
+    app: AppHandle<R>,
+    shell: State<'_, DesktopShell>,
+    dot: bool,
+    update_ready: bool,
+) {
+    shell.set_tray_state(TrayState { dot, update_ready });
+    tray::apply_state(&app);
+}
+
+/// Whether the tray icon shows now.
+#[tauri::command]
+pub fn desktop_tray_shown(shell: State<'_, DesktopShell>) -> bool {
+    shell.tray_shown()
+}
+
+/// Shows, restores and focuses the main window.
+#[tauri::command]
+pub fn desktop_show_window<R: Runtime>(app: AppHandle<R>) {
+    show_main_window(&app);
 }
 
 /// Whether the app starts when the person signs in to this computer. A failure is also logged.
@@ -393,6 +480,31 @@ mod tests {
         first.set_close_action(CloseAction::Tray).unwrap();
         assert_eq!(first.close_action(), CloseAction::Tray);
         assert_eq!(shell(&dir).close_action(), CloseAction::Tray);
+    }
+
+    #[test]
+    fn only_a_real_change_of_the_tray_icon_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell = shell(&dir);
+        assert!(!shell.tray_shown());
+        assert!(!shell.record_tray_shown(false));
+        assert!(shell.record_tray_shown(true));
+        assert!(shell.tray_shown());
+        assert!(!shell.record_tray_shown(true));
+        assert!(shell.record_tray_shown(false));
+    }
+
+    #[test]
+    fn the_tray_state_starts_empty_and_keeps_the_last_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell = shell(&dir);
+        assert_eq!(shell.tray_state(), TrayState::default());
+        let state = TrayState {
+            dot: true,
+            update_ready: true,
+        };
+        shell.set_tray_state(state);
+        assert_eq!(shell.tray_state(), state);
     }
 
     #[test]

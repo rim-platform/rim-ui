@@ -160,9 +160,12 @@ async function notifyKeywords(session: E2eeSession, workspaceId: string, note: M
       showBrowserNotification(content, style);
       continue;
     }
-    await showMessageNotification(content, style, device.soundEnabled).catch(
-      warn("keyword notification"),
-    );
+    await showMessageNotification(content, style, device.soundEnabled, {
+      workspaceId,
+      conversationId: note.conversationId,
+      messageId: message.messageId,
+      threadId: message.threadId,
+    }).catch(warn("keyword notification"));
   }
 }
 

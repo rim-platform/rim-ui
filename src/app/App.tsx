@@ -10,6 +10,7 @@ import { useRuntime } from "../core/runtime/RuntimeProvider";
 import { useNativeContextMenuPolicy } from "../shared/ui/contextMenu/nativeContextMenu";
 import { CloseDialogHost } from "../features/desktop-shell/components/CloseDialogHost";
 import { QuitConfirmHost } from "../features/desktop-shell/components/QuitConfirmHost";
+import { DesktopRuntimeHost } from "../features/desktop-shell/components/DesktopRuntimeHost";
 
 /**
  * Boot-time side-effects, rendered inside `AppProviders`.
@@ -38,6 +39,7 @@ export default function App() {
         <AppRouter />
         <CloseDialogHost />
         <QuitConfirmHost />
+        <DesktopRuntimeHost />
       </AppProviders>
     </AppErrorBoundary>
   );

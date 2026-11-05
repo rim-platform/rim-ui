@@ -18,6 +18,15 @@ export interface MessageNotificationContent {
   workspaceName?: string;
 }
 
+/** The message a notification opens when it is clicked. */
+export interface MessageNotificationTarget {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
+  /** The thread a reply is in, which opens with it; null for any other message. */
+  threadId: string | null;
+}
+
 const PREVIEW_LENGTH = 100;
 
 /**
@@ -72,11 +81,13 @@ function platformSound(): string | undefined {
  * never given; nothing is shown when it is refused.
  *
  * @param opts.sound - Whether to play the platform's notification sound.
+ * @param opts.extra - What a click on the notification gets back.
  */
 export async function showDesktopNotification(opts: {
   title: string;
   body: string;
   sound?: boolean;
+  extra?: Record<string, unknown>;
 }) {
   const granted = await isPermissionGranted();
   if (!granted) {
@@ -89,14 +100,24 @@ export async function showDesktopNotification(opts: {
     title: opts.title,
     body: opts.body,
     ...(sound ? { sound } : {}),
+    ...(opts.extra ? { extra: opts.extra } : {}),
   });
 }
 
-/** A desktop notification of a message, formatted with `style`. */
+/**
+ * A desktop notification of a message, formatted with `style`.
+ *
+ * @param target - The message a click on it opens; without one a click only shows the window.
+ */
 export async function showMessageNotification(
   content: MessageNotificationContent,
   style: NotificationStyle,
   sound?: boolean,
+  target?: MessageNotificationTarget,
 ) {
-  await showDesktopNotification({ ...formatMessageNotification(content, style), sound });
+  await showDesktopNotification({
+    ...formatMessageNotification(content, style),
+    sound,
+    ...(target ? { extra: { rimMessage: target } } : {}),
+  });
 }

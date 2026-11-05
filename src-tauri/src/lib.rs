@@ -263,6 +263,9 @@ pub fn run() {
             desktop_shell::desktop_close_choose,
             desktop_shell::desktop_quit,
             desktop_shell::desktop_tray_available,
+            desktop_shell::desktop_set_tray_state,
+            desktop_shell::desktop_tray_shown,
+            desktop_shell::desktop_show_window,
             desktop_shell::desktop_start_at_login,
             desktop_shell::desktop_set_start_at_login,
         ])

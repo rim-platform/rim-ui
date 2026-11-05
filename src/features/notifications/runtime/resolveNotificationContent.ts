@@ -39,6 +39,7 @@ const NOTIFICATION_DUE_CONTEXT = gql`
     message(serverId: $serverId, conversationId: $conversationId, messageId: $messageId)
       @include(if: $withMessage) {
       id
+      threadId
       authorId
       author {
         id
@@ -55,6 +56,7 @@ const NOTIFICATION_DUE_CONTEXT = gql`
 
 interface CachedMessage {
   id: string;
+  threadId?: string | null;
   authorId?: string;
   author?: { username: string; displayName?: string | null } | null;
   text?: string | null;
@@ -79,6 +81,8 @@ export interface NotificationContent {
   text: string;
   /** Whether the message is end-to-end encrypted. */
   encrypted: boolean;
+  /** The thread the message is a reply in; null for any other message, or one not loaded. */
+  threadId: string | null;
 }
 
 function itemsOf(data: unknown): unknown[] {
@@ -121,8 +125,8 @@ export function findCachedMessage(
 }
 
 /**
- * Title (the conversation label) and body parts (author, text) for a `NotificationDue`, the text
- * as plain text with its mentions named. Reads the caches first; only what they lack is fetched,
+ * Title (the conversation label), body parts (author, text) and thread for a `NotificationDue`, the
+ * text as plain text with its mentions named. Reads the caches first; only what they lack is fetched,
  * in one request.
  */
 export async function resolveNotificationContent(
@@ -198,5 +202,6 @@ export async function resolveNotificationContent(
     authorName,
     text: plainMessagePreview(text, (id) => mentionedMemberName(qc, workspaceId, id)),
     encrypted: Boolean(message?.encryption || message?.e2ee),
+    threadId: message?.threadId ?? null,
   };
 }

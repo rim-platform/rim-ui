@@ -44,6 +44,35 @@ describe("showMessageNotification", () => {
     });
   });
 
+  it("carries the target for a click, and nothing without one", async () => {
+    vi.mocked(isPermissionGranted).mockResolvedValue(true);
+    const content = {
+      channelName: "#general",
+      authorName: "Alice",
+      messageText: "Hello",
+      encrypted: false,
+    };
+    const target = {
+      workspaceId: "ws-1",
+      conversationId: "c-1",
+      messageId: "m-1",
+      threadId: "t-1",
+    };
+
+    await showMessageNotification(content, FULL, false, target);
+    expect(sendNotification).toHaveBeenLastCalledWith({
+      title: "#general",
+      body: "Alice: Hello",
+      extra: { rimMessage: target },
+    });
+
+    await showMessageNotification(content, FULL);
+    expect(sendNotification).toHaveBeenLastCalledWith({
+      title: "#general",
+      body: "Alice: Hello",
+    });
+  });
+
   it("requests permission when not granted", async () => {
     vi.mocked(isPermissionGranted).mockResolvedValue(false);
     vi.mocked(requestPermission).mockResolvedValue("granted");

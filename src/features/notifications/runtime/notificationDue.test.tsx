@@ -195,6 +195,14 @@ describe("NotificationDue rendering", () => {
         title: "#general",
         body: "Alice: hello @me",
         sound: "Ping",
+        extra: {
+          rimMessage: {
+            workspaceId: "ws-1",
+            conversationId: "c-general",
+            messageId: "m-1",
+            threadId: null,
+          },
+        },
       }),
     );
     // Everything was cached: no request for the message.
@@ -259,8 +267,88 @@ describe("NotificationDue rendering", () => {
       expect(sendNotification).toHaveBeenCalledWith({
         title: "#general",
         body: "New message from Alice",
+        extra: {
+          rimMessage: {
+            workspaceId: "ws-1",
+            conversationId: "c-general",
+            messageId: "m-1",
+            threadId: null,
+          },
+        },
       }),
     );
+  });
+
+  describe("the target a click opens", () => {
+    function lastTarget() {
+      const options = vi.mocked(sendNotification).mock.lastCall?.[0];
+      return typeof options === "object" ? options.extra?.rimMessage : undefined;
+    }
+
+    it("names the thread of a reply held in the cache", async () => {
+      const qc = setup({ seed: false });
+      qc.setQueryData(queryKeys.joinedChannels("ws-1"), {
+        items: [general],
+        pageInfo: { hasNext: false, hasPrev: false },
+      });
+      const messages = cachedMessages();
+      Object.assign(messages.pages[0].items[0], { threadId: "t-1" });
+      qc.setQueryData(queryKeys.messages("ws-1", "c-general"), messages);
+      emit(notificationDue());
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-1",
+        threadId: "t-1",
+      });
+    });
+
+    it("asks the server for the thread of a message it has to load", async () => {
+      requestMock.mockImplementation((document: string) =>
+        String(document).includes("NotificationDueContext")
+          ? Promise.resolve({
+              message: {
+                id: "m-9",
+                threadId: "t-2",
+                authorId: "u-bob",
+                author: { id: "u-bob", username: "bob", displayName: null },
+                text: "in the thread",
+              },
+            })
+          : new Promise(() => {}),
+      );
+      setup();
+      emit(notificationDue({ message_id: "m-9" }));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-9",
+        threadId: "t-2",
+      });
+      const context = requestMock.mock.calls.find(([document]) =>
+        String(document).includes("NotificationDueContext"),
+      );
+      expect(String(context?.[0])).toMatch(/\bthreadId\b/);
+    });
+
+    it("has no thread when the message could not be loaded", async () => {
+      requestMock.mockImplementation((document: string) =>
+        String(document).includes("NotificationDueContext")
+          ? Promise.reject(new Error("offline"))
+          : new Promise(() => {}),
+      );
+      setup();
+      emit(notificationDue({ message_id: "m-9" }));
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+      expect(lastTarget()).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "c-general",
+        messageId: "m-9",
+        threadId: null,
+      });
+    });
   });
 
   it("loads only what the caches lack, in one request", async () => {
@@ -280,11 +368,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ message_id: "m-9", reason: "keyword" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "#general",
-        body: "bob: deploy is done",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "#general",
+          body: "bob: deploy is done",
+          sound: "Ping",
+        }),
+      ),
     );
     const contextCalls = requestMock.mock.calls.filter(([doc]) =>
       String(doc).includes("NotificationDueContext"),
@@ -438,11 +528,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ conversation_id: "c-dm", message_id: "m-2", reason: "direct" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "Alice",
-        body: "Alice: hi",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Alice",
+          body: "Alice: hi",
+          sound: "Ping",
+        }),
+      ),
     );
   });
 
@@ -505,11 +597,13 @@ describe("NotificationDue rendering", () => {
       emit(notificationDue({ conversation_id: "c-group", message_id: "m-5", reason: "direct" }));
 
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "Alice and Carol",
-          body: "Alice: hello group",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Alice and Carol",
+            body: "Alice: hello group",
+            sound: "Ping",
+          }),
+        ),
       );
     });
 
@@ -520,11 +614,13 @@ describe("NotificationDue rendering", () => {
       emit(notificationDue({ conversation_id: "c-group", message_id: "m-5", reason: "direct" }));
 
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "Alice and Caz",
-          body: "Alice: hello group",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Alice and Caz",
+            body: "Alice: hello group",
+            sound: "Ping",
+          }),
+        ),
       );
     });
   });
@@ -553,11 +649,13 @@ describe("NotificationDue rendering", () => {
     emit(notificationDue({ message_id: "m-3" }));
 
     await waitFor(() =>
-      expect(sendNotification).toHaveBeenCalledWith({
-        title: "#general",
-        body: "Alice: Release 2.1 is out, @Priya Nair and @Priya Nair, see @member",
-        sound: "Ping",
-      }),
+      expect(sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "#general",
+          body: "Alice: Release 2.1 is out, @Priya Nair and @Priya Nair, see @member",
+          sound: "Ping",
+        }),
+      ),
     );
   });
 
@@ -602,6 +700,14 @@ describe("NotificationDue rendering", () => {
           title: "#general · Beta",
           body: "Alice: hello @me",
           sound: "Ping",
+          extra: {
+            rimMessage: {
+              workspaceId: "ws-2",
+              conversationId: "c-general",
+              messageId: "m-1",
+              threadId: null,
+            },
+          },
         }),
       );
     });
@@ -645,11 +751,13 @@ describe("NotificationDue rendering", () => {
       const qc = seedOther();
       announceNotificationDue(qc, due("ws-2", "n-1"));
       await waitFor(() =>
-        expect(sendNotification).toHaveBeenCalledWith({
-          title: "RIM",
-          body: "New message",
-          sound: "Ping",
-        }),
+        expect(sendNotification).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "RIM",
+            body: "New message",
+            sound: "Ping",
+          }),
+        ),
       );
     });
   });
