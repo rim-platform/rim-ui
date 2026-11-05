@@ -89,6 +89,10 @@ npm run tauri dev            # the desktop app with hot reload
 npm run tauri build          # installers for this platform
 ```
 
+One copy of the app runs per data directory: starting it again brings the running window forward,
+and that includes `npm run tauri dev` while an installed RIM is running. To run a second copy on
+Linux, give it its own directory: `XDG_DATA_HOME=/tmp/rim-second npm run tauri dev`.
+
 **Web.** The Vite dev server serves the web app on port 1420. A server reached from that origin
 needs `RIM_CORS_ALLOWED_ORIGIN=http://localhost:1420`.
 

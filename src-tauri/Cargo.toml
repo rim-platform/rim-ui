@@ -54,6 +54,8 @@ futures-util = "0.3"
 tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+# One running copy per data directory (src/single_instance.rs).
+tauri-plugin-single-instance = "2"
 # In-app updates and the relaunch that applies them. Kept on the same minor as their npm
 # packages and on lines that build against the tauri minor in use.
 tauri-plugin-updater = "~2.14.0"

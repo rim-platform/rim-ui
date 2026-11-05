@@ -12,6 +12,7 @@ mod offline_session;
 mod plugin_host;
 mod relay;
 mod secret_store;
+mod single_instance;
 mod updater;
 
 use std::sync::Arc;
@@ -22,13 +23,14 @@ use tauri::Manager;
 pub fn run() {
     let mut context = tauri::generate_context!();
     let (updater_config, updater_warning) = updater::UpdaterConfig::bundled();
+    // First, so a second copy exits before any other plugin or the setup below runs.
     let builder = updater::register(
-        tauri::Builder::default(),
+        tauri::Builder::default().plugin(single_instance::plugin(&context.config().identifier)),
         &mut context,
         updater_config.as_ref(),
     );
     builder
-        // First, so the other plugins' and the app's start-up messages reach the log file.
+        // Early, so the other plugins' and the app's start-up messages reach the log file.
         .plugin(logging::plugin())
         .manage(updater::UpdaterStatus::of(updater_config.as_ref()))
         .plugin(tauri_plugin_opener::init())
