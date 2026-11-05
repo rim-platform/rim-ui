@@ -216,6 +216,33 @@ describe("NotificationDue rendering", () => {
     expect(toast.info).not.toHaveBeenCalled();
   });
 
+  describe("the conversation that is open", () => {
+    function openGeneral() {
+      useShellStore.setState({
+        mainSurface: { kind: "conversation" },
+        selectedConversationId: "c-general",
+      } as Partial<ReturnType<typeof useShellStore.getState>>);
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    }
+
+    it("does not notify while the person is looking at it", async () => {
+      openGeneral();
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      setup();
+      emit(notificationDue());
+      await new Promise((r) => setTimeout(r, 20));
+      expect(sendNotification).not.toHaveBeenCalled();
+    });
+
+    it("notifies while the window is hidden, even if it still reports focus", async () => {
+      openGeneral();
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      setup();
+      emit(notificationDue());
+      await waitFor(() => expect(sendNotification).toHaveBeenCalled());
+    });
+  });
+
   it("respects the device toggles: disabled shows nothing", async () => {
     useNotificationSettingsStore.setState({ enabled: false });
     setup();
