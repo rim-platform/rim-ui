@@ -203,6 +203,51 @@ describe("BotsSettings", () => {
     );
   });
 
+  it("returns focus to the opener when Escape closes Tokens, Channels and Edit", async () => {
+    serve([bot(1)], {
+      "query BotTokens": () => ({ botTokens: [] }),
+      "query BotChannels": () => ({
+        channels: { next: null, pageInfo: { hasNext: false }, items: [] },
+      }),
+    });
+    const user = userEvent.setup();
+    renderSettings();
+    for (const name of ["Tokens", "Channels", "Edit"]) {
+      const opener = await screen.findByRole("button", { name });
+      await user.click(opener);
+      await screen.findByRole("dialog");
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(opener).toHaveFocus();
+    }
+  });
+
+  it("focuses the new bot's Edit after its token is shown and Done is pressed", async () => {
+    let bots = [bot(1)];
+    serve([], {
+      "query Bots(": () => ({ bots }),
+      "mutation CreateBot": () => {
+        bots = [bot(1), bot(2)];
+        return { createBot: { bot: bot(2), token: SECRET } };
+      },
+    });
+    renderSettings();
+    fireEvent.click(await enabledButton("New bot"));
+    const dialog = await screen.findByRole("dialog");
+    for (const [label, value] of [
+      [/^Name/, "Bot 2"],
+      [/Who runs/i, "Team 2"],
+      [/Where what/i, "Server 2"],
+    ] as const) {
+      fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
+    }
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add bot" }));
+    await screen.findByDisplayValue(SECRET);
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const row = (await screen.findByText("Bot 2")).closest("li")!;
+    await waitFor(() => expect(within(row).getByRole("button", { name: "Edit" })).toHaveFocus());
+  });
+
   it("asks before deactivating, in danger words, and sends nothing on Cancel", async () => {
     serve([bot(1)], { "mutation DeactivateBot": () => ({ deactivateBot: bot(1) }) });
     renderSettings();
@@ -566,6 +611,45 @@ describe("BotsSettings", () => {
           screen.getByRole("button", { name: "Revoke the webhook of releases" }),
         ).toHaveFocus(),
       );
+    });
+
+    it("focuses the new webhook's Revoke after its URL is shown and Done is pressed", async () => {
+      let hooks = [hook()];
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooks": () => ({ incomingWebhooks: hooks }),
+        "mutation CreateIncomingWebhook": () => {
+          hooks = [hook(), hook({ id: "h-9", conversationId: "c-free" })];
+          return { createIncomingWebhook: { webhook: hooks[1], token: "rimhook_TOKEN" } };
+        },
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      fireEvent.click(await enabledButton("New webhook"));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.change(within(dialog).getByLabelText("Channel"), { target: { value: "c-free" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create webhook" }));
+      await screen.findByDisplayValue(/rimhook_TOKEN/);
+      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Revoke the webhook of releases" }),
+        ).toHaveFocus(),
+      );
+    });
+
+    it("returns focus to New webhook when Escape closes its dialog", async () => {
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooks": () => ({ incomingWebhooks: [hook()] }),
+      });
+      const user = userEvent.setup();
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      const opener = await enabledButton("New webhook");
+      await user.click(opener);
+      await screen.findByRole("dialog");
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(opener).toHaveFocus();
     });
 
     it("moves focus to New webhook after the last webhook is revoked", async () => {

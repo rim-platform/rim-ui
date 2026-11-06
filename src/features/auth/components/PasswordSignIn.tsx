@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 
 import {
@@ -178,6 +178,7 @@ export function PasswordSignInForm({
   const [locked, setLocked] = useState(false);
   const [resetting, setResetting] = useState(false);
   const recovery = useRecoveryQuestion();
+  const errorId = useId();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -223,14 +224,15 @@ export function PasswordSignInForm({
             onChange={setPassword}
             disabled={busy}
             autoFocus
+            invalid={error !== null}
+            describedBy={error ? errorId : undefined}
           />
-          <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
           {error && (
             <div
               role="alert"
               className="space-y-2 rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
             >
-              <p>{error}</p>
+              <p id={errorId}>{error}</p>
               {locked && (
                 <Button
                   type="button"
@@ -243,6 +245,7 @@ export function PasswordSignInForm({
               )}
             </div>
           )}
+          <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" isLoading={busy} disabled={!password}>
               {submitLabel}

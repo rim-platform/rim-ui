@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { renderWithServerInfo, type FakeServerDetails } from "../../../test/serverInfo";
 
@@ -34,6 +34,11 @@ import { JoinForm } from "./JoinForm";
 import { InviteTokenType, RegistrationMode } from "../types";
 import { NO_KEYS_HERE_MESSAGE } from "./NoKeysHere";
 import { SELF_HOSTING_URL } from "./RegistrationFullNotice";
+
+function LoginProbe() {
+  const state = useLocation().state as { returnTo?: string } | null;
+  return <p data-testid="return-to">{state?.returnTo}</p>;
+}
 
 // An app that can create keys, unless a test says otherwise.
 beforeEach(() => {
@@ -337,5 +342,49 @@ describe("JoinForm — invite links by registration mode", () => {
     await signUp(user);
 
     expect(mockJoinMutate).not.toHaveBeenCalled();
+  });
+
+  describe("the way back to sign-in", () => {
+    it("links the plain sign-up to the sign-in page", () => {
+      renderVariant("CODE", null);
+      expect(screen.getByRole("link", { name: "I already have an account" })).toHaveAttribute(
+        "href",
+        "/login",
+      );
+    });
+
+    it("keeps an instance invite's own path as the way back", async () => {
+      const user = userEvent.setup();
+      renderWithServerInfo(
+        <MemoryRouter initialEntries={["/join/tok en"]}>
+          <Routes>
+            <Route
+              path="/join/:token"
+              element={
+                <JoinForm variant={InviteTokenType.INSTANCE} token="tok en" onSuccess={vi.fn()} />
+              }
+            />
+            <Route path="/login" element={<LoginProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await user.click(screen.getByRole("link", { name: "I already have an account" }));
+      expect(screen.getByTestId("return-to")).toHaveTextContent("/join/tok%20en");
+    });
+
+    it("leaves the workspace invite's own sign-in alone", () => {
+      renderWithServerInfo(
+        <MemoryRouter>
+          <JoinForm
+            variant={InviteTokenType.WORKSPACE}
+            token="t"
+            workspaceName="Halden"
+            onSuccess={vi.fn()}
+            signIn={<p>Sign in here</p>}
+          />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole("link", { name: "I already have an account" })).toBeNull();
+    });
   });
 });

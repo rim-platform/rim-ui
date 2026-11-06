@@ -28,6 +28,8 @@ export function PasswordInput({
   disabled,
   autoFocus,
   autoComplete = "current-password",
+  invalid,
+  describedBy,
 }: {
   label: string;
   value: string;
@@ -35,12 +37,17 @@ export function PasswordInput({
   disabled?: boolean;
   autoFocus?: boolean;
   autoComplete?: string;
+  /** Marks the field as refused, with `describedBy` naming the text that says why. */
+  invalid?: boolean;
+  describedBy?: string;
 }) {
   return (
     <label className={labelClass}>
       {label}
       <input
         type="password"
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         disabled={disabled}

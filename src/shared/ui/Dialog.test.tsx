@@ -1,3 +1,4 @@
+import { StrictMode, useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -241,6 +242,36 @@ describe("Dialog", () => {
         ),
       );
       rerender(withOpener(null));
+      expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+    });
+
+    it("goes back to what opened it on Escape in a strict-mode tree", async () => {
+      function Page() {
+        const [open, setOpen] = useState(false);
+        return (
+          <>
+            <button type="button" onClick={() => setOpen(true)}>
+              Opener
+            </button>
+            {open && (
+              <Dialog open title="T" onClose={() => setOpen(false)}>
+                <button type="button">Inside</button>
+              </Dialog>
+            )}
+          </>
+        );
+      }
+      const user = userEvent.setup();
+      render(
+        <StrictMode>
+          <Page />
+        </StrictMode>,
+      );
+      await user.click(screen.getByRole("button", { name: "Opener" }));
+      await nextFrame();
+      expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement);
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
     });
 

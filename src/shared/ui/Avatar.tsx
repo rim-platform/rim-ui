@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useServerMediaUrl } from "../media/serverMedia";
 import { cn } from "./cn";
+import { firstLetter } from "../utils/initials";
 
 // Background colors of initials avatars, picked by a hash of the user id. Plain
 // Tailwind classes: the rim-* design tokens define no avatar palette.
@@ -63,7 +64,7 @@ export interface AvatarProps {
 
 export function Avatar({ url, name, userId, size = "md", presenceStatus, className }: AvatarProps) {
   const sizeClass = SIZE_MAP[size];
-  const initial = name.charAt(0).toUpperCase() || "?";
+  const initial = firstLetter(name);
   const src = useServerMediaUrl(url);
   // The image that failed to load, which falls back to the initial until the URL changes.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);

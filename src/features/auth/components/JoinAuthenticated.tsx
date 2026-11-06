@@ -192,6 +192,16 @@ export function JoinAuthenticated({
                         : errorSentence(joinServer.error, "Could not join the workspace.")}
                     </p>
                   )}
+                  {banned && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => navigate("/")}
+                    >
+                      Go to RIM
+                    </Button>
+                  )}
                   <button
                     type="button"
                     onClick={handleJoin}

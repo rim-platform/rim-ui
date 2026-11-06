@@ -36,10 +36,12 @@
  * - `invitedBy`, `ownerName` — who invited and who owns the workspace, from its preview.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
  *
- * A workspace invite link can pass `signIn`, shown above the signup.
+ * A workspace invite link can pass `signIn`, shown above the signup. Without it, a link under the
+ * form leads to the sign-in page, which comes back to the invite link when there is one.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
@@ -285,6 +287,18 @@ export function JoinForm({
             </div>
           )}
         </div>
+
+        {!created && !signIn && (
+          <p className="text-center text-sm text-rim-text-muted">
+            <Link
+              to="/login"
+              state={token ? { returnTo: `/join/${encodeURIComponent(token)}` } : undefined}
+              className="font-medium text-rim-accent hover:underline"
+            >
+              I already have an account
+            </Link>
+          </p>
+        )}
 
         <AbuseContact />
 
