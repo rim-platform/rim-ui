@@ -264,15 +264,16 @@ confirming that one change:
   The app comes forward with a dialog showing the program's name, the workspace, the channel and the
   whole text with its length, with invisible and direction-changing characters shown by name. The
   text is what you are confirming, and the program may have read something meant to steer it, so
-  read it. **Send** stays disabled for the first second, so a click or key press meant for something else
+  read it. What you discard never leaves this device: the text goes to the server only after you confirm, and
+  the app then answers the server's own confirmation for you. **Send** stays disabled for the first second, so a click or key press meant for something else
   can't answer it. Cancel, Close and Escape discard the message, and if you don't answer it expires
   after 60 seconds. The program hears which of those happened. After a discard or an expiry, that
-  program's next request within 10 seconds is refused. While any confirmation is open, a program's
+  program's next request within 10 seconds is refused. While any dialog is open, a program's
   request is refused and can be retried; your own commands replace a program's dialog, which ends as
   discarded. Locking the account or turning the switch off also ends it as discarded. The message
   goes out under your name, and the others in the channel are not told a program wrote it. The audit
   log records that an agent started it, which an Owner or Moderator can read. The server's AI
-  command switch applies: on a server that has it off, sending is refused.
+  command switch applies: on a server that has it off, sending is refused before you're asked.
 - **The record.** **What it was given** lists what RIM handed to that program, what it asked to send
   and what it refused: when, which tool, which channel, how many messages and their ids, and how a
   request to send ended, with the message's id if it went out. **What agents were given** lists it

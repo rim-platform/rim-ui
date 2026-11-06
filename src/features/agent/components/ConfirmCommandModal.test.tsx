@@ -860,7 +860,7 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
   it("says how long the text is", () => {
     open("one\ntwo");
     expect(screen.getByTestId("outside-agent-text-size")).toHaveTextContent(
-      "2 lines, 7 characters.",
+      "2 lines, 7 characters",
     );
   });
 

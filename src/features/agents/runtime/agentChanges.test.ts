@@ -137,6 +137,7 @@ describe("createAgentChanges", () => {
       connected: vi.fn(() => true),
       channelName: vi.fn(() => Promise.resolve("general")),
       busy: vi.fn(() => false),
+      commandsOff: vi.fn(() => Promise.resolve(false)),
       post: vi.fn(() => Promise.resolve(posted())),
       confirm: vi.fn(() => Promise.resolve("approved" as const)),
       record: vi.fn((entry: RecordEntry) => {
@@ -157,11 +158,7 @@ describe("createAgentChanges", () => {
 
   describe("what it refuses as invalid", () => {
     it.each([
-      ["no workspace", { channelId: "c1", text: TEXT }],
-      ["no channel", { workspaceId: "w1", text: TEXT }],
       ["no text", { workspaceId: "w1", channelId: "c1" }],
-      ["a workspace id that is no id", { workspaceId: "w 1", channelId: "c1", text: TEXT }],
-      ["a channel id that is no id", { workspaceId: "w1", channelId: {}, text: TEXT }],
       ["blank text", { workspaceId: "w1", channelId: "c1", text: " \n\t " }],
       ["empty text", { workspaceId: "w1", channelId: "c1", text: "" }],
       ["text that is no string", { workspaceId: "w1", channelId: "c1", text: 7 }],
@@ -190,6 +187,10 @@ describe("createAgentChanges", () => {
       ["a channel it has no grant for", BY_ID, { workspaceId: "w1", channelId: "c2" }],
       ["a workspace it has no grant in", ALL, { workspaceId: "w2", channelId: "c1" }],
       ["an unknown id", ALL, { workspaceId: "w1", channelId: "unknown" }],
+      ["no workspace", ALL, { channelId: "c1" }],
+      ["no channel", ALL, { workspaceId: "w1" }],
+      ["a workspace id that is no id", ALL, { workspaceId: "w 1", channelId: "c1" }],
+      ["a channel id that is no id", ALL, { workspaceId: "w1", channelId: "../../etc/passwd" }],
       ["an encrypted channel", ALL, { workspaceId: "w1", channelId: "secret" }],
       ["a direct message", ALL, { workspaceId: "w1", channelId: "dm" }],
       ["a group", ALL, { workspaceId: "w1", channelId: "group" }],
@@ -302,7 +303,7 @@ describe("createAgentChanges", () => {
         isError: false,
         payload: { outcome: "sent", channelId: "c1", messageId: "m1" },
       });
-      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.confirm).toHaveBeenCalledOnce();
       expect(changesRecorded()).toEqual(["asked", "sent"]);
     });
 
@@ -317,7 +318,7 @@ describe("createAgentChanges", () => {
         payload: { refusal: "DENIED", retrySafe: false },
       });
       expect((outcome.payload as { message: string }).message).toContain("Denied by policy");
-      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.confirm).toHaveBeenCalledOnce();
       expect(changesRecorded()).toEqual(["asked", "refused"]);
       expect(entries[1].refused).toBe(true);
     });
@@ -350,7 +351,7 @@ describe("createAgentChanges", () => {
       deps.post.mockReset();
       deps.post.mockResolvedValue(held(null));
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(FAILED);
-      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.confirm).toHaveBeenCalledOnce();
       expect(changesRecorded()).toEqual(["asked", "refused"]);
     });
 
@@ -358,7 +359,7 @@ describe("createAgentChanges", () => {
       deps.post.mockReset();
       deps.post.mockResolvedValue({ ...posted(), status: CommandResultStatus.ERROR });
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(FAILED);
-      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.confirm).toHaveBeenCalledOnce();
       expect(changesRecorded()).toEqual(["asked", "refused"]);
     });
   });
@@ -371,9 +372,8 @@ describe("createAgentChanges", () => {
         workspaceName: "Acme",
         channelName: "general",
         text: TEXT,
-        expiresAt: CHALLENGE.expiresAt,
-        token: "tok",
-        argsHash: "hash",
+        expiresAt: new Date(clock + 60_000).toISOString(),
+        token: expect.any(String),
       });
     });
 
@@ -391,14 +391,37 @@ describe("createAgentChanges", () => {
       expect(entries).toEqual([]);
     });
 
+    it("refuses without asking when the server has agents' commands off", async () => {
+      deps.commandsOff.mockResolvedValueOnce(true);
+      const outcome = await changes.sendMessage(ALL, ARGS);
+      expect(outcome.payload).toMatchObject({ refusal: "DENIED", retrySafe: false });
+      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.post).not.toHaveBeenCalled();
+      expect(changesRecorded()).toEqual(["refused"]);
+    });
+
+    it("asks anyway when it can't tell, since the server still enforces the switch", async () => {
+      deps.commandsOff.mockRejectedValueOnce(new Error("down"));
+      await changes.sendMessage(ALL, ARGS);
+      expect(deps.confirm).toHaveBeenCalledOnce();
+    });
+
+    it("sends nothing to the server before the person confirms", async () => {
+      deps.confirm.mockImplementationOnce(() => {
+        expect(deps.post).not.toHaveBeenCalled();
+        return Promise.resolve("approved");
+      });
+      await changes.sendMessage(ALL, ARGS);
+      expect(deps.post).toHaveBeenCalledTimes(2);
+    });
+
     it("answers busy with no cooldown and no proof sent", async () => {
       deps.confirm.mockResolvedValueOnce("busy");
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(BUSY);
       expect(changesRecorded()).toEqual(["asked", "busy"]);
       expect(entries[1].refused).toBe(false);
-      expect(proofs()).toEqual([undefined]);
+      expect(deps.post).not.toHaveBeenCalled();
 
-      deps.post.mockResolvedValueOnce(held());
       await changes.sendMessage(ALL, ARGS);
       expect(deps.confirm).toHaveBeenCalledTimes(2);
     });
@@ -407,7 +430,7 @@ describe("createAgentChanges", () => {
       deps.confirm.mockResolvedValueOnce("discarded");
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(DISCARDED);
       expect(changesRecorded()).toEqual(["asked", "discarded"]);
-      expect(proofs()).toEqual([undefined]);
+      expect(deps.post).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -415,12 +438,12 @@ describe("createAgentChanges", () => {
       ["after", 1],
     ])("answers expired %s the expiry, and sends nothing", async (_when, late) => {
       deps.confirm.mockImplementationOnce(() => {
-        clock = EXPIRES_AT + late;
+        clock += 60_000 + late;
         return Promise.resolve("discarded");
       });
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(EXPIRED);
       expect(changesRecorded()).toEqual(["asked", "expired"]);
-      expect(proofs()).toEqual([undefined]);
+      expect(deps.post).not.toHaveBeenCalled();
     });
 
     it("gives a different answer for a discard and for an expiry just past it", async () => {
@@ -474,7 +497,7 @@ describe("createAgentChanges", () => {
     it("does not post when the agent was disconnected during the dialog", async () => {
       deps.connected.mockReturnValueOnce(true).mockReturnValue(false);
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(DENIED);
-      expect(proofs()).toEqual([undefined]);
+      expect(deps.post).not.toHaveBeenCalled();
       expect(changesRecorded()).toEqual(["asked", "refused"]);
       expect(entries[1].refused).toBe(true);
     });
