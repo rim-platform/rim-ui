@@ -16,6 +16,7 @@ import {
   PasswordInput,
 } from "../../auth/components/PasswordFields";
 import { PasswordSignInForm } from "../../auth/components/PasswordSignIn";
+import { WAY_IN_PROPS } from "../../auth/components/wayIn";
 import { WayInRow } from "../../auth/components/WayInRow";
 import {
   EMPTY_NEW_PASSWORD,
@@ -76,12 +77,20 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
   const qc = useQueryClient();
   const endpoint = getGraphqlEndpoint();
   const accounts = useDeviceKeyAccounts();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The account whose password form is open; `undefined` until the person acts, when the only
+  // account on the device, if there is just one, is open already.
+  const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const [revokedId, setRevokedId] = useState<string | null>(null);
   // Said after keys the server never saw were removed, when their account is gone from the list.
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!capabilities.deviceKeys || (!accounts.data?.length && !notice)) return null;
+  const openId =
+    chosenId === undefined
+      ? accounts.data?.length === 1
+        ? accounts.data[0].principalId
+        : null
+      : chosenId;
 
   /**
    * The failures this list shows itself: keys no longer on this device, keys the server never
@@ -149,6 +158,9 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
               <p className="text-xs text-rim-text-muted">
                 This {inBrowser ? "browser" : "device"} holds the key for this account
               </p>
+              {!account.username && (
+                <p className="font-mono text-[11px] text-rim-text-faint">{idLabel(account)}</p>
+              )}
             </div>
           </div>
           {openId === account.principalId ? (
@@ -162,6 +174,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
           ) : (
             <Button
               className="w-full"
+              aria-label={signInLabel(account)}
               disabled={openId !== null}
               onClick={() => {
                 setOpenId(account.principalId);
@@ -169,10 +182,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
                 setNotice(null);
               }}
             >
-              {signInLabel(account)}
-              {!account.username && (
-                <span className="block font-mono text-[11px] opacity-75">{idLabel(account)}</span>
-              )}
+              Sign in
             </Button>
           )}
           {revokedId === account.principalId && (
@@ -207,7 +217,9 @@ export function RecoverAccount({ onSuccess }: { onSuccess: (userId: string) => v
   const [open, setOpen] = useState(false);
   if (!capabilities.identityKeys) return null;
   return open ? (
-    <RecoverAccountForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    <div {...WAY_IN_PROPS}>
+      <RecoverAccountForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    </div>
   ) : (
     <WayInRow
       title="Recover an account"

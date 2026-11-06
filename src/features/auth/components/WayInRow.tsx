@@ -3,12 +3,10 @@ import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { cn } from "../../../shared/ui/cn";
+import { WAY_IN_PROPS } from "./wayIn";
 
 const ROW =
   "flex w-full items-center gap-3 rounded-[10px] border border-rim-line bg-rim-panel px-3.5 py-3 text-left transition hover:border-rim-line-strong hover:bg-rim-panel-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rim-accent";
-
-/** The attribute the sign-in page looks for to tell whether any row renders. */
-const WAY_IN_ATTRIBUTE = "data-way-in";
 
 interface WayInRowProps {
   /** The way's name, which is also the row's accessible name. */
@@ -45,7 +43,7 @@ export function WayInRow({ title, hint, icon, onClick, to, className }: WayInRow
     </>
   );
   const shared = {
-    [WAY_IN_ATTRIBUTE]: "",
+    ...WAY_IN_PROPS,
     "aria-labelledby": `${id}-t`,
     "aria-describedby": `${id}-h`,
     className: cn(ROW, className),

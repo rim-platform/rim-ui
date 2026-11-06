@@ -5,6 +5,7 @@
  * of the endpoint; it makes no request of its own.
  */
 
+import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
 import { endpointHost, getGraphqlEndpoint } from "../../../core/graphql/config";
 import { useHealthCheck } from "../../system/api/useHealthCheck";
@@ -24,6 +25,8 @@ export function HealthIndicator() {
   const { isSuccess, isError } = useHealthCheck();
   const blocked = useEdgeStore((s) => s.blocked);
   const address = serverAddress();
+  // Only the desktop app can move to another server.
+  const { platform } = useRuntime();
 
   if (isError && !blocked && !isSuccess) {
     return (
@@ -34,7 +37,9 @@ export function HealthIndicator() {
         <strong className="font-semibold">
           {address ? `Can't reach ${address}.` : "Can't reach the server."}
         </strong>{" "}
-        Check your connection, or use another server.
+        {platform === "desktop"
+          ? "Check your connection, or use another server."
+          : "Check your connection."}
       </p>
     );
   }

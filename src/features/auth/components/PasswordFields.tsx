@@ -98,6 +98,7 @@ export function NewPasswordFields({
           >
             <input
               type="radio"
+              className="accent-rim-accent-strong"
               name={name}
               checked={value.kind === kind}
               onChange={() => choose(kind)}

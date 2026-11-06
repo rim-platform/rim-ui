@@ -7,6 +7,9 @@ import { HealthIndicator } from "./HealthIndicator";
 const health = vi.hoisted(() => ({ value: { isSuccess: false, isError: false } }));
 vi.mock("../../system/api/useHealthCheck", () => ({ useHealthCheck: () => health.value }));
 
+const runtime = vi.hoisted(() => ({ platform: "desktop" }));
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({ useRuntime: () => runtime }));
+
 const endpoint = vi.hoisted(() => ({ value: "https://rim.example.org/api" }));
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => endpoint.value,
@@ -34,6 +37,19 @@ describe("HealthIndicator", () => {
     expect(bar).toHaveTextContent(
       "Can't reach rim.example.org. Check your connection, or use another server.",
     );
+  });
+
+  it("points to another server only where the app can move to one", () => {
+    health.value = { isSuccess: false, isError: true };
+    runtime.platform = "web";
+    try {
+      render(<HealthIndicator />);
+      const bar = screen.getByRole("status");
+      expect(bar).toHaveTextContent("Can't reach rim.example.org. Check your connection.");
+      expect(bar).not.toHaveTextContent("another server");
+    } finally {
+      runtime.platform = "desktop";
+    }
   });
 
   it("says only that the server is reachable where no address is known", () => {

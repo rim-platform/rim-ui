@@ -8,6 +8,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { PasswordSignInForm } from "../../auth/components/PasswordSignIn";
+import { WAY_IN_PROPS } from "../../auth/components/wayIn";
 import { WayInRow } from "../../auth/components/WayInRow";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
 import { defaultDeviceName, SignInCancelled } from "../api/keyIdentity";
@@ -28,7 +29,10 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
   const inBrowser = platform === "web";
   if (deviceKeyStore === "unsupported") {
     return (
-      <p className="rounded-[10px] border border-rim-line bg-rim-panel px-3 py-2.5 text-xs text-rim-text-muted">
+      <p
+        {...WAY_IN_PROPS}
+        className="rounded-[10px] border border-rim-line bg-rim-panel px-3 py-2.5 text-xs text-rim-text-muted"
+      >
         This browser cannot be linked to your account: it has no Ed25519 keys in WebCrypto, or no
         IndexedDB to keep one in (a private window may block it). Use a current browser, or the
         desktop app.
@@ -37,11 +41,13 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
   }
   if (!capabilities.deviceKeys) return null;
   return open ? (
-    <LinkThisDeviceForm
-      inBrowser={inBrowser}
-      onSuccess={onSuccess}
-      onCancel={() => setOpen(false)}
-    />
+    <div {...WAY_IN_PROPS}>
+      <LinkThisDeviceForm
+        inBrowser={inBrowser}
+        onSuccess={onSuccess}
+        onCancel={() => setOpen(false)}
+      />
+    </div>
   ) : (
     <WayInRow
       title="Link this device"

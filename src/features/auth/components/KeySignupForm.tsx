@@ -177,7 +177,7 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
         aria-label="Working"
         className="h-1.5 overflow-hidden rounded-full bg-rim-line"
       >
-        <div className="h-full w-2/5 animate-pulse rounded-full bg-rim-accent" />
+        <div className="h-full w-2/5 animate-pulse rounded-full motion-reduce:animate-none bg-rim-accent" />
       </div>
       <p>
         This computer is doing a short piece of work that keeps out mass sign-ups. An invite takes

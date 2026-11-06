@@ -125,6 +125,12 @@ describe("LinkThisDevice", () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
+  it("keeps its open form marked as one of the other ways in, so the sign-in page keeps it", async () => {
+    wrap(<LinkThisDevice onSuccess={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
+    expect(screen.getByLabelText(/link code/i).closest("[data-way-in]")).not.toBeNull();
+  });
+
   it("explains a code that was used up", async () => {
     api.linkNewDevice.mockRejectedValue(new DeviceLinkError("codeUnusable"));
     wrap(<LinkThisDevice onSuccess={vi.fn()} />);
