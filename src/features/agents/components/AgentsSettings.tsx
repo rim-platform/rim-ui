@@ -17,6 +17,7 @@ import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentGrantsDialog } from "./AgentGrantsDialog";
 import { AgentPluginsDialog } from "./AgentPluginsDialog";
 import { AgentRecordDialog } from "./AgentRecordDialog";
+import { AgentRunsDialog } from "./AgentRunsDialog";
 
 const SWITCH_LABEL = "Let agents on this computer connect";
 
@@ -31,6 +32,8 @@ export function AgentsSettings() {
   const [choosingPlugins, setChoosingPlugins] = useState<ConnectedAgent | null>(null);
   const [viewing, setViewing] = useState<ConnectedAgent | null>(null);
   const [viewingAll, setViewingAll] = useState(false);
+  const [runsOf, setRunsOf] = useState<ConnectedAgent | null>(null);
+  const [allRuns, setAllRuns] = useState(false);
   const hasRecord = useAgentRecordStore((s) => s.entries.length > 0);
   const saving = useRef(false);
 
@@ -160,6 +163,15 @@ export function AgentsSettings() {
                     type="button"
                     variant="secondary"
                     size="sm"
+                    aria-label={`Runs of ${agent.name}`}
+                    onClick={() => setRunsOf(agent)}
+                  >
+                    Its runs
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
                     aria-label={`Disconnect ${agent.name}`}
                     onClick={() => setDisconnecting(agent)}
                   >
@@ -173,9 +185,12 @@ export function AgentsSettings() {
       )}
 
       {hasRecord && (
-        <div>
+        <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={() => setViewingAll(true)}>
             What agents were given
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setAllRuns(true)}>
+            All runs
           </Button>
         </div>
       )}
@@ -186,6 +201,8 @@ export function AgentsSettings() {
       )}
       {viewing && <AgentRecordDialog agent={viewing} onClose={() => setViewing(null)} />}
       {viewingAll && <AgentRecordDialog agent={null} onClose={() => setViewingAll(false)} />}
+      {runsOf && <AgentRunsDialog agent={runsOf} onClose={() => setRunsOf(null)} />}
+      {allRuns && <AgentRunsDialog agent={null} onClose={() => setAllRuns(false)} />}
 
       {disconnecting && (
         <ConfirmActionDialog

@@ -32,6 +32,7 @@ const LIST_AUDIT_LOG = gql`
         errorKind
         capabilityCheckOutcome
         confirmationOutcome
+        runId
         createdAt
       }
       nextCursor
@@ -56,6 +57,8 @@ export interface ListAuditLogArgs {
   /** The rows to read; `null` while the scope is still unknown, which holds the request. */
   scope: AuditLogScope | null;
   typedVerbFilter?: TypedVerbGql | null;
+  /** Only the rows of this agent run. */
+  runId?: string | null;
   after?: string | null;
   limit?: number;
 }
@@ -63,6 +66,7 @@ export interface ListAuditLogArgs {
 export function useListAuditLog({
   scope,
   typedVerbFilter = null,
+  runId = null,
   after = null,
   limit = 50,
 }: ListAuditLogArgs) {
@@ -72,6 +76,7 @@ export function useListAuditLog({
     ...(serverId != null && { serverId }),
     ...(actorUserId != null && { actorUserId }),
     ...(typedVerbFilter != null && { typedVerb: typedVerbFilter }),
+    ...(runId != null && { runId }),
   };
   const pagination = after != null ? { after, limit } : { limit };
 
@@ -81,6 +86,7 @@ export function useListAuditLog({
       actorUserId ?? undefined,
       typedVerbFilter ?? undefined,
       after ?? undefined,
+      runId ?? undefined,
     ),
     enabled: serverId != null || actorUserId != null,
     staleTime: 15_000,

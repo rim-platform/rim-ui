@@ -68,7 +68,9 @@ const POSTED = {
 };
 
 function inputs() {
-  return mocks.request.mock.calls.map(([, variables]) => (variables as { input: object }).input);
+  return mocks.request.mock.calls.map(
+    ([, variables]) => (variables as { input: Record<string, unknown> }).input,
+  );
 }
 
 /** Waits until the dialog's request is open. */
@@ -112,6 +114,7 @@ describe("appAgentChanges", () => {
         args: { server_id: "w1", conversation_id: "c1", text: "hello" },
         commandContext: { workspaceId: "w1", conversationId: "c1" },
         initiator: CommandInitiator.AGENT,
+        runId: expect.stringMatching(/^r_[A-Za-z0-9_-]{16}$/),
       },
     ]);
     expect(mocks.request.mock.calls[0][0]).toBe("the mutation");
@@ -147,8 +150,13 @@ describe("appAgentChanges", () => {
       args: { server_id: "w1", conversation_id: "c1", text: "hello" },
       commandContext: { workspaceId: "w1", conversationId: "c1" },
       initiator: CommandInitiator.AGENT,
+      runId: inputs()[0].runId,
       confirmation: { inBandToken: { token: "tok", argsHash: "hash" } },
     });
+    expect(inputs()[0].runId).toMatch(/^r_[A-Za-z0-9_-]{16}$/);
+    expect(
+      useAgentRecordStore.getState().entries.every((entry) => entry.runId === inputs()[0].runId),
+    ).toBe(true);
     expect(useAgentRecordStore.getState().entries.map((entry) => entry.change)).toEqual([
       "asked",
       "sent",

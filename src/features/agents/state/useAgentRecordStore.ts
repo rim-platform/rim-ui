@@ -36,6 +36,8 @@ export interface RecordEntry {
   change?: "asked" | "sent" | "proposed" | "done" | "discarded" | "expired" | "busy" | "refused";
   /** The plugin command it was about. An id the call gave in the wrong shape is left empty. */
   plugin?: { pluginId: string; commandId: string };
+  /** The run it belongs to: its agent's calls with no long gap between them. */
+  runId?: string;
 }
 
 interface AgentRecordState {

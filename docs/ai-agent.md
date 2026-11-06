@@ -302,6 +302,14 @@ confirming that one change, unless a plugin says a command you approved only rea
   refused calls. **Clear the whole record** clears it for every program and leaves one line saying
   you did. It is a record of what RIM handed over, not of what
   the program did with it.
+- **Runs.** **Its runs** (or **All runs**) groups the record into runs: one program's calls with no
+  more than 15 minutes between them. A run is a grouping by time, not a task: RIM doesn't see where a
+  program's task starts or ends, nor what it did between two calls, which model it used, or where
+  the content went. A run opens to its steps, what the workspace host recorded for it, where the
+  content goes and what the program may read now. The host's lines are your own audit entries
+  carrying the run's identifier (the app sends it with the changes of a run); those who can read
+  that workspace's log can read them too. Runs are shown on this device only, and nothing in
+  them stops a program: **Disconnect** and the grants do.
 
 The [contract for what agents are given](https://github.com/rim-platform/rim-server/blob/master/docs/specs/agent-data-flow-v1.md)
 is rim-server's.

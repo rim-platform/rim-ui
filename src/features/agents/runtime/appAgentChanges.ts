@@ -17,7 +17,7 @@ import { fetchConversation } from "../../conversations/api/useConversation";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
 import { createAgentChanges, createCooldown, type AgentConfirmation } from "./agentChanges";
-import { connected, lookup, record, workspaces } from "./appAgentReads";
+import { connected, lookup, record, runId, workspaces } from "./appAgentReads";
 
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
@@ -107,7 +107,8 @@ export const appAgentChanges = createAgentChanges({
   connected,
   channelName,
   busy: confirmationOpen,
-  post: async ({ workspaceId, channelId, text, proof }) => {
+  runId,
+  post: async ({ workspaceId, channelId, text, runId: run, proof }) => {
     const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
       EXECUTE_COMMAND_MUTATION,
       {
@@ -116,6 +117,7 @@ export const appAgentChanges = createAgentChanges({
           args: { server_id: workspaceId, conversation_id: channelId, text },
           commandContext: { workspaceId, conversationId: channelId },
           initiator: CommandInitiator.AGENT,
+          runId: run,
           ...(proof ? { confirmation: proof } : {}),
         },
       },

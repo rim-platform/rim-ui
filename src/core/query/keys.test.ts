@@ -21,17 +21,37 @@ describe("queryKeys", () => {
       "user-1",
       "WRITE",
       "cursor-1",
+      null,
     ]);
   });
 
   it("listAuditLog keeps a missing scope part as null so scopes never collide", () => {
-    expect(queryKeys.listAuditLog("ws-1")).toEqual(["listAuditLog", "ws-1", null, null, null]);
+    expect(queryKeys.listAuditLog("ws-1")).toEqual([
+      "listAuditLog",
+      "ws-1",
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(queryKeys.listAuditLog(undefined, "user-1")).toEqual([
       "listAuditLog",
       null,
       "user-1",
       null,
       null,
+      null,
+    ]);
+  });
+
+  it("listAuditLog keys the run", () => {
+    expect(queryKeys.listAuditLog("ws-1", "user-1", undefined, undefined, "r_1")).toEqual([
+      "listAuditLog",
+      "ws-1",
+      "user-1",
+      null,
+      null,
+      "r_1",
     ]);
   });
 

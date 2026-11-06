@@ -24,6 +24,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Settings > Agents shows an agent's runs: what it was handed and asked to do in a stretch of
+  calls, with what the server recorded (`ExecuteCommandInput.runId`).
 - Plugin commands can be approved per connected agent, one by one. A new optional manifest field
   `read_only` marks commands that run for it without asking; every other approved command asks
   first.

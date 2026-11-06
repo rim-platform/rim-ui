@@ -16,6 +16,7 @@ import { useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordSt
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { createAgentReads, type AgentChannel } from "./agentReads";
 import type { GrantChannel } from "./grants";
+import { newRunId, runIdFor } from "./runs";
 
 /**
  * A conversation as the grant check sees it: encrypted when this device pinned it so or the
@@ -70,9 +71,16 @@ export function connected(agentId: string): boolean {
   return useConnectedAgentsStore.getState().agents.some((agent) => agent.id === agentId);
 }
 
-/** Adds an entry to the record and writes it out. */
+/** The run a call from this agent made now belongs to. */
+export function runId(agentId: string): string {
+  return runIdFor(useAgentRecordStore.getState().entries, agentId, Date.now(), newRunId);
+}
+
+/** Adds an entry to the record, in its agent's current run, and writes it out. */
 export async function record(entry: RecordEntry): Promise<void> {
-  useAgentRecordStore.getState().add(entry);
+  useAgentRecordStore
+    .getState()
+    .add(entry.runId ? entry : { ...entry, runId: runId(entry.agentId) });
   await flushSealedStorage();
 }
 

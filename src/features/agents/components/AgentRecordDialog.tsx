@@ -17,7 +17,7 @@ const SHOWN = 200;
 const LIST_PLUGIN_COMMANDS = "rim_list_plugin_commands";
 
 /** The channel's name as this app last saw it, or its id. */
-function channelLabel(qc: QueryClient, workspaceId: string, channelId: string): string {
+export function channelLabel(qc: QueryClient, workspaceId: string, channelId: string): string {
   const known =
     qc.getQueryData<ConversationSummary>(queryKeys.conversation(workspaceId, channelId)) ??
     findCachedConversation(qc, workspaceId, channelId);
@@ -36,7 +36,7 @@ function target(entry: RecordEntry, qc: QueryClient, workspaceName: (id: string)
 }
 
 /** What a line of the record says about a change. */
-const CHANGE_LABELS: Record<NonNullable<RecordEntry["change"]>, string> = {
+export const CHANGE_LABELS: Record<NonNullable<RecordEntry["change"]>, string> = {
   asked: "Asked to send",
   sent: "Sent",
   proposed: "Suggested",

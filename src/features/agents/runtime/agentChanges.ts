@@ -45,11 +45,15 @@ export interface AgentChangesDeps {
   connected: (agentId: string) => boolean;
   /** The channel's name as RIM knows it. */
   channelName: (workspaceId: string, channelId: string) => Promise<string>;
+  /** The run a call from this agent made now belongs to. */
+  runId: (agentId: string) => string;
   /** `executeCommand` for `chat.post_message`, initiator AGENT, naming only the ids it was given. */
   post: (input: {
     workspaceId: string;
     channelId: string;
     text: string;
+    /** The run the call belongs to, the same on the first call and on the proof. */
+    runId: string;
     proof?: ConfirmationProofInput;
   }) => Promise<CommandResult>;
   /** Whether a confirmation is open now. */
@@ -257,7 +261,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
         return failed(SEND_FAILED_TEXT);
       }
 
-      const input = { workspaceId, channelId, text };
+      const input = { workspaceId, channelId, text, runId: deps.runId(agent.id) };
       let held: CommandResult;
       try {
         held = await deps.post(input);
