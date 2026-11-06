@@ -238,10 +238,28 @@ describe("AgentRecordDialog", () => {
       ["refused", "Refused"],
     ] as const)("words %s as %s, with the plugin's name shown safely", (change, label) => {
       useAgentRecordStore.setState({
-        entries: [entry({ tool: "rim_run_plugin_command", change, plugin: POD, messageIds: [] })],
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            change,
+            channelId: null,
+            plugin: POD,
+            messageIds: [],
+          }),
+        ],
       });
       show();
       expect(lines()).toEqual([`${TIME} · ${label} · Po⟦U+202E⟧ds list`]);
+    });
+
+    it("names the channel a command ran in", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({ tool: "rim_run_plugin_command", change: "done", plugin: POD, messageIds: [] }),
+        ],
+      });
+      show();
+      expect(lines()[0]).toMatch(/Ran · Po⟦U\+202E⟧ds list · #/);
     });
 
     it("words a refused run with no change, and falls back on ids", () => {
@@ -250,6 +268,7 @@ describe("AgentRecordDialog", () => {
           entry({
             tool: "rim_run_plugin_command",
             refused: true,
+            channelId: null,
             plugin: { pluginId: "dev.example.gone", commandId: "list" },
             messageIds: [],
           }),
@@ -265,6 +284,7 @@ describe("AgentRecordDialog", () => {
           entry({
             tool: "rim_run_plugin_command",
             refused: true,
+            channelId: null,
             plugin: { pluginId: "", commandId: "" },
             messageIds: [],
           }),
