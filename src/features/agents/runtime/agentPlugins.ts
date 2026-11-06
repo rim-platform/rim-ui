@@ -173,13 +173,16 @@ function proposal(plugin: PluginInfo, command: PluginCommandInfo): ToolOutcome {
   };
 }
 
+/** Arguments that name where a command acts, checked against a grant even when it declares no context. */
+const WHERE_ARGUMENTS = ["workspace_id", "conversation_id"];
+
 /**
- * The ids a command needs from the agent: those of its required context, and the workspace of any
- * conversation, which a grant is checked in.
+ * The ids a command needs from the agent: those of its required context, those the agent gives that
+ * name where it acts, and the workspace of any conversation, which a grant is checked in.
  */
-function contextNames(command: PluginCommandInfo): string[] {
+function contextNames(command: PluginCommandInfo, input: Record<string, unknown>): string[] {
   const required = command.required_context ?? [];
-  const names = new Set<string>();
+  const names = new Set(WHERE_ARGUMENTS.filter((name) => input[name] !== undefined));
   for (const [kind, arguments_] of Object.entries(CONTEXT_ARGUMENTS)) {
     if (!required.includes(kind)) continue;
     for (const name of arguments_) if (name !== OPTIONAL_ARGUMENT) names.add(name);
@@ -310,7 +313,7 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
       if (mode === "proposal") return ended(entry("proposed"), proposal(plugin, command));
 
       const input = given ?? {};
-      const needed = contextNames(command);
+      const needed = contextNames(command, input);
       const missing = needed.filter((name) => idOf(input[name]) === null);
       const thread = input[OPTIONAL_ARGUMENT];
       if (needed.includes("conversation_id") && thread !== undefined && idOf(thread) === null) {

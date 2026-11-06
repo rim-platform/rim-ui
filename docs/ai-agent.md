@@ -283,11 +283,13 @@ confirming that one change, unless a plugin says a command you approved only rea
   in full, except values that look like secrets, which are masked. Discards, expiries, the 10 seconds
   after them and a dialog already being open work as they do for sending, and the 10 seconds cover
   both. A dangerous command is only suggested: the program tells you, and you run it from the
-  plugin's panel. "Uses:" lists the capabilities a command needs. A plugin holding
-  `chat.read.encrypted` can read an encrypted conversation itself and return it, so check for it
-  before approving. When a plugin's manifest changes, its approvals stop working and the screen asks
+  plugin's panel. "Uses:" lists the capabilities a command needs, and the plugin's heading
+  lists all it can use. A plugin holding `chat.read.encrypted` can read an encrypted conversation
+  itself and return it, and the screen warns of this. When a plugin's manifest changes, its approvals stop working and the screen asks
   you to choose again. The program gives any ids a command needs, and a command never uses what you
-  have open. One that needs a workspace or a conversation runs only where the program has a grant.
+  have open. One that needs a workspace or a conversation, or is given a `workspace_id` or `conversation_id`,
+  runs only where the program has a grant. A plugin can name such an argument anything else, or read
+  by itself what its capabilities allow, and a grant can't limit that.
   What a command returns goes to the program marked untrusted, up to 512 KiB. A refusal reads the
   same whether a command isn't approved, its plugin changed or is turned off, or it doesn't exist.
 - **The record.** **What it was given** lists what RIM handed to that program, what it asked to send

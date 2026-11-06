@@ -469,6 +469,19 @@ describe("createAgentPlugins", () => {
       expect(entries.every((entry) => entry.refused)).toBe(true);
     });
 
+    it("checks a conversation the agent names, even when the command declares no context", async () => {
+      expect((await runOf("reads", { conversation_id: "c1" })).payload).toEqual({
+        refusal: "INVALID",
+        message: "This command needs workspace_id.",
+      });
+      const elsewhere = await runOf("reads", {
+        workspace_id: "w1",
+        conversation_id: "not-granted",
+      });
+      expect(elsewhere).toEqual(NOT_APPROVED);
+      expect(deps.run).not.toHaveBeenCalled();
+    });
+
     it("names only what is missing", async () => {
       expect((await runOf("in_conversation", { conversation_id: "c1" })).payload).toEqual({
         refusal: "INVALID",

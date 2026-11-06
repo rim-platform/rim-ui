@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { useInstalledPlugins } from "../../plugins/api/usePluginList";
+import { CHAT_READ_ENCRYPTED } from "../../plugins/chat/chatTypes";
 import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
 import { approvalFor } from "../runtime/agentPlugins";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
@@ -77,6 +78,17 @@ function PluginGroup({
       <h3 id={headingId} className="break-words text-sm font-medium text-rim-text">
         {showInvisibleCharacters(plugin.display_name)} {showInvisibleCharacters(plugin.version)}
       </h3>
+      {plugin.approved_capabilities.length > 0 && (
+        <p className="px-2 pt-1 text-xs text-rim-text-muted">
+          This plugin can use: {plugin.approved_capabilities.join(", ")}
+        </p>
+      )}
+      {plugin.approved_capabilities.includes(CHAT_READ_ENCRYPTED) && (
+        <p className="px-2 pt-1 text-xs text-rim-warm">
+          This plugin can read encrypted conversations, and a command could hand what it reads to
+          this program. A grant can&apos;t limit that.
+        </p>
+      )}
       {changed && (
         <p className="px-2 py-1.5 text-xs text-rim-warm">
           This plugin changed since you approved it. Choose again.

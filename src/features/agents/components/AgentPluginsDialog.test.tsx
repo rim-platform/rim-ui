@@ -283,4 +283,15 @@ describe("AgentPluginsDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Could not load your plugins");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
+
+  it("says what the plugin itself can use, and warns when that includes encrypted reading", () => {
+    mocks.list.mockReturnValue(
+      loaded([plugin({ approved_capabilities: ["chat.read", "chat.read.encrypted"] })]),
+    );
+    show();
+    expect(
+      screen.getByText("This plugin can use: chat.read, chat.read.encrypted"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/can read encrypted conversations/)).toBeInTheDocument();
+  });
 });
