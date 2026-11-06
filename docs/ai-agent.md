@@ -213,6 +213,40 @@ The desktop app writes `rim.log`, and Settings → About has **Open log folder**
 ([Logs](install.md#logs)). It holds the agent's errors and the key events above, never message
 text or keys.
 
+## Agents on this computer
+
+Apart from the agent above, a program that runs on your computer with its own model provider, such
+as Claude Code, can ask to connect to the desktop app. **Settings → Agents** holds the switch, which
+is off by default. It is optional, and RIM works the same without it. The web app does not have it.
+
+- **The switch.** **Let agents on this computer connect** makes the app listen on a port that only
+  this computer can reach. While it is off, nothing listens and connected programs cannot reach RIM.
+  If something else holds the port, the tab says so.
+- **Connecting a program.** The program asks to connect and shows a code. The app comes forward and
+  shows a dialog with the same code and the name the program gives itself. That name is the
+  program's claim; RIM has no way to check it. Compare the codes, then choose **The code matches,
+  connect** or **Don't connect**. Closing the dialog or pressing Escape refuses, and a request that
+  nobody answers expires after two minutes. After a refusal or an expiry, a new request is turned
+  away for ten seconds. An account has to be unlocked for any of this, and locking it closes the
+  dialog.
+- **What a connected program gets.** A token, once, which works for this account on this device
+  only. It is listed as connected when it collects that token, and a program that doesn't within
+  two minutes of your approval is not connected. RIM keeps only the token's hash. A server knows nothing about connected programs, and the
+  token does not reach one.
+- **Disconnecting.** Each connected program has a **Disconnect** button in the tab. It stops the
+  program reaching RIM. It takes nothing back: what the program has already read stays with it.
+
+Reading is not available yet: a connected program can connect and nothing more.
+
+There are limits to what this does:
+
+- RIM controls what it hands to a program. It does not control what happens after that: what a
+  program reads goes to its model provider, and RIM can't see or limit where it goes from there.
+- Connecting keeps an ordinary program from reaching RIM by accident. It is not a boundary against
+  malware. Another program running as you can do what you can, so connect only programs you trust.
+- The desktop app enforces these rules, and a server does not know about them, so they do not bind
+  a modified client.
+
 ## Next
 
 - [Commands and automation](commands-and-automation.md): sensitivity, the palette, macros and

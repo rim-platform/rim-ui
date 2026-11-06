@@ -26,13 +26,21 @@ export function Dialog({
   children,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
   const titleId = useId();
+
+  // Saved while rendering, because a child's `autoFocus` takes focus before any effect runs. A
+  // render that is thrown away and repeated saves the same element, so this stays safe.
+  /* eslint-disable react-hooks/refs */
+  if (open && !wasOpenRef.current) previousFocusRef.current = document.activeElement;
+  wasOpenRef.current = open;
+  /* eslint-enable react-hooks/refs */
 
   // Move focus into the panel and stop the body scrolling while open. On closing or unmounting,
   // focus goes back where it was, or into the dialog still open if that element is gone.
   useEffect(() => {
     if (!open) return;
-    const previous = document.activeElement;
     document.body.style.overflow = "hidden";
     // Next frame, focus the first focusable unless focus is already inside (e.g. `autoFocus`)
     const frame = requestAnimationFrame(() => {
@@ -43,6 +51,10 @@ export function Dialog({
     return () => {
       cancelAnimationFrame(frame);
       document.body.style.overflow = "";
+      // Focus went with the panel. Leave it if something else, such as the next dialog, took it.
+      const previous = previousFocusRef.current;
+      previousFocusRef.current = null;
+      if (document.activeElement && document.activeElement !== document.body) return;
       if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body) {
         previous.focus();
         return;

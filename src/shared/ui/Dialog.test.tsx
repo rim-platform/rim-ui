@@ -100,6 +100,72 @@ describe("Dialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   });
 
+  it("gives focus back on closing, when an autoFocus element took it on opening", async () => {
+    const dialog = (open: boolean) => (
+      <>
+        <button type="button">Before</button>
+        <Dialog open={open} onClose={() => {}} title="Autofocus">
+          <button type="button" autoFocus>
+            Inside
+          </button>
+        </Dialog>
+      </>
+    );
+    const { rerender } = render(dialog(false));
+    const before = screen.getByRole("button", { name: "Before" });
+    before.focus();
+    rerender(dialog(true));
+    expect(screen.getByRole("button", { name: "Inside" })).toHaveFocus();
+    rerender(dialog(false));
+    expect(before).toHaveFocus();
+  });
+
+  it("gives focus back when it closes by unmounting", () => {
+    const view = (shown: boolean) => (
+      <>
+        <button type="button">Before</button>
+        {shown && (
+          <Dialog open onClose={() => {}} title="Unmounted">
+            <button type="button" autoFocus>
+              Inside
+            </button>
+          </Dialog>
+        )}
+      </>
+    );
+    const { rerender } = render(view(false));
+    const before = screen.getByRole("button", { name: "Before" });
+    before.focus();
+    rerender(view(true));
+    expect(screen.getByRole("button", { name: "Inside" })).toHaveFocus();
+    rerender(view(false));
+    expect(before).toHaveFocus();
+  });
+
+  it("leaves focus alone if something else took it as the dialog closed", () => {
+    const view = (first: boolean) => (
+      <>
+        <button type="button">Before</button>
+        {first ? (
+          <Dialog open onClose={() => {}} title="First">
+            <button type="button" autoFocus>
+              In first
+            </button>
+          </Dialog>
+        ) : (
+          <Dialog open onClose={() => {}} title="Second">
+            <button type="button" autoFocus>
+              In second
+            </button>
+          </Dialog>
+        )}
+      </>
+    );
+    const { rerender } = render(view(true));
+    rerender(view(false));
+    expect(screen.getByRole("button", { name: "In second" })).toHaveFocus();
+  });
+
   it("keeps focus on an autoFocus element inside the dialog", async () => {
     render(
       <Dialog open={true} onClose={() => {}} title="Autofocus">
