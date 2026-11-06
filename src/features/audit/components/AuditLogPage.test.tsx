@@ -547,4 +547,19 @@ describe("AuditLogPage", () => {
     expect(screen.getByRole("heading", { name: "Audit Log" })).toBeInTheDocument();
     expect(screen.queryByTestId("audit-retention-note")).not.toBeInTheDocument();
   });
+
+  it("scrolls the table sideways in a narrow window and keeps the retention note in the filter bar", async () => {
+    useShellStore.setState({ shellWidth: "narrow" });
+    requestMock.mockResolvedValue(makePage([]));
+    renderWithProviders(<AuditLogPage />);
+
+    const header = (await screen.findByText("Outcome")).parentElement as HTMLElement;
+    expect(header.parentElement?.className).toContain("min-w-[760px]");
+    expect(header.parentElement?.parentElement?.className).toContain("overflow-x-auto");
+    expect(screen.getByRole("heading", { name: "Audit Log" }).className).toContain(
+      "whitespace-nowrap",
+    );
+    expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    useShellStore.setState({ shellWidth: "wide" });
+  });
 });

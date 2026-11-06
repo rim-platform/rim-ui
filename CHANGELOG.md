@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Narrow windows work: side panels become a drawer, and threads, pins and plugin panels open
+  over the conversation instead of squeezing it. Settings shows its sections as one menu in a
+  narrow window. New commands open the audit log and the message requests, and show or hide the
+  pinned messages, the notifications and the member lists; the sidebar command opens the drawer
+  in a narrow window.
 - Settings > Agents shows an agent's runs: what it was handed and asked to do in a stretch of
   calls, with what the server recorded (`ExecuteCommandInput.runId`).
 - Plugin commands can be approved per connected agent, one by one. A new optional manifest field

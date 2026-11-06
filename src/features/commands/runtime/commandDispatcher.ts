@@ -5,6 +5,10 @@ import { useCommandStore, type TargetPickerKind } from "../state/useCommandStore
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
+import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
+import { isDirectSpace } from "../../relay/state/useRelayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { withWebHealth } from "../../plugins/api/usePluginList";
@@ -152,7 +156,53 @@ const localHandlers: Record<
     useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" });
   },
   "workspace.toggle_sidebar": () => {
-    useShellStore.getState().toggleSidebar();
+    const shell = useShellStore.getState();
+    // A narrow window has no sidebar to collapse: the command opens or closes the drawer.
+    if (shell.shellWidth === "narrow") shell.toggleNavDrawer();
+    else shell.toggleSidebar();
+  },
+  "workspace.open_audit_log": () => {
+    useShellStore.getState().setMainSurface({ kind: "audit-log" });
+  },
+  "workspace.open_message_requests": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    useNotificationsPanelStore.getState().setOpen(false);
+    useShellStore.getState().setMainSurface({
+      kind: "dm-requests",
+      workspaceId: isDirectSpace(workspaceId) ? null : workspaceId,
+    });
+  },
+  "workspace.toggle_pinned_messages": () => {
+    const shell = useShellStore.getState();
+    if (!shell.selectedConversationId) {
+      toast.info("Open a conversation to see its pinned messages");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setPinnedPanelOpen(!shell.pinnedPanelOpen);
+  },
+  "workspace.toggle_notifications": () => {
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    useNotificationsPanelStore.getState().toggle();
+  },
+  "workspace.toggle_conversation_members": () => {
+    const shell = useShellStore.getState();
+    if (!shell.selectedConversationId) {
+      toast.info("Open a conversation to see its members");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setActivePanel("inbox");
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().toggle();
+  },
+  "workspace.toggle_member_directory": () => {
+    const shell = useShellStore.getState();
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setActivePanel("inbox");
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().toggle();
   },
   "workspace.focus_composer": () => {
     document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
