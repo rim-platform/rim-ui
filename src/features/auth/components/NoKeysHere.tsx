@@ -4,5 +4,5 @@ export const NO_KEYS_HERE_MESSAGE =
 
 /** {@link NO_KEYS_HERE_MESSAGE} as a paragraph, shown in place of the key forms. */
 export function NoKeysHere() {
-  return <p className="text-sm text-rim-text-muted">{NO_KEYS_HERE_MESSAGE}</p>;
+  return <p className="text-[13px] leading-relaxed text-rim-text-muted">{NO_KEYS_HERE_MESSAGE}</p>;
 }

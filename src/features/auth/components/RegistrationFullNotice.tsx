@@ -8,10 +8,10 @@ export function RegistrationFullNotice() {
   return (
     <div
       role="status"
-      className="space-y-1 rounded-lg border border-rim-warm/30 bg-rim-warm/10 px-3 py-2 text-sm text-rim-text"
+      className="space-y-1 rounded-[14px] border border-rim-line bg-rim-panel-soft p-[18px] text-sm text-rim-text"
     >
-      <p className="font-medium">This server is full</p>
-      <p className="text-xs text-rim-text-muted">
+      <p className="text-[15px] font-semibold">This server is full</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-rim-text-muted">
         It takes no new accounts. Run your own server, or sign up on another one.{" "}
         <ExternalLink
           href={SELF_HOSTING_URL}

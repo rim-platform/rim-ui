@@ -5,7 +5,7 @@ export function RestoringSessionSplash() {
   return (
     <div role="status" className="flex flex-col items-center gap-4">
       <RimSplash className="w-32 text-rim-text" />
-      <p className="text-sm text-rim-text-muted">Restoring session...</p>
+      <p className="text-[13px] text-rim-text-muted">Restoring session...</p>
     </div>
   );
 }

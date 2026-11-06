@@ -7,6 +7,7 @@ import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { FORBIDDEN, graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { Avatar } from "../../../shared/ui/Avatar";
 import { Button } from "../../../shared/ui/Button";
 import { PasswordLockedError, PasswordWaitError } from "../../auth/api/passwordApi";
 import {
@@ -15,6 +16,8 @@ import {
   PasswordInput,
 } from "../../auth/components/PasswordFields";
 import { PasswordSignInForm } from "../../auth/components/PasswordSignIn";
+import { WAY_IN_PROPS } from "../../auth/components/wayIn";
+import { WayInRow } from "../../auth/components/WayInRow";
 import {
   EMPTY_NEW_PASSWORD,
   keepSignedInByDefault,
@@ -39,7 +42,7 @@ import { parseRecoveryPhrase } from "../browser/recoveryKit";
 import { BrowserKeyNotice } from "./BrowserKeyNotice";
 
 const inputClass =
-  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
+  "w-full rounded-[9px] border border-rim-line-strong bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent";
 
 /** The start of an account's id, for an account this device knows no username for. */
 function idLabel(account: LocalKeyAccount): string {
@@ -74,12 +77,20 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
   const qc = useQueryClient();
   const endpoint = getGraphqlEndpoint();
   const accounts = useDeviceKeyAccounts();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The account whose password form is open; `undefined` until the person acts, when the only
+  // account on the device, if there is just one, is open already.
+  const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const [revokedId, setRevokedId] = useState<string | null>(null);
   // Said after keys the server never saw were removed, when their account is gone from the list.
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!capabilities.deviceKeys || (!accounts.data?.length && !notice)) return null;
+  const openId =
+    chosenId === undefined
+      ? accounts.data?.length === 1
+        ? accounts.data[0].principalId
+        : null
+      : chosenId;
 
   /**
    * The failures this list shows itself: keys no longer on this device, keys the server never
@@ -127,13 +138,31 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
       {notice && (
         <p
           role="status"
-          className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text-muted"
+          className="rounded-[10px] border border-rim-line bg-rim-panel px-3 py-2.5 text-sm text-rim-text"
         >
           {notice}
         </p>
       )}
       {accounts.data?.map((account) => (
-        <div key={account.principalId} className="space-y-2">
+        <section
+          key={account.principalId}
+          aria-label={accountLabel(account)}
+          className="space-y-3.5 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5"
+        >
+          <div className="flex items-center gap-3">
+            <Avatar name={accountLabel(account)} userId={account.principalId} size="md" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-semibold text-rim-text">
+                {signInLabel(account)}
+              </p>
+              <p className="text-xs text-rim-text-muted">
+                This {inBrowser ? "browser" : "device"} holds the key for this account
+              </p>
+              {!account.username && (
+                <p className="font-mono text-[11px] text-rim-text-faint">{idLabel(account)}</p>
+              )}
+            </div>
+          </div>
           {openId === account.principalId ? (
             <PasswordSignInForm
               principalId={account.principalId}
@@ -145,6 +174,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
           ) : (
             <Button
               className="w-full"
+              aria-label={signInLabel(account)}
               disabled={openId !== null}
               onClick={() => {
                 setOpenId(account.principalId);
@@ -152,19 +182,13 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
                 setNotice(null);
               }}
             >
-              <span className="flex items-center justify-center gap-2">
-                <KeyRound className="h-4 w-4" />
-                {signInLabel(account)}
-              </span>
-              {!account.username && (
-                <span className="block font-mono text-[11px] opacity-75">{idLabel(account)}</span>
-              )}
+              Sign in
             </Button>
           )}
           {revokedId === account.principalId && (
             <div
               role="alert"
-              className="space-y-2 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+              className="space-y-2 rounded-[10px] border border-rim-warm/40 bg-rim-warm/10 px-3 py-2.5 text-sm text-rim-warm"
             >
               <p>This device was removed from the account, so its key no longer signs in.</p>
               <Button
@@ -176,7 +200,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
               </Button>
             </div>
           )}
-        </div>
+        </section>
       ))}
       {inBrowser && <BrowserKeyNotice />}
     </div>
@@ -184,7 +208,7 @@ export function DeviceKeySignIn({ onSuccess }: { onSuccess: (userId: string) => 
 }
 
 /**
- * "Recover an account" on the sign-in screen: a link that opens the recovery kit form, which
+ * "Recover an account" on the sign-in screen: a row that opens the recovery kit form, which
  * takes a whole kit (either version), a bare 12-word recovery phrase or a bare `RK1-` key, and
  * the account id, filled in from a pasted kit. Renders nothing where this app cannot hold keys.
  */
@@ -193,15 +217,16 @@ export function RecoverAccount({ onSuccess }: { onSuccess: (userId: string) => v
   const [open, setOpen] = useState(false);
   if (!capabilities.identityKeys) return null;
   return open ? (
-    <RecoverAccountForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    <div {...WAY_IN_PROPS}>
+      <RecoverAccountForm onSuccess={onSuccess} onCancel={() => setOpen(false)} />
+    </div>
   ) : (
-    <button
-      type="button"
+    <WayInRow
+      title="Recover an account"
+      hint="You lost your devices. Use your recovery kit."
+      icon={<KeyRound className="h-4 w-4 text-rim-warm" />}
       onClick={() => setOpen(true)}
-      className="block w-full text-center text-sm text-rim-text-muted transition hover:text-rim-text"
-    >
-      Lost your devices? Recover an account with its recovery kit
-    </button>
+    />
   );
 }
 
@@ -311,16 +336,16 @@ function RecoverAccountForm({
   return (
     <form
       onSubmit={(e) => void recover(e)}
-      className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4"
+      className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5"
     >
-      <p className="text-sm font-medium text-rim-text">Recover an account</p>
+      <p className="text-[15px] font-semibold text-rim-text">Recover an account</p>
       <p className="text-xs text-rim-text-muted">
         Paste the recovery kit you saved when you created the account, or type its 12-word recovery
         phrase (an older kit has a recovery key starting with RK1- instead). This device becomes the
         account&apos;s new device with a new identity key, and every other device and session of the
         account is signed out.
       </p>
-      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+      <label className="block text-[13px] font-medium text-rim-text">
         Recovery kit or phrase
         <textarea
           value={kit}
@@ -329,10 +354,10 @@ function RecoverAccountForm({
           spellCheck={false}
           disabled={recovered !== null}
           placeholder={"RIM recovery kit (v2)\nAccount id: rimp1_…\nRecovery phrase: 12 words"}
-          className={`mt-1 font-mono ${inputClass}`}
+          className={`mt-1.5 font-mono ${inputClass}`}
         />
       </label>
-      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+      <label className="block text-[13px] font-medium text-rim-text">
         Account id
         <input
           value={accountId}
@@ -340,17 +365,17 @@ function RecoverAccountForm({
           placeholder="rimp1_…"
           spellCheck={false}
           disabled={recovered !== null}
-          className={`mt-1 font-mono ${inputClass}`}
+          className={`mt-1.5 font-mono ${inputClass}`}
         />
       </label>
-      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+      <label className="block text-[13px] font-medium text-rim-text">
         Name of this device
         <input
           value={deviceName}
           maxLength={64}
           onChange={(e) => setDeviceName(e.target.value)}
           disabled={recovered !== null}
-          className={`mt-1 ${inputClass}`}
+          className={`mt-1.5 ${inputClass}`}
         />
       </label>
       <div
@@ -401,7 +426,7 @@ function RecoverAccountForm({
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
         >
           {error}
         </p>

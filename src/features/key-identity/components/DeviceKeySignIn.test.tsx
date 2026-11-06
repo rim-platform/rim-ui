@@ -53,10 +53,9 @@ const PASSWORD = "correct horse battery";
 const PHRASE = "abandon amount liar amount expire adjust cage candy arch gather drum buyer";
 const SIGNED_IN = { userId: "u-alice", startedEmpty: false };
 
-/** Opens alice's password prompt and signs in with `password`. */
+/** Signs in to alice's account, whose password prompt is open, with `password`. */
 async function signInAsAlice(password = PASSWORD) {
-  await userEvent.click(await screen.findByRole("button", { name: /sign in as alice/i }));
-  await userEvent.type(screen.getByLabelText(/^password or pin$/i), password);
+  await userEvent.type(await screen.findByLabelText(/^password or pin$/i), password);
   await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 }
 
@@ -107,8 +106,8 @@ describe("DeviceKeySignIn", () => {
     const onSuccess = vi.fn();
     wrap(<DeviceKeySignIn onSuccess={onSuccess} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /sign in as alice/i }));
-    // Nothing opens with one click: the prompt asks for the password first.
+    // The only account's prompt is open from the start and asks for the password first.
+    await screen.findByLabelText(/^password or pin$/i);
     expect(api.signInWithPassword).not.toHaveBeenCalled();
     expect(screen.getByRole("checkbox", { name: /keep me signed in/i })).not.toBeChecked();
     await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
@@ -239,6 +238,8 @@ describe("DeviceKeySignIn", () => {
 
     await signInAsAlice();
     expect(await screen.findByRole("alert")).toHaveTextContent(/device was removed/i);
+    // The revoked account's prompt does not open again by itself.
+    expect(screen.queryByLabelText(/^password or pin$/i)).toBeNull();
 
     api.listDeviceKeyAccounts.mockResolvedValue([]);
     await userEvent.click(screen.getByRole("button", { name: /remove this device's keys/i }));
@@ -276,8 +277,7 @@ describe("DeviceKeySignIn", () => {
     });
     wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /sign in as ada/i }));
-    await userEvent.type(screen.getByLabelText(/^password or pin$/i), PASSWORD);
+    await userEvent.type(await screen.findByLabelText(/^password or pin$/i), PASSWORD);
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     expect(api.forgetKeysTheServerNeverSaw).toHaveBeenCalledWith(unfinished);
@@ -348,11 +348,9 @@ describe("DeviceKeySignIn", () => {
     ]);
     wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
 
-    const button = await screen.findByRole("button", {
-      name: /^Sign in to your recovered account/,
-    });
-    expect(button).toHaveTextContent("rimp1_alice…");
-    expect(screen.queryByRole("button", { name: /Sign in as rimp1/ })).toBeNull();
+    expect(await screen.findByText("Sign in to your recovered account")).toBeInTheDocument();
+    expect(screen.getByText("rimp1_alice…")).toBeInTheDocument();
+    expect(screen.queryByText(/Sign in as rimp1/)).toBeNull();
   });
 
   it("names a linked account without a username as the linked account", async () => {
@@ -361,9 +359,32 @@ describe("DeviceKeySignIn", () => {
     ]);
     wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
 
-    expect(
-      await screen.findByRole("button", { name: /^Sign in to your linked account/ }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Sign in to your linked account")).toBeInTheDocument();
+  });
+
+  it("closes the only account's prompt on Cancel and opens it again from its button", async () => {
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText(/^password or pin$/i)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Sign in as alice" }));
+    expect(screen.getByLabelText(/^password or pin$/i)).toBeInTheDocument();
+    expect(api.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("gives each of several accounts a card with a Sign in button and no open prompt", async () => {
+    api.listDeviceKeyAccounts.mockResolvedValue([
+      alice,
+      { ...alice, principalId: "rimp1_bob", userId: "u-bob", username: "bob" },
+    ]);
+    wrap(<DeviceKeySignIn onSuccess={vi.fn()} />);
+
+    const bob = await screen.findByRole("button", { name: "Sign in as bob" });
+    expect(bob).toHaveTextContent(/^Sign in$/);
+    expect(screen.getByRole("button", { name: "Sign in as alice" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^password or pin$/i)).toBeNull();
+    await userEvent.click(bob);
+    expect(screen.getByLabelText(/^password or pin$/i)).toBeInTheDocument();
   });
 });
 
@@ -471,6 +492,12 @@ describe("RecoverAccount", () => {
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("u-alice"));
     expect(api.recoverDeviceKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps its open form marked as one of the other ways in, so the sign-in page keeps it", async () => {
+    wrap(<RecoverAccount onSuccess={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /recover an account/i }));
+    expect(screen.getByLabelText(/recovery kit/i).closest("[data-way-in]")).not.toBeNull();
   });
 
   it("lets a pasted kit's account id replace one typed before", async () => {
