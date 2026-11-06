@@ -284,6 +284,18 @@ describe("AgentPluginsDialog", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
+  it("warns that a plugin able to read can hand over what a grant doesn't cover", () => {
+    mocks.list.mockReturnValue(loaded([plugin({ approved_capabilities: ["chat.read"] })]));
+    show();
+    expect(screen.getByText(/can read every conversation you can/)).toBeInTheDocument();
+  });
+
+  it("says nothing of reading for a plugin that can't read", () => {
+    mocks.list.mockReturnValue(loaded([plugin({ approved_capabilities: ["net.fetch"] })]));
+    show();
+    expect(screen.queryByText(/can read every conversation you can/)).not.toBeInTheDocument();
+  });
+
   it("says what the plugin itself can use, and warns when that includes encrypted reading", () => {
     mocks.list.mockReturnValue(
       loaded([plugin({ approved_capabilities: ["chat.read", "chat.read.encrypted"] })]),

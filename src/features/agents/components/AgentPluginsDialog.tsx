@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { useInstalledPlugins } from "../../plugins/api/usePluginList";
-import { CHAT_READ_ENCRYPTED } from "../../plugins/chat/chatTypes";
+import { CHAT_READ, CHAT_READ_ENCRYPTED } from "../../plugins/chat/chatTypes";
 import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
 import { approvalFor } from "../runtime/agentPlugins";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
@@ -81,6 +81,12 @@ function PluginGroup({
       {plugin.approved_capabilities.length > 0 && (
         <p className="px-2 pt-1 text-xs text-rim-text-muted">
           This plugin can use: {plugin.approved_capabilities.join(", ")}
+        </p>
+      )}
+      {plugin.approved_capabilities.includes(CHAT_READ) && (
+        <p className="px-2 pt-1 text-xs text-rim-warm">
+          This plugin can read every conversation you can, and a command could hand what it reads to
+          this program, whatever you chose it can read. A grant can&apos;t limit that.
         </p>
       )}
       {plugin.approved_capabilities.includes(CHAT_READ_ENCRYPTED) && (

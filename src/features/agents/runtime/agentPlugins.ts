@@ -161,14 +161,14 @@ function kindOf(error: unknown): unknown {
   return isObject(error) ? error.kind : undefined;
 }
 
-/** The answer for a dangerous command. Its title and the plugin's name are the plugin's words. */
-function proposal(plugin: PluginInfo, command: PluginCommandInfo): ToolOutcome {
+/** The answer for a dangerous command. Its title is the plugin's words. */
+function proposal(command: PluginCommandInfo): ToolOutcome {
   return {
     isError: true,
     payload: {
       outcome: "proposal",
       untrusted: true,
-      message: `"${command.title}" is dangerous, so only the person can run it. Tell them what you propose and why; they can run it from the ${plugin.display_name} panel.`,
+      message: `"${command.title}" is dangerous, so only the person can run it. Tell them what you propose and why; they can run it themselves in RIM.`,
     },
   };
 }
@@ -316,7 +316,7 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
       }
 
       const mode = modeOf(command);
-      if (mode === "proposal") return ended(entry("proposed"), proposal(plugin, command));
+      if (mode === "proposal") return ended(entry("proposed"), proposal(command));
 
       const input = given ?? {};
       const needed = contextNames(command, input);
@@ -395,7 +395,7 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
         output = await deps.run(plugin, command, input, approval.manifestHash);
       } catch (error) {
         if (kindOf(error) === "CONFIRMATION_REQUIRED") {
-          return ended(entry("proposed"), proposal(plugin, command));
+          return ended(entry("proposed"), proposal(command));
         }
         logger.warn("[RIM:agents] a plugin command failed:", errorName(error));
         return ended(failedEntry(), RUN_FAILED);

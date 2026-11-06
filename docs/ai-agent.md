@@ -99,7 +99,7 @@ workspace may run:
   checkboxes, **Approve all** and **Revoke all** change that, and the first approval asks in
   **Grant AI Access?** (**Grant Access**). **Revoke all grants** takes back every plugin's
   approvals. The agent calls an approved command without asking each time, except a dangerous
-  one, which it can only propose: it tells you, and you run it from the plugin's panel.
+  one, which it can only propose: it tells you, and you run it yourself in RIM.
   [Using a plugin](plugins.md#using-a-plugin) has the rest.
 
 It never sees user commands, macros or any command not marked callable. Kept off the AI surface on
@@ -283,9 +283,8 @@ confirming that one change, unless a plugin says a command you approved only rea
   plugin, the command, what the plugin says about it marked as the plugin's words, and every argument
   in full, except values that look like secrets, which are masked. Discards, expiries, the 10 seconds
   after them and a dialog already being open work as they do for sending, and the 10 seconds cover
-  both. A dangerous command is only suggested: the program tells you, and you run it from the
-  plugin's panel. "Uses:" lists the capabilities a command needs, and the plugin's heading
-  lists all it can use. A plugin holding `chat.read.encrypted` can read an encrypted conversation
+  both. A dangerous command is only suggested: the program tells you, and you run it yourself in RIM. "Uses:" lists the capabilities a command needs, and the plugin's heading
+  lists all it can use. A plugin holding `chat.read` can read every conversation you can and return it, whatever you chose the program can read, and the screen warns of this. One holding `chat.read.encrypted` can read an encrypted conversation
   itself and return it, and the screen warns of this. When a plugin's manifest changes, its approvals stop working and the screen asks
   you to choose again. The program gives any ids a command needs, and a command never uses what you
   have open. One that needs a workspace or a conversation, or is given a `workspace_id` or `conversation_id`,
