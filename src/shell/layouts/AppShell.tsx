@@ -79,6 +79,7 @@ import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { ProbationBanner } from "../../features/limits/components/ProbationBanner";
 import { AccountDeletionBanner } from "../../features/account-deletion/components/AccountDeletionBanner";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
+import { HomePage } from "../../features/home/components/HomePage";
 import { DmRequestsPage } from "../../features/relay/components/DmRequestsPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
@@ -592,6 +593,14 @@ function WorkspaceShell() {
             <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
               <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
                 <SettingsPage />
+              </SurfaceErrorBoundary>
+            </main>
+          )}
+
+          {mainSurface.kind === "home" && (
+            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+              <SurfaceErrorBoundary surface="Home" resetKeys={[]}>
+                <HomePage />
               </SurfaceErrorBoundary>
             </main>
           )}

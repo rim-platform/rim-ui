@@ -148,10 +148,36 @@ export interface NotificationPage {
 }
 
 /** `item` with an encrypted message's text taken from this device's store. */
-async function withStoredText(item: NotificationItem): Promise<NotificationItem> {
+export async function withStoredText(item: NotificationItem): Promise<NotificationItem> {
   const message = item.message;
   if (!message?.encryption || message.isDeleted) return item;
   return { ...item, message: { ...message, text: await storedText(message.id) } };
+}
+
+/**
+ * One page of the viewer's notification inbox, newest first, encrypted messages read from this
+ * device's store.
+ *
+ * @param serverId - The workspace, on whichever server hosts it.
+ * @param unreadOnly - Whether to leave out read entries.
+ * @param cursor - The `next` of the previous page, or null for the first.
+ * @param limit - The page size.
+ */
+export async function fetchNotificationPage(
+  serverId: string,
+  unreadOnly: boolean,
+  cursor: NotificationCursor | null,
+  limit: number,
+): Promise<NotificationPage> {
+  const res = await graphqlClient.request<{ myNotifications: NotificationPage }>(MY_NOTIFICATIONS, {
+    serverId,
+    unreadOnly,
+    dir: PageDir.AFTER,
+    cursor,
+    limit,
+  });
+  const page = res.myNotifications;
+  return { ...page, items: await Promise.all(page.items.map(withStoredText)) };
 }
 
 /**
@@ -165,20 +191,7 @@ export function useNotifications(serverId: string | null | undefined, unreadOnly
     enabled: Boolean(ws),
     staleTime: 15_000,
     initialPageParam: null as NotificationCursor | null,
-    queryFn: async ({ pageParam }) => {
-      const res = await graphqlClient.request<{ myNotifications: NotificationPage }>(
-        MY_NOTIFICATIONS,
-        {
-          serverId: ws!,
-          unreadOnly,
-          dir: PageDir.AFTER,
-          cursor: pageParam,
-          limit: PAGE_SIZE,
-        },
-      );
-      const page = res.myNotifications;
-      return { ...page, items: await Promise.all(page.items.map(withStoredText)) };
-    },
+    queryFn: ({ pageParam }) => fetchNotificationPage(ws!, unreadOnly, pageParam, PAGE_SIZE),
     getNextPageParam: (last) => (last.pageInfo.hasNext && last.next ? last.next : undefined),
   });
 }

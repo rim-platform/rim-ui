@@ -27,21 +27,45 @@ export function usePendingDmRequestCount(): number {
 }
 
 /**
+ * The workspace of a request, or `null` for one from outside every workspace; read from the
+ * caches only, as the workspace rail keeps the lists fresh.
+ */
+function useRequestScope(): (request: DmRequestView) => string | null {
+  const info = useRelayStore((s) => s.info);
+  const spaces = useRelayStore((s) => s.spaces);
+  const { data: servers } = useMyServers(false);
+  return useMemo(() => {
+    const localWorkspaceIds = new Set(
+      (servers ?? []).map((s) => s.id).filter((id) => id !== info?.directSpaceId),
+    );
+    const known = { ownServerId: info?.serverId ?? null, localWorkspaceIds, spaces };
+    return (request) => requestWorkspaceId(request, known);
+  }, [info, spaces, servers]);
+}
+
+/**
  * The pending requests of one scope: those whose conversation belongs to the workspace
  * `scope`, or with `null`, those from outside every workspace. `undefined` keeps them all.
  */
 export function usePendingDmRequestsIn(scope: string | null | undefined): DmRequestView[] {
   const requests = usePendingDmRequests().data ?? NO_REQUESTS;
-  const info = useRelayStore((s) => s.info);
-  const spaces = useRelayStore((s) => s.spaces);
-  // Read from the cache only: the workspace rail keeps the list fresh.
-  const { data: servers } = useMyServers(false);
+  const scopeOf = useRequestScope();
   return useMemo(() => {
     if (scope === undefined) return requests;
-    const localWorkspaceIds = new Set(
-      (servers ?? []).map((s) => s.id).filter((id) => id !== info?.directSpaceId),
-    );
-    const known = { ownServerId: info?.serverId ?? null, localWorkspaceIds, spaces };
-    return requests.filter((request) => requestWorkspaceId(request, known) === scope);
-  }, [requests, scope, info, spaces, servers]);
+    return requests.filter((request) => scopeOf(request) === scope);
+  }, [requests, scope, scopeOf]);
+}
+
+/** How many pending requests each scope has: a workspace id, or `null` for outside every one. */
+export function usePendingDmRequestCounts(): ReadonlyMap<string | null, number> {
+  const requests = usePendingDmRequests().data ?? NO_REQUESTS;
+  const scopeOf = useRequestScope();
+  return useMemo(() => {
+    const counts = new Map<string | null, number>();
+    for (const request of requests) {
+      const scope = scopeOf(request);
+      counts.set(scope, (counts.get(scope) ?? 0) + 1);
+    }
+    return counts;
+  }, [requests, scopeOf]);
 }

@@ -21,6 +21,8 @@ export type MainSurface =
   | { kind: "plugin"; pluginId: string }
   | { kind: "marketplace" }
   | { kind: "audit-log" }
+  /** The page across every workspace of what needs the person: requests, mentions, unread counts. */
+  | { kind: "home" }
   /**
    * The message requests of one workspace's conversations, or with `workspaceId: null`, those
    * from outside every workspace.

@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Home: one page across your workspaces with what's waiting for you, your mentions and
+  replies, your unread counts and your agents' runs. It's in the workspace rail and on
+  `workspace.open_home`.
 - Narrow windows work: side panels become a drawer, and threads, pins and plugin panels open
   over the conversation instead of squeezing it. Settings shows its sections as one menu in a
   narrow window. New commands open the audit log and the message requests, and show or hide the
