@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
@@ -35,7 +36,7 @@ export const WEB_SECRET_NOTICE = "Secret settings are only available in the desk
  * user confirms. A saved secret is never shown or fetched.
  */
 export function PluginSettingsDialog({ plugin, onClose }: PluginSettingsDialogProps) {
-  const name = plugin.display_name || plugin.plugin_id;
+  const name = showInvisibleCharacters(plugin.display_name || plugin.plugin_id);
   const state = usePluginSettingsState(plugin.plugin_id);
 
   return (

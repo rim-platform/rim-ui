@@ -54,6 +54,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Settings > Plugins groups plugins by how they run, and each opens in place with its
+  permissions, settings and what agents can do with it.
 - The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
   say when you'd use them.
 - A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched

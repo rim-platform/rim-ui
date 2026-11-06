@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useEffect, useState } from "react";
 import { Bot, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
@@ -68,8 +69,8 @@ function GrantConfirmModal({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
           <p className="text-xs text-rim-warm">
             You are granting the AI agent permission to invoke commands in{" "}
-            <strong>{plugin.display_name}</strong> on your behalf. The agent can call these commands
-            automatically without asking each time.
+            <strong>{showInvisibleCharacters(plugin.display_name)}</strong> on your behalf. The
+            agent can call these commands automatically without asking each time.
           </p>
         </div>
 
@@ -106,7 +107,7 @@ interface PluginConsentRowProps {
   plugin: PluginInfo;
 }
 
-function PluginConsentRow({ plugin }: PluginConsentRowProps) {
+export function PluginConsentRow({ plugin }: PluginConsentRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [pendingGrant, setPendingGrant] = useState<{
     commandIds: string[];
@@ -202,8 +203,12 @@ function PluginConsentRow({ plugin }: PluginConsentRowProps) {
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
-              <span className="text-xs text-rim-text-faint font-mono">{plugin.manifest_id}</span>
+              <span className="min-w-0 wrap-anywhere text-sm font-medium text-rim-text">
+                {showInvisibleCharacters(plugin.display_name)}
+              </span>
+              <span className="break-all text-xs text-rim-text-faint font-mono">
+                {plugin.manifest_id}
+              </span>
               {showConsentRequiredBadge && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
                   <AlertTriangle className="h-2.5 w-2.5" />
