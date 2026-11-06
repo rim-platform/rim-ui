@@ -995,7 +995,7 @@ export function KeybindSettings() {
           </button>
           <button
             onClick={confirmDelete}
-            className="rounded-md bg-rim-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger/90 transition-colors"
+            className="rounded-md bg-rim-danger-solid px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger-solid/90 transition-colors"
           >
             Delete
           </button>

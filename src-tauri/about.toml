@@ -17,6 +17,8 @@ accepted = [
   "OpenSSL",
   # The Mozilla root certificates in webpki-root-certs.
   "CDLA-Permissive-2.0",
+  # The IBM Plex Sans and JetBrains Mono fonts bundled by @fontsource.
+  "OFL-1.1",
 ]
 # Test-only crates never ship.
 ignore-dev-dependencies = true

@@ -70,7 +70,7 @@ export const MessageEditForm = memo(function MessageEditForm({
       <div className="mt-1 flex gap-2">
         <button
           type="button"
-          className="rounded bg-rim-accent px-2 py-0.5 text-xs text-rim-text transition hover:brightness-110"
+          className="rounded bg-rim-accent px-2 py-0.5 text-xs text-rim-void transition hover:brightness-110"
           onClick={submit}
         >
           Save

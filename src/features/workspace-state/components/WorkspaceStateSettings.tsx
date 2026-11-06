@@ -258,7 +258,7 @@ function EntryEditor({ serverId, scope, existingEntry, onClose }: EntryEditorPro
           type="button"
           onClick={handleSave}
           disabled={setWorkspaceState.isPending}
-          className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-rim-void transition hover:bg-rim-accent/80 disabled:opacity-50"
         >
           {setWorkspaceState.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -373,7 +373,7 @@ function EntryRow({ entry, onEdit, onDelete, isDeleting, readOnly }: EntryRowPro
                   type="button"
                   onClick={handleDelete}
                   disabled={isDeleting}
-                  className="rounded bg-rim-danger px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger/80 disabled:opacity-50"
+                  className="rounded bg-rim-danger-solid px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger-solid/80 disabled:opacity-50"
                 >
                   {isDeleting ? "..." : "Delete"}
                 </button>
@@ -504,7 +504,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             onClick={() => setScope(WorkspaceStateScopeGql.SERVER)}
             className={`flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition ${
               scope === WorkspaceStateScopeGql.SERVER
-                ? "bg-rim-accent text-white"
+                ? "bg-rim-accent text-rim-void"
                 : "text-rim-text-muted hover:text-rim-text"
             }`}
           >
@@ -516,7 +516,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             onClick={() => setScope(WorkspaceStateScopeGql.USER)}
             className={`flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition ${
               scope === WorkspaceStateScopeGql.USER
-                ? "bg-rim-accent text-white"
+                ? "bg-rim-accent text-rim-void"
                 : "text-rim-text-muted hover:text-rim-text"
             }`}
           >
@@ -542,7 +542,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
           <button
             type="button"
             onClick={() => setEditorMode({ kind: "create" })}
-            className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80"
+            className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-rim-void transition hover:bg-rim-accent/80"
           >
             <Plus className="h-3.5 w-3.5" />
             New entry

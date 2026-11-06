@@ -54,8 +54,8 @@ describe("Button", () => {
   it("defaults to primary variant and md size", () => {
     render(<Button>Default</Button>);
     const button = screen.getByRole("button");
-    // Primary variant includes bg-rim-accent
-    expect(button.className).toContain("bg-rim-accent");
+    // Primary variant includes bg-rim-text
+    expect(button.className).toContain("bg-rim-text");
     // md size includes px-4
     expect(button.className).toContain("px-4");
   });
