@@ -266,6 +266,20 @@ describe("AgentsSettings", () => {
     expect(screen.getByText(NOTHING)).toBeInTheDocument();
   });
 
+  it("moves focus to the switch after the last agent is disconnected", async () => {
+    status = { ...status, enabled: true, listening: true };
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    const user = userEvent.setup();
+    await renderedSwitch();
+    await user.click(screen.getByRole("button", { name: "Disconnect Claude Code" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Disconnect Claude Code?" })).getByRole("button", {
+        name: "Disconnect",
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("switch")).toHaveFocus());
+  });
+
   it("keeps the program when disconnecting is cancelled", async () => {
     useConnectedAgentsStore.setState({ agents: [AGENT] });
     const user = userEvent.setup();

@@ -47,6 +47,7 @@ export function AgentsSettings() {
   const selected =
     agents.find((agent) => agent.id === selectedId) ?? (agents.length === 1 ? agents[0] : null);
   const saving = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -86,7 +87,7 @@ export function AgentsSettings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div ref={rootRef} className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-rim-text">Agents on this computer</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
@@ -221,6 +222,13 @@ export function AgentsSettings() {
           onConfirm={() => {
             revoke(disconnecting.id);
             setDisconnecting(null);
+            // The detail that opened the dialog goes with the agent: focus moves to the next
+            // agent in the list, or to the switch above it.
+            setTimeout(() => {
+              rootRef.current
+                ?.querySelector<HTMLElement>('button[aria-pressed], [role="switch"]')
+                ?.focus();
+            });
           }}
           onClose={() => setDisconnecting(null)}
         />
