@@ -216,11 +216,13 @@ describe("JoinAuthenticated", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
 
-    it("says a banned account is banned", () => {
+    it("says a banned account is banned, with a way out", async () => {
       renderRefused(graphqlError("FORBIDDEN", "you are banned from this workspace"));
 
       expect(screen.getByText("You are banned from this workspace.")).toBeInTheDocument();
       expect(screen.queryByText(DEAD_INVITE_MESSAGE)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Go to RIM" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
     });
   });
 

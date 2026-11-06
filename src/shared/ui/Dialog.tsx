@@ -52,8 +52,9 @@ export function Dialog({
       cancelAnimationFrame(frame);
       document.body.style.overflow = "";
       // Focus went with the panel. Leave it if something else, such as the next dialog, took it.
+      // Kept, not cleared: a development build runs this cleanup once right after mounting, and
+      // the real close still needs the element.
       const previous = previousFocusRef.current;
-      previousFocusRef.current = null;
       if (document.activeElement && document.activeElement !== document.body) return;
       if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body) {
         previous.focus();

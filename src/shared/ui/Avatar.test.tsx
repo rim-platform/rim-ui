@@ -13,6 +13,17 @@ describe("Avatar", () => {
     expect(screen.getByText("B")).toBeInTheDocument();
   });
 
+  it("shows the first letter of a name led by an emoji, never half a character", () => {
+    render(<Avatar name={"\u{1F680} Botland"} userId="user-4" />);
+    expect(screen.getByText("B")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("\uFFFD");
+  });
+
+  it("renders ? for a name with no letter or digit", () => {
+    render(<Avatar name={"\u{1F680}"} userId="user-5" />);
+    expect(screen.getByText("?")).toBeInTheDocument();
+  });
+
   it("renders ? for empty name", () => {
     render(<Avatar name="" userId="user-3" />);
     expect(screen.getByText("?")).toBeInTheDocument();

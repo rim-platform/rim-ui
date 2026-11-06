@@ -18,7 +18,7 @@ interface NewWebhookDialogProps {
   /** Active bots. */
   bots: Bot[];
   /** Called with the new URL, shown once; the caller shows it and holds it in its state. */
-  onCreated: (created: { url: string; preset: WebhookPreset }) => void;
+  onCreated: (created: { id: string; url: string; preset: WebhookPreset }) => void;
   onClose: () => void;
 }
 
@@ -52,7 +52,7 @@ export function NewWebhookDialog({
     try {
       const created = await createIncomingWebhook({ conversationId, botUserId, preset });
       invalidate(botUserId);
-      onCreated({ url: await webhookUrl(created.token), preset });
+      onCreated({ id: created.webhook.id, url: await webhookUrl(created.token), preset });
     } catch (err) {
       setError(graphqlErrorMessage(err, "Could not make the webhook"));
     } finally {
