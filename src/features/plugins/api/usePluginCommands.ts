@@ -6,6 +6,7 @@ import { openPluginPanelCommandId, runningPluginPanels } from "../pluginPanels";
 import { hasSettings } from "../pluginSettings";
 import { openPluginSettingsCommandId } from "../pluginSettingsLink";
 import type { PluginContextType } from "../types";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 
 // Extended command definition that carries context_types metadata
 export interface PluginCommandDefinition extends CommandDefinition {
@@ -35,9 +36,9 @@ export function usePluginCommands() {
         const needsArguments = command.arguments.some((argument) => argument.required);
         commands.push({
           id: command.qualified_id,
-          title: command.title,
-          description: command.description,
-          category: plugin.display_name,
+          title: showInvisibleCharacters(command.title),
+          description: showInvisibleCharacters(command.description),
+          category: showInvisibleCharacters(plugin.display_name),
           sourceKind: "PLUGIN",
           executionTarget: "DESKTOP_LOCAL",
           requiredContext: command.required_context ?? [],
@@ -56,9 +57,9 @@ export function usePluginCommands() {
         const command = plugin.commands?.find((c) => c.qualified_id === action.command_id);
         commands.push({
           id: action.command_id,
-          title: action.title,
-          description: command?.description ?? action.title,
-          category: plugin.display_name,
+          title: showInvisibleCharacters(action.title),
+          description: showInvisibleCharacters(command?.description ?? action.title),
+          category: showInvisibleCharacters(plugin.display_name),
           sourceKind: "PLUGIN",
           executionTarget: "DESKTOP_LOCAL",
           requiredContext: command?.required_context ?? [],
@@ -92,9 +93,9 @@ export function usePluginCommands() {
       if (!plugin.enabled || !hasSettings(plugin.settings_schema)) continue;
       commands.push({
         id: openPluginSettingsCommandId(plugin.plugin_id),
-        title: `Plugin settings: ${plugin.display_name}`,
-        description: `Open the settings of ${plugin.display_name}`,
-        category: plugin.display_name,
+        title: `Plugin settings: ${showInvisibleCharacters(plugin.display_name)}`,
+        description: `Open the settings of ${showInvisibleCharacters(plugin.display_name)}`,
+        category: showInvisibleCharacters(plugin.display_name),
         sourceKind: "PLUGIN",
         executionTarget: "DESKTOP_LOCAL",
         requiredContext: [],
