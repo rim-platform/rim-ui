@@ -45,7 +45,7 @@ describe("MessageDisplaySettings", () => {
     expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(
       screen.getByText(
-        "Conversations stay unread until you mark them, even after you read to the end.",
+        "Conversations stay unread until you mark them, even after you read to the end. This needs a server that keeps read markers: on an older one, reading still marks them.",
       ),
     ).toBeInTheDocument();
     toggle.focus();
