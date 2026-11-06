@@ -8,12 +8,15 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
-import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
+import {
+  useConfirmationModalStore,
+  type ConfirmationRequest,
+} from "../../agent/state/confirmationModalStore";
 import { EXECUTE_COMMAND_MUTATION } from "../../agent/tools/loader";
 import { fetchConversation } from "../../conversations/api/useConversation";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
-import { createAgentChanges, type AgentConfirmation } from "./agentChanges";
+import { createAgentChanges, createCooldown, type AgentConfirmation } from "./agentChanges";
 import { connected, lookup, record, workspaces } from "./appAgentReads";
 
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -30,7 +33,10 @@ async function channelName(workspaceId: string, channelId: string): Promise<stri
  *
  * @returns Cancels the timer.
  */
-function endAtExpiry({ token, expiresAt }: AgentConfirmation): () => void {
+function endAtExpiry({
+  token,
+  expiresAt,
+}: Pick<AgentConfirmation, "token" | "expiresAt">): () => void {
   const delay = Date.parse(expiresAt) - Date.now();
   if (!Number.isFinite(delay) || delay > MAX_TIMER_DELAY_MS) return () => undefined;
   const timer = setTimeout(
@@ -43,8 +49,28 @@ function endAtExpiry({ token, expiresAt }: AgentConfirmation): () => void {
   return () => clearTimeout(timer);
 }
 
-async function confirm(request: AgentConfirmation): Promise<"approved" | "discarded" | "busy"> {
-  const decision = useConfirmationModalStore.getState().openIfFree({
+/**
+ * Shows an outside agent's request unless a confirmation is open, brings the window forward and
+ * ends the request when it expires.
+ *
+ * @returns How the person answered, or "busy" at once when a confirmation is open.
+ */
+export async function askPerson(
+  request: ConfirmationRequest,
+): Promise<"approved" | "discarded" | "busy"> {
+  const decision = useConfirmationModalStore.getState().openIfFree(request);
+  if (decision === null) return "busy";
+  desktopShowWindow().catch(() => {
+    logger.warn("[RIM:agents] could not bring the window forward");
+  });
+  const stopTimer = endAtExpiry(request);
+  const { approved } = await decision;
+  stopTimer();
+  return approved ? "approved" : "discarded";
+}
+
+function confirm(request: AgentConfirmation): Promise<"approved" | "discarded" | "busy"> {
+  return askPerson({
     initiator: "agent",
     commandId: "chat.post_message",
     toolName: "send a message",
@@ -63,15 +89,15 @@ async function confirm(request: AgentConfirmation): Promise<"approved" | "discar
       text: request.text,
     },
   });
-  if (decision === null) return "busy";
-  desktopShowWindow().catch(() => {
-    logger.warn("[RIM:agents] could not bring the window forward");
-  });
-  const stopTimer = endAtExpiry(request);
-  const { approved } = await decision;
-  stopTimer();
-  return approved ? "approved" : "discarded";
 }
+
+/** Whether a confirmation is open now. */
+export function confirmationOpen(): boolean {
+  return useConfirmationModalStore.getState().request !== null;
+}
+
+/** The wait after a discard or an expiry, shared by everything that asks the person. */
+export const agentCooldown = createCooldown(() => Date.now());
 
 /** The changes this app answers agents with. */
 export const appAgentChanges = createAgentChanges({
@@ -80,7 +106,7 @@ export const appAgentChanges = createAgentChanges({
   isDirectSpace,
   connected,
   channelName,
-  busy: () => useConfirmationModalStore.getState().request !== null,
+  busy: confirmationOpen,
   post: async ({ workspaceId, channelId, text, proof }) => {
     const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
       EXECUTE_COMMAND_MUTATION,
@@ -98,5 +124,6 @@ export const appAgentChanges = createAgentChanges({
   },
   confirm,
   record,
+  cooldown: agentCooldown,
   now: () => Date.now(),
 });

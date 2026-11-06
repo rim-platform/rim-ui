@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Plugin commands can be approved per connected agent, one by one. A new optional manifest field
+  `read_only` marks commands that run for it without asking; every other approved command asks
+  first.
 - A connected agent can ask to send a message to a channel it has a grant for: you see the whole
   text in a dialog and confirm each one.
 - Closing the desktop app's window now asks whether RIM stays running in the system tray or quits,

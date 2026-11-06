@@ -117,6 +117,11 @@ the palette, keybinds, macros and, when allowed, the AI agent.
 - **`ai_callable`** (bool, default `false`): offers the command to the agent once the user allows
   it in the plugin's AI access settings. The tool name `plugin__<plugin_id, dots as _>__<id>` must
   match `[A-Za-z0-9_-]{1,64}`, or the command is not offered.
+- **`read_only`** (bool, default `false`): the plugin's claim that the command changes nothing. An
+  agent outside RIM runs an approved `read_only` command without asking; every other approved
+  command waits for a confirmation. RIM cannot verify the claim, and the approval screen says it is
+  the plugin's. It cannot be combined with `dangerous`: ``command `<id>` cannot be both read_only
+  and dangerous``. It has no effect on the built-in agent.
 - **`output_schema`** (JSON or `null`, default `null`): the JSON Schema of the payload. An
   `ai_callable` command fails with `REQUIRES_MANUAL_REVIEW`, and does not install, without one or
   when its root is not `"type": "object"`, sets `"additionalProperties": true`, or has neither

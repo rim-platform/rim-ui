@@ -14,8 +14,8 @@ const MAX_REFUSED_PER_AGENT = 500;
 export const CLEARED_TOOL = "cleared";
 
 /**
- * One thing RIM handed to an agent, refused it, or was asked to do for it. Holds no message text
- * and no query text.
+ * One thing RIM handed to an agent, refused it, or was asked to do for it. Holds no message text,
+ * no query text, and nothing a plugin command was given or returned.
  */
 export interface RecordEntry {
   /** When, ISO 8601. */
@@ -33,7 +33,9 @@ export interface RecordEntry {
   /** Whether a grant or validation check refused it. */
   refused: boolean;
   /** For a request to change something: that it was asked, or how it ended. */
-  change?: "asked" | "sent" | "discarded" | "expired" | "busy" | "refused";
+  change?: "asked" | "sent" | "proposed" | "done" | "discarded" | "expired" | "busy" | "refused";
+  /** The plugin command it was about. An id the call gave in the wrong shape is left empty. */
+  plugin?: { pluginId: string; commandId: string };
 }
 
 interface AgentRecordState {

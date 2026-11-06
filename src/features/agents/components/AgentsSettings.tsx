@@ -15,6 +15,7 @@ import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentGrantsDialog } from "./AgentGrantsDialog";
+import { AgentPluginsDialog } from "./AgentPluginsDialog";
 import { AgentRecordDialog } from "./AgentRecordDialog";
 
 const SWITCH_LABEL = "Let agents on this computer connect";
@@ -27,6 +28,7 @@ export function AgentsSettings() {
   const [readFailed, setReadFailed] = useState(false);
   const [disconnecting, setDisconnecting] = useState<ConnectedAgent | null>(null);
   const [choosing, setChoosing] = useState<ConnectedAgent | null>(null);
+  const [choosingPlugins, setChoosingPlugins] = useState<ConnectedAgent | null>(null);
   const [viewing, setViewing] = useState<ConnectedAgent | null>(null);
   const [viewingAll, setViewingAll] = useState(false);
   const hasRecord = useAgentRecordStore((s) => s.entries.length > 0);
@@ -140,6 +142,15 @@ export function AgentsSettings() {
                     type="button"
                     variant="secondary"
                     size="sm"
+                    aria-label={`Choose the plugin commands of ${agent.name}`}
+                    onClick={() => setChoosingPlugins(agent)}
+                  >
+                    Choose its plugin commands
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
                     aria-label={`What ${agent.name} was given`}
                     onClick={() => setViewing(agent)}
                   >
@@ -170,6 +181,9 @@ export function AgentsSettings() {
       )}
 
       {choosing && <AgentGrantsDialog agent={choosing} onClose={() => setChoosing(null)} />}
+      {choosingPlugins && (
+        <AgentPluginsDialog agent={choosingPlugins} onClose={() => setChoosingPlugins(null)} />
+      )}
       {viewing && <AgentRecordDialog agent={viewing} onClose={() => setViewing(null)} />}
       {viewingAll && <AgentRecordDialog agent={null} onClose={() => setViewingAll(false)} />}
 

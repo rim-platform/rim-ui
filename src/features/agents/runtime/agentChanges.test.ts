@@ -7,7 +7,7 @@ import {
 import { logger } from "../../../core/logger";
 import type { RecordEntry } from "../state/useAgentRecordStore";
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
-import { createAgentChanges, type AgentChangesDeps } from "./agentChanges";
+import { createAgentChanges, createCooldown, type AgentChangesDeps } from "./agentChanges";
 import { createAgentReads } from "./agentReads";
 import type { AgentGrants, GrantChannel } from "./grants";
 
@@ -143,6 +143,7 @@ describe("createAgentChanges", () => {
         entries.push(entry);
         return Promise.resolve();
       }),
+      cooldown: createCooldown(() => clock),
       now: vi.fn(() => clock),
     } as unknown as typeof deps;
     deps.post.mockResolvedValueOnce(held());

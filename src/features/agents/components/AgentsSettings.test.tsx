@@ -11,6 +11,11 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 vi.mock("../../../shared/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
+vi.mock("./AgentPluginsDialog", () => ({
+  AgentPluginsDialog: ({ agent }: { agent: { name: string } }) => (
+    <div>Plugin commands of {agent.name}</div>
+  ),
+}));
 
 import { toast } from "../../../shared/toast";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
@@ -30,6 +35,7 @@ const AGENT: ConnectedAgent = {
   tokenHash: "hash-1",
   pairedAt: "2026-11-06T10:00:00.000Z",
   grants: {},
+  pluginApprovals: {},
 };
 
 interface Status {
@@ -253,5 +259,17 @@ describe("AgentsSettings", () => {
     expect(screen.getByRole("button", { name: "What Claude Code was given" })).toHaveTextContent(
       "What it was given",
     );
+  });
+
+  it("opens the choice of plugin commands for that agent", async () => {
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    const user = userEvent.setup();
+    await renderedSwitch();
+    const button = screen.getByRole("button", {
+      name: "Choose the plugin commands of Claude Code",
+    });
+    expect(button).toHaveTextContent("Choose its plugin commands");
+    await user.click(button);
+    expect(screen.getByText("Plugin commands of Claude Code")).toBeInTheDocument();
   });
 });

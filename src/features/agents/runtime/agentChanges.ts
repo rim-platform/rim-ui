@@ -27,6 +27,14 @@ export interface AgentConfirmation {
   argsHash: string;
 }
 
+/** Holds back an agent whose last request was discarded or expired. */
+export interface Cooldown {
+  /** Whether the agent's next request is still turned away. */
+  active: (agentId: string) => boolean;
+  /** Starts the wait for this agent. */
+  start: (agentId: string) => void;
+}
+
 /** What the changes need from the app. */
 export interface AgentChangesDeps {
   /** The conversation by id; `null` when it cannot be found or seen. */
@@ -50,6 +58,8 @@ export interface AgentChangesDeps {
   confirm: (request: AgentConfirmation) => Promise<"approved" | "discarded" | "busy">;
   /** Keeps an entry. A failure before anything is posted refuses the call. */
   record: (entry: RecordEntry) => Promise<void>;
+  /** Shared with every other request that asks the person. */
+  cooldown: Cooldown;
   now: () => number;
 }
 
@@ -66,11 +76,13 @@ const INVALID: ToolOutcome = {
   isError: true,
   payload: { refusal: "INVALID", message: "Give workspaceId, channelId and text." },
 };
-const COOLING_DOWN: ToolOutcome = {
+/** The answer while an agent is held back. */
+export const COOLING_DOWN: ToolOutcome = {
   isError: true,
   payload: { refusal: "FAILED", retrySafe: true, message: "Wait ten seconds, then try again." },
 };
-const BUSY: ToolOutcome = {
+/** The answer while another confirmation is open. */
+export const BUSY: ToolOutcome = {
   isError: true,
   payload: {
     refusal: "FAILED",
@@ -125,15 +137,31 @@ function messageIdOf(result: CommandResult): string | null {
 }
 
 /**
+ * Creates a cooldown.
+ *
+ * @param now - The clock it measures the wait by.
+ * @returns The cooldown, with no agent held back.
+ */
+export function createCooldown(now: () => number): Cooldown {
+  const lastEnded = new Map<string, number>();
+  return {
+    active(agentId) {
+      const last = lastEnded.get(agentId);
+      return last !== undefined && now() - last < COOLDOWN_MS;
+    },
+    start(agentId) {
+      lastEnded.set(agentId, now());
+    },
+  };
+}
+
+/**
  * Creates the changes.
  *
  * @param deps - The lookups, the server call, the dialog and the record.
  * @returns One function per tool. None rejects on a refusal or a failed post.
  */
 export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
-  /** When each agent's last request was discarded or expired. */
-  const lastEnded = new Map<string, number>();
-
   function entry(
     call: Call,
     change: NonNullable<RecordEntry["change"]>,
@@ -179,7 +207,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
   }
 
   function expired(call: Call): Promise<ToolOutcome> {
-    lastEnded.set(call.agent.id, deps.now());
+    deps.cooldown.start(call.agent.id);
     return ended(entry(call, "expired"), EXPIRED);
   }
 
@@ -213,8 +241,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
         return ended(entry(call, "refused"), INVALID);
       }
 
-      const last = lastEnded.get(agent.id);
-      if (last !== undefined && deps.now() - last < COOLDOWN_MS) return COOLING_DOWN;
+      if (deps.cooldown.active(agent.id)) return COOLING_DOWN;
 
       const workspace = await grantedWorkspace(agent, workspaceId, channelId);
       if (workspace === null) return ended(entry(call, "refused"), denied());
@@ -255,7 +282,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
       if (decision === "busy") return ended(entry(call, "busy"), BUSY);
       if (decision === "discarded") {
         if (deps.now() >= Date.parse(challenge.expiresAt)) return expired(call);
-        lastEnded.set(agent.id, deps.now());
+        deps.cooldown.start(agent.id);
         return ended(entry(call, "discarded"), DISCARDED);
       }
 

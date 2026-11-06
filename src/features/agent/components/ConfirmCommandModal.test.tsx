@@ -841,6 +841,78 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
     expect(screen.getByText("gen⟦U+202E⟧eral")).toBeInTheDocument();
   });
 
+  describe("for a plugin command", () => {
+    const LONG = "x ".repeat(500);
+
+    function openPluginCommand(args: Record<string, unknown>) {
+      render(<ConfirmCommandModal />);
+      act(() => {
+        void useConfirmationModalStore.getState().open(
+          makeRequest({
+            commandId: "list",
+            toolName: "run a plugin command",
+            args: {},
+            verb: null,
+            initiator: "agent",
+            nlDescription: undefined,
+            outsideAgent: {
+              name: "Claude Code",
+              target: [
+                { label: "Plugin", value: "Pods" },
+                { label: "Command", value: "list" },
+              ],
+              pluginWords: { title: "List\u202E pods", description: "Lists\u200B them" },
+              args,
+            },
+          }),
+        );
+      });
+    }
+
+    it("marks the title and description as the plugin's words, with invisibles shown", () => {
+      openPluginCommand({});
+      const words = screen.getByTestId("outside-agent-plugin-words");
+      expect(words).toHaveTextContent("In the plugin's words:");
+      expect(words).toHaveTextContent("List⟦U+202E⟧ pods");
+      expect(words).toHaveTextContent("Lists⟦U+200B⟧ them");
+    });
+
+    it("shows each argument whole, in a box that scrolls, with invisibles shown", () => {
+      openPluginCommand({ long: LONG, "na\u202Eme": "va\u202Elue", nested: { deep: [1, 2] } });
+      const box = screen.getByRole("group", { name: "The arguments" });
+      expect(box).toHaveClass("overflow-y-auto");
+      expect(box.textContent).toContain(LONG);
+      expect(box).toHaveTextContent("na⟦U+202E⟧me");
+      expect(box).toHaveTextContent("va⟦U+202E⟧lue");
+      expect(box).toHaveTextContent('{"deep":[1,2]}');
+      expect(screen.getByTestId("outside-agent-args-size")).toHaveTextContent(
+        "Scroll to read it all.",
+      );
+    });
+
+    it("masks an argument that looks like a secret", () => {
+      openPluginCommand({ api_key: "the-secret-value", other: "ghp_abcdef" });
+      const box = screen.getByTestId("outside-agent-args");
+      expect(box.textContent).not.toContain("the-secret-value");
+      expect(box.textContent).not.toContain("ghp_abcdef");
+      expect(box).toHaveTextContent("[REDACTED]");
+    });
+
+    it("says when there are no arguments", () => {
+      openPluginCommand({});
+      expect(screen.getByTestId("outside-agent-args")).toHaveTextContent("(no arguments)");
+    });
+
+    it("does not offer to send, and waits a second like any outside request", () => {
+      openPluginCommand({});
+      const confirm = screen.getByTestId("confirm-button");
+      expect(confirm).toBeDisabled();
+      expect(confirm).not.toHaveTextContent("Send");
+      pass(1000);
+      expect(confirm).toBeEnabled();
+    });
+  });
+
   it("leaves what is confirmed exact in the request", () => {
     open("safe\u202Etxt");
     expect(useConfirmationModalStore.getState().request?.outsideAgent?.text).toBe("safe\u202Etxt");

@@ -856,6 +856,7 @@ mod tests {
             arguments: vec![],
             ai_callable,
             output_schema,
+            read_only: false,
         }
     }
 

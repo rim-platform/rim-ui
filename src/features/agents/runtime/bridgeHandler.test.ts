@@ -25,6 +25,7 @@ const mcp = {
     searchMessages: vi.fn(),
   },
   changes: { sendMessage: vi.fn() },
+  plugins: { listCommands: vi.fn(), runCommand: vi.fn() },
 };
 
 function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {

@@ -41,6 +41,10 @@ export interface ConfirmationRequest {
     target: { label: string; value: string }[];
     /** Exact text being confirmed; shown whole. */
     text?: string;
+    /** What the plugin's author says the command does, marked as theirs. */
+    pluginWords?: { title: string; description: string };
+    /** The arguments being confirmed; shown whole, with secrets masked. */
+    args?: Record<string, unknown>;
   };
 }
 
