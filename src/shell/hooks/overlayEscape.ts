@@ -12,11 +12,11 @@ import { hostDialogOpen } from "../../shared/ui/hostDialogs";
  */
 export function closeOnEscape(event: KeyboardEvent, close: () => void): void {
   if (event.key !== "Escape" || event.defaultPrevented || hostDialogOpen()) return;
-  // React events bubble through portals: an Escape from a picker or menu rendered elsewhere in
-  // the document belongs to that one.
   // A picker or menu that is open closes itself on this Escape, from a listener on the document
   // that runs after this one.
   if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+  // React events bubble through portals: an Escape from something rendered elsewhere in the
+  // document belongs to that one.
   if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
   if (
     event.target instanceof Element &&
