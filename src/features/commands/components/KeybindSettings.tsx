@@ -492,7 +492,7 @@ export function KeybindSettings() {
           <button
             onClick={() => confirmPendingRecord(kb, pendingRecord.keystroke)}
             disabled={blocked || updateMutation.isPending}
-            className="rounded bg-rim-accent px-2 py-0.5 text-[11px] font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+            className="rounded bg-rim-text px-2 py-0.5 text-[11px] font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
           >
             Save
           </button>
@@ -631,7 +631,7 @@ export function KeybindSettings() {
               disabled={
                 !newKeystroke || !newCommandId || workspaceConflict || createMutation.isPending
               }
-              className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+              className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Saving..." : "Save"}
             </button>
@@ -763,7 +763,7 @@ export function KeybindSettings() {
                           <button
                             onClick={() => handleSaveEdit(kb)}
                             disabled={!editCommandId || updateMutation.isPending}
-                            className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+                            className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
                           >
                             {updateMutation.isPending ? "Saving..." : "Save"}
                           </button>

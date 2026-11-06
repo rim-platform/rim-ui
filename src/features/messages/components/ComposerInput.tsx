@@ -530,7 +530,7 @@ export function ComposerInput({
         <button
           type="submit"
           disabled={isSubmitting || isUploading || !canSubmit}
-          className="rounded-lg bg-rim-accent p-2 text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
+          className="rounded-lg bg-rim-text p-2 text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
           aria-label={inThread ? "Send reply" : "Send message"}
         >
           {isUploading ? (

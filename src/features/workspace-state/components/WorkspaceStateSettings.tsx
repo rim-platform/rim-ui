@@ -258,7 +258,7 @@ function EntryEditor({ serverId, scope, existingEntry, onClose }: EntryEditorPro
           type="button"
           onClick={handleSave}
           disabled={setWorkspaceState.isPending}
-          className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-rim-void transition hover:bg-rim-accent/80 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md bg-rim-text px-3 py-1.5 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
         >
           {setWorkspaceState.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -542,7 +542,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
           <button
             type="button"
             onClick={() => setEditorMode({ kind: "create" })}
-            className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-rim-void transition hover:bg-rim-accent/80"
+            className="flex items-center gap-1.5 rounded-md bg-rim-text px-3 py-1.5 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90"
           >
             <Plus className="h-3.5 w-3.5" />
             New entry

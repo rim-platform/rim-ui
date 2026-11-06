@@ -184,7 +184,7 @@ export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuild
               <button
                 type="button"
                 onClick={handleUseSteps}
-                className="flex items-center gap-1.5 rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-rim-void transition hover:bg-rim-accent/90"
+                className="flex items-center gap-1.5 rounded-lg bg-rim-text px-4 py-2 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90"
               >
                 Use these steps
               </button>
@@ -193,7 +193,7 @@ export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuild
                 type="button"
                 onClick={() => void handleGenerate()}
                 disabled={!prompt.trim() || isGenerating}
-                className="flex items-center gap-1.5 rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-rim-void transition hover:bg-rim-accent/90 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-rim-text px-4 py-2 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
               >
                 {isGenerating ? (
                   <>

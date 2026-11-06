@@ -196,7 +196,7 @@ export function EmojiManagement({ serverId }: EmojiManagementProps) {
             onClick={handleUpload}
             disabled={!selectedFile || !name.trim() || createEmoji.isPending}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded bg-rim-accent px-3 py-1.5 text-sm text-rim-void transition hover:brightness-110",
+              "inline-flex items-center gap-1.5 rounded bg-rim-text px-3 py-1.5 text-sm text-rim-panel transition hover:brightness-110",
               (!selectedFile || !name.trim() || createEmoji.isPending) &&
                 "cursor-not-allowed opacity-50",
             )}
