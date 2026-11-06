@@ -321,6 +321,9 @@ async fn respond(request: Request<Incoming>, serving: &Serving) -> Response<Full
 /// Checks a request, reads its body and forwards it.
 async fn handle(request: Request<Incoming>, serving: &Serving) -> Result<BridgeAnswer, Refused> {
     let (parts, body) = request.into_parts();
+    if parts.headers.get_all(header::HOST).iter().count() > 1 {
+        return Err(Refused::BadHost);
+    }
     let path = admit(
         serving.port,
         parts.method.as_str(),
@@ -889,6 +892,20 @@ mod tests {
         raw.push(0xff);
         raw.extend_from_slice(b"\r\n\r\n{}");
         let response = read_response(&mut send(listener.port, &raw));
+        assert_eq!(status_line_code(&response), 403, "{response}");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_second_host_is_refused() {
+        let (forward, calls) = counting();
+        let listener = Listener::start(0, forward).unwrap();
+        let port = listener.port;
+        let raw = format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nHost: evil.example\r\n\
+             Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}"
+        );
+        let response = read_response(&mut send(port, raw.as_bytes()));
         assert_eq!(status_line_code(&response), 403, "{response}");
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
