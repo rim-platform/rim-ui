@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 import type { PluginInfo } from "../../features/plugins/types";
 import { createTestQueryClient } from "../../test/utils";
@@ -110,10 +113,29 @@ vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {}
 vi.mock("../../features/workspaces/components/WorkspaceSelector", () => ({
   WorkspaceSelector: () => null,
 }));
+const mounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../../features/messages/components/MessageTimeline", () => ({
-  MessageTimeline: () => null,
+  MessageTimeline: () => {
+    useEffect(() => {
+      mounts.count += 1;
+    }, []);
+    return null;
+  },
 }));
-vi.mock("../../features/threads/components/ThreadPanel", () => ({ ThreadPanel: () => null }));
+const threadFocus = vi.hoisted(() => ({ on: false }));
+vi.mock("../../features/threads/components/ThreadPanel", () => ({
+  ThreadPanel: () => {
+    const ref = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+      if (threadFocus.on) ref.current?.focus();
+    }, []);
+    return (
+      <div data-testid="thread-panel">
+        <input ref={ref} data-testid="thread-input" />
+      </div>
+    );
+  },
+}));
 vi.mock("../../features/conversations/components/ConversationInvitation", () => ({
   InvitationGate: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -144,12 +166,14 @@ vi.mock("../../features/plugins/components/PluginSlotContainer", () => ({
 vi.mock("../components/WorkspaceRail", () => ({
   WorkspaceRail: () => <div data-testid="workspace-rail" />,
 }));
-vi.mock("../components/SideRail", () => ({ SideRail: () => null }));
-vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => null }));
+vi.mock("../components/SideRail", () => ({ SideRail: () => <div data-testid="side-rail" /> }));
+vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => <div data-testid="tool-panel" /> }));
 vi.mock("../components/ConversationHeader", () => ({
   ConversationHeader: () => <div data-testid="conversation-header" />,
 }));
-vi.mock("../../features/settings/components/SettingsPage", () => ({ SettingsPage: () => null }));
+vi.mock("../../features/settings/components/SettingsPage", () => ({
+  SettingsPage: () => <div data-testid="settings-page" />,
+}));
 vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
@@ -178,6 +202,16 @@ vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
   PinnedMessagesPanel: () => {
     if (pinnedShouldThrow) throw new Error("pinned boom");
     return <div data-testid="pinned-panel">pinned ok</div>;
+  },
+}));
+
+vi.mock("../../features/conversations/components/ConversationSelectionRuntime", () => ({
+  ConversationSelectionRuntime: () => {
+    useEffect(() => {
+      const shell = useShellStore.getState();
+      if (shell.selectedConversationId === null) shell.setSelectedConversationId("conv-first");
+    }, []);
+    return null;
   },
 }));
 
@@ -394,5 +428,346 @@ describe("AppShell — the unlock gate", () => {
     renderShell();
     expect(screen.getByRole("status")).toHaveTextContent("Restoring session...");
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell — narrow and medium windows", () => {
+  let observers: ((width: number) => void)[] = [];
+  let width = 1400;
+
+  beforeEach(() => {
+    observers = [];
+    pinnedShouldThrow = false;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: ResizeObserverCallback;
+        constructor(callback: ResizeObserverCallback) {
+          this.callback = callback;
+        }
+        observe() {
+          observers.push((next) =>
+            this.callback(
+              [{ contentRect: { width: next } } as ResizeObserverEntry],
+              this as unknown as ResizeObserver,
+            ),
+          );
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => ({ width }) as DOMRect,
+    );
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    pluginList.data = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useShellStore.setState({ sidebarCollapsed: false });
+  });
+
+  function renderAt(px: number) {
+    width = px;
+    return renderShell();
+  }
+
+  function resizeTo(px: number) {
+    act(() => observers.forEach((fire) => fire(px)));
+  }
+
+  it("keeps every panel beside the conversation in a wide window", () => {
+    useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
+    renderAt(1400);
+    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("thread-panel")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+  });
+
+  it("opens the thread over the conversation in a medium window and keeps the side panel", async () => {
+    const user = userEvent.setup();
+    renderAt(900);
+    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
+
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+
+    const dialog = screen.getByRole("region", { name: "Thread" });
+    expect(within(dialog).getByTestId("thread-panel")).toBeInTheDocument();
+    expect(dialog).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().isThreadOpen).toBe(false);
+    expect(screen.queryByRole("region", { name: "Thread" })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("opens pinned messages and a tool-panel plugin as overlays in a medium window", async () => {
+    const user = userEvent.setup();
+    pluginList.data = [
+      {
+        plugin_id: "p",
+        manifest_id: "p",
+        display_name: "P",
+        version: "1.0.0",
+        description: "",
+        enabled: true,
+        capabilities: [],
+        approved_capabilities: ["ui.panel"],
+        approved_ai_commands: [],
+        ai_callable_commands: [],
+        ai_consent_required: false,
+        fingerprint_changed: false,
+        panels: [{ id: "notes", title: "Notes" }],
+      },
+    ];
+    useShellStore.setState({ pinnedPanelOpen: true });
+    useShellStore.getState().openPluginPanel("p", "notes", "tool_panel");
+    renderAt(900);
+
+    const pins = screen.getByRole("region", { name: "Pinned messages" });
+    expect(within(pins).getByTestId("pinned-panel")).toBeInTheDocument();
+    const plugin = screen.getByRole("region", { name: "Notes" });
+    expect(within(plugin).getByTestId("plugin-slot-notes")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().pinnedPanelOpen).toBe(false);
+  });
+
+  it("puts the navigation in a drawer in a narrow window", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
+    renderAt(600);
+    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    expect(within(drawer).getByTestId("workspace-rail")).toBeInTheDocument();
+    expect(within(drawer).getByTestId("side-rail")).toBeInTheDocument();
+    expect(drawer).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveFocus();
+  });
+
+  it("shows the conversation list in the drawer and closes it when a conversation is chosen", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    expect(
+      within(screen.getByRole("dialog", { name: "Navigation" })).getByTestId("tool-panel"),
+    ).toBeInTheDocument();
+
+    act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const backdrop = document.querySelector('[aria-hidden="true"].absolute') as HTMLElement;
+    await user.click(backdrop);
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("fills the main area with a thread in a narrow window", () => {
+    useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
+    renderAt(600);
+    expect(screen.getByRole("region", { name: "Thread" }).className).toContain("inset-0");
+  });
+
+  it("follows the window as it is resized and never writes the saved sidebar choice", () => {
+    useShellStore.setState({ sidebarCollapsed: true });
+    renderAt(1400);
+    expect(useShellStore.getState().shellWidth).toBe("wide");
+
+    resizeTo(600);
+    expect(useShellStore.getState().shellWidth).toBe("narrow");
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+
+    resizeTo(1400);
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+    expect(useShellStore.getState().sidebarCollapsed).toBe(true);
+    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+  });
+
+  it("opens the drawer when the tool panel is asked for in a narrow window", () => {
+    renderAt(600);
+    act(() => useShellStore.getState().setShowNewMessagePicker(true));
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+  });
+
+  it("keeps the conversation mounted across a resize through every width class", () => {
+    mounts.count = 0;
+    renderAt(1400);
+    expect(mounts.count).toBe(1);
+    resizeTo(900);
+    resizeTo(600);
+    resizeTo(1400);
+    expect(mounts.count).toBe(1);
+  });
+
+  it("keeps a main-area page mounted when the window narrows", () => {
+    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
+    renderAt(1400);
+    const text = screen.getByText("Marketplace coming soon!");
+    resizeTo(600);
+    expect(screen.getByText("Marketplace coming soon!")).toBe(text);
+  });
+
+  it("keeps Tab inside the drawer and closes it on Escape from the page body", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    expect(drawer).toHaveAttribute("aria-modal", "true");
+    const first = document.createElement("button");
+    first.textContent = "first";
+    const last = document.createElement("button");
+    last.textContent = "last";
+    drawer.prepend(first);
+    drawer.append(last);
+
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+
+    (document.activeElement as HTMLElement).blur();
+    await user.tab();
+    expect(first).toHaveFocus();
+
+    (document.activeElement as HTMLElement).blur();
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("leaves Escape to an open menu above the drawer", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
+    document.body.append(menu);
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+    menu.remove();
+  });
+
+  it("does not close the thread for an Escape from a portal outside it", async () => {
+    renderAt(900);
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    const picker = document.createElement("input");
+    document.body.append(picker);
+    picker.focus();
+    const region = screen.getByRole("region", { name: "Thread" });
+    // A synthetic event whose React ancestry runs through the overlay, but whose DOM does not.
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true });
+    picker.dispatchEvent(event);
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    expect(region).toBeInTheDocument();
+    picker.remove();
+  });
+
+  it("returns focus past a child that took focus itself when the overlay opened", () => {
+    renderAt(900);
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    threadFocus.on = true;
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    expect(screen.getByTestId("thread-input")).toHaveFocus();
+    act(() => useShellStore.getState().closeThread());
+    threadFocus.on = false;
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("leaves focus alone that the person moved elsewhere", () => {
+    renderAt(900);
+    const opener = document.createElement("button");
+    const elsewhere = document.createElement("textarea");
+    document.body.append(opener, elsewhere);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    elsewhere.focus();
+    act(() => useShellStore.getState().closeThread());
+    expect(elsewhere).toHaveFocus();
+    opener.remove();
+    elsewhere.remove();
+  });
+
+  it("keeps the drawer open after the first press although the conversation opens at load", () => {
+    useShellStore.setState({ selectedConversationId: null });
+    renderAt(600);
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-first");
+
+    act(() => useShellStore.getState().toggleNavDrawer());
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+  });
+
+  it("opens the drawer for a panel asked for after the drawer was closed with another open", () => {
+    renderAt(600);
+    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+
+    act(() => useShellStore.getState().setNavDrawerOpen(false));
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+
+    act(() => useMembersPanelStore.getState().setOpen(true));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+    act(() => useShellStore.getState().setNavDrawerOpen(false));
+    expect(useMembersPanelStore.getState().open).toBe(false);
+  });
+
+  it("leaves an open panel alone when the window widens and the drawer goes", () => {
+    renderAt(600);
+    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    resizeTo(1400);
+    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    act(() => useNotificationsPanelStore.getState().setOpen(false));
+  });
+
+  it("leaves an Escape to a picker that is open over the thread", async () => {
+    const user = userEvent.setup();
+    renderAt(900);
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    const picker = document.createElement("div");
+    picker.setAttribute("role", "dialog");
+    document.body.append(picker);
+    screen.getByTestId("thread-input").focus();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    picker.remove();
+  });
+
+  it("returns focus to the composer when the element that opened the overlay is gone", () => {
+    renderAt(900);
+    const composer = document.createElement("textarea");
+    composer.setAttribute("data-composer-input", "");
+    const opener = document.createElement("button");
+    document.body.append(composer, opener);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    opener.remove();
+    act(() => useShellStore.getState().closeThread());
+    expect(composer).toHaveFocus();
+    composer.remove();
   });
 });

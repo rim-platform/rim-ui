@@ -686,7 +686,7 @@ describe("ConfirmCommandModal — a dangerous command", () => {
     const panel = screen.getByRole("dialog");
     expect(panel).toHaveAttribute("data-dangerous", "true");
     expect(panel).toHaveClass("border-l-rim-danger");
-    expect(screen.getByTestId("confirm-button")).toHaveClass("bg-rim-danger");
+    expect(screen.getByTestId("confirm-button")).toHaveClass("bg-rim-danger-solid");
     expect(panel).toHaveTextContent("This is a dangerous command.");
   });
 

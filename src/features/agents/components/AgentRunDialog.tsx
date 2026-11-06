@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
+import { ActionCard, type ActionCardState } from "../../../shared/ui/ActionCard";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useListAuditLog } from "../../audit/api/useListAuditLog";
@@ -31,6 +32,29 @@ interface Step {
   text: string;
   /** Whether RIM handed the agent content in this step. */
   handed: boolean;
+  /** How the step ended; a plain read or search has none. */
+  state?: ActionCardState;
+}
+
+/**
+ * The card state of a recorded outcome. A request still waiting on the person (`proposed`, `asked`)
+ * has no outcome to show.
+ */
+function stateOf(change: Change): ActionCardState | undefined {
+  switch (change) {
+    case "sent":
+    case "done":
+      return "done";
+    case "discarded":
+    case "expired":
+    case "busy":
+      return "ended";
+    case "refused":
+      return "denied";
+    case "asked":
+    case "proposed":
+      return undefined;
+  }
 }
 
 /** What an entry named, as the person reads it. */
@@ -91,7 +115,12 @@ function stepsOf(
       const verb = entry.plugin ? "Asked to run" : "Asked to send to";
       const what = entry.plugin ? pluginText(entry) : placeOf(entry, qc, workspaceName);
       const answer = result === null ? "No answer recorded" : CHANGE_LABELS[result];
-      steps.push({ at: entry.at, text: `${verb} ${what} → ${answer}`, handed: false });
+      steps.push({
+        at: entry.at,
+        text: `${verb} ${what} → ${answer}`,
+        handed: false,
+        state: result === null ? "ended" : stateOf(result),
+      });
       return;
     }
 
@@ -99,7 +128,12 @@ function stepsOf(
       flush();
       const what = entry.plugin ? pluginText(entry) : placeOf(entry, qc, workspaceName);
       const word = entry.change === "done" && entry.plugin ? "Ran" : CHANGE_LABELS[entry.change];
-      steps.push({ at: entry.at, text: `${word} ${what}`.trimEnd(), handed: false });
+      steps.push({
+        at: entry.at,
+        text: `${word} ${what}`.trimEnd(),
+        handed: false,
+        state: stateOf(entry.change),
+      });
       return;
     }
 
@@ -110,7 +144,7 @@ function stepsOf(
         steps[folding.index].text = `${folding.entries.length} refused requests`;
         return;
       }
-      steps.push({ at: entry.at, text: "Refused a request", handed: false });
+      steps.push({ at: entry.at, text: "Refused a request", handed: false, state: "denied" });
       folding = { key, entries: [entry], index: steps.length - 1 };
       return;
     }
@@ -173,7 +207,8 @@ function HostLines({
         <ul className="space-y-1 text-sm text-rim-text">
           {data.items.map((item) => (
             <li key={item.id} className="break-words">
-              {new Date(item.createdAt).toLocaleTimeString()} · {item.commandId} · {item.outcome}
+              {new Date(item.createdAt).toLocaleTimeString()} ·{" "}
+              <span className="font-mono">{item.commandId}</span> · {item.outcome}
             </li>
           ))}
         </ul>
@@ -251,13 +286,24 @@ export function AgentRunDialog({
       <div className="mt-3 max-h-[60vh] space-y-5 overflow-y-auto">
         <section>
           <h3 className="text-sm font-semibold text-rim-text">Steps</h3>
-          <ol className="mt-1 space-y-1 text-sm text-rim-text">
+          <ol className="mt-1 space-y-1.5 text-sm text-rim-text">
             {steps.map((step, index) => (
               <li key={`${step.at}-${index}`} className="break-words">
-                <span className="text-rim-text-muted">
-                  {new Date(step.at).toLocaleTimeString()} ·{" "}
-                </span>
-                {step.text}
+                {step.state ? (
+                  <ActionCard
+                    className="p-2.5"
+                    state={step.state}
+                    title={step.text}
+                    detail={new Date(step.at).toLocaleTimeString()}
+                  />
+                ) : (
+                  <>
+                    <span className="text-rim-text-muted">
+                      {new Date(step.at).toLocaleTimeString()} ·{" "}
+                    </span>
+                    {step.text}
+                  </>
+                )}
                 {index === gapAfter && (
                   <p className="mt-1 text-xs text-rim-text-faint">
                     {OUTSIDE_RIM} RIM can&apos;t see it, which model it used, or where the content

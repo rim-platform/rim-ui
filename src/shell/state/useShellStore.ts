@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import type { PluginPanelSlot } from "../../features/plugins/types";
 import type { DirectMember } from "../../features/relay/conversations/startDirect";
+import type { ShellWidth } from "../hooks/useShellWidth";
 
 export type ActivePanel = "inbox";
 
@@ -80,6 +81,10 @@ type ShellState = {
   displayDensity: DisplayDensity;
   zenMode: boolean;
   navigationMode: boolean;
+  /** The width class of the shell, set from its measured width. */
+  shellWidth: ShellWidth;
+  /** Whether the navigation drawer is open: the rails and tool panel of a narrow window. */
+  navDrawerOpen: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
   setMainSurface: (surface: MainSurface) => void;
@@ -112,6 +117,10 @@ type ShellState = {
   cycleDisplayDensity: () => void;
   toggleZenMode: () => void;
   setNavigationMode: (enabled: boolean) => void;
+  /** Sets the width class; any width but narrow closes the navigation drawer. */
+  setShellWidth: (width: ShellWidth) => void;
+  setNavDrawerOpen: (open: boolean) => void;
+  toggleNavDrawer: () => void;
   reset: () => void;
 };
 
@@ -141,6 +150,8 @@ export const useShellStore = create<ShellState>((set) => ({
   displayDensity: "comfortable",
   zenMode: false,
   navigationMode: false,
+  shellWidth: "wide",
+  navDrawerOpen: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setMainSurface: (surface) => set({ mainSurface: surface }),
@@ -216,6 +227,15 @@ export const useShellStore = create<ShellState>((set) => ({
 
   setNavigationMode: (enabled) => set({ navigationMode: enabled }),
 
+  setShellWidth: (width) =>
+    set((state) =>
+      state.shellWidth === width
+        ? {}
+        : { shellWidth: width, ...(width === "narrow" ? {} : { navDrawerOpen: false }) },
+    ),
+  setNavDrawerOpen: (open) => set({ navDrawerOpen: open }),
+  toggleNavDrawer: () => set((state) => ({ navDrawerOpen: !state.navDrawerOpen })),
+
   reset: () =>
     set({
       activePanel: "inbox",
@@ -238,5 +258,6 @@ export const useShellStore = create<ShellState>((set) => ({
       displayDensity: "comfortable",
       zenMode: false,
       navigationMode: false,
+      navDrawerOpen: false,
     }),
 }));

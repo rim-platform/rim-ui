@@ -11,6 +11,9 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginSettingsDialogStore } from "../../plugins/state/usePluginSettingsDialogStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
+import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
@@ -36,6 +39,9 @@ describe("this app's own commands", () => {
   });
 
   afterEach(() => {
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().setOpen(false);
     queryClient.clear();
     useUnreadStore.setState({ counts: {} });
     useWorkspaceStore.setState({ workspaceId: null });

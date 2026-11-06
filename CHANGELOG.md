@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Narrow windows work: side panels become a drawer, and threads, pins and plugin panels open
+  over the conversation instead of squeezing it. Settings shows its sections as one menu in a
+  narrow window. New commands open the audit log and the message requests, and show or hide the
+  pinned messages, the notifications and the member lists; the sidebar command opens the drawer
+  in a narrow window.
 - Settings > Agents shows an agent's runs: what it was handed and asked to do in a stretch of
   calls, with what the server recorded (`ExecuteCommandInput.runId`).
 - Plugin commands can be approved per connected agent, one by one. A new optional manifest field
@@ -56,6 +61,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 - Settings > Plugins groups plugins by how they run, and each opens in place with its
   permissions, settings and what agents can do with it.
+- The agent's run view and the confirmation dialog use the same cards: orange when you're needed, and a different card for each way a step can end.
+- A refused command now shows a card that says which kind of refusal it was: not allowed, failed, or expired.
 - The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
   say when you'd use them.
 - A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched

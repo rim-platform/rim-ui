@@ -9,11 +9,17 @@ function topPanelClose(): (() => void) | null {
   const shell = useShellStore.getState();
   const { workspaceId } = useWorkspaceStore.getState();
   const onConversation = shell.mainSurface.kind === "conversation";
+  // The navigation drawer of a narrow window sits in front of everything else.
+  if (shell.navDrawerOpen && !shell.zenMode) return () => shell.setNavDrawerOpen(false);
   // A main-area plugin panel covers the conversation, and the thread beside it.
   if (onConversation && shell.activePluginPanel?.slot === "main_area") {
     return shell.closePluginPanel;
   }
   if (shell.isThreadOpen) return shell.closeThread;
+  // Beside the conversation the pinned panel has no Escape; over it, it closes like the thread.
+  if (onConversation && shell.shellWidth !== "wide" && shell.pinnedPanelOpen) {
+    return () => shell.setPinnedPanelOpen(false);
+  }
   if (!onConversation) return () => shell.setMainSurface({ kind: "conversation" });
   if (shell.activePluginPanel) return shell.closePluginPanel;
   const notifications = useNotificationsPanelStore.getState();

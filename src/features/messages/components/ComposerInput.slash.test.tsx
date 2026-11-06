@@ -111,6 +111,7 @@ describe("ComposerInput — / suggestions", () => {
 
     await vi.waitFor(() =>
       expect(spy).toHaveBeenCalledWith("Command 0: not done", {
+        card: "denied",
         description: "Only moderators can do this",
       }),
     );

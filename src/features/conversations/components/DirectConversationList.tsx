@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
 import {
@@ -50,21 +50,11 @@ export function DirectConversationList() {
     (id: string) => {
       const conversation = items.find((c) => c.id === id);
       if (conversation) selectDirectConversation(conversation.serverId, id);
+      useShellStore.getState().setNavDrawerOpen(false);
       useShellStore.getState().setNavigationMode(false);
     },
     [items],
   );
-
-  // Open the first conversation of the space shown when nothing is open; a draft DM counts as
-  // open. A plugin panel the user has open stays over it.
-  const draftOpen = draftDirect !== null;
-  useEffect(() => {
-    if (selectedId || draftOpen) return;
-    const first = items.find((c) => c.serverId === workspaceId);
-    if (first) {
-      useShellStore.getState().setSelectedConversationId(first.id, { keepPluginPanel: true });
-    }
-  }, [selectedId, draftOpen, items, workspaceId]);
 
   if (isPending) {
     return <p className="px-2 py-4 text-sm text-rim-text-muted">Loading conversations...</p>;

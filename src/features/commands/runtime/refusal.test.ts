@@ -81,17 +81,21 @@ describe("showCommandRefusal", () => {
       retry,
     );
     expect(toast.error).toHaveBeenCalledWith("Ban: not done", {
+      card: "denied",
       description: "You don't have the `moderation.ban` permission.",
     });
+    expect(vi.mocked(toast.error).mock.calls[0][1]?.action).toBeUndefined();
   });
 
   it("uses the server's message for DENIED without a missing capability, or a default", () => {
     showCommandRefusal("Ban", failure("Timed out until noon.", { code: "TIMED_OUT" }));
     expect(toast.error).toHaveBeenLastCalledWith("Ban: not done", {
+      card: "denied",
       description: "Timed out until noon.",
     });
     showCommandRefusal("Ban", { response: { errors: [{ extensions: { refusal: "DENIED" } }] } });
     expect(toast.error).toHaveBeenLastCalledWith("Ban: not done", {
+      card: "denied",
       description: "You don't have permission to do this.",
     });
   });
@@ -106,6 +110,7 @@ describe("showCommandRefusal", () => {
     const [title, options] = vi.mocked(toast.warning).mock.calls[0];
     expect(title).toBe("Sync: failed");
     expect(options?.description).toBe("Upstream timed out. It is safe to try again.");
+    expect(options?.card).toBe("failed");
     expect(options?.action?.label).toBe("Retry");
     options?.action?.onClick();
     expect(retry).toHaveBeenCalledOnce();
@@ -118,6 +123,7 @@ describe("showCommandRefusal", () => {
       vi.fn(),
     );
     expect(toast.warning).toHaveBeenCalledWith("Sync: failed", {
+      card: "failed",
       description: "Upstream timed out. It may have gone through, so check before trying again.",
       action: undefined,
     });
@@ -134,6 +140,7 @@ describe("showCommandRefusal", () => {
     const [title, options] = vi.mocked(toast.info).mock.calls[0];
     expect(title).toBe("Delete: expired");
     expect(options?.description).toBe("You didn't confirm in time. Nothing ran.");
+    expect(options?.card).toBe("ended");
     expect(options?.action?.label).toBe("Ask again");
     options?.action?.onClick();
     expect(retry).toHaveBeenCalledOnce();
@@ -143,6 +150,7 @@ describe("showCommandRefusal", () => {
   it("shows INVALID and unknown errors as the title and message, with no action", () => {
     showCommandRefusal("Run", failure("Bad argument", { refusal: "INVALID" }), vi.fn());
     expect(toast.error).toHaveBeenLastCalledWith("Run: Bad argument");
+    expect(vi.mocked(toast.error).mock.calls.at(-1)?.[1]).toBeUndefined();
     showCommandRefusal("Run", new Error("Network down"), vi.fn());
     expect(toast.error).toHaveBeenLastCalledWith("Run: Network down");
   });

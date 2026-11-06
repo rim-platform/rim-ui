@@ -3,6 +3,8 @@ import { useState, useEffect, useId, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { NavMenuButton } from "../../../shell/components/NavMenuButton";
+import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { KeyboardSettings } from "../../commands/components/KeyboardSettings";
@@ -235,7 +237,7 @@ function AboutRim() {
   );
 }
 
-type SettingsTab =
+export type SettingsTab =
   | "profile"
   | "keybinds"
   | "keyboard"
@@ -288,7 +290,7 @@ const groups = [
 
 type SettingsGroup = (typeof groups)[number];
 
-const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
+export const SETTINGS_TABS: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "profile", label: "Profile", group: "You" },
   { key: "account", label: "Account", group: "You" },
   { key: "security", label: "Security", group: "You" },
@@ -316,6 +318,35 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "about", label: "About", group: "About" },
 ];
 
+/** What decides which settings tabs a person is offered. */
+export interface SettingsTabAccess {
+  canModerate: boolean;
+  isOperator: boolean;
+  customEmoji: boolean;
+  botsManageable: boolean;
+  agentAvailable: boolean;
+  desktopShellAvailable: boolean;
+  inDirectSpace: boolean;
+}
+
+/**
+ * The settings tabs offered under `access`, in display order.
+ *
+ * @param access - The person's role, the server's features and where they are.
+ */
+export function visibleSettingsTabs(access: SettingsTabAccess): typeof SETTINGS_TABS {
+  return SETTINGS_TABS.filter(
+    (tab) =>
+      (!["workspace", "workspace-moderation"].includes(tab.key) || access.canModerate) &&
+      (tab.key !== "moderation" || access.isOperator) &&
+      (tab.key !== "emoji" || access.customEmoji) &&
+      (tab.key !== "bots" || access.botsManageable) &&
+      (!AGENT_TABS.includes(tab.key) || access.agentAvailable) &&
+      (tab.key !== "desktop" || access.desktopShellAvailable) &&
+      !(access.inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
+  );
+}
+
 export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const mainSurface = useShellStore((s) => s.mainSurface);
@@ -326,7 +357,7 @@ export function SettingsPage() {
   // stale or typo'd value doesn't silently show an empty panel.
   const resolveTab = (surface: typeof mainSurface): SettingsTab => {
     if (surface.kind === "settings" && surface.tab) {
-      const found = tabs.find((t) => t.key === surface.tab);
+      const found = SETTINGS_TABS.find((t) => t.key === surface.tab);
       if (found) return found.key;
     }
     return "profile";
@@ -350,21 +381,21 @@ export function SettingsPage() {
   const canHaveLink = useCanHavePublicLink(workspaceId);
   const { data: requestCount } = useJoinRequestCount(workspaceId, canModerate && canHaveLink);
   const moderationBadge = canModerate && canHaveLink ? joinRequestBadge(requestCount) : null;
-  const visibleTabs = tabs.filter(
-    (tab) =>
-      (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
-      (tab.key !== "moderation" || isOperator) &&
-      (tab.key !== "emoji" || customEmoji) &&
-      (tab.key !== "bots" || botsManageable) &&
-      (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
-      (tab.key !== "desktop" || desktopShellAvailable()) &&
-      !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
-  );
+  const visibleTabs = visibleSettingsTabs({
+    canModerate,
+    isOperator,
+    customEmoji,
+    botsManageable,
+    agentAvailable: agentAvailable(),
+    desktopShellAvailable: desktopShellAvailable(),
+    inDirectSpace,
+  });
+  const narrow = useShellWidth() === "narrow";
   const shownTab: SettingsTab =
     activeTab === "moderation" || visibleTabs.some((tab) => tab.key === activeTab)
       ? activeTab
       : "profile";
-  const sectionLabel = tabs.find((tab) => tab.key === shownTab)?.label ?? "Settings";
+  const sectionLabel = SETTINGS_TABS.find((tab) => tab.key === shownTab)?.label ?? "Settings";
   // Groups with no visible tab are left out, label included.
   const visibleGroups = groups
     .map((group) => ({ group, items: visibleTabs.filter((tab) => tab.group === group) }))
@@ -384,8 +415,16 @@ export function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-10 items-center justify-between border-b border-rim-line px-8">
-        <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
+      <div
+        className={cn(
+          "flex h-10 items-center justify-between border-b border-rim-line",
+          narrow ? "px-4" : "px-8",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <NavMenuButton />
+          <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
+        </div>
         <button
           type="button"
           onClick={() => setMainSurface({ kind: "conversation" })}
@@ -397,58 +436,82 @@ export function SettingsPage() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Section navigation */}
-        <nav
-          aria-label="Settings sections"
-          onKeyDown={handleVerticalStripKeys}
-          className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
-        >
-          {visibleGroups.map(({ group, items }) => {
-            const labelId = `${groupIdPrefix}-${group}`;
-            return (
-              <div key={group} role="group" aria-labelledby={labelId}>
-                <p
-                  id={labelId}
-                  className="px-3 pt-4 pb-1 text-[11px] uppercase tracking-wide text-rim-text-faint"
-                >
-                  {group}
-                </p>
-                {items.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    aria-current={shownTab === tab.key ? "page" : undefined}
-                    className={cn(
-                      "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
-                      shownTab === tab.key
-                        ? "bg-rim-panel-soft text-rim-text"
-                        : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
-                    )}
+      <div className={cn("flex min-h-0 flex-1", narrow && "flex-col")}>
+        {/* Section navigation: a list beside the content, or one menu above it in a narrow window */}
+        {narrow ? (
+          <div className="shrink-0 border-b border-rim-line bg-rim-void px-3 py-2">
+            <select
+              aria-label="Settings sections"
+              value={shownTab}
+              onChange={(event) => setActiveTab(event.target.value as SettingsTab)}
+              className="w-full rounded-md border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text"
+            >
+              {visibleGroups.map(({ group, items }) => (
+                <optgroup key={group} label={group}>
+                  {items.map((tab) => (
+                    <option key={tab.key} value={tab.key}>
+                      {tab.label}
+                      {tab.key === "workspace-moderation" && moderationBadge
+                        ? ` (${moderationBadge} join requests)`
+                        : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <nav
+            aria-label="Settings sections"
+            onKeyDown={handleVerticalStripKeys}
+            className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
+          >
+            {visibleGroups.map(({ group, items }) => {
+              const labelId = `${groupIdPrefix}-${group}`;
+              return (
+                <div key={group} role="group" aria-labelledby={labelId}>
+                  <p
+                    id={labelId}
+                    className="px-3 pt-4 pb-1 text-[11px] uppercase tracking-wide text-rim-text-faint"
                   >
-                    {tab.label}
-                    {tab.key === "workspace-moderation" && moderationBadge && (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className="ml-2 rounded-full bg-rim-accent px-1.5 text-[10px] font-semibold text-rim-void"
-                        >
-                          {moderationBadge}
-                        </span>
-                        <span className="sr-only">, {moderationBadge} join requests</span>
-                      </>
-                    )}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+                    {group}
+                  </p>
+                  {items.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveTab(tab.key)}
+                      aria-current={shownTab === tab.key ? "page" : undefined}
+                      className={cn(
+                        "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                        shownTab === tab.key
+                          ? "bg-rim-panel-soft text-rim-text"
+                          : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+                      )}
+                    >
+                      {tab.label}
+                      {tab.key === "workspace-moderation" && moderationBadge && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="ml-2 rounded-full bg-rim-accent px-1.5 text-[10px] font-semibold text-rim-void"
+                          >
+                            {moderationBadge}
+                          </span>
+                          <span className="sr-only">, {moderationBadge} join requests</span>
+                        </>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
+        )}
 
         {/* Tab content */}
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-8 py-6">
+          <div className={cn("mx-auto max-w-3xl", narrow ? "px-4 py-4" : "px-8 py-6")}>
             <SurfaceErrorBoundary surface={sectionLabel} resetKeys={[shownTab]}>
               <Suspense fallback={<SettingsLoadingSpinner />}>
                 {shownTab === "profile" && <ProfileSettings />}

@@ -577,4 +577,19 @@ describe("ConversationHeader — no conversation open", () => {
     expect(screen.getByRole("heading", { name: "No conversation" })).toBeInTheDocument();
     expect(document.body.querySelector("svg.lucide-hash")).toBeNull();
   });
+
+  it("wraps in a narrow window: the controls drop to a second line, and the count stays whole", async () => {
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ shellWidth: "narrow", selectedConversationId: "conv-1" });
+    serveConversation(makeConversation({ title: "design", memberCount: 1 }));
+    renderHeader();
+
+    const count = await screen.findByRole("button", { name: "1 member" });
+    expect(count.className).toContain("whitespace-nowrap");
+    expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    const bar = count.closest("div.border-b") as HTMLElement;
+    expect(bar.className).toContain("flex-wrap");
+    expect(bar.className).toContain("min-h-10");
+    useShellStore.setState({ shellWidth: "wide" });
+  });
 });
