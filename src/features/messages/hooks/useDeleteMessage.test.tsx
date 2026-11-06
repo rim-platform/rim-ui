@@ -216,6 +216,6 @@ describe("useDeleteMessage", () => {
 
     await expect(deleted).resolves.toBe(false);
     expect(cachedMessage(qc)?.isDeleted).toBe(false);
-    expect(toast.error).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+    expect(toast.info).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
   });
 });

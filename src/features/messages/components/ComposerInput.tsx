@@ -26,7 +26,7 @@ import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { toast } from "../../../shared/toast";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { showCommandRefusal } from "../../commands/runtime/refusal";
 import type { CommandDefinition } from "../../commands/types";
 
 /** A member the mention list offers. */
@@ -316,7 +316,7 @@ export function ComposerInput({
             toast.error(result.message || "Command failed");
           }
         } catch (err: unknown) {
-          toast.error(graphqlErrorMessage(err, "Command execution failed"));
+          showCommandRefusal(suggestion.command.title, err);
         }
       })();
     }

@@ -103,6 +103,23 @@ describe("sanitizeToolError", () => {
     expect(sanitizeToolError(new Error("boom"))).toBe("Tool error: boom");
   });
 
+  it("tells the model a denied refusal is a decision, with no response dump", () => {
+    const denied = Object.assign(new Error('Forbidden: {"response":{"errors":[]}}'), {
+      response: {
+        errors: [
+          {
+            message: "Only moderators can do this",
+            extensions: { code: "FORBIDDEN", refusal: "DENIED" },
+          },
+        ],
+      },
+    });
+    const text = sanitizeToolError(denied);
+    expect(text.startsWith("Tool error: Denied by policy, do not retry.")).toBe(true);
+    expect(text).toContain("Only moderators can do this");
+    expect(text).not.toContain("response");
+  });
+
   it("strips URLs", () => {
     const out = sanitizeToolError(
       new Error("fetch failed: https://internal.example.com/api/v1/secret"),
