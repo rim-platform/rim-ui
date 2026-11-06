@@ -39,10 +39,6 @@ function setup() {
     now: () => Date.now(),
     random,
     connect: (agent) => agents.push(agent),
-    disconnect: (id) => {
-      const at = agents.findIndex((agent) => agent.id === id);
-      if (at >= 0) agents.splice(at, 1);
-    },
     onPendingChanged,
     setTimeout: (run, ms) => setTimeout(run, ms),
     clearTimeout: (timer) => clearTimeout(timer),
@@ -298,8 +294,9 @@ describe("createPairing", () => {
 
   it("approves once for a double click", async () => {
     const { pairing, agents } = setup();
-    const { requestId } = await started(pairing);
+    const { requestId, pollSecret } = await started(pairing);
     await Promise.all([pairing.approve(requestId), pairing.approve(requestId)]);
+    await pairing.poll({ requestId, pollSecret });
     expect(agents).toHaveLength(1);
   });
 
@@ -343,20 +340,46 @@ describe("createPairing", () => {
   });
 
   it("gives a token 120 s from approval, not from the request", async () => {
-    const { pairing, agents } = setup();
+    const { pairing } = setup();
     const { requestId, pollSecret } = await started(pairing);
     vi.advanceTimersByTime(LIFETIME_MS - 1000);
     await pairing.approve(requestId);
     vi.advanceTimersByTime(LIFETIME_MS - 1);
-    expect(agents).toHaveLength(1);
     expect((await pairing.poll({ requestId, pollSecret })).body.status).toBe("approved");
   });
 
-  it("removes an agent whose token expires uncollected, and forgets the token", async () => {
+  it("connects nothing until the token is collected", async () => {
     const { pairing, agents } = setup();
     const { requestId, pollSecret } = await started(pairing);
     await pairing.approve(requestId);
+    expect(agents).toEqual([]);
+    expect((await pairing.poll({ requestId, pollSecret })).body.status).toBe("approved");
     expect(agents).toHaveLength(1);
+  });
+
+  it("keeps the token for another poll if connecting fails", async () => {
+    const connect = vi.fn<(agent: ConnectedAgent) => void>().mockImplementationOnce(() => {
+      throw new Error("store failed");
+    });
+    const pairing = createPairing({
+      now: () => Date.now(),
+      random: (target) => void crypto.getRandomValues(target),
+      connect,
+      onPendingChanged: vi.fn(),
+      setTimeout: (run, ms) => setTimeout(run, ms),
+      clearTimeout: (timer) => clearTimeout(timer),
+    });
+    const { requestId, pollSecret } = await started(pairing);
+    await pairing.approve(requestId);
+    await expect(pairing.poll({ requestId, pollSecret })).rejects.toThrow("store failed");
+    expect((await pairing.poll({ requestId, pollSecret })).body.status).toBe("approved");
+    expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it("connects nothing when a token expires uncollected, and forgets the token", async () => {
+    const { pairing, agents } = setup();
+    const { requestId, pollSecret } = await started(pairing);
+    await pairing.approve(requestId);
     vi.advanceTimersByTime(LIFETIME_MS);
     expect(agents).toEqual([]);
     expect(await pairing.poll({ requestId, pollSecret })).toEqual({
@@ -390,7 +413,7 @@ describe("createPairing", () => {
     expect(onPendingChanged).toHaveBeenCalledWith(null);
   });
 
-  it("forgets an uncollected token at reset, and removes its agent", async () => {
+  it("forgets an uncollected token at reset, and connects nothing", async () => {
     const { pairing, agents } = setup();
     const { requestId, pollSecret } = await started(pairing);
     await pairing.approve(requestId);

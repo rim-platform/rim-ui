@@ -42,7 +42,6 @@ export function useAgentBridge(): void {
       now: () => Date.now(),
       random: secureRandom,
       connect: (agent) => useConnectedAgentsStore.getState().add(agent),
-      disconnect: (id) => useConnectedAgentsStore.getState().revoke(id),
       onPendingChanged: (view) => {
         usePendingPairingStore.setState({ pending: view });
         if (!view) return;

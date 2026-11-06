@@ -74,6 +74,14 @@ async function asked(path: string, body: unknown, authorization: string | null =
   return answerTo(await deliver(path, body, authorization));
 }
 
+/** Polls until the person's choice has taken effect. */
+async function collected(ids: { requestId: string; pollSecret: string }) {
+  for (;;) {
+    const answer = await asked("/pair/poll", ids);
+    if (answer.body.status !== "pending") return answer;
+  }
+}
+
 async function renderBridge() {
   const view = render(<Harness />);
   await waitFor(() => expect(events.listeners.has(AGENT_BRIDGE_REQUEST_EVENT)).toBe(true));
@@ -189,19 +197,20 @@ describe("useAgentBridge", () => {
     expect((await asked("/pair/poll", ids)).body).toEqual({ status: "pending" });
 
     await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
-    await waitFor(() => expect(useConnectedAgentsStore.getState().agents).toHaveLength(1));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(useConnectedAgentsStore.getState().agents).toEqual([]);
 
-    const collected = await asked("/pair/poll", ids);
-    expect(collected.body.status).toBe("approved");
-    const authorization = `Bearer ${collected.body.token}`;
+    const answer = await collected(ids);
+    expect(answer.body.status).toBe("approved");
+    expect(useConnectedAgentsStore.getState().agents).toHaveLength(1);
+    const authorization = `Bearer ${answer.body.token}`;
     expect((await asked("/pair/poll", ids)).status).toBe(404);
     expect((await asked("/mcp", {}, authorization)).status).toBe(501);
     expect((await asked("/mcp", {}, null)).status).toBe(401);
 
     const [agent] = useConnectedAgentsStore.getState().agents;
     expect(agent.name).toBe("Claude Code");
-    expect(JSON.stringify(agent)).not.toContain(collected.body.token);
+    expect(JSON.stringify(agent)).not.toContain(answer.body.token);
     act(() => useConnectedAgentsStore.getState().revoke(agent.id));
     expect((await asked("/mcp", {}, authorization)).status).toBe(401);
   });
@@ -257,12 +266,8 @@ describe("useAgentBridge", () => {
     await renderBridge();
     const { body } = await asked("/pair", { name: "Claude Code" });
     await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
-    await waitFor(() => expect(useConnectedAgentsStore.getState().agents).toHaveLength(1));
-    const collected = await asked("/pair/poll", {
-      requestId: body.requestId,
-      pollSecret: body.pollSecret,
-    });
-    const authorization = `Bearer ${collected.body.token}`;
+    const answer = await collected({ requestId: body.requestId, pollSecret: body.pollSecret });
+    const authorization = `Bearer ${answer.body.token}`;
     expect((await asked("/mcp", {}, authorization)).status).toBe(501);
 
     await act(() => unlockTestVault({ endpoint: "http://other/api", principalId: "rimp1_other" }));
@@ -274,14 +279,10 @@ describe("useAgentBridge", () => {
     await renderBridge();
     const { body } = await asked("/pair", { name: "Claude Code" });
     await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
-    await waitFor(() => expect(useConnectedAgentsStore.getState().agents).toHaveLength(1));
-    const collected = await asked("/pair/poll", {
-      requestId: body.requestId,
-      pollSecret: body.pollSecret,
-    });
+    const answer = await collected({ requestId: body.requestId, pollSecret: body.pollSecret });
     const sealed = readSealedItem("rim-connected-agents");
-    expect(sealed).toContain(await sha256Base64Url(collected.body.token));
-    expect(sealed).not.toContain(collected.body.token);
+    expect(sealed).toContain(await sha256Base64Url(answer.body.token));
+    expect(sealed).not.toContain(answer.body.token);
     expect(sealed).not.toContain(body.pollSecret);
   });
 

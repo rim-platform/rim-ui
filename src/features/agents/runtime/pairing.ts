@@ -37,10 +37,8 @@ export interface PairAnswer {
 export interface PairingDeps {
   now: () => number;
   random: RandomFill;
-  /** Adds a newly approved agent to the store. */
+  /** Adds an agent to the store, once it has collected its token. */
   connect: (agent: ConnectedAgent) => void;
-  /** Removes an agent whose token was never collected from the store. */
-  disconnect: (id: string) => void;
   /** Says what the dialog shows, `null` for nothing. */
   onPendingChanged: (view: PendingView | null) => void;
   setTimeout: (run: () => void, ms: number) => ReturnType<typeof setTimeout>;
@@ -51,12 +49,12 @@ export interface PairingDeps {
 export interface Pairing {
   /** Starts a request for the program calling itself `rawName`. */
   request: (rawName: unknown) => Promise<PairAnswer>;
-  /** Says how the request named in `body` stands, and hands over the token once. */
+  /** Says how the request named in `body` stands, and hands over the token once, connecting the agent. */
   poll: (body: unknown) => Promise<PairAnswer>;
-  /** Mints the token and connects the agent. */
+  /** Mints the token, for the program to collect. */
   approve: (requestId: string) => Promise<void>;
   refuse: (requestId: string) => void;
-  /** Forgets everything, including an agent whose token was not collected, and tells the UI. */
+  /** Forgets everything, including a token not collected, and tells the UI. */
   reset: () => void;
   pending: () => PendingView | null;
 }
@@ -70,9 +68,8 @@ interface PairRequest {
   phase: Phase;
   /** When this phase expires. */
   deadline: number;
-  /** The plain token, only between approval and the poll that collects it. */
-  token: string | null;
-  agentId: string | null;
+  /** The plain token and its agent, only between approval and the poll that collects it. */
+  approved: { token: string; agent: ConnectedAgent } | null;
 }
 
 const BAD_NAME: PairAnswer = { status: 400, body: { error: "bad_name" } };
@@ -104,7 +101,7 @@ function cleanName(raw: unknown): string | null {
  * @returns The running pairing.
  */
 export function createPairing(deps: PairingDeps): Pairing {
-  const { now, random, connect, disconnect, onPendingChanged } = deps;
+  const { now, random, connect, onPendingChanged } = deps;
   let current: PairRequest | null = null;
   let retryAt = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -131,13 +128,11 @@ export function createPairing(deps: PairingDeps): Pairing {
   function settle() {
     const request = current;
     if (!request || request.phase === "expired" || now() < request.deadline) return;
-    const { phase, agentId, deadline } = request;
+    const { phase, deadline } = request;
     request.phase = "expired";
-    request.token = null;
-    request.agentId = null;
+    request.approved = null;
     if (phase !== "refused") retryAt = deadline + RETRY_WAIT_MS;
     if (phase === "pending") onPendingChanged(null);
-    if (phase === "approved" && agentId !== null) disconnect(agentId);
   }
 
   function forget() {
@@ -164,8 +159,7 @@ export function createPairing(deps: PairingDeps): Pairing {
         secretHash: sha256Base64Url(pollSecret),
         phase: "pending",
         deadline: view.expiresAt,
-        token: null,
-        agentId: null,
+        approved: null,
       };
       arm();
       onPendingChanged(view);
@@ -201,7 +195,8 @@ export function createPairing(deps: PairingDeps): Pairing {
           forget();
           return statusAnswer("expired");
         case "approved": {
-          const token = request.token;
+          const { token, agent } = request.approved!;
+          connect(agent);
           forget();
           return statusAnswer("approved", { token });
         }
@@ -217,16 +212,16 @@ export function createPairing(deps: PairingDeps): Pairing {
       const token = TOKEN_PREFIX + randomToken(SECRET_BYTES, random);
       const tokenHash = await sha256Base64Url(token);
       if (current !== request || request.phase !== "approving") return;
-      const id = crypto.randomUUID();
-      connect({
-        id,
-        name: request.view.name,
-        tokenHash,
-        pairedAt: new Date(now()).toISOString(),
-      });
       request.phase = "approved";
-      request.token = token;
-      request.agentId = id;
+      request.approved = {
+        token,
+        agent: {
+          id: crypto.randomUUID(),
+          name: request.view.name,
+          tokenHash,
+          pairedAt: new Date(now()).toISOString(),
+        },
+      };
       request.deadline = now() + LIFETIME_MS;
       arm();
     },
@@ -241,10 +236,8 @@ export function createPairing(deps: PairingDeps): Pairing {
     },
 
     reset() {
-      const agentId = current?.agentId ?? null;
       forget();
       retryAt = 0;
-      if (agentId !== null) disconnect(agentId);
       onPendingChanged(null);
     },
 

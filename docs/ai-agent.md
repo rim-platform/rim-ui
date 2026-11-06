@@ -230,7 +230,8 @@ is off by default. It is optional, and RIM works the same without it. The web ap
   away for ten seconds. An account has to be unlocked for any of this, and locking it closes the
   dialog.
 - **What a connected program gets.** A token, once, which works for this account on this device
-  only. RIM keeps only the token's hash. A server knows nothing about connected programs, and the
+  only. It is listed as connected when it collects that token, and a program that doesn't within
+  two minutes of your approval is not connected. RIM keeps only the token's hash. A server knows nothing about connected programs, and the
   token does not reach one.
 - **Disconnecting.** Each connected program has a **Disconnect** button in the tab. It stops the
   program reaching RIM. It takes nothing back: what the program has already read stays with it.
