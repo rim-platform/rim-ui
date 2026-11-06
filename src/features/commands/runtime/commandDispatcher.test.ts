@@ -10,6 +10,7 @@ const {
   invalidateQueriesMock,
   getQueryDataMock,
   toastErrorMock,
+  toastInfoMock,
   safeInvokeMock,
 } = vi.hoisted(() => ({
   setMainSurfaceMock: vi.fn(),
@@ -21,11 +22,12 @@ const {
   invalidateQueriesMock: vi.fn(),
   getQueryDataMock: vi.fn(() => null as unknown),
   toastErrorMock: vi.fn(),
+  toastInfoMock: vi.fn(),
   safeInvokeMock: vi.fn(),
 }));
 
 vi.mock("../../../shared/toast", () => ({
-  toast: { error: toastErrorMock, success: vi.fn(), info: vi.fn() },
+  toast: { error: toastErrorMock, success: vi.fn(), info: toastInfoMock },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -376,7 +378,7 @@ describe("backend commands the server holds for confirmation", () => {
 
     const result = await pending;
     expect(isCancelledResult(result)).toBe(true);
-    expect(toastErrorMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+    expect(toastInfoMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
 
     // Running it again starts a fresh challenge.
     mockExecuteBackend.mockResolvedValueOnce(held).mockResolvedValueOnce({
@@ -402,7 +404,7 @@ describe("backend commands the server holds for confirmation", () => {
 
     expect(isCancelledResult(await pending)).toBe(true);
     expect(mockExecuteBackend).toHaveBeenCalledTimes(1);
-    expect(toastErrorMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+    expect(toastInfoMock).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
   });
 
   it("never reports success for a held command that carries no challenge", async () => {
