@@ -8,6 +8,7 @@ import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommand
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
+import { showCommandRefusal } from "../../commands/runtime/refusal";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useDeleteMessage } from "./useDeleteMessage";
 import { useToggleReactionMutation } from "../api/useToggleReaction";
@@ -223,7 +224,7 @@ export function useMessageContextMenu({
                 selectedMessageId: messageId,
                 threadId: threadId ?? message?.threadId ?? undefined,
               }),
-            });
+            }).catch((err: unknown) => showCommandRefusal(cmd.title, err));
           },
         });
       });

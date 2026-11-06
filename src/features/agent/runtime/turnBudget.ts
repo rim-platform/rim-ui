@@ -1,5 +1,6 @@
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import type { RegisteredTool } from "../tools/types";
+import { refusalForAgent } from "../../commands/runtime/refusal";
 
 /**
  * Per-turn spending caps.
@@ -64,6 +65,19 @@ const ABS_PATH_RE = /(?:\/[^/\s]+){2,}|\b[a-zA-Z]:\\[^\s]+/g;
 const CONTROL_RE = /[\x00-\x1F\x7F]+/g;
 const MAX_ERR_LEN = 200;
 
+/** Strips URLs, absolute paths and control characters from `raw` and limits its length. */
+function clean(raw: string): string {
+  let cleaned = raw
+    .replace(URL_RE, "[url]")
+    .replace(ABS_PATH_RE, "[path]")
+    .replace(CONTROL_RE, " ")
+    .trim();
+  if (cleaned.length > MAX_ERR_LEN) {
+    cleaned = cleaned.slice(0, MAX_ERR_LEN - 3) + "...";
+  }
+  return cleaned;
+}
+
 /**
  * Tool error sanitization.
  *
@@ -82,6 +96,9 @@ const MAX_ERR_LEN = 200;
  *   message — never JSON.stringify arbitrary objects (might contain PII).
  */
 export function sanitizeToolError(err: unknown): string {
+  const refused = refusalForAgent(err);
+  if (refused) return `Tool error: ${clean(refused)}`;
+
   let raw: string;
   if (err instanceof Error) {
     raw = err.message || err.name || "Error";
@@ -91,15 +108,7 @@ export function sanitizeToolError(err: unknown): string {
     return "Tool execution failed.";
   }
 
-  let cleaned = raw
-    .replace(URL_RE, "[url]")
-    .replace(ABS_PATH_RE, "[path]")
-    .replace(CONTROL_RE, " ")
-    .trim();
-
+  const cleaned = clean(raw);
   if (cleaned.length === 0) return "Tool execution failed.";
-  if (cleaned.length > MAX_ERR_LEN) {
-    cleaned = cleaned.slice(0, MAX_ERR_LEN - 3) + "...";
-  }
   return `Tool error: ${cleaned}`;
 }

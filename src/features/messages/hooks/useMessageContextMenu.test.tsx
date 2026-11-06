@@ -517,6 +517,7 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     requestMock.mockReset();
     onForward.mockReset();
     dispatched.mockReset();
+    dispatched.mockResolvedValue(null);
     vi.mocked(toast.success).mockReset();
     window.getSelection()?.removeAllRanges();
   });
