@@ -35,6 +35,7 @@ import {
   signingSourceOf,
   type SigningSource,
 } from "../signing";
+import { showInvisibleCharacters } from "../../../agents/runtime/invisibleCharacters";
 
 interface SignAndPublishDialogProps {
   plugin: PluginInfo;
@@ -202,7 +203,12 @@ export function SignAndPublishDialog({ plugin, identity, onClose }: SignAndPubli
   }
 
   return (
-    <Dialog open onClose={onClose} title={`Sign ${plugin.display_name}`} maxWidth="max-w-lg">
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Sign ${showInvisibleCharacters(plugin.display_name)}`}
+      maxWidth="max-w-lg"
+    >
       <div className="space-y-3 text-xs text-rim-text-muted">
         {source ? (
           <SourceSummary source={source} />

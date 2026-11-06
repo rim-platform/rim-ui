@@ -38,6 +38,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginList } from "../api/usePluginList";
 import type { PluginInfo } from "../types";
+import { openPluginRows } from "./openPluginRows";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 
 function makePlugin(id: string, overrides: Partial<PluginInfo> = {}): PluginInfo {
@@ -82,12 +83,14 @@ beforeEach(() => {
 describe("PluginSettingsPage settings", () => {
   it("shows Settings only on the row of a plugin that declares settings", () => {
     render(<PluginSettingsPage />);
+    openPluginRows();
     expect(screen.getByRole("button", { name: "Settings for dev.example.pods" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^Settings for/ })).toHaveLength(1);
   });
 
   it("opens the plugin's settings form from its row", () => {
     render(<PluginSettingsPage />);
+    openPluginRows();
     fireEvent.click(screen.getByRole("button", { name: "Settings for dev.example.pods" }));
     expect(screen.getByRole("dialog", { name: "settings of dev.example.pods" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));

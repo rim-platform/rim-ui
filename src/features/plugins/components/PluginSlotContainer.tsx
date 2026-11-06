@@ -14,6 +14,7 @@ import {
   type PluginInfo,
   type PluginPanelDef,
 } from "../types";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 
 interface PluginSlotContainerProps {
   plugin: PluginInfo;
@@ -37,7 +38,8 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
   const frameKey = `${plugin.plugin_id}/${panel.id}`;
   const settings = hasSettings(plugin.settings_schema);
   const contextMenu = useContextMenu();
-  const pluginLine = `${plugin.display_name} · ${kindLabel(plugin)} · ${trustBadge(plugin)}`;
+  const pluginName = showInvisibleCharacters(plugin.display_name || plugin.plugin_id);
+  const pluginLine = `${pluginName} · ${kindLabel(plugin)} · ${trustBadge(plugin)}`;
   const headerMenuItems = (): DropdownMenuItem[] => [
     ...(settings
       ? [
@@ -72,7 +74,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
                 type="button"
                 onClick={() => openPluginSettings(plugin.plugin_id)}
                 title="Plugin settings"
-                aria-label={`Settings for ${plugin.display_name || plugin.plugin_id}`}
+                aria-label={`Settings for ${pluginName}`}
                 className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
               >
                 <SlidersHorizontal className="h-4 w-4" />
@@ -105,7 +107,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
             key={frameKey}
             pluginId={plugin.plugin_id}
             panelId={panel.id}
-            pluginName={plugin.display_name}
+            pluginName={pluginName}
             approvedCapabilities={approvedCapabilities}
             onClose={onClose}
           />
@@ -114,7 +116,7 @@ export function PluginSlotContainer({ plugin, panel, onClose }: PluginSlotContai
             key={frameKey}
             pluginId={plugin.plugin_id}
             panelId={panel.id}
-            pluginName={plugin.display_name}
+            pluginName={pluginName}
             approvedCapabilities={approvedCapabilities}
             onClose={onClose}
           />
