@@ -117,3 +117,34 @@ describe("ToastItem", () => {
     expect(description).toHaveAttribute("title", `${long}d`);
   });
 });
+
+describe("ToastItem as a card", () => {
+  beforeEach(() => {
+    useToastStore.setState({ toasts: [] });
+  });
+
+  it("renders the card with its state word, and dismisses", () => {
+    const t = makeToast({ id: "c1", variant: "error", card: "denied", title: "Ban: not done" });
+    useToastStore.setState({ toasts: [t] });
+    render(<ToastItem toast={t} />);
+    expect(screen.getByText("Not done:", { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(useToastStore.getState().toasts[0].dismissing).toBe(true);
+  });
+
+  it("fires its action and dismisses", () => {
+    const onClick = vi.fn();
+    const t = makeToast({
+      id: "c2",
+      variant: "warning",
+      card: "failed",
+      title: "Sync: failed",
+      action: { label: "Retry", onClick },
+    });
+    useToastStore.setState({ toasts: [t] });
+    render(<ToastItem toast={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(useToastStore.getState().toasts[0].dismissing).toBe(true);
+  });
+});

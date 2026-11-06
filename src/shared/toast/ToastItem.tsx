@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Check, AlertCircle, AlertTriangle, Info, X } from "lucide-react";
+import { ActionCard } from "../ui/ActionCard";
 import { cn } from "../ui/cn";
 import { withoutCodeMarks } from "./codeMarks";
 import { InlineCodeText } from "./inlineCode";
@@ -106,8 +107,10 @@ export function ToastItem({ toast: t }: ToastItemProps) {
       role={t.variant === "error" ? "alert" : "status"}
       aria-live={t.variant === "error" ? "assertive" : "polite"}
       className={cn(
-        "relative w-80 overflow-hidden rounded-lg border border-rim-line bg-rim-panel p-3 shadow-lg shadow-black/30",
-        style.border,
+        "relative w-80 overflow-hidden shadow-lg shadow-black/30",
+        t.card
+          ? "rounded-xl"
+          : cn("rounded-lg border border-rim-line bg-rim-panel p-3", style.border),
         exiting
           ? "animate-[toast-out_150ms_ease-in_forwards]"
           : "animate-[toast-in_200ms_ease-out]",
@@ -115,48 +118,83 @@ export function ToastItem({ toast: t }: ToastItemProps) {
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <div className="flex items-start gap-3">
-        {/* Icon */}
-        <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", style.icon)} />
-
-        {/* Text area */}
-        <div className="min-w-0 flex-1">
-          <p
-            className="line-clamp-3 break-words text-sm font-medium text-rim-text"
-            title={codeAware ? withoutCodeMarks(t.title) : t.title}
+      {t.card ? (
+        <>
+          <ActionCard
+            className="pr-9"
+            state={t.card}
+            title={codeAware ? <InlineCodeText text={t.title} /> : t.title}
+            detail={
+              t.description ? (
+                codeAware ? (
+                  <InlineCodeText text={t.description} />
+                ) : (
+                  t.description
+                )
+              ) : undefined
+            }
+            actions={
+              t.action
+                ? [{ label: t.action.label, onClick: handleAction, ariaLabel: t.action.ariaLabel }]
+                : undefined
+            }
+          />
+          <button
+            type="button"
+            className="absolute right-2.5 top-2.5 rounded p-0.5 text-rim-text-muted transition hover:text-rim-text"
+            onClick={() => dismiss(t.id)}
+            aria-label="Dismiss notification"
           >
-            {codeAware ? <InlineCodeText text={t.title} /> : t.title}
-          </p>
-          {t.description && (
-            <p
-              className="mt-0.5 line-clamp-3 break-words text-xs text-rim-text-muted"
-              title={codeAware ? withoutCodeMarks(t.description) : t.description}
-            >
-              {codeAware ? <InlineCodeText text={t.description} /> : t.description}
-            </p>
-          )}
-          {t.action && (
-            <button
-              type="button"
-              className={cn("mt-1.5 text-xs font-medium transition hover:underline", style.action)}
-              onClick={handleAction}
-              aria-label={t.action.ariaLabel ?? t.action.label}
-            >
-              {t.action.label}
-            </button>
-          )}
-        </div>
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </>
+      ) : (
+        <div className="flex items-start gap-3">
+          {/* Icon */}
+          <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", style.icon)} />
 
-        {/* Close button */}
-        <button
-          type="button"
-          className="shrink-0 rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
-          onClick={() => dismiss(t.id)}
-          aria-label="Dismiss notification"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          {/* Text area */}
+          <div className="min-w-0 flex-1">
+            <p
+              className="line-clamp-3 break-words text-sm font-medium text-rim-text"
+              title={codeAware ? withoutCodeMarks(t.title) : t.title}
+            >
+              {codeAware ? <InlineCodeText text={t.title} /> : t.title}
+            </p>
+            {t.description && (
+              <p
+                className="mt-0.5 line-clamp-3 break-words text-xs text-rim-text-muted"
+                title={codeAware ? withoutCodeMarks(t.description) : t.description}
+              >
+                {codeAware ? <InlineCodeText text={t.description} /> : t.description}
+              </p>
+            )}
+            {t.action && (
+              <button
+                type="button"
+                className={cn(
+                  "mt-1.5 text-xs font-medium transition hover:underline",
+                  style.action,
+                )}
+                onClick={handleAction}
+                aria-label={t.action.ariaLabel ?? t.action.label}
+              >
+                {t.action.label}
+              </button>
+            )}
+          </div>
+
+          {/* Close button */}
+          <button
+            type="button"
+            className="shrink-0 rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
+            onClick={() => dismiss(t.id)}
+            aria-label="Dismiss notification"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Progress bar */}
       {!t.persistent && t.duration && (

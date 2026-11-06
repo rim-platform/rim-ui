@@ -30,6 +30,18 @@
   --color-rim-text-muted: #9ba1ad;
   --color-rim-text-faint: #8a909c;
   --color-rim-signal: #f2541b;
+  --color-rim-card-running: #161a22;
+  --color-rim-card-running-line: #263248;
+  --color-rim-card-confirm: #1c1713;
+  --color-rim-card-confirm-line: #5a3220;
+  --color-rim-card-denied: #1c1418;
+  --color-rim-card-denied-line: #5c2533;
+  --color-rim-card-failed: #1b1913;
+  --color-rim-card-failed-line: #4f4321;
+  --color-rim-card-done: #13191a;
+  --color-rim-card-done-line: #1f4434;
+  --color-rim-card-ended: #16181d;
+  --color-rim-card-ended-line: #3a404d;
 }
 
 :root {
