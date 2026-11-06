@@ -115,7 +115,7 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
         >
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
-            <h3 id={titleId} className="text-sm font-medium text-rim-text">
+            <h3 id={titleId} className="min-w-0 break-words text-sm font-medium text-rim-text">
               {title}
             </h3>
             <button

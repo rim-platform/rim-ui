@@ -48,6 +48,10 @@ vi.mock("../../agent/settings/AgentSettingsPanel", () => ({
   AgentSettingsPanel: () => <div data-testid="agent-settings">Agent Panel</div>,
 }));
 
+vi.mock("../../agents/components/AgentsSettings", () => ({
+  AgentsSettings: () => <div data-testid="agents-settings">Agents Panel</div>,
+}));
+
 vi.mock("../../notifications/components/NotificationSettings", () => ({
   NotificationSettings: () => <div data-testid="notification-settings">Notifications Panel</div>,
 }));
@@ -295,6 +299,37 @@ describe("SettingsPage", () => {
     }
   });
 
+  it("switches to the Agents tab, listed right before AI Agent", async () => {
+    inDesktopApp(true);
+    try {
+      const user = userEvent.setup();
+      renderSettings();
+
+      const extensions = screen.getByRole("group", { name: "Extensions" });
+      const names = within(extensions)
+        .getAllByRole("button")
+        .map((button) => button.textContent);
+      expect(names.indexOf("AI Agent")).toBe(names.indexOf("Agents") + 1);
+      await user.click(screen.getByRole("button", { name: "Agents" }));
+      expect(await screen.findByTestId("agents-settings")).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
+  it("lists Agents only in the desktop app", () => {
+    const web = renderSettings();
+    expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument();
+    web.unmount();
+    inDesktopApp(true);
+    try {
+      renderSettings();
+      expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
   it("lists AI Agent and Plugin AI only in the desktop app", () => {
     const web = renderSettings();
     expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
@@ -310,13 +345,17 @@ describe("SettingsPage", () => {
     }
   });
 
-  it.each(["agent", "plugin-ai"])("opens Profile for a link to the %s tab on the web", (tab) => {
-    mockShellState.mainSurface = { kind: "settings", tab };
-    renderSettings();
-    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
-    expect(screen.queryByTestId("agent-settings")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("plugin-ai-settings")).not.toBeInTheDocument();
-  });
+  it.each(["agents", "agent", "plugin-ai"])(
+    "opens Profile for a link to the %s tab on the web",
+    (tab) => {
+      mockShellState.mainSurface = { kind: "settings", tab };
+      renderSettings();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+      expect(screen.queryByTestId("agents-settings")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("agent-settings")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("plugin-ai-settings")).not.toBeInTheDocument();
+    },
+  );
 
   it("switches to Account tab", async () => {
     const user = userEvent.setup();

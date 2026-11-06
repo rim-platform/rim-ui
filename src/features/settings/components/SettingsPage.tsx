@@ -53,6 +53,11 @@ const AgentSettingsPanel = lazyWithRetry(() =>
     default: m.AgentSettingsPanel,
   })),
 );
+const AgentsSettings = lazyWithRetry(() =>
+  import("../../agents/components/AgentsSettings").then((m) => ({
+    default: m.AgentsSettings,
+  })),
+);
 const EmojiManagement = lazyWithRetry(() =>
   import("../../emoji/components/EmojiManagement").then((m) => ({ default: m.EmojiManagement })),
 );
@@ -237,6 +242,7 @@ type SettingsTab =
   | "plugin-ai"
   | "emoji"
   | "state"
+  | "agents"
   | "agent"
   | "messages"
   | "direct-messages"
@@ -252,7 +258,7 @@ type SettingsTab =
   | "about";
 
 /** Settings of the AI agent, which runs in the desktop app only. */
-const AGENT_TABS: readonly SettingsTab[] = ["agent", "plugin-ai"];
+const AGENT_TABS: readonly SettingsTab[] = ["agents", "agent", "plugin-ai"];
 
 /** Tabs that edit what only a workspace has: hidden in a direct space. */
 const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
@@ -295,6 +301,7 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "plugin-ai", label: "Plugin AI", group: "Extensions" },
   { key: "state", label: "State", group: "Extensions" },
   { key: "emoji", label: "Emoji", group: "Extensions" },
+  { key: "agents", label: "Agents", group: "Extensions" },
   { key: "agent", label: "AI Agent", group: "Extensions" },
   { key: "workspace", label: "Workspace", group: "Workspace" },
   { key: "workspace-moderation", label: "Moderation", group: "Workspace" },
@@ -446,6 +453,7 @@ export function SettingsPage() {
                 {shownTab === "state" && (
                   <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
                 )}
+                {shownTab === "agents" && <AgentsSettings />}
                 {shownTab === "agent" && <AgentSettingsPanel />}
                 {shownTab === "messages" && <MessageDisplaySettings />}
                 {shownTab === "direct-messages" && <DmSettings />}

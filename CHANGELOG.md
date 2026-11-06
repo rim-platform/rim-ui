@@ -31,6 +31,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Settings > Desktop.
 - The desktop app's tray icon shows a dot while you have unread notifications and offers "Restart
   to update" when an update is ready. Clicking a message notification opens that conversation.
+- Settings > Agents lets a program on this computer, such as Claude Code, ask to connect to the desktop
+  app. It is off by default. You compare a code and approve it, and you can disconnect it at any time.
 
 ### Changed
 
