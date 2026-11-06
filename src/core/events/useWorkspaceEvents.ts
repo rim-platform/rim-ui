@@ -53,6 +53,7 @@ import {
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
+  UnreadRewoundEvent,
   PresenceChangedEvent,
   TypingStartedEvent,
   TypingStoppedEvent,
@@ -506,6 +507,13 @@ export function applyWorkspaceEvent(
         conversationId: event.conversation_id,
       });
       handleReadStateUpdated(qc, workspaceId);
+      break;
+
+    case "ReadMarkerRewound":
+      eventBus.emit<UnreadRewoundEvent>(BUS_EVENTS.UNREAD_REWOUND, {
+        conversationId: event.conversation_id,
+      });
+      void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
       break;
 
     case "PresenceChanged": {

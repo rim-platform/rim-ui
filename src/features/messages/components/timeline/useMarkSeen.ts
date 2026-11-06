@@ -50,11 +50,16 @@ export function newestMessage<T extends Parameters<typeof isTimelineNotice>[0]>(
   return null;
 }
 
-/** Whether "Only when I mark it read" applies to the space, whose host then has read markers. */
-export function marksByHand(spaceId: string): boolean {
+/**
+ * Whether a conversation is marked read only by hand: it was just marked unread and is still
+ * open, or "Only when I mark it read" applies to its space, whose host then has read markers.
+ */
+export function marksByHand(spaceId: string, conversationId: string): boolean {
+  const unread = useUnreadStore.getState();
+  if (unread.held[conversationId]) return true;
   return (
     useMessageDisplaySettingsStore.getState().markReadByHand &&
-    useUnreadStore.getState().countSources[spaceId] === "markers"
+    unread.countSources[spaceId] === "markers"
   );
 }
 
@@ -88,8 +93,9 @@ function hasUnseen(state: SeenState, readUpTo: string | null): boolean {
  * On a host with read markers, leaving the conversation cancels a pending mark, since reading
  * means having stayed, and reads the counts again when something arrived that was not marked. On
  * an older host, whose conversations have no marker to come back to, leaving sends it at once.
- * With "Only when I mark it read" on such a host nothing is marked: a message arriving at the
- * bottom reads the counts again instead, so its conversation shows as unread.
+ * While a conversation just marked unread stays open, and with "Only when I mark it read" on such
+ * a host, nothing is marked: a message arriving at the bottom reads the counts again instead, so
+ * the conversation shows as unread.
  */
 export function useMarkSeen({
   workspaceId,
@@ -102,6 +108,7 @@ export function useMarkSeen({
   const qcRef = useRef(useQueryClient());
   const { mutate: markAsRead } = useMarkAsRead();
   const unread = useUnreadStore((s) => (conversationId ? (s.counts[conversationId] ?? 0) : 0));
+  const held = useUnreadStore((s) => (conversationId ? Boolean(s.held[conversationId]) : false));
   const newest = useMemo(() => newestMessage(items, isLensActive), [items, isLensActive]);
 
   const stateRef = useRef<SeenState>({
@@ -132,7 +139,7 @@ export function useMarkSeen({
     const { workspaceId: wsId, conversationId: convId, newest: last } = state;
     if (!wsId || !convId || !last || !hasUnseen(state, readUpTo(state))) return;
     readUpToRef.current = { conversationId: convId, sentAt: last.sentAt };
-    if (marksByHand(wsId)) {
+    if (marksByHand(wsId, convId)) {
       void qcRef.current.invalidateQueries({ queryKey: queryKeys.unreadCounts(wsId) });
       return;
     }
@@ -144,7 +151,9 @@ export function useMarkSeen({
     if (timerRef.current || !isPageVisible() || !state.newest) return;
     const known = readUpTo(state);
     const due =
-      state.workspaceId && marksByHand(state.workspaceId)
+      state.workspaceId &&
+      state.conversationId &&
+      marksByHand(state.workspaceId, state.conversationId)
         ? hasNewFromOthers(state, known)
         : hasUnseen(state, known);
     if (!due) return;
@@ -181,10 +190,15 @@ export function useMarkSeen({
     readUpToRef.current = { conversationId, sentAt: newest.sentAt };
   }, [conversationId, newest]);
 
+  // A hold takes back a mark that was about to go out.
+  useEffect(() => {
+    if (held) cancel();
+  }, [held, cancel]);
+
   // A newer message, or an unread count, while at the bottom.
   useEffect(() => {
     if (isAtBottomRef.current) scheduleIfUnseen();
-  }, [conversationId, newest, unread, isAtBottomRef, scheduleIfUnseen]);
+  }, [conversationId, newest, unread, held, isAtBottomRef, scheduleIfUnseen]);
 
   // Nothing is seen while the page is hidden; coming back at the bottom counts.
   useEffect(() => {

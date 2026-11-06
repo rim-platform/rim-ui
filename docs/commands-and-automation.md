@@ -120,7 +120,7 @@ new device:
 | <kbd>Ctrl+Shift+A</kbd> | Open the AI agent (desktop app) |
 | <kbd>Ctrl+Shift+C</kbd> | Create a channel |
 | <kbd>Ctrl+Shift+G</kbd> | New message |
-| <kbd>Ctrl+Shift+M</kbd> | Mark everything as read |
+| <kbd>Ctrl+Shift+M</kbd> | Mark everything as read, with an Undo for 6 seconds before the server is told |
 | <kbd>Ctrl+Shift+K</kbd> | Jump to a conversation; with none named, opens the palette |
 | <kbd>Ctrl+Shift+T</kbd> | Reopen the last thread |
 | <kbd>Ctrl+R</kbd> | Cycle recent activity: jump to where someone last posted, newest first; pressed again within 5 seconds it goes further back |

@@ -23,6 +23,7 @@ import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvok
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
+import { markAsUnread, spaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
@@ -124,6 +125,14 @@ export function argString(
     if (typeof value === "string" && value.trim() !== "") return value;
   }
   return undefined;
+}
+
+/** The id of the message selected in the open message list, as the list announces it. */
+function selectedMessageInList(): string | undefined {
+  const active = document
+    .querySelector("[data-message-list]")
+    ?.getAttribute("aria-activedescendant");
+  return active?.startsWith("message-") ? active.slice("message-".length) : undefined;
 }
 
 const localHandlers: Record<
@@ -349,7 +358,22 @@ const localHandlers: Record<
     const workspaceId = useWorkspaceStore.getState().workspaceId;
     if (!workspaceId) return;
     markWorkspaceRead(workspaceId);
-    return resultText("All conversations marked as read");
+  },
+  "chat.mark_as_unread": (args) => {
+    const workspaceId = spaceOf(args ?? {});
+    const conversationId =
+      argString(args, "conversationId", "conversation_id") ??
+      useShellStore.getState().selectedConversationId;
+    const messageId = argString(args, "messageId", "message_id") ?? selectedMessageInList();
+    if (!workspaceId || !conversationId || !messageId) {
+      toast.info("Select a message to mark unread from");
+      return;
+    }
+    if (!spaceMarksUnread(workspaceId)) {
+      toast.error("This workspace's server does not support marking unread yet");
+      return;
+    }
+    void markAsUnread({ workspaceId, conversationId, messageId });
   },
   "workspace.reload_commands": () => {
     reloadCommands();

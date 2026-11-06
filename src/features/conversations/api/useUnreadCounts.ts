@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { isBlockedConversation } from "../../relay/state/useBlockedConversations";
+import { hostOf } from "../../relay/state/useRelayStore";
 import { READ_MARKER, spaceHasCapability } from "../../updater/api/serverCapabilities";
 import { useUnreadStore } from "../state/useUnreadStore";
 
@@ -60,12 +61,22 @@ export async function fetchUnreadCounts(workspaceId: string): Promise<UnreadCoun
   return shown;
 }
 
+/** How often the counts of an open workspace on another server are read again. */
+const REMOTE_UNREAD_POLL_MS = 60_000;
+
+/**
+ * One space's unread counts, kept in the unread store. They are read again when the window
+ * regains focus, and through the invalidations on a WebSocket reconnect and on a gap in a relay
+ * stream. A workspace on another server is also polled: while the relay alone is cut off from its
+ * host this app sees no reconnect, and a `ReadMarkerRewound` missed then leaves no gap.
+ */
 export function useUnreadCounts(workspaceId?: string) {
   return useQuery({
     queryKey: queryKeys.unreadCounts(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+    refetchInterval: () => (hostOf(workspaceId) ? REMOTE_UNREAD_POLL_MS : false),
     queryFn: () => fetchUnreadCounts(workspaceId!),
   });
 }

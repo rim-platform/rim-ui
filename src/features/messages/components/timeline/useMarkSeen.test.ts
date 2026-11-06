@@ -65,7 +65,7 @@ beforeEach(() => {
   requestMock.mockReset();
   requestMock.mockResolvedValue({ markAsRead: true });
   atBottom.current = true;
-  useUnreadStore.setState({ counts: {}, spaceOf: {}, markers: {}, countSources: {} });
+  useUnreadStore.setState({ counts: {}, spaceOf: {}, markers: {}, countSources: {}, held: {} });
   useMessageDisplaySettingsStore.setState({ markReadByHand: false });
 });
 
@@ -211,6 +211,35 @@ describe("useMarkSeen", () => {
     useMessageDisplaySettingsStore.setState({ markReadByHand: true });
     useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 });
     renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS);
+    expect(marks()).toHaveLength(1);
+  });
+
+  it("held: nothing is marked at the bottom, and a pending mark is taken back", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS / 2);
+    act(() => useUnreadStore.getState().setHeld("conv-1"));
+    await wait(MARK_SEEN_DELAY_MS * 3);
+    expect(marks()).toEqual([]);
+    expect(useUnreadStore.getState().counts).toEqual({ "conv-1": 2 });
+  });
+
+  it("held: a count read again while at the bottom does not mark", async () => {
+    useUnreadStore.getState().setCounts("ws-1", {}, {});
+    useUnreadStore.getState().setHeld("conv-1");
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    act(() => useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS));
+    await wait(MARK_SEEN_DELAY_MS * 3);
+    expect(marks()).toEqual([]);
+  });
+
+  it("marks again once the hold ends", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    useUnreadStore.getState().setHeld("conv-1");
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    act(() => useUnreadStore.getState().clearHeld("conv-1"));
     await wait(MARK_SEEN_DELAY_MS);
     expect(marks()).toHaveLength(1);
   });

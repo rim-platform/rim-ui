@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -311,6 +311,70 @@ describe("ConversationActionsMenu — role gating", () => {
       "Assign keybind…",
       "Leave channel",
     ]);
+  });
+
+  describe("Mark as unread", () => {
+    const seedPages = (items: { id: string; authorId: string }[]) => async (qc: QueryClient) => {
+      qc.setQueryDefaults(queryKeys.messages("ws-1", "conv-1"), { gcTime: Infinity });
+      qc.setQueryData(queryKeys.messages("ws-1", "conv-1"), { pages: [{ items }], pageParams: [] });
+    };
+
+    beforeEach(() => {
+      useUnreadStore.setState({ countSources: { "ws-1": "markers" }, held: {} });
+    });
+
+    it("marks from the newest loaded message by someone else, and holds the open one", async () => {
+      serve(ServerMemberRoleGql.MEMBER, {
+        "mutation MarkAsUnread": () => ({ markAsUnread: true }),
+      });
+      useShellStore.setState({ selectedConversationId: "conv-1" });
+      await openMenu(
+        makeConversation(),
+        ServerMemberRoleGql.MEMBER,
+        seedPages([
+          { id: "m-1", authorId: "bob" },
+          { id: "m-2", authorId: "me" },
+        ]),
+      );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark as unread" }));
+      await waitFor(() =>
+        expect(callsTo(requestMock, "mutation MarkAsUnread")).toEqual([
+          { input: { workspaceId: "ws-1", conversationId: "conv-1", messageId: "m-1" } },
+        ]),
+      );
+      expect(useUnreadStore.getState().held).toEqual({ "conv-1": true });
+    });
+
+    it("is left out when what is loaded holds nothing by someone else", async () => {
+      serve(ServerMemberRoleGql.MEMBER);
+      await openMenu(
+        makeConversation(),
+        ServerMemberRoleGql.MEMBER,
+        seedPages([{ id: "m-2", authorId: "me" }]),
+      );
+      expect(menuLabels()).not.toContain("Mark as unread");
+    });
+
+    it("with nothing loaded, says so if the first page has no one else's message", async () => {
+      serve(ServerMemberRoleGql.MEMBER, {
+        "query Messages(": () => ({ messages: { items: [{ id: "m-2", authorId: "me" }] } }),
+      });
+      await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark as unread" }));
+      await waitFor(() => expect(toast.info).toHaveBeenCalledWith("Nothing here to mark unread"));
+      expect(callsTo(requestMock, "mutation MarkAsUnread")).toEqual([]);
+    });
+
+    it("is left out while the conversation is unread, and on an older host", async () => {
+      serve(ServerMemberRoleGql.MEMBER);
+      useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 }, {});
+      await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+      expect(menuLabels()).not.toContain("Mark as unread");
+      cleanup();
+      useUnreadStore.getState().setCounts("ws-1", {});
+      await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+      expect(menuLabels()).not.toContain("Mark as unread");
+    });
   });
 
   it("offers Mark as read while the conversation has unread messages", async () => {

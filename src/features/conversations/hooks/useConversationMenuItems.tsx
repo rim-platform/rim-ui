@@ -37,6 +37,11 @@ import {
 } from "../api/useConversationInvite";
 import { cachedChannelPosting } from "../api/useChannelPosting";
 import { useMarkAsRead } from "../api/useMarkAsRead";
+import {
+  knownMessageToMarkUnread,
+  markConversationUnread,
+  spaceMarksUnread,
+} from "../api/useMarkAsUnread";
 import { formatSlowModeInterval } from "../api/useSlowMode";
 import { ChannelPostingDialog } from "../components/ChannelPostingDialog";
 import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
@@ -81,15 +86,16 @@ type PendingDialog = {
  *
  * - An invitation the viewer holds: Accept (on a device set up for encryption) and Decline.
  * - A channel: Join channel first for a public one the viewer is not in, then Mark as read
- *   (when unread), Notifications, Members, Invite people…, Edit topic… (Owner, Moderator or a
- *   private channel's creator), Assign keybind…, the
+ *   (when unread) or Mark as unread (when read, on a host with read markers, unless what is
+ *   loaded shows nothing by someone else), Notifications, Members, Invite people…, Edit topic…
+ *   (Owner, Moderator or a private channel's creator), Assign keybind…, the
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
  *   posting policies, Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
- * - A group: Mark as read, Notifications, Members, Add people… (also in Direct messages),
- *   Assign keybind…, Leave group….
- * - A DM: Mark as read, Notifications, Add to contacts or Remove from contacts (while the
- *   relay is on), Assign keybind…, Block… (its other person, while the relay is on and they
+ * - A group: Mark as read or Mark as unread, Notifications, Members, Add people… (also in Direct
+ *   messages), Assign keybind…, Leave group….
+ * - A DM: Mark as read or Mark as unread, Notifications, Add to contacts or Remove from contacts
+ *   (while the relay is on), Assign keybind…, Block… (its other person, while the relay is on and they
  *   are not blocked).
  *
  * @param workspaceId The workspace the list or header shows, whose role gates the moderation
@@ -216,6 +222,16 @@ export function useConversationMenuItems(workspaceId: string | null): {
               workspaceId: serverId,
               readAt: new Date().toISOString(),
             }),
+        });
+      } else if (
+        !archived &&
+        spaceMarksUnread(serverId) &&
+        knownMessageToMarkUnread(qc, serverId, conversationId, currentUserId) !== null
+      ) {
+        items.push({
+          id: "mark-unread",
+          label: "Mark as unread",
+          onSelect: () => void markConversationUnread(qc, serverId, conversationId, currentUserId),
         });
       }
 

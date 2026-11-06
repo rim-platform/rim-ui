@@ -205,7 +205,8 @@ menu. The surfaces with a menu:
 - **A message**, in the timeline and in the thread panel: Add reaction (a submenu of quick
   reactions), Copy selection (while part of the message is selected, since the menu takes the
   place of the system's one there), Copy text, Reply (in the timeline, where you can post),
-  Reply in thread (not in the thread panel), Forward…, Pin or Unpin message; Edit message
+  Reply in thread (not in the thread panel), Forward…, Pin or Unpin message, Mark unread from
+  here (a message of the main timeline, on a server that has read markers); Edit message
   and Delete message… on your own message, Report message… on someone
   else's; a Moderation section with Delete message… for an Owner or a Moderator; then the
   plugins' message actions.
@@ -218,8 +219,8 @@ menu. The surfaces with a menu:
 - **A notification**: Mark as read while unread; Mute conversation (a submenu of durations) or
   Unmute conversation, and Open, while its conversation is readable.
 - **A plugin panel's header**: Plugin settings, when the plugin has settings, and Close panel.
-- **A conversation** in the sidebar: the same items as the "…" menu in its header (read state,
-  notifications with timed mutes, members, invite, topic (for whoever may change it), a keybind
+- **A conversation** in the sidebar: the same items as the "…" menu in its header (Mark as read
+  while unread, otherwise Mark as unread, from the newest message by someone else; notifications with timed mutes, members, invite, topic (for whoever may change it), a keybind
   to open it, the Owner and Moderator's slow mode and archive, leave), or Accept and Decline for
   an invitation.
 - **A section heading** of the sidebar: Browse channels and Create channel (where you may create

@@ -1246,3 +1246,24 @@ describe("pipeline firings", () => {
     });
   });
 });
+
+describe("ReadMarkerRewound", () => {
+  it("has the unread counts read again and tells the unread feature", () => {
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const emit = vi.spyOn(eventBus, "emit");
+    applyWorkspaceEvent(
+      {
+        type: "ReadMarkerRewound",
+        workspace_id: "ws-1",
+        conversation_id: "conv-1",
+        user_id: "me",
+      },
+      qc,
+      "ws-1",
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.unreadCounts("ws-1") });
+    expect(emit).toHaveBeenCalledWith(BUS_EVENTS.UNREAD_REWOUND, { conversationId: "conv-1" });
+    emit.mockRestore();
+  });
+});

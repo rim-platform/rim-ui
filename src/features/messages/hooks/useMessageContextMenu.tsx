@@ -4,6 +4,7 @@ import type { MessageItem } from "../../../core/types/messages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { toast } from "../../../shared/toast";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { markAsUnread, useSpaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
 import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
 import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
@@ -67,7 +68,8 @@ function selectedTextIn(messageId: string): string | null {
 /**
  * The message context menu of a conversation, in this order: Add reaction, Copy selection
  * (while text of the message is selected) and Copy text, Reply, Reply in thread, Forward, Pin or
- * Unpin; then Edit and Delete on the viewer's own message, Report on someone else's; a
+ * Unpin, Mark unread from here (a top-level message of the main timeline, on a host with read
+ * markers); then Edit and Delete on the viewer's own message, Report on someone else's; a
  * Moderation section with Delete for an Owner or Moderator; then the plugins' message actions.
  * Add reaction, Reply in thread and Pin or Unpin are left out where the channel's posting policy
  * keeps the viewer from them.
@@ -96,6 +98,7 @@ export function useMessageContextMenu({
   const [pendingReport, setPendingReport] = useState<MessageMenuTarget | null>(null);
   const canModerate = useCanModerate(workspaceId ?? undefined);
   const rights = usePostingRights(workspaceId, conversationId);
+  const marksUnread = useSpaceMarksUnread(workspaceId);
 
   const getItems = useCallback(
     (target: MessageMenuTarget): DropdownMenuItem[] => {
@@ -164,6 +167,14 @@ export function useMessageContextMenu({
               pinMessage.mutate(vars);
             }
           },
+        });
+      }
+
+      if (marksUnread && !threadId && !message?.threadId && !message?.isDeleted) {
+        result.push({
+          id: "mark-unread-from-here",
+          label: "Mark unread from here",
+          onSelect: () => void markAsUnread({ workspaceId, conversationId, messageId }),
         });
       }
 
@@ -239,6 +250,7 @@ export function useMessageContextMenu({
       onEdit,
       threadId,
       canModerate,
+      marksUnread,
       rights.reaction,
       rights.thread,
       rights.pin,
