@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -212,7 +212,7 @@ impl Listener {
             port,
             forward,
             body_timeout,
-            in_flight: Arc::new(AtomicUsize::new(0)),
+            in_flight: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
         });
         runtime.spawn(accept_loop(
             listener,
@@ -243,7 +243,7 @@ struct Serving {
     port: u16,
     forward: Forward,
     body_timeout: Duration,
-    in_flight: Arc<AtomicUsize>,
+    in_flight: Arc<Semaphore>,
 }
 
 /// Accepts connections until told to stop, then releases the port and says so.
@@ -331,7 +331,11 @@ async fn handle(request: Request<Incoming>, serving: &Serving) -> Result<BridgeA
         body.size_hint().exact(),
     )?;
     let authorization = header_text(&parts.headers, &header::AUTHORIZATION);
-    let slot = InFlightSlot::take(&serving.in_flight).ok_or(Refused::Busy)?;
+    let slot = serving
+        .in_flight
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| Refused::Busy)?;
     let body = read_body(body, serving.body_timeout).await?;
     let forward = serving.forward.clone();
     let admitted = AdmittedRequest {
@@ -367,27 +371,6 @@ async fn read_body(body: Incoming, timeout: Duration) -> Result<String, Refused>
             }
         })?;
     String::from_utf8(collected.to_bytes().to_vec()).map_err(|_| Refused::BadContentType)
-}
-
-/// One of the [`MAX_IN_FLIGHT`] places for a request in progress, released on drop.
-struct InFlightSlot(Arc<AtomicUsize>);
-
-impl InFlightSlot {
-    /// Takes a place, or `None` when all are taken.
-    fn take(in_flight: &Arc<AtomicUsize>) -> Option<Self> {
-        in_flight
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |taken| {
-                (taken < MAX_IN_FLIGHT).then_some(taken + 1)
-            })
-            .ok()
-            .map(|_| Self(in_flight.clone()))
-    }
-}
-
-impl Drop for InFlightSlot {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 /// The agent bridge's state, managed by the app.
@@ -582,6 +565,7 @@ mod tests {
     use super::*;
     use std::io::{ErrorKind, Read, Write};
     use std::net::TcpStream as StdTcpStream;
+    use std::sync::atomic::AtomicUsize;
     use std::thread;
     use std::time::Instant;
 
