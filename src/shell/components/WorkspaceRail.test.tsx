@@ -63,6 +63,16 @@ describe("WorkspaceRail", () => {
     requestMock.mockImplementation(() => new Promise(() => {}));
   });
 
+  it("shows one whole letter for a workspace whose name starts with an emoji", () => {
+    myServers.data = [
+      { id: "ws-1", name: "\u{1F680} Botland", owner: null },
+      { id: "ws-2", name: "\u{1F680}", owner: null },
+    ];
+    renderWithQuery(<WorkspaceRail />);
+    expect(screen.getByRole("button", { name: "\u{1F680} Botland" })).toHaveTextContent(/^B$/);
+    expect(screen.getByRole("button", { name: "\u{1F680}" })).toHaveTextContent(/^\?$/);
+  });
+
   it("badges another workspace with its unread messages and not the open one", () => {
     useUnreadStore.getState().setCounts("ws-1", { c1: 4 });
     useUnreadStore.getState().setCounts("ws-2", { c2: 2, c3: 1 });

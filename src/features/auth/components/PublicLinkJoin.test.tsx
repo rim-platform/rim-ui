@@ -138,6 +138,8 @@ describe("PublicLinkJoin", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/^This link isn't valid\.$/);
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(callsTo(requestMock, "query PublicJoinLinkPreview")).toEqual([{ token: TOKEN }]);
+    await userEvent.click(screen.getByRole("button", { name: "Go to RIM" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
   it("says when to try again after too many invalid links", async () => {
@@ -157,6 +159,8 @@ describe("PublicLinkJoin", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Too many tries from this network. Try again in 57 minutes.",
     );
+    await userEvent.click(screen.getByRole("button", { name: "Go to RIM" }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
   it("offers to try again when the link could not be read", async () => {
@@ -168,6 +172,7 @@ describe("PublicLinkJoin", () => {
     const user = userEvent.setup();
     renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load this link.");
+    expect(screen.getByRole("button", { name: "Go to RIM" })).toBeInTheDocument();
     fail = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("button", { name: "Join Acme Community" })).toBeInTheDocument();

@@ -56,6 +56,7 @@ export function PublicLinkJoin({ token }: PublicLinkJoinProps) {
   const { isHydrating } = useSessionHydration();
   const userId = useAuthStore((s) => s.session?.userId ?? null);
   const preview = usePublicJoinLinkPreview(token, userId, !isHydrating);
+  const navigate = useNavigate();
 
   if (isHydrating) return <RestoringSession />;
 
@@ -80,11 +81,16 @@ export function PublicLinkJoin({ token }: PublicLinkJoinProps) {
                 ? publicLinkErrorMessage(preview.error, "")
                 : "Couldn't load this link. Check your connection and try again."}
           </p>
-          {!known && (
-            <Button type="button" variant="secondary" onClick={() => void preview.refetch()}>
-              Try again
+          <div className="flex flex-col gap-2">
+            {!known && (
+              <Button type="button" onClick={() => void preview.refetch()}>
+                Try again
+              </Button>
+            )}
+            <Button type="button" variant="secondary" onClick={() => navigate("/")}>
+              Go to RIM
             </Button>
-          )}
+          </div>
         </div>
       </Centered>
     );

@@ -5,6 +5,7 @@ import { useMyServers } from "../api/useMyServers";
 import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { ownerName, workspaceLabels } from "../workspaceLabel";
 import { EmptyWorkspaceState } from "./EmptyWorkspaceState";
+import { firstLetter } from "../../../shared/utils/initials";
 
 export function WorkspaceSelector() {
   const { data: servers, isPending, isError } = useMyServers();
@@ -67,7 +68,7 @@ export function WorkspaceSelector() {
                 className="flex w-full items-center gap-3 rounded-xl border border-rim-line bg-rim-panel px-4 py-3 text-left transition hover:border-rim-accent/40 hover:bg-rim-panel-soft"
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-rim-accent to-rim-accent text-sm font-bold text-rim-void">
-                  {server.name.charAt(0).toUpperCase()}
+                  {firstLetter(server.name)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-rim-text">{labels[index]}</p>
