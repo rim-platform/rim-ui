@@ -23,6 +23,8 @@ export type MainSurface =
   | { kind: "audit-log" }
   /** The page across every workspace of what needs the person: requests, mentions, unread counts. */
   | { kind: "home" }
+  /** Every unread message across the workspaces, staying until it is marked read. */
+  | { kind: "unreads" }
   /**
    * The message requests of one workspace's conversations, or with `workspaceId: null`, those
    * from outside every workspace.

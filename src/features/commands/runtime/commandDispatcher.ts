@@ -21,6 +21,7 @@ import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plug
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import { useUnreadsPageStore } from "../../unreads/state/useUnreadsPageStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
 import { markAsUnread, spaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
@@ -173,6 +174,14 @@ const localHandlers: Record<
   "workspace.open_home": () => {
     useShellStore.getState().setMainSurface({ kind: "home" });
   },
+  "workspace.open_unreads": () => {
+    useShellStore.getState().setMainSurface({ kind: "unreads" });
+  },
+  "workspace.unreads_next": () => useUnreadsPageStore.getState().controls?.next(),
+  "workspace.unreads_previous": () => useUnreadsPageStore.getState().controls?.previous(),
+  "workspace.unreads_mark_group": () => useUnreadsPageStore.getState().controls?.markGroup(),
+  "workspace.unreads_open": () => useUnreadsPageStore.getState().controls?.open(),
+  "workspace.unreads_undo": () => useUnreadsPageStore.getState().controls?.undo(),
   "workspace.open_audit_log": () => {
     useShellStore.getState().setMainSurface({ kind: "audit-log" });
   },

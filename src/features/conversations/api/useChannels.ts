@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -85,8 +85,15 @@ export function useArchivedChannels(workspaceId: string | undefined, enabled: bo
 export function useJoinedChannels(workspaceId?: string) {
   const direct = useIsDirectSpace(workspaceId);
   return useQuery({
-    queryKey: queryKeys.joinedChannels(workspaceId),
+    ...joinedChannelsQueryOptions(workspaceId),
     enabled: Boolean(workspaceId) && !direct,
+  });
+}
+
+/** The joined channels query's options, for reading it across workspaces. */
+export function joinedChannelsQueryOptions(workspaceId?: string) {
+  return queryOptions({
+    queryKey: queryKeys.joinedChannels(workspaceId),
     staleTime: 30_000,
     networkMode: "offlineFirst",
     queryFn: () =>

@@ -136,6 +136,8 @@ describe("VOLATILE_WORKSPACE_KEY_ROOTS", () => {
     "lenses",
     "lensMessages",
     "unreadCounts",
+    "unreadGroupMessages",
+    "unreadsMuted",
     "mutedConversations",
     "workspacePresence",
     "serverMembers",

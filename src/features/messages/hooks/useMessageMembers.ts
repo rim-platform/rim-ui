@@ -1,7 +1,13 @@
 import { useCallback, useMemo } from "react";
 
+import type { BotInfo } from "../../../core/graphql/generated/schema-types";
+import { viewHandle } from "../../../shared/utils/handles";
 import type { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import type { MessageMembers } from "../components/message-item/types";
+import type {
+  MessageAuthorView,
+  MessageMembers,
+  ResolvedMember,
+} from "../components/message-item/types";
 import type { AuthorBan } from "./useBanExpiry";
 import { activeBan, banLabel } from "./useBanExpiry";
 
@@ -17,6 +23,70 @@ export function authorNameOf(
   member: { displayName?: string | null },
 ): string {
   return member.displayName || msg.author?.displayName || msg.author?.username || "Former member";
+}
+
+/**
+ * A row's author, from the workspace's member and what the server sent with the message.
+ *
+ * @param place - The viewer's domain, whether the row is in a direct space, and who the viewer is.
+ */
+export function messageAuthorView(
+  msg: {
+    authorId: string;
+    author?:
+      | (AuthorBan & {
+          displayName?: string | null;
+          username?: string | null;
+          handle?: string | null;
+          avatarUrl?: string | null;
+          isBot?: boolean;
+          bot?: BotInfo | null;
+        })
+      | null;
+  },
+  member: Pick<
+    ResolvedMember,
+    | "displayName"
+    | "isFormerMember"
+    | "avatarUrl"
+    | "username"
+    | "statusText"
+    | "role"
+    | "joinedAt"
+    | "bio"
+    | "isBot"
+    | "bot"
+  > & { handle?: string | null },
+  place: {
+    ownDomain: Parameters<typeof viewHandle>[2];
+    inDirectSpace: boolean;
+    currentUserId: string | undefined;
+  },
+): MessageAuthorView {
+  return {
+    name: authorNameOf(msg, member),
+    isFormerMember: member.isFormerMember,
+    ban: {
+      banned: activeBan(msg.author),
+      bannedUntil: msg.author?.bannedUntil,
+      banReason: msg.author?.banReason,
+    },
+    avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
+    username: member.username ?? msg.author?.username ?? undefined,
+    handle: viewHandle(
+      msg.author?.username ?? member.username,
+      msg.author?.handle ?? member.handle,
+      place.ownDomain,
+    ),
+    statusText: member.statusText,
+    role: place.inDirectSpace ? undefined : member.role,
+    inDirectSpace: place.inDirectSpace,
+    joinedAt: member.joinedAt,
+    bio: member.bio,
+    isBot: member.isBot ?? msg.author?.isBot,
+    bot: member.bot ?? msg.author?.bot,
+    isCurrentUser: place.currentUserId !== undefined && msg.authorId === place.currentUserId,
+  };
 }
 
 /**

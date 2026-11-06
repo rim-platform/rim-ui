@@ -2,14 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { activeBan, banLabel, useBanExpiry } from "../hooks/useBanExpiry";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
-import { authorNameOf, useMessageMembers } from "../hooks/useMessageMembers";
+import { authorNameOf, messageAuthorView, useMessageMembers } from "../hooks/useMessageMembers";
 import { useMessageNavigation } from "../hooks/useMessageNavigation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { rememberHandles } from "../../workspaces/state/useKnownHandles";
-import { viewHandle } from "../../../shared/utils/handles";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { LensBanner } from "../../lenses/components/LensBanner";
@@ -543,31 +542,11 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                       view={{
                         message: msg,
                         replyTo,
-                        author: {
-                          name: authorNameOf(msg, member),
-                          isFormerMember: member.isFormerMember,
-                          ban: {
-                            banned: activeBan(msg.author),
-                            bannedUntil: msg.author?.bannedUntil,
-                            banReason: msg.author?.banReason,
-                          },
-                          avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
-                          username: member.username ?? msg.author?.username,
-                          handle: viewHandle(
-                            msg.author?.username ?? member.username,
-                            msg.author?.handle ?? member.handle,
-                            memberLookup.ownDomain,
-                          ),
-                          statusText: member.statusText,
-                          role: inDirectSpace ? undefined : member.role,
+                        author: messageAuthorView(msg, member, {
+                          ownDomain: memberLookup.ownDomain,
                           inDirectSpace,
-                          joinedAt: member.joinedAt,
-                          bio: member.bio,
-                          isBot: member.isBot ?? msg.author?.isBot,
-                          bot: member.bot ?? msg.author?.bot,
-                          isCurrentUser:
-                            currentUserId !== undefined && msg.authorId === currentUserId,
-                        },
+                          currentUserId,
+                        }),
                         isSelected: row.index === selectedMessageIndex,
                         isHighlighted: msg.id === highlightedMessageId,
                         isDeleteConfirming: msg.id === deleteConfirmMessageId,

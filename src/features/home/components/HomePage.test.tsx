@@ -430,3 +430,18 @@ describe("HomePage", () => {
     expect(within(filter).getByRole("button", { name: /Team/ })).toBeInTheDocument();
   });
 });
+
+describe("HomePage: the way to Unreads", () => {
+  it("offers See all unread with the total, which opens the page", async () => {
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    serve({});
+    useUnreadStore.getState().setCounts("ws-1", { a: 2 });
+    useUnreadStore.getState().setCounts("ws-2", { b: 3 });
+    renderHome();
+    const row = await screen.findByRole("button", { name: /See all unread/ });
+    expect(row).toHaveTextContent("5");
+    await userEvent.setup().click(row);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+  });
+});
