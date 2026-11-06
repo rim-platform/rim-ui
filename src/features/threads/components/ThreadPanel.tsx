@@ -199,6 +199,8 @@ export function ThreadPanel() {
       ),
       role: inDirectSpace ? undefined : member.role,
       inDirectSpace,
+      isBot: member.isBot ?? msg.author?.isBot,
+      bot: member.bot ?? msg.author?.bot,
     };
   };
   useEffect(

@@ -288,6 +288,54 @@ describe("ConversationMembersPanel", () => {
     );
   });
 
+  describe("with a bot in the workspace", () => {
+    const helper = {
+      ...workspaceMembers[2],
+      userId: "u-helper",
+      username: "helper",
+      displayName: "Helper",
+      memberRole: ServerMemberRoleGql.GUEST,
+      isBot: true,
+    };
+
+    function serveWithBot(role: ServerMemberRoleGql, conversation: ConversationSummary) {
+      serve(role, conversation);
+      const route = requestMock.getMockImplementation()!;
+      requestMock.mockImplementation((document: unknown, variables?: Record<string, unknown>) =>
+        String(document).includes("query ServerMembers")
+          ? Promise.resolve({ serverMembers: [...workspaceMembers, helper] })
+          : route(document, variables),
+      );
+    }
+
+    it("marks a bot member with the bot badge instead of its role", async () => {
+      serveWithBot(
+        ServerMemberRoleGql.MODERATOR,
+        makeConversation({ memberIds: ["me", "u-alice", "u-helper"], memberCount: 3 }),
+      );
+      await renderPanel(ServerMemberRoleGql.MODERATOR);
+      const row = await screen.findByTestId("member-row-u-helper");
+      expect(within(row).getByTestId("bot-badge")).toBeInTheDocument();
+      expect(within(row).queryByTestId("role-badge")).not.toBeInTheDocument();
+    });
+
+    it("offers a moderator a bot to add to a channel, with its badge", async () => {
+      serveWithBot(ServerMemberRoleGql.MODERATOR, channel);
+      await renderPanel(ServerMemberRoleGql.MODERATOR);
+      fireEvent.click(screen.getByRole("button", { name: /invite/i }));
+      const option = await screen.findByRole("option", { name: /Helper/ });
+      expect(within(option).getByTestId("bot-badge")).toBeInTheDocument();
+    });
+
+    it("offers an ordinary member no bot to add", async () => {
+      serveWithBot(ServerMemberRoleGql.MEMBER, channel);
+      await renderPanel(ServerMemberRoleGql.MEMBER);
+      fireEvent.click(screen.getByRole("button", { name: /invite/i }));
+      await screen.findAllByRole("option");
+      expect(screen.queryByRole("option", { name: /Helper/ })).not.toBeInTheDocument();
+    });
+  });
+
   it("opens with the invite picker when a conversation menu asked for it", async () => {
     serve(ServerMemberRoleGql.MEMBER);
     useMembersPanelStore.getState().openInvite("conv-1");

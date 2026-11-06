@@ -5,7 +5,7 @@ export interface MessageReaction {
   userIds: string[];
 }
 
-import { AttachmentStatusEnum, type User } from "../graphql/generated/schema-types";
+import { AttachmentStatusEnum, type BotInfo, type User } from "../graphql/generated/schema-types";
 
 export type AttachmentStatus = AttachmentStatusEnum;
 
@@ -27,6 +27,10 @@ export interface MessageAuthor extends Partial<Pick<User, "banned" | "bannedUnti
   principalId?: string | null;
   /** `@<username>:<domain>`; null when the server does not know it. */
   handle?: string | null;
+  /** Whether the account is a bot; absent from a server without `bot_disclosure`. */
+  isBot?: boolean;
+  /** What the person who added a bot says about it; null for anyone else. */
+  bot?: BotInfo | null;
 }
 
 export interface ForwardedFrom {
