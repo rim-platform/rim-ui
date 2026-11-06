@@ -95,6 +95,11 @@ rim_mls = { path = "crates/rim_mls" }
 # The account password (src/account_lock): OPAQUE and the wraps of each account's data key.
 rim_opaque = { path = "crates/rim_opaque" }
 
+# The agent bridge's loopback HTTP server (src/agent_bridge).
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+
 # Asks the session bus for a tray host (src/desktop_shell).
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5"
