@@ -86,9 +86,13 @@ export function BotsSettings({ serverId }: { serverId: string }) {
   const sectionRef = useRef<HTMLElement>(null);
   // Where focus goes once the list has been fetched again: a bot's Edit button, or New bot.
   const [refocus, setRefocus] = useState<{ editOf: string | null } | null>(null);
-  const [secret, setSecret] = useState<{ title: string; label: string; value: string } | null>(
-    null,
-  );
+  const [secret, setSecret] = useState<{
+    title: string;
+    label: string;
+    value: string;
+    /** The bot whose Edit takes focus when the dialog is closed. */
+    editOf?: string;
+  } | null>(null);
 
   const active = bots.data?.filter((b) => !b.deactivatedAt) ?? [];
   const inactive = bots.data?.filter((b) => b.deactivatedAt) ?? [];
@@ -179,7 +183,12 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           onClose={() => setDialog(null)}
           onCreated={(bot, token) => {
             setDialog(null);
-            setSecret({ title: `Token of ${bot.name}`, label: "Token", value: token });
+            setSecret({
+              title: `Token of ${bot.name}`,
+              label: "Token",
+              value: token,
+              editOf: bot.userId,
+            });
           }}
         />
       )}
@@ -234,7 +243,10 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           title={secret.title}
           label={secret.label}
           value={secret.value}
-          onClose={() => setSecret(null)}
+          onClose={() => {
+            if (secret.editOf) setRefocus({ editOf: secret.editOf });
+            setSecret(null);
+          }}
         />
       )}
     </div>

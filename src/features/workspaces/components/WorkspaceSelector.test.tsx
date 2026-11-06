@@ -60,6 +60,13 @@ describe("WorkspaceSelector", () => {
     expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
+  it("badges an emoji-led workspace with its first whole letter", () => {
+    servers.data = [{ id: "ws-1", name: "\u{1F680} Botland" }];
+    render(<WorkspaceSelector />);
+    expect(screen.getByRole("button", { name: /Botland/ })).toHaveTextContent(/^B/);
+    expect(document.body.textContent).not.toContain("\uFFFD");
+  });
+
   it("reaches every workspace by keyboard and picks one with Enter", async () => {
     const user = userEvent.setup();
     render(<WorkspaceSelector />);

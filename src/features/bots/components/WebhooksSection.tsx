@@ -29,7 +29,9 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   const channels = useAllChannels(serverId);
   const revoke = useRevokeIncomingWebhook(serverId);
   const [creating, setCreating] = useState(false);
-  const [shown, setShown] = useState<{ url: string; preset: WebhookPreset } | null>(null);
+  const [shown, setShown] = useState<{ id: string; url: string; preset: WebhookPreset } | null>(
+    null,
+  );
   const [toRevoke, setToRevoke] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const newRef = useRef<HTMLButtonElement>(null);
@@ -142,7 +144,10 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           title="Webhook URL"
           label="URL"
           value={shown.url}
-          onClose={() => setShown(null)}
+          onClose={() => {
+            setRefocus({ revokeOf: shown.id });
+            setShown(null);
+          }}
         >
           {shown.preset === WebhookPreset.GITHUB && (
             <p className="text-sm text-rim-text-muted">{GITHUB_SETUP_NOTE}</p>

@@ -21,6 +21,7 @@ import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
 import { useHomeMentionCount } from "../../features/home/api/useHomeMentions";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
+import { firstLetter } from "../../shared/utils/initials";
 
 /** The unread count over a rail button. */
 function UnreadBadge({ count }: { count: number }) {
@@ -237,7 +238,7 @@ function WorkspaceRailButton({
             : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
         )}
       >
-        {name.charAt(0).toUpperCase()}
+        {firstLetter(name)}
         {unread > 0 && <UnreadBadge count={unread} />}
       </button>
       {openMenu}

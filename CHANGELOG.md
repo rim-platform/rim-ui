@@ -86,6 +86,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- Sign-up has a way back to sign-in, every join page has a way out, emoji-led names no longer break
+  a workspace's badge, and focus returns to the right place after closing dialogs in Settings > Bots.
 - Installing a plugin from a local folder works on Linux.
 - Starting the desktop app while it is already running brings the open window forward instead of
   starting a second copy on the same data.
