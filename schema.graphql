@@ -1799,6 +1799,12 @@ input MarkAsReadInput {
 	readAt: DateTime!
 }
 
+input MarkAsUnreadInput {
+	workspaceId: ID!
+	conversationId: ID!
+	messageId: ID!
+}
+
 """
 How many of a person's messages in the workspace's channels `deleteMemberMessages` would
 reach with the same `since`.
@@ -2237,6 +2243,12 @@ type Mutation {
 	updateKeybind(input: UpdateKeybindInput!): Keybind!
 	toggleReaction(input: ToggleReactionInput!): [ReactionGroup!]!
 	markAsRead(input: MarkAsReadInput!): Boolean!
+	"""
+	Moves the viewer's read marker back so that the message and every later one count as
+	unread. Nothing becomes less unread: when they already count, the marker stays.
+	Notifications already read stay read.
+	"""
+	markAsUnread(input: MarkAsUnreadInput!): Boolean!
 	markAllAsRead(input: MarkAllAsReadInput!): Boolean!
 	"""
 	Join the current default workspace as Member with its public channels. Active bans
@@ -4387,7 +4399,8 @@ type ServerInfo {
 	(`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
 	`conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
 	(`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
-	`ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`).
+	`ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
+	`read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event).
 	A client ignores names it does not know.
 	"""
 	capabilities: [String!]!
@@ -4754,6 +4767,10 @@ input UnpinMessageInput {
 type UnreadCount {
 	conversationId: ID!
 	count: Int!
+	"""
+	Messages sent after this time count as unread.
+	"""
+	unreadAfter: DateTime!
 }
 
 """

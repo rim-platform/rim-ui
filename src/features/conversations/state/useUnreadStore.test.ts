@@ -3,7 +3,39 @@ import { unreadTotal, useUnreadStore } from "./useUnreadStore";
 
 describe("useUnreadStore", () => {
   beforeEach(() => {
-    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+    useUnreadStore.setState({ counts: {}, spaceOf: {}, markers: {}, countSources: {} });
+  });
+
+  it("keeps a space's markers with its counts and says where the counts came from", () => {
+    const store = useUnreadStore.getState();
+    store.setCounts("with", { a: 1 }, { a: "2026-11-06T10:00:00Z" });
+    store.setCounts("without", { b: 2 });
+    const state = useUnreadStore.getState();
+    expect(state.markers).toEqual({ a: "2026-11-06T10:00:00Z" });
+    expect(state.countSources).toEqual({ with: "markers", without: "plain" });
+  });
+
+  it("replaces one space's markers and keeps the other spaces'", () => {
+    const store = useUnreadStore.getState();
+    store.setCounts("one", { a: 1 }, { a: "2026-11-06T10:00:00Z" });
+    store.setCounts("two", { b: 1 }, { b: "2026-11-06T11:00:00Z" });
+    store.setCounts("one", {}, {});
+    expect(useUnreadStore.getState().markers).toEqual({ b: "2026-11-06T11:00:00Z" });
+  });
+
+  it("clears a conversation's marker when it is marked read", () => {
+    const store = useUnreadStore.getState();
+    store.setCounts("ws", { a: 1, b: 1 }, { a: "2026-11-06T10:00:00Z", b: "2026-11-06T11:00:00Z" });
+    store.markRead("a");
+    expect(useUnreadStore.getState().markers).toEqual({ b: "2026-11-06T11:00:00Z" });
+  });
+
+  it("clears a space's markers when all of it is marked read", () => {
+    const store = useUnreadStore.getState();
+    store.setCounts("one", { a: 1 }, { a: "2026-11-06T10:00:00Z" });
+    store.setCounts("two", { b: 1 }, { b: "2026-11-06T11:00:00Z" });
+    store.markAllRead("one");
+    expect(useUnreadStore.getState().markers).toEqual({ b: "2026-11-06T11:00:00Z" });
   });
 
   it("starts with empty counts", () => {

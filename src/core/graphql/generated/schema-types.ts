@@ -1438,6 +1438,12 @@ export type MarkAsReadInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+export type MarkAsUnreadInput = {
+  conversationId: Scalars['ID']['input'];
+  messageId: Scalars['ID']['input'];
+  workspaceId: Scalars['ID']['input'];
+};
+
 /**
  * How many of a person's messages in the workspace's channels `deleteMemberMessages` would
  * reach with the same `since`.
@@ -2035,6 +2041,12 @@ export type Mutation = {
   logoutOtherSessions: Scalars['Int']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
   markAsRead: Scalars['Boolean']['output'];
+  /**
+   * Moves the viewer's read marker back so that the message and every later one count as
+   * unread. Nothing becomes less unread: when they already count, the marker stays.
+   * Notifications already read stay read.
+   */
+  markAsUnread: Scalars['Boolean']['output'];
   /**
    * Mark the viewer's notifications read: the given `ids`, or every notification created at
    * or before `allBefore` (exactly one of the two). Returns how many changed.
@@ -2783,6 +2795,11 @@ export type MutationMarkAllAsReadArgs = {
 
 export type MutationMarkAsReadArgs = {
   input: MarkAsReadInput;
+};
+
+
+export type MutationMarkAsUnreadArgs = {
+  input: MarkAsUnreadInput;
 };
 
 
@@ -4645,7 +4662,8 @@ export type ServerInfo = {
    * (`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
    * `conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
    * (`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
-   * `ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`).
+   * `ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
+   * `read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event).
    * A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
@@ -5010,6 +5028,8 @@ export type UnpinMessageInput = {
 export type UnreadCount = {
   conversationId: Scalars['ID']['output'];
   count: Scalars['Int']['output'];
+  /** Messages sent after this time count as unread. */
+  unreadAfter: Scalars['DateTime']['output'];
 };
 
 /** Change a bot; a field left out stays as it is. */

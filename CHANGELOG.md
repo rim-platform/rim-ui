@@ -62,6 +62,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Opening a conversation starts at your first unread message, from where the server says you
+  stopped, and it only counts as read once you've reached the end of what's new. A setting keeps
+  conversations unread until you mark them. It needs a workspace server that lists `read_marker`
+  in `serverInfo.capabilities`; on an older one conversations open and count as read as before.
 - Settings > Plugins groups plugins by how they run, and each opens in place with its
   permissions, settings and what agents can do with it.
 - Settings > Agents shows each agent on one page: what it can read, what asks you first, what
