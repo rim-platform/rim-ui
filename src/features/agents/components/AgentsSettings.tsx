@@ -68,8 +68,8 @@ export function AgentsSettings() {
       </div>
 
       <div className="rounded-lg border border-rim-line bg-rim-panel px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0 flex-1 basis-48">
             <div className="text-sm font-medium text-rim-text">{SWITCH_LABEL}</div>
             <div className="text-xs text-rim-text-muted">
               An agent runs on your computer with its own model provider. What it reads goes to that
@@ -108,8 +108,8 @@ export function AgentsSettings() {
           )}
           <ul className="divide-y divide-rim-line rounded-lg border border-rim-line bg-rim-panel px-4">
             {agents.map((agent) => (
-              <li key={agent.id} className="flex items-center justify-between gap-4 py-3">
-                <div className="min-w-0">
+              <li key={agent.id} className="flex flex-wrap items-center justify-between gap-4 py-3">
+                <div className="min-w-0 flex-1 basis-48">
                   <div className="break-words text-sm font-medium text-rim-text">{agent.name}</div>
                   <div className="text-xs text-rim-text-muted">
                     Connected {new Date(agent.pairedAt).toLocaleDateString()}

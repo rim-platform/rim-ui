@@ -18,13 +18,20 @@ const FOCUSABLE_SELECTOR =
 export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<Element | null>(null);
+  const wasOpenRef = useRef(false);
   const titleId = useId();
 
-  // Save previous focus, move focus into the panel when opening, prevent body scroll
+  // Saved while rendering, because a child's `autoFocus` takes focus before any effect runs. A
+  // render that is thrown away and repeated saves the same element, so this stays safe.
+  /* eslint-disable react-hooks/refs */
+  if (open && !wasOpenRef.current) previousFocusRef.current = document.activeElement;
+  wasOpenRef.current = open;
+  /* eslint-enable react-hooks/refs */
+
+  // Move focus into the panel when opening, give it back when closing, prevent body scroll
   useEffect(() => {
     let frame: number | undefined;
     if (open) {
-      previousFocusRef.current = document.activeElement;
       document.body.style.overflow = "hidden";
       // Next frame, focus the first focusable unless focus is already inside (e.g. `autoFocus`)
       frame = requestAnimationFrame(() => {
