@@ -37,12 +37,12 @@ export function ShowOnceDialog({ title, label, value, children, onClose }: ShowO
           <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
             {label}
           </span>
-          <input
-            type="text"
+          <textarea
             readOnly
+            rows={3}
             value={value}
             onFocus={(e) => e.currentTarget.select()}
-            className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 font-mono text-xs text-rim-text outline-none focus:border-rim-accent/40"
+            className="w-full resize-none break-all rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 font-mono text-xs text-rim-text outline-none focus:border-rim-accent/40"
           />
         </label>
         <p className="text-sm text-rim-warm">

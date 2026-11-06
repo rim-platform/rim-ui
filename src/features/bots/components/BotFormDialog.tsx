@@ -20,6 +20,8 @@ interface BotFormDialogProps {
   /** Called with a new bot's token, shown once; the caller shows it and holds it in its state. */
   onCreated?: (bot: Bot, token: string) => void;
   onClose: () => void;
+  /** Called after an edit is saved, before the dialog closes. */
+  onSaved?: () => void;
 }
 
 function Counter({ id, length }: { id: string; length: number }) {
@@ -35,7 +37,7 @@ function Counter({ id, length }: { id: string; length: number }) {
  * statements are required and are shown to everyone in the workspace as what the person who
  * added the bot says.
  */
-export function BotFormDialog({ serverId, bot, onCreated, onClose }: BotFormDialogProps) {
+export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: BotFormDialogProps) {
   const [name, setName] = useState(bot?.name ?? "");
   const [runBy, setRunBy] = useState(bot?.runBy ?? "");
   const [readsGoTo, setReadsGoTo] = useState(bot?.readsGoTo ?? "");
@@ -64,6 +66,7 @@ export function BotFormDialog({ serverId, bot, onCreated, onClose }: BotFormDial
           runBy: trimmed.runBy,
           readsGoTo: trimmed.readsGoTo,
         });
+        onSaved?.();
         onClose();
       } else {
         const created = await createBot({ serverId, ...trimmed });
