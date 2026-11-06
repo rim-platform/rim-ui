@@ -21,9 +21,12 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
   const wasOpenRef = useRef(false);
   const titleId = useId();
 
-  // Saved while rendering, because a child's `autoFocus` takes focus before any effect runs.
+  // Saved while rendering, because a child's `autoFocus` takes focus before any effect runs. A
+  // render that is thrown away and repeated saves the same element, so this stays safe.
+  /* eslint-disable react-hooks/refs */
   if (open && !wasOpenRef.current) previousFocusRef.current = document.activeElement;
   wasOpenRef.current = open;
+  /* eslint-enable react-hooks/refs */
 
   // Move focus into the panel when opening, give it back when closing, prevent body scroll
   useEffect(() => {
