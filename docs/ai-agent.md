@@ -315,6 +315,18 @@ There are limits to what this does:
 - The desktop app enforces these rules, and a server does not know about them, so they do not bind
   a modified client.
 
+### Claude Code
+
+Claude Code connects through a plugin in this repository:
+
+```sh
+claude plugin marketplace add rim-platform/rim-ui
+claude plugin install rim@rim-platform
+```
+
+Then say "connect to RIM" in Claude Code. The steps are in the
+[plugin's README](../integrations/claude-code/README.md).
+
 ## Next
 
 - [Commands and automation](commands-and-automation.md): sensitivity, the palette, macros and

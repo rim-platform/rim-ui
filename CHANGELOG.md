@@ -46,6 +46,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   to update" when an update is ready. Clicking a message notification opens that conversation.
 - Settings > Agents lets a program on this computer, such as Claude Code, ask to connect to the desktop
   app. It is off by default. You compare a code and approve it, and you can disconnect it at any time.
+- A Claude Code plugin in `integrations/claude-code` connects Claude Code to the desktop app: it shows the code to compare and adds RIM as an MCP server.
 - A connected agent can read the channels you choose in Settings > Agents, from the messages on this device. It
   can't change anything, and it can't read encrypted conversations. "What it was given" shows what RIM handed over.
 

@@ -1,0 +1,11 @@
+{
+  "name": "rim-platform",
+  "owner": { "name": "RIM" },
+  "plugins": [
+    {
+      "name": "rim",
+      "source": "./integrations/claude-code",
+      "description": "Connect Claude Code to the RIM desktop app on this computer."
+    }
+  ]
+}
