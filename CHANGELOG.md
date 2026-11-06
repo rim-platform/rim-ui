@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A message or a conversation can be marked unread, on all your devices, and marking everything
+  read can be undone for a few seconds. Marking unread needs a workspace server that lists
+  `read_marker` in `serverInfo.capabilities`.
 - Home: one page across your workspaces with what's waiting for you, your mentions and
   replies, your unread counts and your agents' runs. It's in the workspace rail and on
   `workspace.open_home`.

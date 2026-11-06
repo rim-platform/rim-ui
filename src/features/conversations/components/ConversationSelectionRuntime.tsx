@@ -19,6 +19,16 @@ import { useUnreadStore } from "../state/useUnreadStore";
 export function ConversationSelectionRuntime() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const direct = useIsDirectSpace(workspaceId);
+  const selectedId = useShellStore((s) => s.selectedConversationId);
+
+  // Leaving a conversation ends the hold on its automatic marking.
+  const leftFrom = useRef(selectedId);
+  useEffect(() => {
+    const previous = leftFrom.current;
+    leftFrom.current = selectedId;
+    if (previous && previous !== selectedId) useUnreadStore.getState().clearHeld(previous);
+  }, [selectedId]);
+
   return direct ? <DirectSelection /> : <WorkspaceSelection />;
 }
 

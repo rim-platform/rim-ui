@@ -179,6 +179,12 @@ export type WorkspaceEvent =
       last_read_at: string;
     }
   | {
+      type: "ReadMarkerRewound";
+      workspace_id: string;
+      conversation_id: string;
+      user_id: string;
+    }
+  | {
       type: "PresenceChanged";
       workspace_id: string;
       user_id: string;

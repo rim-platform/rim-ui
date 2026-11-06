@@ -46,10 +46,19 @@ beforeEach(() => {
     markers: {},
     countSources: {},
     watermarks: {},
+    held: {},
   });
 });
 
 describe("leaving a conversation", () => {
+  it("ends its hold and no other", () => {
+    useUnreadStore.setState({ held: { "conv-1": true, "conv-3": true } });
+    renderRuntime();
+    expect(useUnreadStore.getState().held).toEqual({ "conv-1": true, "conv-3": true });
+    leave();
+    expect(useUnreadStore.getState().held).toEqual({ "conv-3": true });
+  });
+
   it("keeps the count of an unread conversation on a host with read markers", () => {
     useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 }, { "conv-1": MARKER });
     useUnreadStore.setState({ watermarks: { "conv-1": MARKER } });

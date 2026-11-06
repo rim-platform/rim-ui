@@ -116,11 +116,16 @@ describe("skew check", () => {
     ]);
   });
 
-  it("refuses only the marker document on a server without read_marker", () => {
-    const schema = schemaWithoutFields({ UnreadCount: ["unreadAfter"] });
-    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
-      "query UnreadCountsWithMarkers",
-    ]);
+  it("refuses only the marker documents on a server without read_marker", () => {
+    const schema = schemaWithoutFields({
+      UnreadCount: ["unreadAfter"],
+      Mutation: ["markAsUnread"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual(["mutation MarkAsUnread", "query UnreadCountsWithMarkers"]);
   });
 
   it("refuses only the bot disclosure documents on a server without bot_disclosure", () => {

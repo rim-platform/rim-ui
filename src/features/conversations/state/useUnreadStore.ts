@@ -25,8 +25,21 @@ interface UnreadState {
   ) => void;
   increment: (conversationId: string, spaceId: string) => void;
   markRead: (conversationId: string) => void;
-  /** Clear the counts of one space. */
-  markAllRead: (spaceId: string) => void;
+  /** Spaces marked read here whose call to the server waits out its undo; their reads are held. */
+  markAllPending: Record<string, true>;
+  /** Clears a space's counts and holds later reads of them; returns what it cleared. */
+  beginMarkAll: (spaceId: string) => CountSnapshot;
+  /**
+   * Ends a pending mark of a space.
+   *
+   * @param restore - What to put back, on top of what arrived in the meantime; left out when the
+   *   mark stands.
+   */
+  endMarkAll: (spaceId: string, restore?: CountSnapshot) => void;
+  /** Open conversations automatic marking must leave alone, until left or marked read. */
+  held: Record<string, true>;
+  setHeld: (conversationId: string) => void;
+  clearHeld: (conversationId: string) => void;
   // Watermarks track the sentAt timestamp of the last seen message per conversation.
   // When a watermark exists, the MessageTimeline renders a "New messages" divider.
   watermarks: Record<string, string>;
@@ -35,6 +48,9 @@ interface UnreadState {
 }
 
 type SpaceEntries = Pick<UnreadState, "counts" | "spaceOf" | "markers">;
+
+/** A space's counts and read markers at one moment. */
+export type CountSnapshot = Pick<UnreadState, "counts" | "markers">;
 
 /** `counts`, `spaceOf` and `markers` without the conversations of `spaceId`. */
 function withoutSpace(entries: SpaceEntries, spaceId: string): SpaceEntries {
@@ -71,6 +87,11 @@ export const useUnreadStore = create<UnreadState>((set) => ({
   countSources: {},
   setCounts: (spaceId, counts, markers) =>
     set((state) => {
+      const countSources: Record<string, CountSource> = {
+        ...state.countSources,
+        [spaceId]: markers ? "markers" : "plain",
+      };
+      if (state.markAllPending[spaceId]) return { countSources };
       const rest = withoutSpace(state, spaceId);
       for (const [conversationId, count] of Object.entries(counts)) {
         rest.counts[conversationId] = count;
@@ -78,10 +99,7 @@ export const useUnreadStore = create<UnreadState>((set) => ({
         const marker = markers?.[conversationId];
         if (marker !== undefined) rest.markers[conversationId] = marker;
       }
-      return {
-        ...rest,
-        countSources: { ...state.countSources, [spaceId]: markers ? "markers" : "plain" },
-      };
+      return { ...rest, countSources };
     }),
   increment: (conversationId, spaceId) =>
     set((state) => ({
@@ -93,16 +111,61 @@ export const useUnreadStore = create<UnreadState>((set) => ({
     })),
   markRead: (conversationId) =>
     set((state) => {
-      if (!state.counts[conversationId]) return state;
+      if (!state.counts[conversationId] && !state.held[conversationId]) return state;
       const counts = { ...state.counts };
       const spaceOf = { ...state.spaceOf };
       const markers = { ...state.markers };
+      const held = { ...state.held };
       delete counts[conversationId];
       delete spaceOf[conversationId];
       delete markers[conversationId];
-      return { counts, spaceOf, markers };
+      delete held[conversationId];
+      return { counts, spaceOf, markers, held };
     }),
-  markAllRead: (spaceId) => set((state) => withoutSpace(state, spaceId)),
+  markAllPending: {},
+  beginMarkAll: (spaceId) => {
+    const snapshot: CountSnapshot = { counts: {}, markers: {} };
+    set((state) => {
+      const held = { ...state.held };
+      for (const [conversationId, count] of Object.entries(state.counts)) {
+        if (state.spaceOf[conversationId] !== spaceId) continue;
+        snapshot.counts[conversationId] = count;
+        const marker = state.markers[conversationId];
+        if (marker !== undefined) snapshot.markers[conversationId] = marker;
+        delete held[conversationId];
+      }
+      return {
+        ...withoutSpace(state, spaceId),
+        held,
+        markAllPending: { ...state.markAllPending, [spaceId]: true },
+      };
+    });
+    return snapshot;
+  },
+  endMarkAll: (spaceId, restore) =>
+    set((state) => {
+      const markAllPending = { ...state.markAllPending };
+      delete markAllPending[spaceId];
+      if (!restore) return { markAllPending };
+      const counts = { ...state.counts };
+      const spaceOf = { ...state.spaceOf };
+      const markers = { ...state.markers, ...restore.markers };
+      for (const [conversationId, count] of Object.entries(restore.counts)) {
+        counts[conversationId] = (counts[conversationId] ?? 0) + count;
+        spaceOf[conversationId] = spaceId;
+      }
+      return { counts, spaceOf, markers, markAllPending };
+    }),
+  held: {},
+  setHeld: (conversationId) =>
+    set((state) => ({ held: { ...state.held, [conversationId]: true } })),
+  clearHeld: (conversationId) =>
+    set((state) => {
+      if (!state.held[conversationId]) return state;
+      const held = { ...state.held };
+      delete held[conversationId];
+      return { held };
+    }),
   watermarks: {},
   setWatermark: (conversationId, sentAt) =>
     set((state) => ({

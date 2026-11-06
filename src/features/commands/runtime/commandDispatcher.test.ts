@@ -114,13 +114,19 @@ vi.mock("../../conversations/state/useUnreadStore", () => ({
   useUnreadStore: {
     getState: () => ({
       counts: {},
-      markAllRead: vi.fn(),
     }),
   },
 }));
 
 vi.mock("../../conversations/api/useMarkAsRead", () => ({
   markWorkspaceRead: vi.fn(),
+}));
+
+const markAsUnreadMock = vi.hoisted(() => vi.fn());
+const marksUnread = vi.hoisted(() => ({ value: true }));
+vi.mock("../../conversations/api/useMarkAsUnread", () => ({
+  markAsUnread: (...args: unknown[]) => markAsUnreadMock(...args),
+  spaceMarksUnread: () => marksUnread.value,
 }));
 
 vi.mock("../../../core/graphql/client", () => ({
@@ -210,21 +216,69 @@ describe("dispatchCommand", () => {
     expect(mockExecuteBackend).not.toHaveBeenCalled();
   });
 
-  it("answers Mark All as Read and Reload Commands with their result text", async () => {
+  describe("chat.mark_as_unread", () => {
+    const run = (args?: Record<string, unknown>) =>
+      dispatchCommand(makeCommand({ id: "chat.mark_as_unread" }), mockExecuteBackend, { args });
+
+    beforeEach(() => {
+      markAsUnreadMock.mockReset().mockResolvedValue(true);
+      marksUnread.value = true;
+      document.body.innerHTML = "";
+    });
+
+    it("takes the message from its arguments, and never reaches the server's command", async () => {
+      await run({ serverId: "ws-9", conversationId: "conv-9", messageId: "msg-9" });
+      expect(markAsUnreadMock).toHaveBeenCalledWith({
+        workspaceId: "ws-9",
+        conversationId: "conv-9",
+        messageId: "msg-9",
+      });
+      expect(mockExecuteBackend).not.toHaveBeenCalled();
+    });
+
+    it("otherwise takes the message selected in the open list", async () => {
+      document.body.innerHTML =
+        '<div data-message-list aria-activedescendant="message-msg-3"></div>';
+      await run({ serverId: "ws-9", conversationId: "conv-9" });
+      expect(markAsUnreadMock).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: "msg-3" }),
+      );
+    });
+
+    it("says so when no message is selected", async () => {
+      await run({ serverId: "ws-9", conversationId: "conv-9" });
+      expect(markAsUnreadMock).not.toHaveBeenCalled();
+      expect(toastInfoMock).toHaveBeenCalledWith("Select a message to mark unread from");
+    });
+
+    it("says so on a server without read markers", async () => {
+      marksUnread.value = false;
+      await run({ serverId: "ws-9", conversationId: "conv-9", messageId: "msg-9" });
+      expect(markAsUnreadMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "This workspace's server does not support marking unread yet",
+      );
+    });
+  });
+
+  it("leaves Mark All as Read to its own toast, which offers the undo", async () => {
     const read = await dispatchCommand(
       makeCommand({ id: "chat.mark_all_as_read" }),
       mockExecuteBackend,
     );
+    expect(read).toEqual({
+      status: "SUCCESS",
+      message: "",
+      payload: LOCAL_ACTION_PAYLOAD,
+      followUpCommands: [],
+    });
+  });
+
+  it("answers Reload Commands with its result text", async () => {
     const reload = await dispatchCommand(
       makeCommand({ id: "workspace.reload_commands" }),
       mockExecuteBackend,
     );
-    expect(read).toEqual({
-      status: "SUCCESS",
-      message: "All conversations marked as read",
-      payload: null,
-      followUpCommands: [],
-    });
     expect(reload).toEqual({
       status: "SUCCESS",
       message: "Commands reloaded",

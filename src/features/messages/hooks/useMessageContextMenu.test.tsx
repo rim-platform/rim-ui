@@ -37,6 +37,7 @@ import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal"
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useRelayStore } from "../../relay/state/useRelayStore";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
 import { useShellStore } from "../../../shell/state/useShellStore";
 
@@ -654,5 +655,62 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
     expect(onEdit).toHaveBeenCalledWith("msg-1");
     expect(useShellStore.getState().editingMessageId).toBeNull();
+  });
+});
+
+describe("useMessageContextMenu — Mark unread from here", () => {
+  const ITEM = "Mark unread from here";
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useUnreadStore.setState({ countSources: { "ws-1": "markers" }, held: {} });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+  });
+
+  it("marks from a top-level message on a host with read markers, and holds it", async () => {
+    serve(ServerMemberRoleGql.MEMBER, { "mutation MarkAsUnread": () => ({ markAsUnread: true }) });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: ITEM }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation MarkAsUnread")).toEqual([
+        { input: { workspaceId: "ws-1", conversationId: "conv-1", messageId: "msg-1" } },
+      ]),
+    );
+    expect(useUnreadStore.getState().held).toEqual({ "conv-1": true });
+  });
+
+  it("is offered on the viewer's own message too", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, true);
+    expect(labels()).toContain(ITEM);
+  });
+
+  it("is left out on a host without read markers", async () => {
+    useUnreadStore.setState({ countSources: { "ws-1": "plain" } });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out until the counts have shown what the host has", async () => {
+    useUnreadStore.setState({ countSources: {} });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out in the thread panel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, "thread-1");
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out on a thread reply and on a deleted message", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, { threadId: "t-1" } as MessageItem);
+    expect(labels()).not.toContain(ITEM);
+    cleanup();
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, { isDeleted: true } as MessageItem);
+    expect(labels()).not.toContain(ITEM);
   });
 });

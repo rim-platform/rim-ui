@@ -81,6 +81,7 @@ beforeEach(() => {
     markers: {},
     countSources: { "ws-1": "markers" },
     watermarks: {},
+    held: {},
   });
   useMessageDisplaySettingsStore.setState({ markReadByHand: false });
 });
@@ -308,5 +309,50 @@ describe("useNewMessagesDivider: marking", () => {
     useMessageDisplaySettingsStore.setState({ markReadByHand: true });
     useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 });
     expect(renderDivider().result.current.markShownRead).toBeNull();
+  });
+});
+
+describe("useNewMessagesDivider: held", () => {
+  beforeEach(() => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, { "conv-1": items[1].sentAt });
+  });
+
+  it("stays at the bottom, marks nothing and offers its button", async () => {
+    useUnreadStore.getState().setHeld("conv-1");
+    const { result } = renderDivider();
+    act(() => result.current.onScrollPosition(true));
+    await wait(5000);
+    expect(marks()).toEqual([]);
+    expect(result.current.firstNewIndex).toBe(2);
+    expect(result.current.markShownRead).not.toBeNull();
+  });
+
+  it("takes back a dismissal on its way", async () => {
+    const { result } = renderDivider();
+    act(() => result.current.onScrollPosition(true));
+    await wait(1500);
+    expect(result.current.dividerFading).toBe(true);
+    act(() => useUnreadStore.getState().setHeld("conv-1"));
+    await wait(5000);
+    expect(marks()).toEqual([]);
+    expect(result.current.dividerFading).toBe(false);
+  });
+
+  it("follows what the counts say, not the message chosen", () => {
+    useUnreadStore.getState().setHeld("conv-1");
+    const { result } = renderDivider();
+    expect(result.current.firstNewIndex).toBe(2);
+    act(() =>
+      useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 }, { "conv-1": items[0].sentAt }),
+    );
+    expect(result.current.firstNewIndex).toBe(1);
+  });
+
+  it("marking by its button ends the hold", () => {
+    useUnreadStore.getState().setHeld("conv-1");
+    const { result } = renderDivider();
+    act(() => result.current.markShownRead?.());
+    expect(useUnreadStore.getState().held).toEqual({});
+    expect(result.current.markShownRead).toBeNull();
   });
 });

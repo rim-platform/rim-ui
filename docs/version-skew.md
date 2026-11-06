@@ -57,4 +57,5 @@ workspace's server does not support it yet.
 A read every workspace depends on goes by the capabilities of the workspace's own host instead:
 `spaceHasCapability` asks that host through the same route as the workspace's other requests and
 keeps the answer for a few minutes. The unread counts ask for `unreadAfter` this way
-(`read_marker`), so a workspace on an older host keeps its badges under a newer relay.
+(`read_marker`), so a workspace on an older host keeps its badges under a newer relay. What those
+counts brought then gates Mark unread from here and Mark as unread, also by the workspace's host.

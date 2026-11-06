@@ -1,7 +1,7 @@
 /**
  * Which host stream an event may arrive on: a conversation's events on `c:<conversation id>`,
  * one person's on `u:<principal id>` (this app's own only), other space-wide events on `w`,
- * typing and presence on `e` without a `seq`.
+ * typing, presence and a rewound read marker on `e` without a `seq`.
  */
 
 /** Events for one person. Directory events about a guest go to the guest's stream too. */
@@ -22,7 +22,7 @@ const DIRECTORY_EVENTS = new Set([
   "MemberBanChanged",
   "MemberTimeoutChanged",
 ]);
-const EPHEMERAL_EVENTS = new Set(["TypingStarted", "PresenceChanged"]);
+const EPHEMERAL_EVENTS = new Set(["TypingStarted", "PresenceChanged", "ReadMarkerRewound"]);
 
 export interface StreamedEvent {
   stream: string;

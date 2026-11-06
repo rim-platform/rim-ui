@@ -18,6 +18,11 @@ export interface UnreadMarkReadEvent {
   conversationId: string;
 }
 
+/** The viewer moved their read marker back in a conversation, here or on another device. */
+export interface UnreadRewoundEvent {
+  conversationId: string;
+}
+
 export interface PresenceChangedEvent {
   userId: string;
   status: string; // raw status string — feature normalizes it
@@ -84,6 +89,7 @@ export interface PipelineSuspendedEvent {
 export const BUS_EVENTS = {
   UNREAD_INCREMENT: "unread:increment",
   UNREAD_MARK_READ: "unread:markRead",
+  UNREAD_REWOUND: "unread:rewound",
   PRESENCE_CHANGED: "presence:changed",
   TYPING_STARTED: "typing:started",
   TYPING_STOPPED: "typing:stopped",

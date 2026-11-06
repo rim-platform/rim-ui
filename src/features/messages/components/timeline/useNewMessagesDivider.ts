@@ -60,8 +60,10 @@ export function useNewMessagesDivider({
   const markByHandSetting = useMessageDisplaySettingsStore((s) => s.markReadByHand);
   const { mutate: markAsRead } = useMarkAsRead();
 
+  const held = useUnreadStore((s) => (conversationId ? Boolean(s.held[conversationId]) : false));
+
   const hasMarkers = source === "markers";
-  const byHand = markByHandSetting && hasMarkers;
+  const byHand = held || (markByHandSetting && hasMarkers);
   const marker = count > 0 ? storedMarker : null;
   const line = marker ?? watermark;
 
@@ -191,6 +193,13 @@ export function useNewMessagesDivider({
       dismissTimerRef.current = null;
     }
   }, [firstNewIndex]);
+
+  // Marked unread during the dwell or the fade: the divider stays.
+  useEffect(() => {
+    if (!byHand) return;
+    clearTimers();
+    setDividerFading(false);
+  }, [byHand, clearTimers]);
 
   // Conversation switch or unmount: cancel the previous conversation's timers.
   useEffect(() => {

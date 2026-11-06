@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { act, renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
@@ -13,7 +16,7 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
-import { fetchUnreadCounts } from "./useUnreadCounts";
+import { fetchUnreadCounts, useUnreadCounts } from "./useUnreadCounts";
 
 beforeEach(() => {
   requestMock.mockReset().mockResolvedValue({
@@ -99,5 +102,43 @@ describe("fetchUnreadCounts", () => {
     const items = await fetchUnreadCounts("remote-direct");
     expect(items).toEqual([{ conversationId: "c-other", count: 2 }]);
     expect(useUnreadStore.getState().counts).toEqual({ "c-other": 2 });
+  });
+});
+
+describe("useUnreadCounts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** How many count reads run for `workspaceId` over two minutes after the first one. */
+  async function readsOverTwoMinutes(workspaceId: string): Promise<number> {
+    vi.useFakeTimers();
+    const client = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { unmount } = renderHook(() => useUnreadCounts(workspaceId), { wrapper });
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    const first = countDocuments().length;
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    const later = countDocuments().length - first;
+    unmount();
+    client.clear();
+    return later;
+  }
+
+  it("polls an open workspace on another server, whose missed events leave no sign", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities: [] }));
+    useRelayStore.setState({
+      spaces: {
+        remote: { account: "a", spaceId: "remote", hostServerId: "host-1", kind: "workspace" },
+      },
+    });
+    queryClient.setQueryData(queryKeys.hostCapabilities("host-1"), []);
+    expect(await readsOverTwoMinutes("remote")).toBe(2);
+  });
+
+  it("does not poll a workspace on the connected server, which refetches on reconnect", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities: [] }));
+    expect(await readsOverTwoMinutes("local")).toBe(0);
   });
 });

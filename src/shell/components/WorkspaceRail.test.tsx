@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { expectReachableByKeyboard } from "../../test/keyboard";
+import { sendPendingMarkAll } from "../../features/conversations/api/useMarkAsRead";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useQuickAccessStore } from "../../features/commands/state/useQuickAccessStore";
 import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
@@ -266,12 +267,14 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Assign keybind…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Mark all as read" }));
+    expect(useUnreadStore.getState().counts.c2 ?? 0).toBe(0);
+    expect(callsTo(requestMock, "mutation MarkAllAsRead")).toEqual([]);
+    sendPendingMarkAll();
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation MarkAllAsRead")).toEqual([
         { input: { workspaceId: "ws-2" } },
       ]),
     );
-    expect(useUnreadStore.getState().counts.c2 ?? 0).toBe(0);
     expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
