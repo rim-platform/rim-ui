@@ -100,6 +100,26 @@ describe("Dialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   });
 
+  it("gives focus back on closing, when an autoFocus element took it on opening", async () => {
+    const dialog = (open: boolean) => (
+      <>
+        <button type="button">Before</button>
+        <Dialog open={open} onClose={() => {}} title="Autofocus">
+          <button type="button" autoFocus>
+            Inside
+          </button>
+        </Dialog>
+      </>
+    );
+    const { rerender } = render(dialog(false));
+    const before = screen.getByRole("button", { name: "Before" });
+    before.focus();
+    rerender(dialog(true));
+    expect(screen.getByRole("button", { name: "Inside" })).toHaveFocus();
+    rerender(dialog(false));
+    expect(before).toHaveFocus();
+  });
+
   it("keeps focus on an autoFocus element inside the dialog", async () => {
     render(
       <Dialog open={true} onClose={() => {}} title="Autofocus">
