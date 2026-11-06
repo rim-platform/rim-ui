@@ -428,7 +428,7 @@ describe("createAgentPlugins", () => {
         outcome: "proposal",
         untrusted: true,
         message:
-          '"Title of wipes" is dangerous, so only the person can run it. Tell them what you propose and why; they can run it from the Pods panel.',
+          '"Title of wipes" is dangerous, so only the person can run it. Tell them what you propose and why; they can run it themselves in RIM.',
       },
     };
 
