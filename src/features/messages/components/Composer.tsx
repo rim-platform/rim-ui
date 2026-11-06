@@ -196,19 +196,24 @@ function MessageComposer(props: ComposerProps) {
   const { data: serverMembers } = useServerMembers(workspaceId);
   const memberLookup = useMemberLookup(workspaceId);
   // Members as the mention list offers them: by the handle that reads, never an `r_…` name.
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  // A bot is offered only in a conversation it was added to.
   const mentionMembers = useMemo(
     () =>
-      serverMembers?.map((m) => {
-        const info = memberLookup.resolve(m.userId);
-        return {
-          userId: m.userId,
-          mention: info.handleView?.shown.slice(1) ?? null,
-          handle: info.handleView?.copied.slice(1) ?? null,
-          displayName: m.displayName,
-          avatarUrl: m.avatarUrl,
-        };
-      }),
-    [serverMembers, memberLookup],
+      serverMembers
+        ?.filter((m) => !m.isBot || conversation?.memberIds.includes(m.userId))
+        .map((m) => {
+          const info = memberLookup.resolve(m.userId);
+          return {
+            userId: m.userId,
+            mention: info.handleView?.shown.slice(1) ?? null,
+            handle: info.handleView?.copied.slice(1) ?? null,
+            displayName: m.displayName,
+            avatarUrl: m.avatarUrl,
+            isBot: m.isBot,
+          };
+        }),
+    [serverMembers, memberLookup, conversation?.memberIds],
   );
 
   /** The picked mentions, and every member's whole handle typed out, to user ids. */
@@ -221,7 +226,6 @@ function MessageComposer(props: ComposerProps) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const { data: conversation } = useConversation(workspaceId, conversationId);
   // A timed-out viewer reads but cannot write; slow mode spaces out members' messages
   // (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);

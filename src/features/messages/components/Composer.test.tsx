@@ -5,7 +5,7 @@ import { MAX_ATTACHMENT_BYTES } from "../api/attachmentTypes";
 import { useDraftStore } from "../state/useDraftStore";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -872,6 +872,56 @@ describe("Composer — mentions by handle", () => {
     expect(row).toHaveTextContent("@alice:elsewhere.example");
     fireEvent.click(row);
     expect(textbox).toHaveValue("@alice:elsewhere.example ");
+  });
+});
+
+describe("Composer — mentioning a bot", () => {
+  const bot = {
+    ...workspaceMembers[1],
+    userId: "u-helper",
+    username: "helper",
+    displayName: "Helper",
+    isBot: true,
+  };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  async function typeMention() {
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query ServerMembers").length).toBeGreaterThan(0),
+    );
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query Conversation(").length).toBeGreaterThan(0),
+    );
+    fireEvent.change(textbox, { target: { value: "@Help", selectionStart: 5 } });
+  }
+
+  it("offers a bot with its badge in a channel it was added to", async () => {
+    serve(makeConversation({ memberIds: ["me", "u-helper"] }), ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({ serverMembers: [...workspaceMembers, bot] }),
+    });
+    await typeMention();
+    const row = await screen.findByRole("button", { name: /Helper/ });
+    expect(within(row).getByTestId("bot-badge")).toBeInTheDocument();
+  });
+
+  it("does not offer a bot in a channel it is not in", async () => {
+    serve(makeConversation({ memberIds: ["me"] }), ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({ serverMembers: [...workspaceMembers, bot] }),
+    });
+    await typeMention();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Helper/ })).toBeNull());
   });
 });
 

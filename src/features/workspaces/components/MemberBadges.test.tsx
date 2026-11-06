@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
-import { RoleBadge, MessageRoleBadge } from "./MemberBadges";
+import { BotBadge, RoleBadge, MessageRoleBadge } from "./MemberBadges";
 
 describe("RoleBadge", () => {
   it("puts a crown before the label for an owner", () => {
@@ -42,5 +42,15 @@ describe("MessageRoleBadge", () => {
   it.each([ServerMemberRoleGql.MEMBER, "ADMIN", "", undefined])("shows nothing for %j", (role) => {
     render(<MessageRoleBadge role={role} />);
     expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
+  });
+});
+
+describe("BotBadge", () => {
+  it("marks a bot with an icon, the word Bot and a title that says it is not a person", () => {
+    render(<BotBadge />);
+    const badge = screen.getByTestId("bot-badge");
+    expect(badge).toHaveTextContent("Bot");
+    expect(badge).toHaveAttribute("title", "A bot, not a person");
+    expect(badge.querySelector("svg.lucide-bot")).toHaveAttribute("aria-hidden", "true");
   });
 });

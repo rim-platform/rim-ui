@@ -60,6 +60,9 @@ vi.mock("../../macros/components/MacroSettings", () => ({
   MacroSettings: () => <div data-testid="macro-settings">Macros Panel</div>,
 }));
 
+vi.mock("../../bots/components/BotsSettings", () => ({
+  BotsSettings: () => <div data-testid="bots-settings">Bots Panel</div>,
+}));
 vi.mock("../../emoji/components/EmojiManagement", () => ({
   EmojiManagement: () => <div data-testid="emoji-settings">Emoji Panel</div>,
 }));
@@ -595,6 +598,40 @@ describe("SettingsPage", () => {
     renderSettings();
     await user.click(screen.getByRole("button", { name: "About" }));
     expect(screen.getByRole("list", { name: "Server features" })).toBeInTheDocument();
+  });
+
+  describe("Bots tab", () => {
+    it("is offered to a moderator and opens the bots panel", async () => {
+      mockGate.canModerate = true;
+      const user = userEvent.setup();
+      renderSettings();
+      const workspace = screen.getByRole("group", { name: "Workspace" });
+      await user.click(within(workspace).getByRole("button", { name: "Bots" }));
+      expect(await screen.findByTestId("bots-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden from a member, even when deep-linked", () => {
+      mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+      renderSettings();
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden while the bots feature is switched off", () => {
+      mockGate.canModerate = true;
+      mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+      renderSettings({ bots: ServerFeatureState.DISABLED });
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden in a direct space", () => {
+      startRelayWithDirectSpace();
+      mockWorkspace.workspaceId = DIRECT_SPACE_ID;
+      mockGate.canModerate = true;
+      renderSettings();
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+    });
   });
 
   describe("Emoji tab", () => {

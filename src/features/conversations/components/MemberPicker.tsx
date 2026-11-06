@@ -3,6 +3,7 @@ import { Users, Check, X } from "lucide-react";
 import { useFuzzySearchList, Highlight } from "@nozbe/microfuzz/react";
 
 import { cn } from "../../../shared/ui/cn";
+import { BotBadge } from "../../../shared/ui/BotBadge";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
@@ -15,6 +16,8 @@ export interface MemberPickerProps {
   onChange: (userIds: string[]) => void;
   /** Workspace members that cannot be picked (e.g. already in the conversation). */
   excludeUserIds?: readonly string[];
+  /** Whether bots are offered; they are left out unless the caller may add them. */
+  includeBots?: boolean;
   /** Ctrl/Cmd+Enter, or Enter with an empty query and at least one pick. */
   onConfirm?: () => void;
   /** Escape. When absent, Escape bubbles (so an enclosing dialog can close). */
@@ -33,6 +36,7 @@ export function MemberPicker({
   selectedUserIds,
   onChange,
   excludeUserIds,
+  includeBots = false,
   onConfirm,
   onEscape,
   autoFocus = false,
@@ -53,7 +57,7 @@ export function MemberPicker({
   const resolvedMembers = useMemo(() => {
     const excluded = new Set(excludeUserIds ?? []);
     return (members ?? [])
-      .filter((m) => m.userId !== me?.id && !excluded.has(m.userId))
+      .filter((m) => m.userId !== me?.id && !excluded.has(m.userId) && (includeBots || !m.isBot))
       .map((m) => {
         const resolved = memberLookup.resolve(m.userId);
         return {
@@ -61,10 +65,11 @@ export function MemberPicker({
           handle: resolved.handleView?.shown ?? "",
           displayName: resolved.displayName,
           avatarUrl: resolved.avatarUrl ?? null,
+          isBot: Boolean(m.isBot),
         };
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [members, me?.id, memberLookup, excludeUserIds]);
+  }, [members, me?.id, memberLookup, excludeUserIds, includeBots]);
 
   const getText = useCallback(
     (member: { displayName: string; handle: string }) => [member.displayName, member.handle],
@@ -227,6 +232,7 @@ export function MemberPicker({
               <span className="flex-1 truncate">
                 <Highlight text={member.displayName} ranges={result.matches?.[0] ?? null} />
               </span>
+              {member.isBot && <BotBadge />}
               {selected ? (
                 <Check className="ml-auto h-4 w-4 shrink-0 text-rim-accent" />
               ) : (

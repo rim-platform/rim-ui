@@ -3,8 +3,9 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import type { BotInfo, ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { withOfflineSnapshot } from "../../offline/api/offlineSnapshot";
+import { botDisclosureDocument } from "../../updater/api/serverCapabilities";
 
 const SERVER_MEMBERS_QUERY = gql`
   query ServerMembers($serverId: ID!) {
@@ -23,6 +24,30 @@ const SERVER_MEMBERS_QUERY = gql`
   }
 `;
 
+/** The same with `isBot` and `bot`, for a server that lists `bot_disclosure`. */
+const SERVER_MEMBERS_WITH_BOTS_QUERY = gql`
+  query ServerMembersWithBots($serverId: ID!) {
+    serverMembers(serverId: $serverId) {
+      userId
+      username
+      memberRole
+      joinedAt
+      avatarUrl
+      statusText
+      bio
+      displayName
+      timeoutUntil
+      principalId
+      isBot
+      bot {
+        runBy
+        readsGoTo
+        addedByName
+      }
+    }
+  }
+`;
+
 export interface ServerMember {
   userId: string;
   username: string;
@@ -36,15 +61,22 @@ export interface ServerMember {
   timeoutUntil?: string | null;
   /** The member's key identity (`rimp1_…`) once enrolled; null for a password-only account. */
   principalId?: string | null;
+  /** Whether the member is a bot; absent from a server without `bot_disclosure`. */
+  isBot?: boolean;
+  /** What the person who added a bot says about it; null for a person. */
+  bot?: BotInfo | null;
 }
 
 /** The workspace's members, from the server or (offline, on the desktop) its saved copy. */
 export function fetchServerMembers(serverId: string): Promise<ServerMember[]> {
   return withOfflineSnapshot("members", serverId, async () => {
-    const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(
-      SERVER_MEMBERS_QUERY,
-      { serverId },
-    );
+    const document = await botDisclosureDocument({
+      plain: SERVER_MEMBERS_QUERY,
+      withBots: SERVER_MEMBERS_WITH_BOTS_QUERY,
+    });
+    const res = await graphqlClient.request<{ serverMembers: ServerMember[] }>(document, {
+      serverId,
+    });
     return res.serverMembers;
   });
 }

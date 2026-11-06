@@ -1,3 +1,4 @@
+import { useCanManageBots } from "../../bots/availability";
 import { useState, useEffect, useId, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
@@ -60,6 +61,9 @@ const AgentsSettings = lazyWithRetry(() =>
 );
 const EmojiManagement = lazyWithRetry(() =>
   import("../../emoji/components/EmojiManagement").then((m) => ({ default: m.EmojiManagement })),
+);
+const BotsSettings = lazyWithRetry(() =>
+  import("../../bots/components/BotsSettings").then((m) => ({ default: m.BotsSettings })),
 );
 const WorkspaceStateSettings = lazyWithRetry(() =>
   import("../../workspace-state/components/WorkspaceStateSettings").then((m) => ({
@@ -241,6 +245,7 @@ type SettingsTab =
   | "plugins"
   | "plugin-ai"
   | "emoji"
+  | "bots"
   | "state"
   | "agents"
   | "agent"
@@ -267,6 +272,7 @@ const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
   "emoji",
   "workspace",
   "workspace-moderation",
+  "bots",
 ];
 
 /** Sections of the settings navigation, in display order. */
@@ -305,6 +311,7 @@ const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
   { key: "agent", label: "AI Agent", group: "Extensions" },
   { key: "workspace", label: "Workspace", group: "Workspace" },
   { key: "workspace-moderation", label: "Moderation", group: "Workspace" },
+  { key: "bots", label: "Bots", group: "Workspace" },
   { key: "moderation", label: "Instance moderation", group: "Instance" },
   { key: "about", label: "About", group: "About" },
 ];
@@ -334,6 +341,8 @@ export function SettingsPage() {
   // Emoji management needs custom emoji on the server.
   const customEmoji = useServerFeature("custom_emoji").enabled;
   const inDirectSpace = useIsDirectSpace(workspaceId);
+  // Bots are managed by moderators, on a server that lists the bots feature as enabled.
+  const botsManageable = useCanManageBots(workspaceId);
   // Instance moderation is listed for instance operators only. Opened directly by anyone else,
   // the page says it is for operators instead of falling back to Profile.
   const { isOperator } = useIsInstanceOperator();
@@ -346,6 +355,7 @@ export function SettingsPage() {
       (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
       (tab.key !== "moderation" || isOperator) &&
       (tab.key !== "emoji" || customEmoji) &&
+      (tab.key !== "bots" || botsManageable) &&
       (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
       (tab.key !== "desktop" || desktopShellAvailable()) &&
       !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
@@ -478,6 +488,7 @@ export function SettingsPage() {
                 {shownTab === "workspace-moderation" && workspaceId && (
                   <ModerationSettings serverId={workspaceId} />
                 )}
+                {shownTab === "bots" && workspaceId && <BotsSettings serverId={workspaceId} />}
                 {shownTab === "moderation" && (
                   <InstanceModerationSettings
                     onNavigateToWorkspaceModeration={
