@@ -33,6 +33,8 @@ interface SeverityVisuals {
   borderAccent: string;
   confirmBg: string;
   confirmHover: string;
+  /** The text colour on the Confirm button and its shortcut hint. */
+  confirmText: string;
   confirmLabel: string;
   srLabel: string;
   /** Block accidental dismiss (backdrop click) at MUTATING and above. */
@@ -46,8 +48,9 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.RESTRICTED:
       return {
         borderAccent: "border-l-rim-danger",
-        confirmBg: "bg-rim-danger",
-        confirmHover: "hover:bg-rim-danger/90",
+        confirmBg: "bg-rim-danger-solid",
+        confirmHover: "hover:bg-rim-danger-solid/90",
+        confirmText: "text-white",
         confirmLabel: "I understand — execute",
         srLabel: "Restricted action",
         disableBackdropClose: true,
@@ -55,9 +58,10 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
       };
     case CommandSensitivity.MUTATING:
       return {
-        borderAccent: "border-l-rim-warm",
-        confirmBg: "bg-rim-warm",
-        confirmHover: "hover:bg-rim-warm/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Run anyway",
         srLabel: "Mutating action",
         disableBackdropClose: true,
@@ -65,9 +69,10 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
       };
     case CommandSensitivity.SENSITIVE:
       return {
-        borderAccent: "border-l-rim-accent",
-        confirmBg: "bg-rim-accent",
-        confirmHover: "hover:bg-rim-accent/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Confirm",
         srLabel: "Sensitive action",
         disableBackdropClose: false,
@@ -76,9 +81,10 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.SAFE:
     default:
       return {
-        borderAccent: "border-l-rim-success",
-        confirmBg: "bg-rim-accent",
-        confirmHover: "hover:bg-rim-accent/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Confirm",
         srLabel: "Safe action",
         disableBackdropClose: false,
@@ -251,6 +257,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const subtitle =
     request.description ??
     (request.dangerous ? "This is a dangerous command." : request.nlDescription);
+  const confirmText = request.dangerous ? "text-white" : visuals.confirmText;
   const titleId = `confirm-cmd-title-${request.token}`;
   const descId = `confirm-cmd-desc-${request.token}`;
 
@@ -279,14 +286,15 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           onKeyDown={onPanelKeyDown}
           data-dangerous={request.dangerous ? "true" : undefined}
           className={cn(
-            "w-full max-w-lg rounded-xl border border-rim-line border-l-4 bg-rim-panel",
+            "w-full max-w-lg rounded-xl border border-rim-card-confirm-line border-l-4 bg-rim-card-confirm",
             fromOutside && "max-h-full overflow-y-auto",
             request.dangerous ? "border-l-rim-danger" : visuals.borderAccent,
           )}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-rim-line px-6 py-3">
+          <div className="flex items-center justify-between border-b border-rim-card-confirm-line px-6 py-3">
             <div className="flex items-center gap-2">
+              <ShieldAlert aria-hidden="true" className="h-4 w-4 text-rim-signal" />
               <RimSystemBadge />
               <span className="text-[10px] font-medium uppercase tracking-wide text-rim-text-muted">
                 Confirm command
@@ -314,7 +322,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
             <div>
               <h2 id={titleId} className="break-words text-xl font-medium text-rim-text">
                 {outside ? `${outside.name} wants to:` : byUser ? "Confirm:" : "Agent wants to:"}{" "}
-                <span className="text-rim-accent">{request.toolName}</span>
+                <span className="font-mono text-rim-warm">{request.toolName}</span>
               </h2>
               {/* `description` is the human-facing consequence line, written
                   for humans and not clamp-prone the way `nlDescription` (model-facing, tuned for
@@ -430,11 +438,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 border-t border-rim-line px-6 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-rim-card-confirm-line px-6 py-3">
             <button
               type="button"
               onClick={onReject}
-              className="rounded border border-rim-line bg-rim-void px-4 py-2 text-xs text-rim-text-muted transition hover:text-rim-text"
+              className="rounded border border-rim-card-confirm-line bg-rim-void px-4 py-2 text-xs text-rim-text transition hover:bg-white/5"
             >
               Cancel
             </button>
@@ -444,9 +452,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               aria-disabled={!confirmEnabled}
               disabled={!confirmEnabled}
               className={cn(
-                "inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-medium text-rim-void transition",
-                request.dangerous ? "bg-rim-danger hover:bg-rim-danger/90" : visuals.confirmBg,
-                !request.dangerous && visuals.confirmHover,
+                "inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-medium transition",
+                request.dangerous
+                  ? "bg-rim-danger-solid hover:bg-rim-danger-solid/90"
+                  : cn(visuals.confirmBg, visuals.confirmHover),
+                confirmText,
                 !confirmEnabled && "cursor-not-allowed opacity-50",
               )}
               data-testid="confirm-button"
@@ -456,7 +466,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               ) : (
                 <>
                   <span>{outside?.text === undefined ? visuals.confirmLabel : "Send"}</span>
-                  <span className="text-rim-void/70">{confirmShortcutLabel()}</span>
+                  <span className={confirmText}>{confirmShortcutLabel()}</span>
                 </>
               )}
             </button>
