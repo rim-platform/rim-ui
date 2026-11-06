@@ -30,7 +30,7 @@ import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { confirmConversationCommand } from "./conversationActionGate";
-import { openWorkspaceAction } from "../../workspaces/workspaceActions";
+import { openWorkspaceAction, workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
@@ -180,6 +180,13 @@ const localHandlers: Record<
   },
   "workspace.back_to_workspace": () => {
     returnFromDirect();
+  },
+  "workspace.open_bots": () => {
+    if (!workspaceCommandOffered("workspace.open_bots")) {
+      toast.info("Bots are managed by this workspace's owners and moderators.");
+      return;
+    }
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "bots" });
   },
   "workspace.leave": () => openWorkspaceAction("leave"),
   "workspace.rename": () => openWorkspaceAction("rename"),

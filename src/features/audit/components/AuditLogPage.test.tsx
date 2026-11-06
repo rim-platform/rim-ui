@@ -28,7 +28,11 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
     request: (document: unknown, variables: unknown) => {
       const text = String(document);
-      if (text.includes("serverInfo")) return new Promise(() => {});
+      if (text.includes("serverInfo")) {
+        return Promise.resolve({
+          serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
+        });
+      }
       return text.includes("listAuditLog")
         ? requestMock(document, variables)
         : serverMock(document, variables);

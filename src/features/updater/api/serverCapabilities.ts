@@ -1,3 +1,5 @@
+import { onlineManager } from "@tanstack/react-query";
+
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { fetchServerInfo, type KnownServerInfo } from "./serverInfoApi";
@@ -32,6 +34,15 @@ export const NOTIFICATION_EVENTS = "notification_events";
 /** The capability of a server that keeps a command's `runId` and filters its audit log by it. */
 export const COMMAND_RUN_ID = "command_run_id";
 
+/**
+ * The capability of a server with `User.isBot`, `User.bot`, `ServerMember.isBot` and
+ * `ServerMember.bot`; such a server also lists {@link MESSAGE_FLAG}.
+ */
+export const BOT_DISCLOSURE = "bot_disclosure";
+
+/** The capability of a server with incoming webhooks (`incomingWebhooks` and its mutations). */
+export const INCOMING_WEBHOOKS = "incoming_webhooks";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;
@@ -44,13 +55,16 @@ export interface MessageReadDocuments<T> {
   withEdits: T;
   /** With `Message.editedAt` and `Message.flagged`. */
   withFlags: T;
+  /** With `Message.editedAt`, `Message.flagged` and the author's bot disclosure. */
+  withBots: T;
 }
 
 /**
- * The document of a message read that the connected server answers: `withFlags` when it lists
- * {@link MESSAGE_FLAG}, `withEdits` when it lists {@link MESSAGE_EDITED_AT}, else `plain`.
+ * The document of a message read that the connected server answers: `withBots` when it lists
+ * {@link BOT_DISCLOSURE}, `withFlags` when it lists {@link MESSAGE_FLAG}, `withEdits` when it lists {@link MESSAGE_EDITED_AT}, else `plain`.
  */
 export async function messageReadDocument<T>(documents: MessageReadDocuments<T>): Promise<T> {
+  if (await serverHasCapability(BOT_DISCLOSURE)) return documents.withBots;
   if (await serverHasCapability(MESSAGE_FLAG)) return documents.withFlags;
   if (await serverHasCapability(MESSAGE_EDITED_AT)) return documents.withEdits;
   return documents.plain;
@@ -58,9 +72,16 @@ export async function messageReadDocument<T>(documents: MessageReadDocuments<T>)
 
 /**
  * Whether the connected server lists `capability`, read from the cached server info (fetched
- * once when missing); false when it cannot be read.
+ * once when missing); false when it cannot be read. While the device is offline only the cached
+ * server info is read, since a fetch would wait for the network.
  */
 export async function serverHasCapability(capability: string): Promise<boolean> {
+  if (!onlineManager.isOnline()) {
+    return hasCapability(
+      queryClient.getQueryData<KnownServerInfo>(queryKeys.serverInfo),
+      capability,
+    );
+  }
   try {
     const info = await queryClient.ensureQueryData({
       queryKey: queryKeys.serverInfo,
@@ -72,4 +93,19 @@ export async function serverHasCapability(capability: string): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+/** The two documents of a read whose only newer part is the bot disclosure. */
+export interface BotDisclosureDocuments<T> {
+  plain: T;
+  /** With the author's bot disclosure. */
+  withBots: T;
+}
+
+/**
+ * The document of a read that the connected server answers: `withBots` when it lists
+ * {@link BOT_DISCLOSURE}, else `plain`.
+ */
+export async function botDisclosureDocument<T>(documents: BotDisclosureDocuments<T>): Promise<T> {
+  return (await serverHasCapability(BOT_DISCLOSURE)) ? documents.withBots : documents.plain;
 }

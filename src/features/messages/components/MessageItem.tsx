@@ -17,6 +17,7 @@ import { EditedMark } from "./message-item/EditedMark";
 import { FlaggedCover } from "./message-item/FlaggedCover";
 import { FoldableText } from "./message-item/FoldableText";
 import { MessageEditForm } from "./message-item/MessageEditForm";
+import { BotBadge } from "../../workspaces/components/MemberBadges";
 import { MessageAvatar, MessageHeader } from "./message-item/MessageHeader";
 import { MessageReactions } from "./message-item/MessageReactions";
 import { ReplyQuote } from "./message-item/ReplyQuote";
@@ -228,7 +229,8 @@ export const MessageItem = memo(function MessageItem({
             className="shrink-0 text-sm font-semibold text-rim-accent"
             {...bindUserContextMenu?.({ userId: message.authorId, displayName: author.name })}
           >
-            {author.name}:
+            {author.name}
+            {author.isBot && <BotBadge className="ml-1 align-middle" />}:
           </span>
         )}
         {isDeleted ? (

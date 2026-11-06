@@ -141,3 +141,66 @@ describe("UserCardContent", () => {
     expect(screen.queryByRole("button", { name: "Block…" })).not.toBeInTheDocument();
   });
 });
+
+describe("UserCardContent for a bot", () => {
+  const bot = {
+    runBy: "the Halden Studio team",
+    readsGoTo: "our own server, with a local model",
+    addedByName: "Ivana",
+  };
+  const props = {
+    userId: "bot-1",
+    username: "helper",
+    displayName: "Helper",
+    isBot: true,
+    bot,
+    role: "GUEST",
+    statusText: "Online and busy",
+    presenceStatus: "ONLINE" as const,
+  };
+
+  it("shows what the person who added it says, and that RIM cannot check it", () => {
+    render(<UserCardContent {...props} />);
+    expect(screen.getByTestId("bot-badge")).toBeInTheDocument();
+    expect(screen.getByText("Who runs it")).toBeInTheDocument();
+    expect(screen.getByText("the Halden Studio team")).toBeInTheDocument();
+    expect(screen.getByText("Where what it reads goes")).toBeInTheDocument();
+    expect(screen.getByText("our own server, with a local model")).toBeInTheDocument();
+    expect(screen.getByText("Added by")).toBeInTheDocument();
+    expect(screen.getByText("Ivana")).toBeInTheDocument();
+    expect(
+      screen.getByText("This is what the person who added it says. RIM can't check it."),
+    ).toBeInTheDocument();
+  });
+
+  it("names nobody when the person who added it is gone", () => {
+    render(<UserCardContent {...props} bot={{ ...bot, addedByName: null }} />);
+    expect(screen.getByText("someone no longer here")).toBeInTheDocument();
+  });
+
+  it("shows markup in a statement as plain text", () => {
+    render(<UserCardContent {...props} bot={{ ...bot, runBy: "<b>them</b>" }} />);
+    expect(screen.getByText("<b>them</b>")).toBeInTheDocument();
+  });
+
+  it("offers no message, copy, block, status line or role", () => {
+    render(
+      <UserCardContent
+        {...props}
+        onSendDm={vi.fn()}
+        blockAction={() => vi.fn()}
+        handle={{ shown: "@helper", copied: "@helper" }}
+      />,
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByText("Online and busy")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Role:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("@helper")).not.toBeInTheDocument();
+  });
+
+  it("shows a person none of it", () => {
+    render(<UserCardContent userId="u" username="person" statusText="Hi" />);
+    expect(screen.queryByTestId("bot-badge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Who runs it")).not.toBeInTheDocument();
+  });
+});

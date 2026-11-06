@@ -1,3 +1,4 @@
+import type { BotInfo } from "../../../../core/graphql/generated/schema-types";
 import type { AuthorBan } from "../../hooks/useBanExpiry";
 import type { MessageAttachment, MessageE2ee } from "../../../../core/types/messages";
 import type { DisplayDensity } from "../../../../shell/state/useShellStore";
@@ -70,6 +71,8 @@ export interface ResolvedMember {
   role?: string;
   joinedAt?: string;
   bio?: string | null;
+  isBot?: boolean;
+  bot?: BotInfo | null;
 }
 
 export type MemberResolver = (userId: string) => ResolvedMember;
@@ -87,6 +90,10 @@ export interface MessageAuthorView {
   role?: string;
   joinedAt?: string;
   bio?: string | null;
+  /** The author is a bot. */
+  isBot?: boolean;
+  /** What the person who added the bot says about it. */
+  bot?: BotInfo | null;
   /** The message is in the direct space: no workspace role applies and the handle shows inline. */
   inDirectSpace?: boolean;
   /** Fallback when the presence store has no entry for the author. */

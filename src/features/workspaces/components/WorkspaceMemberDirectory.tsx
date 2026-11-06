@@ -8,7 +8,7 @@ import { AddContactButton } from "../../relay/components/AddContactButton";
 import { useServerMembers, type ServerMember } from "../api/useServerMembers";
 import { ServerMemberRoleGql } from "../role";
 import { useUserContextMenu } from "../hooks/useUserContextMenu";
-import { RoleBadge, TimeoutMarker } from "./MemberBadges";
+import { BotBadge, RoleBadge, TimeoutMarker } from "./MemberBadges";
 import { MemberMenuButton } from "./MemberMenuButton";
 
 const ROLE_RANK: Record<ServerMemberRoleGql, number> = {
@@ -103,7 +103,7 @@ export function WorkspaceMemberDirectory({ workspaceId, onClose }: WorkspaceMemb
                     {member.userId === currentUserId && (
                       <span className="text-xs text-rim-text-faint">(you)</span>
                     )}
-                    <RoleBadge role={member.memberRole} />
+                    {member.isBot ? <BotBadge /> : <RoleBadge role={member.memberRole} />}
                   </span>
                   <TimeoutMarker until={member.timeoutUntil} />
                 </span>

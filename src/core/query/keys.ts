@@ -87,6 +87,9 @@ export const queryKeys = {
   pinnedMessages: (workspaceId?: string, conversationId?: string) =>
     ["pinnedMessages", workspaceId, conversationId] as const,
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
+  bots: (serverId?: string) => ["bots", serverId] as const,
+  botTokens: (botUserId?: string) => ["botTokens", botUserId] as const,
+  incomingWebhooks: (serverId?: string) => ["incomingWebhooks", serverId] as const,
   plugins: () => ["plugins"] as const,
   // One plugin's settings form, apart from the list so reloading the list leaves an open form alone.
   pluginSettings: (pluginId: string) => ["pluginSettings", pluginId] as const,
