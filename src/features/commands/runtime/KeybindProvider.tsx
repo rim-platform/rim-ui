@@ -13,6 +13,7 @@ import {
 } from "./keybindEngine";
 import { dispatchCommand, hasLocalHandler, isLocalActionResult } from "./commandDispatcher";
 import { commandSuccessText } from "./commandResultText";
+import { showCommandRefusal } from "./refusal";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
 import {
@@ -184,38 +185,38 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       return;
     }
 
-    dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
-      args: match.presetArgs as Record<string, unknown> | undefined,
-      commandContext: currentCommandContext(),
-    })
-      .then((result) => {
-        // A plugin command runs on this device, out of sight: say how it went.
-        if (isPluginCommand) {
-          toastPluginCommandResult(command.title, result);
-        } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
-          // An open panel shows for itself; one that cannot open says why.
-          toast.error(result.message);
-        } else if (
-          hasLocalHandler(command.id) &&
-          result?.status === "SUCCESS" &&
-          result.message.trim() &&
-          !isLocalActionResult(result)
-        ) {
-          // A local command that has something to say says it, as the palette does.
-          toast.success(commandSuccessText(command.title, result));
-        } else if (!isPluginCommand) {
-          void presentReadResult(
-            command.id,
-            command.title,
-            result,
-            presetArgs,
-            currentCommandContext(),
-          );
-        }
+    // A retry runs where the key was pressed, wherever the person is by then.
+    const commandContext = currentCommandContext();
+    const run = () => {
+      dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
+        args: match.presetArgs as Record<string, unknown> | undefined,
+        commandContext,
       })
-      .catch((err: unknown) => {
-        logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
-      });
+        .then((result) => {
+          // A plugin command runs on this device, out of sight: say how it went.
+          if (isPluginCommand) {
+            toastPluginCommandResult(command.title, result);
+          } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
+            // An open panel shows for itself; one that cannot open says why.
+            toast.error(result.message);
+          } else if (
+            hasLocalHandler(command.id) &&
+            result?.status === "SUCCESS" &&
+            result.message.trim() &&
+            !isLocalActionResult(result)
+          ) {
+            // A local command that has something to say says it, as the palette does.
+            toast.success(commandSuccessText(command.title, result));
+          } else if (!isPluginCommand) {
+            void presentReadResult(command.id, command.title, result, presetArgs, commandContext);
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
+          showCommandRefusal(command.title, err, run);
+        });
+    };
+    run();
   };
 
   // The Vim layer listens first, so a key it takes never reaches the keybinds.

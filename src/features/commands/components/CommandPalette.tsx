@@ -28,6 +28,7 @@ import {
   type ArgumentContext,
 } from "../runtime/commandArguments";
 import { commandSuccessText } from "../runtime/commandResultText";
+import { showCommandRefusal } from "../runtime/refusal";
 import { currentCommandContext } from "../runtime/commandContext";
 import { CONFIRMATION_REQUIRED, runWithHumanConfirmation } from "../runtime/humanConfirmation";
 import {
@@ -357,11 +358,13 @@ function CommandPaletteDialog() {
       args?: Record<string, unknown>,
       options?: { commandContext?: CommandContextInput; onSuccess?: () => void },
     ) => {
+      // A retry runs where the command was started, wherever the person is by then.
+      const commandContext = options?.commandContext ?? currentCommandContext();
       try {
         const result = await dispatchCommand(
           command,
           (input) => executeCommandMutation.mutateAsync(input),
-          { args, commandContext: options?.commandContext ?? currentCommandContext() },
+          { args, commandContext },
         );
         if (command.sourceKind === "PLUGIN") {
           // A plugin answers in words (its payload is for scripts and the agent).
@@ -379,15 +382,17 @@ function CommandPaletteDialog() {
             command.title,
             result,
             args,
-            options?.commandContext ?? currentCommandContext(),
+            commandContext,
           );
           if (!shown) toast.success(commandSuccessText(command.title, result));
           options?.onSuccess?.();
         }
       } catch (err) {
-        // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)
-        // rather than graphql-request's serialized response dump.
-        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
+        showCommandRefusal(
+          command.title,
+          err,
+          () => void runCommand(command, args, { ...options, commandContext }),
+        );
       }
     },
     [executeCommandMutation],

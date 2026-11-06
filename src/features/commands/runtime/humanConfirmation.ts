@@ -129,7 +129,7 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
   });
   if (!decision.approved) {
     if (!isExpired(challenge.expiresAt)) return { kind: "cancelled" };
-    toast.error(CONFIRMATION_EXPIRED_MESSAGE);
+    toast.info(CONFIRMATION_EXPIRED_MESSAGE);
     return { kind: "stale" };
   }
 
@@ -140,7 +140,7 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
     });
   } catch (err) {
     if (graphqlErrorCode(err) !== CONFIRMATION_STALE) throw err;
-    toast.error(CONFIRMATION_EXPIRED_MESSAGE);
+    toast.info(CONFIRMATION_EXPIRED_MESSAGE);
     return { kind: "stale" };
   }
   if (confirmed.status === CONFIRMATION_REQUIRED) {

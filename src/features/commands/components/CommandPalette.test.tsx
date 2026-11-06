@@ -50,7 +50,7 @@ import { dispatchCommand, isLocalActionResult } from "../runtime/commandDispatch
 import { currentCommandContext } from "../runtime/commandContext";
 import { commandSuccessText } from "../runtime/commandResultText";
 import { toast } from "../../../shared/toast";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { showCommandRefusal } from "../runtime/refusal";
 import { CANCELLED_PAYLOAD, isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import type { CommandDefinition, CommandResult } from "../types";
 
@@ -67,7 +67,7 @@ function useExecuteSelected(
     commandContext?: Record<string, unknown>;
   }) => Promise<{ executeCommand: CommandResult }>,
 ) {
-  return useCallback(
+  const run = useCallback(
     async (command: CommandDefinition) => {
       closeCommandPalette();
       try {
@@ -84,11 +84,12 @@ function useExecuteSelected(
           toast.success(commandSuccessText(command.title, result));
         }
       } catch (err) {
-        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
+        showCommandRefusal(command.title, err, () => void run(command));
       }
     },
     [closeCommandPalette, executeBackend],
   );
+  return run;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -225,9 +226,40 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
       await executeSelected(makeCommand());
     });
 
-    expect(toast.error).toHaveBeenCalledWith(
-      "Run Test Command: Only moderators can run this command",
-    );
+    expect(toast.error).toHaveBeenCalledWith("Run Test Command: not done", {
+      description: "Only moderators can run this command",
+    });
+  });
+
+  it("offers Retry on a failure that is safe to repeat, and the action runs the command again", async () => {
+    const failed = Object.assign(new Error("dump"), {
+      response: {
+        errors: [
+          {
+            message: "Upstream timed out",
+            extensions: { code: "TIMEOUT", refusal: "FAILED", retrySafe: true },
+          },
+        ],
+      },
+    });
+    vi.mocked(dispatchCommand).mockRejectedValue(failed);
+
+    const { executeSelected } = setup();
+
+    await act(async () => {
+      await executeSelected(makeCommand());
+    });
+
+    expect(toast.warning).toHaveBeenCalledOnce();
+    const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+    expect(title).toBe("Run Test Command: failed");
+    expect(options?.action?.label).toBe("Retry");
+    expect(dispatchCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      options?.action?.onClick();
+    });
+    expect(dispatchCommand).toHaveBeenCalledTimes(2);
   });
 
   it("shows no toast when the user cancelled the confirmation", async () => {
