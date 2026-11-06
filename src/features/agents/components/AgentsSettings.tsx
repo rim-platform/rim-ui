@@ -11,9 +11,15 @@ import {
   agentBridgeStatus,
   type AgentBridgeStatus,
 } from "../api/agentBridge";
+import { agentAvailable } from "../../agent/agentAvailability";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import { cn } from "../../../shared/ui/cn";
+import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
+import { plural } from "../runtime/runs";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
+import { AgentDetail, grantSummary, runCount } from "./AgentDetail";
 import { AgentGrantsDialog } from "./AgentGrantsDialog";
 import { AgentPluginsDialog } from "./AgentPluginsDialog";
 import { AgentRecordDialog } from "./AgentRecordDialog";
@@ -34,7 +40,12 @@ export function AgentsSettings() {
   const [viewingAll, setViewingAll] = useState(false);
   const [runsOf, setRunsOf] = useState<ConnectedAgent | null>(null);
   const [allRuns, setAllRuns] = useState(false);
-  const hasRecord = useAgentRecordStore((s) => s.entries.length > 0);
+  const entries = useAgentRecordStore((s) => s.entries);
+  const hasRecord = entries.length > 0;
+  const setMainSurface = useShellStore((s) => s.setMainSurface);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    agents.find((agent) => agent.id === selectedId) ?? (agents.length === 1 ? agents[0] : null);
   const saving = useRef(false);
 
   useEffect(() => {
@@ -116,72 +127,69 @@ export function AgentsSettings() {
       {agents.length === 0 ? (
         <p className="text-sm text-rim-text-muted">Nothing is connected.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {status && !status.enabled && (
             <p className="text-sm text-rim-text-muted">
               These stay connected, but cannot reach RIM while this is off.
             </p>
           )}
-          <ul className="divide-y divide-rim-line rounded-lg border border-rim-line bg-rim-panel px-4">
-            {agents.map((agent) => (
-              <li key={agent.id} className="flex flex-wrap items-center justify-between gap-4 py-3">
-                <div className="min-w-0 flex-1 basis-48">
-                  <div className="break-words text-sm font-medium text-rim-text">{agent.name}</div>
-                  <div className="text-xs text-rim-text-muted">
-                    Connected {new Date(agent.pairedAt).toLocaleString()}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
+          <ul className="space-y-2">
+            {agents.map((agent) => {
+              const name = showInvisibleCharacters(agent.name);
+              const runs = runCount(entries, agent.id);
+              return (
+                <li key={agent.id}>
+                  <button
                     type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Choose what ${agent.name} can read`}
-                    onClick={() => setChoosing(agent)}
+                    aria-pressed={selected?.id === agent.id}
+                    onClick={() => setSelectedId(agent.id)}
+                    className={cn(
+                      "w-full rounded-lg border px-4 py-3 text-left transition-colors",
+                      selected?.id === agent.id
+                        ? "border-rim-accent/40 bg-rim-panel-soft"
+                        : "border-rim-line bg-rim-panel hover:bg-rim-panel-soft",
+                    )}
                   >
-                    Choose what it can read
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Choose the plugin commands of ${agent.name}`}
-                    onClick={() => setChoosingPlugins(agent)}
-                  >
-                    Choose its plugin commands
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`What ${agent.name} was given`}
-                    onClick={() => setViewing(agent)}
-                  >
-                    What it was given
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Runs of ${agent.name}`}
-                    onClick={() => setRunsOf(agent)}
-                  >
-                    Its runs
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Disconnect ${agent.name}`}
-                    onClick={() => setDisconnecting(agent)}
-                  >
-                    Disconnect
-                  </Button>
-                </div>
-              </li>
-            ))}
+                    <span className="block break-words text-sm font-medium text-rim-text">
+                      {name}
+                    </span>
+                    <span className="block text-xs text-rim-text-muted">
+                      Connected {new Date(agent.pairedAt).toLocaleString()} · {grantSummary(agent)}
+                      {runs > 0 && ` · ${plural(runs, "run", "runs")}`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
+      )}
+
+      {agentAvailable() && (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-rim-text-muted">
+            The agent built into this app has its own tab.
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setMainSurface({ kind: "settings", tab: "agent" })}
+          >
+            Open AI Agent
+          </Button>
+        </div>
+      )}
+
+      {selected && (
+        <AgentDetail
+          agent={selected}
+          onDisconnect={() => setDisconnecting(selected)}
+          onChoose={() => setChoosing(selected)}
+          onChoosePlugins={() => setChoosingPlugins(selected)}
+          onViewRecord={() => setViewing(selected)}
+          onViewRuns={() => setRunsOf(selected)}
+        />
       )}
 
       {hasRecord && (
@@ -206,7 +214,7 @@ export function AgentsSettings() {
 
       {disconnecting && (
         <ConfirmActionDialog
-          title={`Disconnect ${disconnecting.name}?`}
+          title={`Disconnect ${showInvisibleCharacters(disconnecting.name)}?`}
           description="It will not be able to reach RIM any more. It keeps nothing RIM can take back: what it has already read stays with it."
           confirmLabel="Disconnect"
           danger

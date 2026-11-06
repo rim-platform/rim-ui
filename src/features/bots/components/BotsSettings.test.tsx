@@ -151,6 +151,58 @@ describe("BotsSettings", () => {
     expect(within(details).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
   });
 
+  it("moves focus to the next bot's Edit after one is deactivated, once the list is read again", async () => {
+    let bots = [bot(1), bot(2)];
+    serve([], {
+      "query Bots(": () => ({ bots }),
+      "mutation DeactivateBot": () => {
+        bots = [bot(1, { deactivatedAt: "2026-11-02T00:00:00Z" }), bot(2)];
+        return { deactivateBot: bots[0] };
+      },
+    });
+    renderSettings();
+    const row = (await screen.findByText("Bot 1")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Deactivate" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Deactivate" }));
+    const second = (await screen.findByText("Bot 2")).closest("li")!;
+    await waitFor(() => expect(within(second).getByRole("button", { name: "Edit" })).toHaveFocus());
+  });
+
+  it("moves focus to New bot after the last bot is deactivated", async () => {
+    let bots = [bot(1)];
+    serve([], {
+      "query Bots(": () => ({ bots }),
+      "mutation DeactivateBot": () => {
+        bots = [bot(1, { deactivatedAt: "2026-11-02T00:00:00Z" })];
+        return { deactivateBot: bots[0] };
+      },
+    });
+    renderSettings();
+    fireEvent.click(await screen.findByRole("button", { name: "Deactivate" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Deactivate" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New bot" })).toHaveFocus());
+  });
+
+  it("returns focus to that bot's Edit after Save", async () => {
+    let bots = [bot(1), bot(2)];
+    serve([], {
+      "query Bots(": () => ({ bots }),
+      "mutation UpdateBot": () => {
+        bots = [bot(1), bot(2, { name: "Renamed" })];
+        return { updateBot: bots[1] };
+      },
+    });
+    renderSettings();
+    const row = (await screen.findByText("Bot 2")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Renamed" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save" }));
+    const renamed = (await screen.findByText("Renamed")).closest("li")!;
+    await waitFor(() =>
+      expect(within(renamed).getByRole("button", { name: "Edit" })).toHaveFocus(),
+    );
+  });
+
   it("asks before deactivating, in danger words, and sends nothing on Cancel", async () => {
     serve([bot(1)], { "mutation DeactivateBot": () => ({ deactivateBot: bot(1) }) });
     renderSettings();
@@ -492,6 +544,45 @@ describe("BotsSettings", () => {
       fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
       await waitFor(() =>
         expect(callsTo(requestMock, "mutation RevokeIncomingWebhook")).toEqual([{ id: "h-1" }]),
+      );
+    });
+
+    it("moves focus to the next webhook's Revoke after one is revoked", async () => {
+      let hooks = [hook(), hook({ id: "h-2", conversationId: "c-free" })];
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooks": () => ({ incomingWebhooks: hooks }),
+        "mutation RevokeIncomingWebhook": () => {
+          hooks = [hook({ revokedAt: "x" }), hook({ id: "h-2", conversationId: "c-free" })];
+          return { revokeIncomingWebhook: hooks[0] };
+        },
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      const row = (await screen.findByText(/general · Bot 1 · GitHub/)).closest("li")!;
+      fireEvent.click(within(row).getByRole("button", { name: /Revoke/ }));
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Revoke the webhook of releases" }),
+        ).toHaveFocus(),
+      );
+    });
+
+    it("moves focus to New webhook after the last webhook is revoked", async () => {
+      let hooks = [hook()];
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooks": () => ({ incomingWebhooks: hooks }),
+        "mutation RevokeIncomingWebhook": () => {
+          hooks = [hook({ revokedAt: "x" })];
+          return { revokeIncomingWebhook: hooks[0] };
+        },
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      fireEvent.click(await screen.findByRole("button", { name: /Revoke/ }));
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "New webhook" })).toHaveFocus(),
       );
     });
 

@@ -54,6 +54,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Settings > Agents shows each agent on one page: what it can read, what asks you first, what
+  stays closed, and what it has been given. A token or webhook URL is shown in full, over
+  several lines.
 - A refused command now shows a card that says which kind of refusal it was: not allowed, failed, or expired.
 - The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
   say when you'd use them.

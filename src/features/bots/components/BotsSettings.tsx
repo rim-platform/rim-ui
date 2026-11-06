@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { Bot } from "../../../core/graphql/generated/schema-types";
@@ -49,7 +49,12 @@ function BotRow({ bot, onOpen }: { bot: Bot; onOpen: (dialog: Dialog) => void })
       </div>
       {active && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => onOpen({ kind: "edit", bot })}>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-bot-edit={bot.userId}
+            onClick={() => onOpen({ kind: "edit", bot })}
+          >
             Edit
           </Button>
           <Button size="sm" variant="secondary" onClick={() => onOpen({ kind: "tokens", bot })}>
@@ -78,6 +83,9 @@ export function BotsSettings({ serverId }: { serverId: string }) {
   const { info } = useServerInfo();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const newBotRef = useRef<HTMLButtonElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  // Where focus goes once the list has been fetched again: a bot's Edit button, or New bot.
+  const [refocus, setRefocus] = useState<{ editOf: string | null } | null>(null);
   const [secret, setSecret] = useState<{ title: string; label: string; value: string } | null>(
     null,
   );
@@ -86,9 +94,22 @@ export function BotsSettings({ serverId }: { serverId: string }) {
   const inactive = bots.data?.filter((b) => b.deactivatedAt) ?? [];
   const full = active.length >= MAX_ACTIVE_BOTS;
 
+  useEffect(() => {
+    if (!refocus || bots.isFetching) return;
+    setTimeout(() => {
+      const edit = refocus.editOf
+        ? Array.from(
+            sectionRef.current?.querySelectorAll<HTMLElement>("[data-bot-edit]") ?? [],
+          ).find((el) => el.dataset.botEdit === refocus.editOf)
+        : null;
+      (edit ?? newBotRef.current)?.focus();
+    });
+    setRefocus(null);
+  }, [refocus, bots.isFetching]);
+
   return (
     <div className="space-y-8">
-      <section className="space-y-3" aria-labelledby="bots-heading">
+      <section ref={sectionRef} className="space-y-3" aria-labelledby="bots-heading">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="bots-heading" className="text-base font-semibold text-rim-text">
             Bots in this workspace
@@ -163,7 +184,12 @@ export function BotsSettings({ serverId }: { serverId: string }) {
         />
       )}
       {dialog?.kind === "edit" && (
-        <BotFormDialog serverId={serverId} bot={dialog.bot} onClose={() => setDialog(null)} />
+        <BotFormDialog
+          serverId={serverId}
+          bot={dialog.bot}
+          onSaved={() => setRefocus({ editOf: dialog.bot.userId })}
+          onClose={() => setDialog(null)}
+        />
       )}
       {!secret && dialog?.kind === "tokens" && (
         <BotTokensDialog
@@ -186,19 +212,21 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           danger
           isPending={deactivate.isPending}
           onClose={() => setDialog(null)}
-          onConfirm={() =>
+          onConfirm={() => {
+            const at = active.findIndex((b) => b.userId === dialog.bot.userId);
+            const next = active[at + 1]?.userId ?? null;
             deactivate.mutate(dialog.bot.userId, {
               onSuccess: () => {
                 setDialog(null);
-                // The row that opened this has moved to the deactivated list.
-                setTimeout(() => newBotRef.current?.focus());
+                // The row that opened this moves to the deactivated list.
+                setRefocus({ editOf: next });
               },
               onError: (err) => {
                 setDialog(null);
                 toast.error(graphqlErrorMessage(err, "Could not deactivate the bot"));
               },
-            })
-          }
+            });
+          }}
         />
       )}
       {secret && (
