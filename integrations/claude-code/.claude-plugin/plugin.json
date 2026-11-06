@@ -1,5 +1,6 @@
 {
   "name": "rim",
+  "version": "0.1.0",
   "description": "Connect Claude Code to the RIM desktop app on this computer.",
   "license": "Apache-2.0"
 }

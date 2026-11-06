@@ -27,8 +27,10 @@ in RIM's **Settings > Agents**.
 ## What to know
 
 - The token is stored by Claude Code in `~/.claude.json`, readable by any program running as you.
-  That is the same limit the app's own dialog states.
-- Removing RIM from Claude Code does not end its access. **Disconnect** in RIM does.
+  That is the same limit the app's own dialog states. `claude mcp get rim` prints it, and Claude Code
+  keeps copies in `~/.claude/backups`, which stay after RIM is removed from Claude Code.
+- Removing RIM from Claude Code does not end its access, and neither does connecting again, which
+  leaves the older entry working. **Disconnect** in RIM does. Each entry there shows when it connected.
 - This works with the desktop app only, and needs **Settings > Agents** on.
 - The script never prints the token or the poll secret, because what a command prints goes to the
   model and its provider.

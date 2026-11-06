@@ -15,9 +15,11 @@ The script prints one line per run, `KEY` or `KEY: text`.
    then approve. Never pick the answer for them. Show the code as printed.
 3. Run `${CLAUDE_PLUGIN_ROOT}/scripts/pair.sh wait`. While it prints `PENDING`, run it again. Any
    other line is the result: tell the person what it says.
-4. To disconnect, run `${CLAUDE_PLUGIN_ROOT}/scripts/pair.sh disconnect` and show its line.
-5. Never read, print or ask for a token, and never read `~/.claude.json` or the script's state
-   directory. Do not run `curl` against RIM yourself.
+4. To disconnect, run `${CLAUDE_PLUGIN_ROOT}/scripts/pair.sh disconnect` and show its line. To check
+   whether RIM is set up, run `${CLAUDE_PLUGIN_ROOT}/scripts/pair.sh status`.
+5. Never read, print or ask for a token. Never run `claude mcp get`, which prints it, and never read
+   `~/.claude.json`, `~/.claude/backups` or the script's state directory. Do not run `curl` against
+   RIM yourself.
 6. After connecting, say that the agent can read nothing until the person chooses what in RIM's
    Settings > Agents, and that what it reads goes to its model provider. Do not tell them this makes
    anything private.

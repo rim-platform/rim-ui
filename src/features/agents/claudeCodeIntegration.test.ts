@@ -231,7 +231,9 @@ describe.skipIf(process.platform === "win32")("pair.sh", () => {
     it("stops when RIM is already set up, unless asked to replace it", async () => {
       const env = { FAKE_CLAUDE_GET_EXIT: "0" };
       const first = await run(["start"], env);
-      expect(first.stdout).toBe("ALREADY_CONNECTED: RIM is already set up in Claude Code.");
+      expect(first.stdout).toBe(
+        "ALREADY_CONNECTED: RIM is already set up in Claude Code, though it may have stopped working if it was disconnected in RIM.",
+      );
       expect(requests).toEqual([]);
       expect((await run(["start", "--replace"], env)).stdout).toBe("CODE: 482 917");
       expect(claudeCalls()).toEqual(["mcp get rim"]);
@@ -319,7 +321,9 @@ describe.skipIf(process.platform === "win32")("pair.sh", () => {
     it("removes the old entry first when start was given --replace", async () => {
       const env = { FAKE_CLAUDE_GET_EXIT: "0" };
       await run(["start", "--replace"], env);
-      expect((await run(["wait"], env)).stdout).toMatch(/^CONNECTED:/);
+      expect((await run(["wait"], env)).stdout).toBe(
+        "CONNECTED: RIM is set up. Restart Claude Code or run /mcp to use it. The connection it replaced still works until you press Disconnect on the older entry in RIM's Settings > Agents.",
+      );
       expect(claudeCalls()).toEqual([
         "mcp remove --scope user rim",
         `mcp add --transport http --scope user rim ${baseUrl}/mcp --header Authorization: Bearer ${TOKEN}`,
@@ -382,6 +386,20 @@ describe.skipIf(process.platform === "win32")("pair.sh", () => {
       handler = byPath({ status: 200, body: { ...paired.body, code: "1234567" } }, approved);
       expect(await run(["start"])).toMatchObject(failed);
       expect(existsSync(stateFile())).toBe(false);
+    });
+  });
+
+  describe("status", () => {
+    it("says RIM is set up, dropping what Claude Code prints, which holds the token", async () => {
+      const result = await run(["status"], { FAKE_CLAUDE_GET_EXIT: "0" });
+      expect(result.stdout).toBe(
+        "SET_UP: RIM is set up in Claude Code. Run /mcp to see whether it can connect.",
+      );
+    });
+
+    it("says when it is not", async () => {
+      const result = await run(["status"], { FAKE_CLAUDE_GET_EXIT: "1" });
+      expect(result.stdout).toBe("NOT_SET_UP: RIM isn't set up in Claude Code.");
     });
   });
 

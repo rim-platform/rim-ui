@@ -3,6 +3,7 @@
 #
 #   pair.sh start [--replace]   asks RIM to pair and prints the code to compare
 #   pair.sh wait                waits for the answer and, if approved, adds RIM to Claude Code
+#   pair.sh status              says whether RIM is set up in Claude Code
 #   pair.sh disconnect          removes RIM from Claude Code
 #
 # Every command prints exactly one line, `KEY` or `KEY: text`. Output goes to a model, so the
@@ -87,7 +88,7 @@ cmd_start() {
   replace=0
   [ "${1:-}" = "--replace" ] && replace=1
   if [ "$replace" -eq 0 ] && claude mcp get rim </dev/null >/dev/null 2>&1; then
-    say 'ALREADY_CONNECTED: RIM is already set up in Claude Code.'
+    say 'ALREADY_CONNECTED: RIM is already set up in Claude Code, though it may have stopped working if it was disconnected in RIM.'
   fi
   make_work
   printf '{"name":"Claude Code"}' >"$WORK/request"
@@ -180,7 +181,18 @@ cmd_wait() {
     --header "Authorization: Bearer $token" </dev/null >/dev/null 2>&1; then
     say 'COULD_NOT_ADD: RIM approved this, but Claude Code could not save it. Press Disconnect in RIM'"'"'s Settings > Agents, then try again.' 1
   fi
+  if [ "$replace" = 1 ]; then
+    say 'CONNECTED: RIM is set up. Restart Claude Code or run /mcp to use it. The connection it replaced still works until you press Disconnect on the older entry in RIM'"'"'s Settings > Agents.'
+  fi
   say 'CONNECTED: RIM is set up. Restart Claude Code or run /mcp to use it.'
+}
+
+# The output of `claude mcp get` holds the token, so it is dropped.
+cmd_status() {
+  if claude mcp get rim </dev/null >/dev/null 2>&1; then
+    say 'SET_UP: RIM is set up in Claude Code. Run /mcp to see whether it can connect.'
+  fi
+  say 'NOT_SET_UP: RIM isn'"'"'t set up in Claude Code.'
 }
 
 cmd_disconnect() {
@@ -199,6 +211,7 @@ esac
 case ${1:-} in
   start) shift; cmd_start "$@" ;;
   wait) cmd_wait ;;
+  status) cmd_status ;;
   disconnect) cmd_disconnect ;;
-  *) say 'FAILED: Use start, wait or disconnect.' 1 ;;
+  *) say 'FAILED: Use start, wait, status or disconnect.' 1 ;;
 esac
