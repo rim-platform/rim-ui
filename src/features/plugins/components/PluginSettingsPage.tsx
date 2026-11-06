@@ -20,6 +20,7 @@ import {
 import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginList } from "../api/usePluginList";
@@ -76,7 +77,7 @@ const healthDisplay: Record<PluginHealth, { color: string; pill: string; label: 
  * entry as needing the desktop app.
  *
  * Surfaces:
- * - Install from local folder button (webkitdirectory input, works in Tauri webview), desktop only
+ * - Install from local folder button (the desktop shell's folder dialog), desktop only
  * - Install from git URL button + text input, desktop only
  * - Install from link (a `.rimbundle` link pinned by its SHA-256), desktop and web
  * - List of installed plugins with enable/disable/uninstall + fingerprint trust action
@@ -84,11 +85,6 @@ const healthDisplay: Record<PluginHealth, { color: string; pill: string; label: 
  *   `{ kind: "settings", tab: "plugins", plugin }` surface opens that plugin's form
  * - Update on the row of a plugin installed from a git URL, desktop only
  * - Empty state with onboarding copy when no plugins are installed
- *
- * Note: folder-picker uses `<input type="file" webkitdirectory>` because
- * `@tauri-apps/plugin-dialog` is not a declared dependency.  The Tauri webview
- * exposes the full filesystem path via `file.path` (Tauri-injected property) when
- * running in the desktop shell.  On web the picker is disabled.
  */
 export function PluginSettingsPage() {
   const { platform, capabilities } = useRuntime();
@@ -154,42 +150,26 @@ export function PluginSettingsPage() {
     request: PostInstallConsentRequest;
   } | null>(null);
 
-  // Hidden file input for folder picker — see module docblock for why.
-  const folderInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFolderPick = useCallback(() => {
-    folderInputRef.current?.click();
-  }, []);
-
-  const handleFolderSelected = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-
-      // In Tauri the webview injects a `path` property on File objects that
-      // exposes the absolute filesystem path.  The directory comes from the
-      // first file's path.
-      const firstFile = files[0] as File & { path?: string };
-      if (firstFile.path) {
-        // Derive the folder path by stripping the filename.
-        const parts = firstFile.path.split(/[/\\]/);
-        parts.pop(); // remove filename
-        const folderPath = parts.join("/");
-        setInstallError(null);
-        installFromLocal.mutate(folderPath, {
-          onSuccess: (result) => setInstalledId(result?.plugin_id ?? null),
-          onError: (err) => {
-            setInstallError("message" in err ? err.message : "Install failed");
-          },
-        });
-      } else {
-        setInstallError("Could not read folder path. This feature requires the desktop app.");
-      }
-      // Reset so the same folder can be re-selected after an error.
-      e.target.value = "";
-    },
-    [installFromLocal],
-  );
+  // Asks the desktop shell for a folder and installs the plugin in it; a cancelled dialog does nothing.
+  const handleFolderPick = useCallback(async () => {
+    const picked = await safeInvoke<string | null>("plugin_pick_folder");
+    if (!picked.ok) {
+      setInstallError(
+        picked.error.kind === "ipc_unavailable"
+          ? "Installing from a folder requires the desktop app."
+          : picked.error.message,
+      );
+      return;
+    }
+    if (picked.value === null) return;
+    setInstallError(null);
+    installFromLocal.mutate(picked.value, {
+      onSuccess: (result) => setInstalledId(result?.plugin_id ?? null),
+      onError: (err) => {
+        setInstallError("message" in err ? err.message : "Install failed");
+      },
+    });
+  }, [installFromLocal]);
 
   const runGitInstall = useCallback(
     (url: string, allowPostInstall: boolean) => {
@@ -321,21 +301,11 @@ export function PluginSettingsPage() {
       <div className="flex flex-wrap items-center gap-2">
         {desktop && (
           <>
-            {/* Hidden folder picker — see module docblock */}
-            <input
-              ref={folderInputRef}
-              type="file"
-              // @ts-expect-error webkitdirectory is not in the standard TS types but works in all Tauri-supported browsers
-              webkitdirectory=""
-              className="hidden"
-              onChange={handleFolderSelected}
-              aria-hidden
-            />
             <Button
               className="inline-flex items-center"
               variant="secondary"
               size="sm"
-              onClick={handleFolderPick}
+              onClick={() => void handleFolderPick()}
               disabled={isInstalling}
             >
               <FolderOpen className="mr-1.5 h-4 w-4" />

@@ -7,6 +7,7 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: vi.fn(),
 }));
 
+vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: vi.fn() }));
 vi.mock("../registry/components/RegistryNotes", () => ({ RegistryNotes: () => null }));
 vi.mock("../registry/signing", () => ({
   usePluginSigning: () => ({ canSign: false, identity: undefined }),
@@ -36,6 +37,7 @@ vi.mock("../api/usePluginCapabilities", () => ({
 }));
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import {
   usePluginDisable,
   usePluginEnable,
@@ -569,7 +571,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
   });
 
-  it("shows what an installed plugin does and asks for its permissions right away", () => {
+  it("shows what an installed plugin does and asks for its permissions right away", async () => {
     const k8s = makePlugin({
       plugin_id: "chat.rim.k8s-pods",
       display_name: "Kubernetes Pods",
@@ -585,16 +587,13 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       isPending: false,
     } as unknown as ReturnType<typeof usePluginInstallFromLocal>);
 
-    const { container } = render(<PluginSettingsPage />);
+    vi.mocked(safeInvoke).mockResolvedValue({ ok: true, value: "/home/me/k8s-pods" });
+    render(<PluginSettingsPage />);
     expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
 
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = Object.assign(new File([""], "rim-plugin.json"), {
-      path: "/home/me/k8s-pods/rim-plugin.json",
-    });
-    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /install from local folder/i }));
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
     // Right after an install, approving also turns the plugin on.
     expect(within(dialog).getByRole("button", { name: "Approve and turn on" })).toBeInTheDocument();

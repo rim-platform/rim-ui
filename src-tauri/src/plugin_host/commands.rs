@@ -24,7 +24,8 @@ use crate::plugin_host::wire::JsonRpcError;
 use crate::plugin_host::PluginHostState;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginInfo {
@@ -1275,6 +1276,37 @@ fn check_outside_agent(
         command_id
     );
     Ok(())
+}
+
+/// Asks the person for a plugin folder with the system's folder dialog; `None` when they cancel.
+///
+/// The path is only returned: [`plugin_install_from_local`] checks it exactly as it checks a
+/// path from any other caller.
+///
+/// # Errors
+///
+/// Returns [`LocalInstallError::Io`] when the dialog's choice is not a local folder path, or
+/// the dialog task fails.
+#[tauri::command]
+pub async fn plugin_pick_folder(app: AppHandle) -> Result<Option<String>, LocalInstallError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a plugin folder")
+            .blocking_pick_folder();
+        match picked {
+            None => Ok(None),
+            Some(path) => path
+                .into_path()
+                .map(|p| Some(p.display().to_string()))
+                .map_err(|e| {
+                    LocalInstallError::Io(std::io::Error::other(format!("not a local folder: {e}")))
+                }),
+        }
+    })
+    .await
+    .map_err(|e| LocalInstallError::Io(std::io::Error::other(e.to_string())))?
 }
 
 /// Installs a plugin from a local folder on disk.
