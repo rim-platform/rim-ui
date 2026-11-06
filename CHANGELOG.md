@@ -61,6 +61,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 - Settings > Plugins groups plugins by how they run, and each opens in place with its
   permissions, settings and what agents can do with it.
+- Settings > Agents shows each agent on one page: what it can read, what asks you first, what
+  stays closed, and what it has been given. A token or webhook URL is shown in full, over
+  several lines.
 - The agent's run view and the confirmation dialog use the same cards: orange when you're needed, and a different card for each way a step can end.
 - A refused command now shows a card that says which kind of refusal it was: not allowed, failed, or expired.
 - The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in

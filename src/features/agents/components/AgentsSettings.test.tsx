@@ -11,6 +11,13 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
 vi.mock("../../../shared/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
+vi.mock("../../plugins/api/usePluginList", () => ({
+  useInstalledPlugins: () => ({ data: undefined }),
+}));
+vi.mock("../../workspaces/api/useMyServers", () => ({
+  useMyServers: () => ({ data: [] }),
+}));
+vi.mock("../../agent/agentAvailability", () => ({ agentAvailable: () => true }));
 vi.mock("./AgentPluginsDialog", () => ({
   AgentPluginsDialog: ({ agent }: { agent: { name: string } }) => (
     <div>Plugin commands of {agent.name}</div>
@@ -28,6 +35,17 @@ import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentsSettings } from "./AgentsSettings";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useShellStore } from "../../../shell/state/useShellStore";
+
+function renderTab() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <AgentsSettings />
+    </QueryClientProvider>,
+  );
+}
 
 const SWITCH = "Let agents on this computer connect";
 const OFF_LINE = "These stay connected, but cannot reach RIM while this is off.";
@@ -63,7 +81,7 @@ function setCalls() {
 }
 
 async function renderedSwitch() {
-  render(<AgentsSettings />);
+  renderTab();
   const toggle = screen.getByRole("switch", { name: SWITCH });
   await waitFor(() => expect(toggle).toBeEnabled());
   return toggle;
@@ -112,7 +130,7 @@ describe("AgentsSettings", () => {
   });
 
   it("disables the switch until the state is read", async () => {
-    render(<AgentsSettings />);
+    renderTab();
     const toggle = screen.getByRole("switch", { name: SWITCH });
     expect(toggle).toBeDisabled();
     await waitFor(() => expect(toggle).toBeEnabled());
@@ -174,7 +192,7 @@ describe("AgentsSettings", () => {
 
   it("keeps the switch off and disabled and says so when reading fails", async () => {
     readFails = true;
-    render(<AgentsSettings />);
+    renderTab();
     expect(await screen.findByText(READ_FAILED)).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: SWITCH });
     expect(toggle).toBeDisabled();
@@ -214,10 +232,11 @@ describe("AgentsSettings", () => {
       agents: [AGENT, { ...AGENT, id: "agent-2", name: "<b>Other</b>" }],
     });
     await renderedSwitch();
-    const rows = within(screen.getByRole("list")).getAllByRole("listitem");
+    const rows = within(screen.getAllByRole("list")[0]).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Claude Code");
     expect(rows[0]).toHaveTextContent(`Connected ${new Date(AGENT.pairedAt).toLocaleString()}`);
+    expect(rows[0]).toHaveTextContent("Nothing granted");
     expect(rows[1]).toHaveTextContent("<b>Other</b>");
     expect(screen.queryByText(NOTHING)).not.toBeInTheDocument();
     expect(screen.queryByText(OFF_LINE)).not.toBeInTheDocument();
@@ -227,7 +246,7 @@ describe("AgentsSettings", () => {
     useConnectedAgentsStore.setState({ agents: [AGENT] });
     await renderedSwitch();
     expect(screen.getByText(OFF_LINE)).toBeInTheDocument();
-    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Claude Code/ })).toBeInTheDocument();
   });
 
   it("disconnects after asking, and never holds a token", async () => {
@@ -245,6 +264,20 @@ describe("AgentsSettings", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
     expect(screen.getByText(NOTHING)).toBeInTheDocument();
+  });
+
+  it("moves focus to the switch after the last agent is disconnected", async () => {
+    status = { ...status, enabled: true, listening: true };
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    const user = userEvent.setup();
+    await renderedSwitch();
+    await user.click(screen.getByRole("button", { name: "Disconnect Claude Code" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Disconnect Claude Code?" })).getByRole("button", {
+        name: "Disconnect",
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("switch")).toHaveFocus());
   });
 
   it("keeps the program when disconnecting is cancelled", async () => {
@@ -275,7 +308,7 @@ describe("AgentsSettings", () => {
         },
       ],
     });
-    render(<AgentsSettings />);
+    renderTab();
     for (const name of ["Runs of Claude Code", "All runs"]) {
       const button = screen.getByRole("button", { name });
       let reached = false;
@@ -314,5 +347,110 @@ describe("AgentsSettings", () => {
     expect(button).toHaveTextContent("Choose its plugin commands");
     await user.click(button);
     expect(screen.getByText("Plugin commands of Claude Code")).toBeInTheDocument();
+  });
+
+  it("shows no detail until one of several agents is chosen", async () => {
+    useConnectedAgentsStore.setState({
+      agents: [AGENT, { ...AGENT, id: "agent-2", name: "Other" }],
+    });
+    const user = userEvent.setup();
+    await renderedSwitch();
+    expect(screen.queryByRole("button", { name: "Disconnect Claude Code" })).toBeNull();
+    const first = screen.getByRole("button", { name: /^Claude Code/ });
+    expect(first).toHaveAttribute("aria-pressed", "false");
+    await user.click(first);
+    expect(first).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Disconnect Claude Code" })).toBeInTheDocument();
+  });
+
+  it("counts grants and runs in the list and writes the detail from the grants", async () => {
+    useConnectedAgentsStore.setState({
+      agents: [
+        {
+          ...AGENT,
+          grants: {
+            w1: { all: false, channelIds: ["c1", "c2"] },
+            w2: { all: true, channelIds: [] },
+          },
+          pluginApprovals: { p: { manifestHash: "h", commandIds: ["a"] } },
+        },
+      ],
+    });
+    useAgentRecordStore.setState({
+      entries: [
+        {
+          at: "2026-11-06T10:00:00.000Z",
+          agentId: "agent-1",
+          agentName: "Claude Code",
+          tool: "rim_read_messages",
+          workspaceId: "w1",
+          channelId: "c1",
+          query: false,
+          messageIds: ["m1", "m2"],
+          refused: false,
+          runId: "r1",
+        },
+        {
+          at: "2026-11-06T10:05:00.000Z",
+          agentId: "agent-1",
+          agentName: "Claude Code",
+          tool: "rim_read_messages",
+          workspaceId: "w1",
+          channelId: "c1",
+          query: false,
+          messageIds: ["m2", "m3"],
+          refused: false,
+          runId: "r1",
+        },
+      ],
+    });
+    await renderedSwitch();
+    const row = screen.getByRole("button", { name: /^Claude Code/ });
+    expect(row).toHaveTextContent("Every channel in 1 workspace · 2 channels granted · 1 run");
+    expect(screen.getByText("Every channel you can see")).toBeInTheDocument();
+    expect(screen.getByText("Granted by you. No prompt on each read.")).toBeInTheDocument();
+    expect(screen.getByText(/do only what you can do/)).toHaveClass("font-medium");
+    expect(
+      screen.getByText("Encrypted conversations, direct messages and groups"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 approved.")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Channel", "Messages", "Last read"]);
+    expect(within(table).getByRole("rowheader")).toHaveTextContent("w1 · #c1");
+    expect(within(table).getByText("3 messages")).toBeInTheDocument();
+    expect(screen.getByText("This list stays on this device.")).toBeInTheDocument();
+  });
+
+  it("shows invisible characters in names, and caps the given list at eight", async () => {
+    useConnectedAgentsStore.setState({ agents: [{ ...AGENT, name: "Evil\u202Ename" }] });
+    useAgentRecordStore.setState({
+      entries: Array.from({ length: 10 }, (_, i) => ({
+        at: `2026-11-06T10:0${i}:00.000Z`,
+        agentId: "agent-1",
+        agentName: "x",
+        tool: "rim_read_messages",
+        workspaceId: "w1",
+        channelId: `c${i}`,
+        query: false,
+        messageIds: [`m${i}`],
+        refused: false,
+      })),
+    });
+    await renderedSwitch();
+    expect(screen.getByRole("button", { name: "Disconnect Evil⟦U+202E⟧name" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getAllByRole("rowheader")).toHaveLength(8);
+    expect(screen.getByText("The 8 most recent of 10 channels.")).toBeInTheDocument();
+  });
+
+  it("opens the AI Agent tab from the line under the list", async () => {
+    useShellStore.setState({ mainSurface: { kind: "settings", tab: "agents" } });
+    const user = userEvent.setup();
+    await renderedSwitch();
+    await user.click(screen.getByRole("button", { name: "Open AI Agent" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agent" });
   });
 });

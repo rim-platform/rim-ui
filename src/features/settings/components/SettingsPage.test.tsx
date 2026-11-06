@@ -676,6 +676,27 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
+  it("moves focus to the main panel when a settings tab is opened, unless it is already inside", () => {
+    const panel = () => (
+      <main data-panel="mainSurface" tabIndex={-1} data-testid="panel">
+        <SettingsPage />
+      </main>
+    );
+    mockShellState.mainSurface = { kind: "settings", tab: "agents" };
+    const wrapper = withServerInfo();
+    const { rerender } = render(panel(), { wrapper });
+    expect(screen.getByTestId("panel")).toHaveFocus();
+
+    screen.getByRole("button", { name: "Close settings" }).focus();
+    mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+    rerender(
+      <main data-panel="mainSurface" tabIndex={-1} data-testid="panel">
+        <SettingsPage />
+      </main>,
+    );
+    expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
+  });
+
   it("turns the section list into one menu above the content in a narrow window", async () => {
     const user = userEvent.setup();
     mockShellState.shellWidth = "narrow";
