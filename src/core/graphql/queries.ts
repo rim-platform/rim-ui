@@ -1,6 +1,6 @@
 import { gql } from "graphql-request";
 
-import { MESSAGE_WITH_REACTIONS } from "../../graphql/fragments/message";
+import { MESSAGE_BOT_FIELDS, MESSAGE_WITH_REACTIONS } from "../../graphql/fragments/message";
 
 /** The variables of a timeline page read. */
 const MESSAGES_VARIABLES = `
@@ -79,9 +79,27 @@ export const MESSAGES_WITH_FLAGS_QUERY = gql`
   ${MESSAGE_WITH_REACTIONS}
 `;
 
+/** The same with the author's bot disclosure, for a server that lists `bot_disclosure`. */
+export const MESSAGES_WITH_BOTS_QUERY = gql`
+  query MessagesWithBots(${MESSAGES_VARIABLES}) {
+    messages(${MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+        ...MessageBotFields
+        editedAt
+        flagged
+      }
+      ${MESSAGES_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+  ${MESSAGE_BOT_FIELDS}
+`;
+
 /** The timeline page documents, for `messageReadDocument`. */
 export const MESSAGES_DOCUMENTS = {
   plain: MESSAGES_QUERY,
   withEdits: MESSAGES_WITH_EDITS_QUERY,
   withFlags: MESSAGES_WITH_FLAGS_QUERY,
+  withBots: MESSAGES_WITH_BOTS_QUERY,
 };

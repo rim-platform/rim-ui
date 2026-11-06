@@ -10,7 +10,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useCanModerate, useMyServerRole } from "../../workspaces/api/useMyServerRole";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
-import { RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
+import { BotBadge, RoleBadge, TimeoutMarker } from "../../workspaces/components/MemberBadges";
 import { MemberMenuButton } from "../../workspaces/components/MemberMenuButton";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { usePresenceStore } from "../../presence/state/usePresenceStore";
@@ -294,6 +294,9 @@ function MembersList({
               selectedUserIds={inviteIds}
               onChange={setInviteIds}
               excludeUserIds={[...conversation.memberIds, ...pendingIds]}
+              includeBots={
+                canModerate && conversation.conversationType === ConversationTypeEnum.CHANNEL
+              }
               onConfirm={handleInvite}
               onEscape={cancelInvite}
               autoFocus
@@ -339,7 +342,11 @@ function MembersList({
                 <span className="flex min-w-0 items-center gap-1">
                   <span className="truncate text-sm text-rim-text">{member.displayName}</span>
                   {isSelf && <span className="shrink-0 text-xs text-rim-text-faint">(you)</span>}
-                  <RoleBadge role={inDirectSpace ? null : member.role} />
+                  {member.isBot ? (
+                    <BotBadge />
+                  ) : (
+                    <RoleBadge role={inDirectSpace ? null : member.role} />
+                  )}
                   {member.pending && (
                     <span className="shrink-0 rounded border border-rim-accent/40 px-1 text-[10px] uppercase tracking-wider text-rim-accent">
                       Invited

@@ -3,7 +3,8 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { MESSAGE_BOT_FIELDS, MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { botDisclosureDocument } from "../../updater/api/serverCapabilities";
 import type { MessageItem } from "../../../core/types/messages";
 import {
   FilterField,
@@ -58,6 +59,28 @@ const APPLY_LENS_QUERY = gql`
     }
   }
   ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** The same with the authors' bot disclosure, for a server that lists `bot_disclosure`. */
+const APPLY_LENS_WITH_BOTS_QUERY = gql`
+  query ApplyChannelLensWithBots(
+    $serverId: ID!
+    $conversationId: ID!
+    $lensId: ID!
+    $limit: Int! = 50
+  ) {
+    applyChannelLens(
+      serverId: $serverId
+      conversationId: $conversationId
+      lensId: $lensId
+      limit: $limit
+    ) {
+      ...MessageWithReactions
+      ...MessageBotFields
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+  ${MESSAGE_BOT_FIELDS}
 `;
 
 // --- Mutations ---
@@ -155,7 +178,11 @@ export function useApplyLens(serverId?: string, conversationId?: string, lensId?
     enabled: Boolean(serverId && conversationId && lensId),
     staleTime: 10_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<ApplyLensResponse>(APPLY_LENS_QUERY, {
+      const document = await botDisclosureDocument({
+        plain: APPLY_LENS_QUERY,
+        withBots: APPLY_LENS_WITH_BOTS_QUERY,
+      });
+      const res = await graphqlClient.request<ApplyLensResponse>(document, {
         serverId: serverId!,
         conversationId: conversationId!,
         lensId: lensId!,

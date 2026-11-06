@@ -82,7 +82,8 @@ type Handler = (variables: Record<string, unknown>) => unknown;
 /**
  * Routes `graphqlClient.request(document, variables)` calls by a substring of the document
  * (e.g. `"mutation JoinChannel"`). A handler's return value resolves the request; a thrown
- * error rejects it. Unrouted requests never settle, like a slow server.
+ * error rejects it. Unrouted requests never settle, like a slow server, except the server info
+ * read, which answers a server that lists no capabilities.
  */
 export function routeRequests(requestMock: Mock, handlers: Record<string, Handler>): void {
   requestMock.mockImplementation((document: unknown, variables: Record<string, unknown> = {}) => {
@@ -95,6 +96,12 @@ export function routeRequests(requestMock: Mock, handlers: Record<string, Handle
           return Promise.reject(err);
         }
       }
+    }
+    // A server that lists no capabilities, which the member and message reads ask first.
+    if (doc.includes("query ServerInfo")) {
+      return Promise.resolve({
+        serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
+      });
     }
     return new Promise(() => {});
   });
