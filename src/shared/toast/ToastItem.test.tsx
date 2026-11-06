@@ -132,6 +132,21 @@ describe("ToastItem as a card", () => {
     expect(useToastStore.getState().toasts[0].dismissing).toBe(true);
   });
 
+  it("clamps a long message and keeps the whole text as its title", () => {
+    const long = "A long refusal from the server. ".repeat(20).trim();
+    const t = makeToast({
+      id: "c3",
+      variant: "error",
+      card: "denied",
+      title: "Ban: not done",
+      description: long,
+    });
+    useToastStore.setState({ toasts: [t] });
+    render(<ToastItem toast={t} />);
+    const description = screen.getByTitle(long);
+    expect(description).toHaveClass("line-clamp-3");
+  });
+
   it("fires its action and dismisses", () => {
     const onClick = vi.fn();
     const t = makeToast({

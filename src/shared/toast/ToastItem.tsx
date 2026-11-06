@@ -123,14 +123,22 @@ export function ToastItem({ toast: t }: ToastItemProps) {
           <ActionCard
             className="pr-9"
             state={t.card}
-            title={codeAware ? <InlineCodeText text={t.title} /> : t.title}
+            title={
+              <span
+                className="line-clamp-3"
+                title={codeAware ? withoutCodeMarks(t.title) : t.title}
+              >
+                {codeAware ? <InlineCodeText text={t.title} /> : t.title}
+              </span>
+            }
             detail={
               t.description ? (
-                codeAware ? (
-                  <InlineCodeText text={t.description} />
-                ) : (
-                  t.description
-                )
+                <span
+                  className="line-clamp-3"
+                  title={codeAware ? withoutCodeMarks(t.description) : t.description}
+                >
+                  {codeAware ? <InlineCodeText text={t.description} /> : t.description}
+                </span>
               ) : undefined
             }
             actions={
