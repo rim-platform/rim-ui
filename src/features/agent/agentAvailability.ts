@@ -4,8 +4,11 @@ import { desktopShellAvailable, QUIT_COMMAND_ID } from "../desktop-shell/availab
 /** What the agent's place shows in an app without the agent. */
 export const AGENT_DESKTOP_ONLY_MESSAGE = "The AI agent is available in the desktop app.";
 
-/** Commands that open the AI agent. */
-const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set(["workspace.open_agent"]);
+/** Commands that open the AI agent, or the settings of programs connected to it. */
+const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set([
+  "workspace.open_agent",
+  "workspace.open_agents",
+]);
 
 /** Whether this app has the AI agent, which runs in the desktop app only. */
 export function agentAvailable(): boolean {

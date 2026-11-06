@@ -67,6 +67,11 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   localCommand("workspace.rename", "Rename Workspace…", "Give the open workspace a new name"),
   localCommand("workspace.open_bots", "Open Bots", "Open the workspace's bots in Settings"),
   localCommand("workspace.leave", "Leave Workspace…", "Leave the open workspace"),
+  localCommand(
+    "workspace.open_agents",
+    "Open Agents",
+    "Connect programs, choose what they can read and see their runs",
+  ),
   localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];
 

@@ -343,6 +343,7 @@ describe("createAgentPlugins", () => {
         connected: () => true,
         channelName: () => Promise.resolve("general"),
         post: () => Promise.resolve(held as never),
+        runId: () => "r_test",
         busy: () => false,
         commandsOff: () => Promise.resolve(false),
         confirm: () => Promise.resolve("discarded"),

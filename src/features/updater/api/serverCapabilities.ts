@@ -31,6 +31,9 @@ export const CONVERSATION_MEMBER_REMOVALS = "conversation_member_removals";
 /** The capability of a server with the `notificationEvents` subscription. */
 export const NOTIFICATION_EVENTS = "notification_events";
 
+/** The capability of a server that keeps a command's `runId` and filters its audit log by it. */
+export const COMMAND_RUN_ID = "command_run_id";
+
 /**
  * The capability of a server with `User.isBot`, `User.bot`, `ServerMember.isBot` and
  * `ServerMember.bot`; such a server also lists {@link MESSAGE_FLAG}.

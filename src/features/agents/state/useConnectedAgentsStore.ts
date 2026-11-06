@@ -23,6 +23,8 @@ export interface ConnectedAgent {
   grants: AgentGrants;
   /** What it may run, by plugin id. Everything starts off. */
   pluginApprovals: Record<string, PluginApproval>;
+  /** When its grants or approvals last changed, ISO 8601; a run does not span the change. */
+  scopeChangedAt?: string;
 }
 
 interface ConnectedAgentsState {
@@ -43,7 +45,11 @@ export const useConnectedAgentsStore = create<ConnectedAgentsState>()(
       revoke: (id) => set((state) => ({ agents: state.agents.filter((agent) => agent.id !== id) })),
       setGrants: (id, grants) =>
         set((state) => ({
-          agents: state.agents.map((agent) => (agent.id === id ? { ...agent, grants } : agent)),
+          agents: state.agents.map((agent) =>
+            agent.id === id
+              ? { ...agent, grants, scopeChangedAt: new Date().toISOString() }
+              : agent,
+          ),
         })),
       setPluginApprovals: (id, pluginId, approval) =>
         set((state) => ({
@@ -52,6 +58,7 @@ export const useConnectedAgentsStore = create<ConnectedAgentsState>()(
             const { [pluginId]: _previous, ...others } = agent.pluginApprovals ?? {};
             return {
               ...agent,
+              scopeChangedAt: new Date().toISOString(),
               pluginApprovals: approval ? { ...others, [pluginId]: approval } : others,
             };
           }),

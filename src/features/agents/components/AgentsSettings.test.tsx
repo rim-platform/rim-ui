@@ -17,7 +17,14 @@ vi.mock("./AgentPluginsDialog", () => ({
   ),
 }));
 
+vi.mock("./AgentRunsDialog", () => ({
+  AgentRunsDialog: ({ agent }: { agent: { name: string } | null }) => (
+    <h2>{agent ? `Runs of ${agent.name}` : "All runs"}</h2>
+  ),
+}));
+
 import { toast } from "../../../shared/toast";
+import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentsSettings } from "./AgentsSettings";
@@ -248,6 +255,42 @@ describe("AgentsSettings", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(useConnectedAgentsStore.getState().agents).toEqual([AGENT]);
+  });
+
+  it("opens the runs by keyboard", async () => {
+    const user = userEvent.setup();
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    useAgentRecordStore.setState({
+      entries: [
+        {
+          at: "2026-11-06T10:00:00.000Z",
+          agentId: "agent-1",
+          agentName: "Claude Code",
+          tool: "rim_read_messages",
+          workspaceId: "w1",
+          channelId: null,
+          query: false,
+          messageIds: [],
+          refused: false,
+        },
+      ],
+    });
+    render(<AgentsSettings />);
+    for (const name of ["Runs of Claude Code", "All runs"]) {
+      const button = screen.getByRole("button", { name });
+      let reached = false;
+      for (let i = 0; i < 20 && !reached; i++) {
+        await user.tab();
+        reached = document.activeElement === button;
+      }
+      expect(reached).toBe(true);
+      await user.keyboard("{Enter}");
+      expect(
+        screen.getByText(name === "All runs" ? "All runs" : "Runs of Claude Code", {
+          selector: "h2",
+        }),
+      ).toBeInTheDocument();
+    }
   });
 
   it("offers each connected agent what it can read and what it was given", async () => {

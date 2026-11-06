@@ -29,11 +29,13 @@ vi.mock("../../relay/state/useRelayStore", () => ({
 }));
 vi.mock("../../plugins/chat/appMessageService", () => ({ appChatDeps: {} }));
 vi.mock("../../updater/api/serverInfoApi", () => ({
-  fetchServerInfo: () => Promise.resolve({ features: [] }),
+  fetchServerInfo: () => Promise.resolve({ features: [], capabilities: ["command_run_id"] }),
 }));
 vi.mock("../../desktop-shell/api/desktopShell", () => ({ desktopShowWindow: mocks.showWindow }));
 
 import { logger } from "../../../core/logger";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
@@ -72,7 +74,9 @@ const POSTED = {
 };
 
 function inputs() {
-  return mocks.request.mock.calls.map(([, variables]) => (variables as { input: object }).input);
+  return mocks.request.mock.calls.map(
+    ([, variables]) => (variables as { input: Record<string, unknown> }).input,
+  );
 }
 
 /** Waits until the dialog's request is open. */
@@ -119,6 +123,7 @@ describe("appAgentChanges", () => {
         args: { server_id: "w1", conversation_id: "c1", text: "hello" },
         commandContext: { workspaceId: "w1", conversationId: "c1" },
         initiator: CommandInitiator.AGENT,
+        runId: expect.stringMatching(/^r_[A-Za-z0-9_-]{16}$/),
       },
     ]);
     expect(mocks.request.mock.calls[0][0]).toBe("the mutation");
@@ -155,12 +160,29 @@ describe("appAgentChanges", () => {
       args: { server_id: "w1", conversation_id: "c1", text: "hello" },
       commandContext: { workspaceId: "w1", conversationId: "c1" },
       initiator: CommandInitiator.AGENT,
+      runId: inputs()[0].runId,
       confirmation: { inBandToken: { token: "tok", argsHash: "hash" } },
     });
+    expect(inputs()[0].runId).toMatch(/^r_[A-Za-z0-9_-]{16}$/);
+    expect(
+      useAgentRecordStore.getState().entries.every((entry) => entry.runId === inputs()[0].runId),
+    ).toBe(true);
     expect(useAgentRecordStore.getState().entries.map((entry) => entry.change)).toEqual([
       "asked",
       "sent",
     ]);
+  });
+
+  it("leaves the run id out for a server that doesn't keep runs", async () => {
+    const kept = queryClient.getQueryData(queryKeys.serverInfo);
+    queryClient.setQueryData(queryKeys.serverInfo, { features: [], capabilities: [] });
+    mocks.request.mockResolvedValueOnce(challenge()).mockResolvedValueOnce(POSTED);
+    const answer = appAgentChanges.sendMessage(freshAgent("no-runs"), ARGS);
+    await requestOpen();
+    STORE.getState().approve();
+    expect(await answer).toMatchObject({ isError: false });
+    expect(inputs().every((input) => !("runId" in input))).toBe(true);
+    queryClient.setQueryData(queryKeys.serverInfo, kept);
   });
 
   it("uses the channel's id in the dialog when it has no title", async () => {

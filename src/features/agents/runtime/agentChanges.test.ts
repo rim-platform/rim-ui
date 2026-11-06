@@ -137,6 +137,7 @@ describe("createAgentChanges", () => {
       connected: vi.fn(() => true),
       channelName: vi.fn(() => Promise.resolve("general")),
       busy: vi.fn(() => false),
+      runId: vi.fn(() => "r_test"),
       commandsOff: vi.fn(() => Promise.resolve(false)),
       post: vi.fn(() => Promise.resolve(posted())),
       confirm: vi.fn(() => Promise.resolve("approved" as const)),
@@ -285,7 +286,9 @@ describe("createAgentChanges", () => {
   describe("the first post", () => {
     it("goes with the exact ids and text, and no proof", async () => {
       await changes.sendMessage(ALL, ARGS);
-      expect(deps.post.mock.calls[0]).toEqual([{ workspaceId: "w1", channelId: "c1", text: TEXT }]);
+      expect(deps.post.mock.calls[0]).toEqual([
+        { workspaceId: "w1", channelId: "c1", text: TEXT, runId: "r_test" },
+      ]);
     });
 
     it("passes no context of what the person has open", async () => {
@@ -459,8 +462,10 @@ describe("createAgentChanges", () => {
       const outcome = await changes.sendMessage(ALL, ARGS);
       expect(deps.post).toHaveBeenCalledTimes(2);
       expect(deps.post.mock.calls[1]).toEqual([
-        { workspaceId: "w1", channelId: "c1", text: TEXT, proof: PROOF },
+        { workspaceId: "w1", channelId: "c1", text: TEXT, runId: "r_test", proof: PROOF },
       ]);
+      expect(deps.post.mock.calls[0][0]).toMatchObject({ runId: "r_test" });
+      expect(deps.runId).toHaveBeenCalledTimes(1);
       expect(outcome).toEqual({
         isError: false,
         payload: { outcome: "sent", channelId: "c1", messageId: "m1" },

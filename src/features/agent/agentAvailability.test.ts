@@ -10,6 +10,7 @@ describe("agentAvailability", () => {
   it("has no agent and does not offer workspace.open_agent on the web", () => {
     expect(agentAvailable()).toBe(false);
     expect(commandOfferedHere("workspace.open_agent")).toBe(false);
+    expect(commandOfferedHere("workspace.open_agents")).toBe(false);
     expect(commandOfferedHere("workspace.open_settings")).toBe(true);
     expect(commandOfferedHere("app.quit")).toBe(false);
   });
