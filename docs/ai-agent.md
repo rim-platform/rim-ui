@@ -308,7 +308,8 @@ confirming that one change, unless a plugin says a command you approved only rea
   the content went. A run opens to its steps, what the workspace host recorded for it, where the
   content goes and what the program may read now. The host's lines are your own audit entries
   carrying the run's identifier (the app sends it with the changes of a run); those who can read
-  that workspace's log can read them too. Runs are shown on this device only, and nothing in
+  that workspace's log can read them too. A change to what a program may read or run starts a new
+  run. Runs are shown on this device only, and nothing in
   them stops a program: **Disconnect** and the grants do.
 
 The [contract for what agents are given](https://github.com/rim-platform/rim-server/blob/master/docs/specs/agent-data-flow-v1.md)

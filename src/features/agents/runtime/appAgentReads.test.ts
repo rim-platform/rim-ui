@@ -97,6 +97,17 @@ describe("appAgentReads", () => {
     expect(second.runId).toBe(first.runId);
   });
 
+  it("starts a new run after the agent's grants change, and not otherwise", async () => {
+    await read();
+    await read();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    useConnectedAgentsStore.getState().setGrants(AGENT.id, {});
+    await read();
+    const ids = useAgentRecordStore.getState().entries.map((entry) => entry.runId);
+    expect(ids[1]).toBe(ids[0]);
+    expect(ids[2]).not.toBe(ids[0]);
+  });
+
   it("stamps a refused read with a run too", async () => {
     mocks.fetchConversation.mockResolvedValue(conversation({ conversationType: "DIRECT" }));
     await read();

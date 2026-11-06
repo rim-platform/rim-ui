@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -120,10 +120,17 @@ describe("AgentRunsDialog", () => {
     const user = userEvent.setup();
     useAgentRecordStore.setState({ entries: [entry(100)] });
     show(AGENT);
-    screen.getByRole("button", { name: /Acme/ }).focus();
+    let reached = false;
+    for (let i = 0; i < 5 && !reached; i++) {
+      await user.tab();
+      reached = document.activeElement === screen.getByRole("button", { name: /Acme/ });
+    }
+    expect(reached).toBe(true);
     await user.keyboard("{Enter}");
     expect(screen.getByText(/^Run at /)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Back" })).toHaveFocus());
+    await user.keyboard("{Enter}");
     expect(screen.getByText("Runs of Claude Code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Acme/ })).toHaveFocus();
   });
 });

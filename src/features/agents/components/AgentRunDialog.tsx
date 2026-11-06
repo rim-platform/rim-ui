@@ -235,7 +235,7 @@ export function AgentRunDialog({
       maxWidth="max-w-2xl"
       onClose={onClose}
     >
-      <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+      <Button type="button" variant="ghost" size="sm" autoFocus onClick={onBack}>
         Back
       </Button>
       <p className="mt-2 text-sm text-rim-text-muted">

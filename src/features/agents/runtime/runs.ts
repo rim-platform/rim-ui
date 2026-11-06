@@ -17,19 +17,24 @@ export function newRunId(random: RandomFill = secureRandom): string {
 /**
  * The run a call at `now` belongs to.
  *
- * @returns The id of the agent's last entry when that entry is recent enough, else a new id.
+ * @param scopeChangedAt - When the agent's grants or approvals last changed, ISO 8601: a run does
+ *   not span that moment.
+ * @returns The id of the agent's last entry when that entry is recent enough and not older than
+ *   the change, else a new id.
  */
 export function runIdFor(
   entries: readonly RecordEntry[],
   agentId: string,
   now: number,
   newId: () => string,
+  scopeChangedAt?: string,
 ): string {
   for (let index = entries.length - 1; index >= 0; index--) {
     const last = entries[index];
     if (last.agentId !== agentId) continue;
     const at = Date.parse(last.at);
-    if (last.runId && now - at <= RUN_GAP_MS) return last.runId;
+    const changed = scopeChangedAt ? Date.parse(scopeChangedAt) : -Infinity;
+    if (last.runId && now - at <= RUN_GAP_MS && at >= changed) return last.runId;
     break;
   }
   return newId();

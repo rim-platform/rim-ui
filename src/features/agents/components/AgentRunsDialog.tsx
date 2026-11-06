@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { useMyServers } from "../../workspaces/api/useMyServers";
@@ -31,7 +31,18 @@ export function AgentRunsDialog({
   const entries = useAgentRecordStore((s) => s.entries);
   const { data: servers } = useMyServers();
   const [selected, setSelected] = useState<string | null>(null);
+  const returnTo = useRef<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const [now] = useState(() => Date.now());
+
+  // Back from a run puts focus on the row it opened.
+  useEffect(() => {
+    if (selected !== null) return;
+    const row = returnTo.current;
+    if (row === null) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-run="${CSS.escape(row)}"]`)?.focus();
+    returnTo.current = null;
+  }, [selected]);
 
   const runs = groupRuns(entries)
     .filter((run) => !agent || run.agentId === agent.id)
@@ -52,19 +63,23 @@ export function AgentRunsDialog({
     >
       <p className="text-sm text-rim-text-muted">
         A run is one stretch of an agent&apos;s calls, grouped by time. RIM doesn&apos;t see where
-        an agent&apos;s task starts or ends.
+        an agent&apos;s task starts or ends. A change to what it may do starts a new run.
       </p>
       {runs.length === 0 ? (
         <p className="mt-3 text-sm text-rim-text-muted">No runs yet.</p>
       ) : (
-        <ul className="mt-3 max-h-[50vh] space-y-2 overflow-y-auto">
+        <ul ref={listRef} className="mt-3 max-h-[50vh] space-y-2 overflow-y-auto">
           {runs.map((run) => {
             const going = now - Date.parse(run.lastAt) < RUN_GAP_MS;
             return (
               <li key={keyOf(run)}>
                 <button
                   type="button"
-                  onClick={() => setSelected(keyOf(run))}
+                  data-run={keyOf(run)}
+                  onClick={() => {
+                    returnTo.current = keyOf(run);
+                    setSelected(keyOf(run));
+                  }}
                   className="w-full break-words rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-left text-sm text-rim-text hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent"
                 >
                   <span className="font-medium">{new Date(run.startedAt).toLocaleString()}</span>

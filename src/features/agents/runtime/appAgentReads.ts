@@ -73,7 +73,9 @@ export function connected(agentId: string): boolean {
 
 /** The run a call from this agent made now belongs to. */
 export function runId(agentId: string): string {
-  return runIdFor(useAgentRecordStore.getState().entries, agentId, Date.now(), newRunId);
+  const agent = useConnectedAgentsStore.getState().agents.find((a) => a.id === agentId);
+  const { entries } = useAgentRecordStore.getState();
+  return runIdFor(entries, agentId, Date.now(), newRunId, agent?.scopeChangedAt);
 }
 
 /** Adds an entry to the record, in its agent's current run, and writes it out. */

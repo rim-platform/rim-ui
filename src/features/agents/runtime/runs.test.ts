@@ -51,6 +51,15 @@ describe("runIdFor", () => {
     expect(runIdFor(entries, "a3", T0 + 120_000, newId)).toBe("r_new");
   });
 
+  it("starts a new run when the agent's scope changed after its last entry", () => {
+    const entries = [entry({ runId: "r_old" })];
+    const after = new Date(T0 + 60_000).toISOString();
+    const before = new Date(T0 - 60_000).toISOString();
+    expect(runIdFor(entries, "a1", T0 + 120_000, newId, after)).toBe("r_new");
+    expect(runIdFor(entries, "a1", T0 + 120_000, newId, before)).toBe("r_old");
+    expect(runIdFor(entries, "a1", T0 + 120_000, newId, undefined)).toBe("r_old");
+  });
+
   it("counts a refused entry, and starts anew after one with no id", () => {
     expect(runIdFor([entry({ runId: "r_x", refused: true })], "a1", T0, newId)).toBe("r_x");
     expect(runIdFor([entry()], "a1", T0, newId)).toBe("r_new");
