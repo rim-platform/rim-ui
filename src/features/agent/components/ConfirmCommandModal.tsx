@@ -265,6 +265,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
       <div
         className="fixed inset-0 flex items-center justify-center p-4"
         style={{ zIndex: Z.OVERLAY_CONTENT }}
+        // A click beside the panel keeps focus in it, so its keys and Tab go on working.
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) e.preventDefault();
+        }}
       >
         <div
           ref={panelRef}
@@ -505,7 +509,7 @@ function ExpiresIn({ expiresAt }: { expiresAt: string }) {
 function textSize(text: string): string {
   const lines = text.split("\n").length;
   const characters = Array.from(text).length;
-  return `${lines} ${lines === 1 ? "line" : "lines"}, ${characters} ${characters === 1 ? "character" : "characters"}. Scroll to read it all.`;
+  return `${lines} ${lines === 1 ? "line" : "lines"}, ${characters} ${characters === 1 ? "character" : "characters"}`;
 }
 
 /**

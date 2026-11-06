@@ -344,6 +344,7 @@ describe("createAgentPlugins", () => {
         channelName: () => Promise.resolve("general"),
         post: () => Promise.resolve(held as never),
         busy: () => false,
+        commandsOff: () => Promise.resolve(false),
         confirm: () => Promise.resolve("discarded"),
         record: () => Promise.resolve(),
         cooldown: deps.cooldown,

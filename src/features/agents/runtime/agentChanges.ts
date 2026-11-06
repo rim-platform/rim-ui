@@ -1,7 +1,8 @@
 /**
  * The change a connected agent can ask for: sending a message. Each call names its target, is
- * checked against that agent's grants, is held by the server, and goes out only after the person
- * confirms the exact text in RIM. The text never reaches the record or a log.
+ * checked against that agent's grants, and is shown to the person first, so what they discard never
+ * leaves this device. Only then does the text go to the server, which holds it for the proof the
+ * app answers with. The text never reaches the record or a log.
  */
 
 import {
@@ -13,18 +14,19 @@ import { logger } from "../../../core/logger";
 import { readRefusal, refusalForAgent } from "../../commands/runtime/refusal";
 import type { RecordEntry } from "../state/useAgentRecordStore";
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
+import { randomToken } from "./agentCrypto";
 import { denied, errorName, failed, idOf, type ToolArgs, type ToolOutcome } from "./agentReads";
 import { grantCovers, grantMayCover, type GrantChannel } from "./grants";
 
-/** What the person is asked to confirm, and the server's challenge to answer if they do. */
+/** What the person is asked to confirm. */
 export interface AgentConfirmation {
   agentName: string;
   workspaceName: string;
   channelName: string;
   text: string;
   expiresAt: string;
+  /** Tells this request from another. */
   token: string;
-  argsHash: string;
 }
 
 /** Holds back an agent whose last request was discarded or expired. */
@@ -52,8 +54,10 @@ export interface AgentChangesDeps {
     text: string;
     proof?: ConfirmationProofInput;
   }) => Promise<CommandResult>;
-  /** Whether a confirmation is open now. */
+  /** Whether something that needs answering is open now. */
   busy: () => boolean;
+  /** Whether the server has agents' commands switched off, so the person isn't asked for nothing. */
+  commandsOff: () => Promise<boolean>;
   /** Shows the dialog. Answers "busy" at once when any confirmation is open. */
   confirm: (request: AgentConfirmation) => Promise<"approved" | "discarded" | "busy">;
   /** Keeps an entry. A failure before anything is posted refuses the call. */
@@ -71,6 +75,8 @@ export interface AgentChanges {
 const TOOL = "rim_send_message";
 /** How long after a discard or an expiry an agent's next request is turned away. */
 const COOLDOWN_MS = 10_000;
+/** How long the person has to answer. */
+const CONFIRM_MS = 60_000;
 
 const INVALID: ToolOutcome = {
   isError: true,
@@ -102,6 +108,15 @@ const DISCARDED: ToolOutcome = {
   payload: {
     outcome: "discarded",
     message: "The person chose not to send this. Do not send it again unless they ask.",
+  },
+};
+const COMMANDS_OFF: ToolOutcome = {
+  isError: true,
+  payload: {
+    refusal: "DENIED",
+    retrySafe: false,
+    message:
+      "Denied by policy, do not retry. Tell the user: AI commands are switched off on this server",
   },
 };
 const SEND_FAILED_TEXT = "RIM could not send this.";
@@ -232,23 +247,25 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
       const channelId = idOf(args.channelId);
       const { text } = args;
       const call: Call = { agent, workspaceId, channelId };
-      if (
-        workspaceId === null ||
-        channelId === null ||
-        typeof text !== "string" ||
-        text.trim() === ""
-      ) {
+      if (typeof text !== "string" || text.trim() === "") {
         return ended(entry(call, "refused"), INVALID);
       }
 
       if (deps.cooldown.active(agent.id)) return COOLING_DOWN;
 
-      const workspace = await grantedWorkspace(agent, workspaceId, channelId);
-      if (workspace === null) return ended(entry(call, "refused"), denied());
+      // An id that could not be one gets the same answer as one RIM doesn't know.
+      const workspace =
+        workspaceId === null || channelId === null
+          ? null
+          : await grantedWorkspace(agent, workspaceId, channelId);
+      if (workspaceId === null || channelId === null || workspace === null) {
+        return ended(entry(call, "refused"), denied());
+      }
 
-      // Before asking the server, whose limit on unanswered challenges would otherwise let requests
-      // made during a dialog push out the challenge that dialog holds.
       if (deps.busy()) return BUSY;
+      if (await deps.commandsOff().catch(() => false)) {
+        return ended(entry(call, "refused"), COMMANDS_OFF);
+      }
 
       try {
         await keep(entry(call, "asked"));
@@ -257,31 +274,18 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
         return failed(SEND_FAILED_TEXT);
       }
 
-      const input = { workspaceId, channelId, text };
-      let held: CommandResult;
-      try {
-        held = await deps.post(input);
-      } catch (error) {
-        return ended(entry(call, "refused"), refusalOf(error));
-      }
-      if (held.status === CommandResultStatus.SUCCESS) return sent(call, channelId, held);
-      const challenge = held.confirmationRequired;
-      if (held.status !== CommandResultStatus.CONFIRMATION_REQUIRED || !challenge) {
-        return ended(entry(call, "refused"), failed(SEND_FAILED_TEXT));
-      }
-
+      const expiresAt = new Date(deps.now() + CONFIRM_MS).toISOString();
       const decision = await deps.confirm({
         agentName: agent.name,
         workspaceName: workspace.name,
         channelName: await deps.channelName(workspaceId, channelId).catch(() => channelId),
         text,
-        expiresAt: challenge.expiresAt,
-        token: challenge.token,
-        argsHash: challenge.argsHash,
+        expiresAt,
+        token: randomToken(16),
       });
       if (decision === "busy") return ended(entry(call, "busy"), BUSY);
       if (decision === "discarded") {
-        if (deps.now() >= Date.parse(challenge.expiresAt)) return expired(call);
+        if (deps.now() >= Date.parse(expiresAt)) return expired(call);
         deps.cooldown.start(agent.id);
         return ended(entry(call, "discarded"), DISCARDED);
       }
@@ -295,8 +299,15 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
         return denied();
       }
 
+      const input = { workspaceId, channelId, text };
       let done: CommandResult;
       try {
+        const held = await deps.post(input);
+        if (held.status === CommandResultStatus.SUCCESS) return sent(call, channelId, held);
+        const challenge = held.confirmationRequired;
+        if (held.status !== CommandResultStatus.CONFIRMATION_REQUIRED || !challenge) {
+          return ended(entry(call, "refused"), failed(SEND_FAILED_TEXT));
+        }
         done = await deps.post({
           ...input,
           proof: { inBandToken: { token: challenge.token, argsHash: challenge.argsHash } },

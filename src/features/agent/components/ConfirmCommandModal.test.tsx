@@ -885,9 +885,7 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
       expect(box).toHaveTextContent("na⟦U+202E⟧me");
       expect(box).toHaveTextContent("va⟦U+202E⟧lue");
       expect(box).toHaveTextContent('{"deep":[1,2]}');
-      expect(screen.getByTestId("outside-agent-args-size")).toHaveTextContent(
-        "Scroll to read it all.",
-      );
+      expect(screen.getByTestId("outside-agent-args-size")).toHaveTextContent(/\d+ characters$/);
     });
 
     it("masks an argument that looks like a secret", () => {
@@ -932,7 +930,7 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
   it("says how long the text is", () => {
     open("one\ntwo");
     expect(screen.getByTestId("outside-agent-text-size")).toHaveTextContent(
-      "2 lines, 7 characters.",
+      "2 lines, 7 characters",
     );
   });
 

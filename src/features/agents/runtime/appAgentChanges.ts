@@ -4,10 +4,13 @@ import { graphqlClient } from "../../../core/graphql/client";
 import {
   CommandInitiator,
   CommandSensitivity,
+  ServerFeatureState,
   type CommandResult,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
+import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
+import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import {
   useConfirmationModalStore,
   type ConfirmationRequest,
@@ -16,10 +19,22 @@ import { EXECUTE_COMMAND_MUTATION } from "../../agent/tools/loader";
 import { fetchConversation } from "../../conversations/api/useConversation";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
+import { fetchServerInfo } from "../../updater/api/serverInfoApi";
 import { createAgentChanges, createCooldown, type AgentConfirmation } from "./agentChanges";
 import { connected, lookup, record, workspaces } from "./appAgentReads";
 
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
+/** Whether the server says agents' commands are off. The server still enforces it either way. */
+async function commandsOff(): Promise<boolean> {
+  const info = await queryClient.fetchQuery({
+    queryKey: queryKeys.serverInfo,
+    queryFn: fetchServerInfo,
+    staleTime: Infinity,
+  });
+  const state = info.features?.find((feature) => feature.key === "ai_commands")?.state;
+  return state !== undefined && state !== ServerFeatureState.ENABLED;
+}
 
 /** The channel's title, falling back on its id. */
 async function channelName(workspaceId: string, channelId: string): Promise<string> {
@@ -78,7 +93,7 @@ function confirm(request: AgentConfirmation): Promise<"approved" | "discarded" |
     sensitivity: CommandSensitivity.MUTATING,
     verb: null,
     token: request.token,
-    argsHash: request.argsHash,
+    argsHash: "",
     expiresAt: request.expiresAt,
     outsideAgent: {
       name: request.agentName,
@@ -93,7 +108,7 @@ function confirm(request: AgentConfirmation): Promise<"approved" | "discarded" |
 
 /** Whether a confirmation is open now. */
 export function confirmationOpen(): boolean {
-  return useConfirmationModalStore.getState().request !== null;
+  return useConfirmationModalStore.getState().request !== null || hostDialogOpen();
 }
 
 /** The wait after a discard or an expiry, shared by everything that asks the person. */
@@ -107,6 +122,7 @@ export const appAgentChanges = createAgentChanges({
   connected,
   channelName,
   busy: confirmationOpen,
+  commandsOff,
   post: async ({ workspaceId, channelId, text, proof }) => {
     const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
       EXECUTE_COMMAND_MUTATION,
