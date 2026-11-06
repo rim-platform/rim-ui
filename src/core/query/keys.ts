@@ -107,6 +107,20 @@ export const queryKeys = {
     ["lensMessages", workspaceId, conversationId, lensId] as const,
   keybinds: (scope?: string, workspaceId?: string) => ["keybinds", scope, workspaceId] as const,
   unreadCounts: (workspaceId?: string) => ["unreadCounts", workspaceId] as const,
+  /** Everything the Unreads page has read of one conversation, or of a whole workspace. */
+  unreadGroupMessagesOf: (workspaceId: string, conversationId?: string) =>
+    (conversationId
+      ? ["unreadGroupMessages", workspaceId, conversationId]
+      : ["unreadGroupMessages", workspaceId]) as readonly string[],
+  /** One Unreads group's messages after `marker`, from the server or this device's store. */
+  unreadGroupMessages: (
+    workspaceId: string,
+    conversationId: string,
+    marker: string,
+    source: "server" | "store",
+  ) => ["unreadGroupMessages", workspaceId, conversationId, marker, source] as const,
+  /** Which conversations of a workspace are muted, as the Unreads page reads it for each one. */
+  unreadsMuted: (workspaceId: string) => ["unreadsMuted", workspaceId] as const,
   mutedConversations: (workspaceId?: string) => ["mutedConversations", workspaceId] as const,
   workspaceState: (serverId?: string, scope?: string, key?: string) =>
     ["workspaceState", serverId, scope ?? "SERVER", key] as const,
@@ -191,6 +205,8 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "lenses",
   "lensMessages",
   "unreadCounts",
+  "unreadGroupMessages",
+  "unreadsMuted",
   "mutedConversations",
   "workspacePresence",
   "serverMembers",

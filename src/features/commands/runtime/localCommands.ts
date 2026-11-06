@@ -72,6 +72,36 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Open Agents",
     "Connect programs, choose what they can read and see their runs",
   ),
+  localCommand(
+    "workspace.open_unreads",
+    "Open Unreads",
+    "See everything you haven't read across your workspaces",
+  ),
+  localCommand(
+    "workspace.unreads_next",
+    "Unreads: Next Message",
+    "Select the next message on the Unreads page",
+  ),
+  localCommand(
+    "workspace.unreads_previous",
+    "Unreads: Previous Message",
+    "Select the previous message on the Unreads page",
+  ),
+  localCommand(
+    "workspace.unreads_mark_group",
+    "Unreads: Mark Conversation as Read",
+    "Mark the selected conversation read up to the newest message shown",
+  ),
+  localCommand(
+    "workspace.unreads_open",
+    "Unreads: Open Message",
+    "Open the selected message in its conversation",
+  ),
+  localCommand(
+    "workspace.unreads_undo",
+    "Unreads: Undo",
+    "Take back the last mark while it is still waiting",
+  ),
   localCommand("workspace.open_home", "Open Home", "See what needs you across your workspaces"),
   localCommand(
     "workspace.open_audit_log",

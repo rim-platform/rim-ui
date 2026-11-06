@@ -63,6 +63,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const unreadCounts = useUnreadStore((s) => s.counts);
+  const allUnread = Object.values(unreadCounts).reduce((total, count) => total + count, 0);
   const mutedIds = useMutedStore((s) => s.mutedIds);
   // Guests cannot browse, join or create channels; the server refuses anyway.
   const isGuest = useIsGuest(workspaceId ?? undefined);
@@ -252,6 +253,16 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
           setFocusedIndex(-1);
         }}
       >
+        {allUnread > 0 && (
+          <button
+            type="button"
+            onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
+            className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
+          >
+            Unreads
+            <span className="text-xs text-rim-text-faint">{allUnread}</span>
+          </button>
+        )}
         <div>
           <div
             {...bindContextMenu(channelSectionItems, { label: "Channels" })}

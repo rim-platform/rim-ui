@@ -198,6 +198,15 @@ function typingName(
  * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
  * this server hosts, or a verified host event from the relay for a space elsewhere.
  */
+/** The events that change what the Unreads page shows of a conversation. */
+const UNREAD_GROUP_EVENTS: ReadonlySet<WorkspaceEvent["type"]> = new Set([
+  "NewMessage",
+  "MessageUpdated",
+  "MessageDeleted",
+  "MessagesDeleted",
+  "MessageFlagChanged",
+]);
+
 export function applyWorkspaceEvent(
   event: WorkspaceEvent,
   qc: ReturnType<typeof useQueryClient>,
@@ -254,6 +263,12 @@ export function applyWorkspaceEvent(
       break;
     default:
       break;
+  }
+
+  if (UNREAD_GROUP_EVENTS.has(event.type) && "conversation_id" in event) {
+    void qc.invalidateQueries({
+      queryKey: queryKeys.unreadGroupMessagesOf(workspaceId, event.conversation_id),
+    });
   }
 
   switch (event.type) {

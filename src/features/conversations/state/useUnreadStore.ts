@@ -36,6 +36,31 @@ interface UnreadState {
    *   mark stands.
    */
   endMarkAll: (spaceId: string, restore?: CountSnapshot) => void;
+  /**
+   * Conversations marked read here up to a time, whose call to the server waits out its undo:
+   * by conversation id, how many of its unread messages that mark leaves. Later reads of their
+   * counts are held.
+   */
+  conversationMarks: Record<string, number>;
+  /**
+   * Marks a conversation read locally up to `readAt`, holds later reads of its count, and returns
+   * what it replaced.
+   *
+   * @param remaining - How many unread messages are newer than `readAt`.
+   */
+  beginConversationMark: (
+    conversationId: string,
+    spaceId: string,
+    remaining: number,
+    readAt: string,
+  ) => CountSnapshot;
+  /**
+   * Ends a pending mark of a conversation.
+   *
+   * @param restore - What to put back, on top of what arrived in the meantime; left out when the
+   *   mark stands.
+   */
+  endConversationMark: (conversationId: string, spaceId: string, restore?: CountSnapshot) => void;
   /** Open conversations automatic marking must leave alone, until left or marked read. */
   held: Record<string, true>;
   setHeld: (conversationId: string) => void;
@@ -93,7 +118,17 @@ export const useUnreadStore = create<UnreadState>((set) => ({
       };
       if (state.markAllPending[spaceId]) return { countSources };
       const rest = withoutSpace(state, spaceId);
+      // A conversation with a mark on its way keeps what it has here.
+      for (const conversationId of Object.keys(state.conversationMarks)) {
+        const count = state.counts[conversationId];
+        if (count === undefined || state.spaceOf[conversationId] !== spaceId) continue;
+        rest.counts[conversationId] = count;
+        rest.spaceOf[conversationId] = spaceId;
+        const marker = state.markers[conversationId];
+        if (marker !== undefined) rest.markers[conversationId] = marker;
+      }
       for (const [conversationId, count] of Object.entries(counts)) {
+        if (state.conversationMarks[conversationId] !== undefined) continue;
         rest.counts[conversationId] = count;
         rest.spaceOf[conversationId] = spaceId;
         const marker = markers?.[conversationId];
@@ -155,6 +190,57 @@ export const useUnreadStore = create<UnreadState>((set) => ({
         spaceOf[conversationId] = spaceId;
       }
       return { counts, spaceOf, markers, markAllPending };
+    }),
+  conversationMarks: {},
+  beginConversationMark: (conversationId, spaceId, remaining, readAt) => {
+    const snapshot: CountSnapshot = { counts: {}, markers: {} };
+    set((state) => {
+      const count = state.counts[conversationId];
+      const marker = state.markers[conversationId];
+      if (count !== undefined) snapshot.counts[conversationId] = count;
+      if (marker !== undefined) snapshot.markers[conversationId] = marker;
+      const counts = { ...state.counts };
+      const spaceOf = { ...state.spaceOf };
+      const markers = { ...state.markers };
+      const held = { ...state.held };
+      delete held[conversationId];
+      if (remaining > 0) {
+        counts[conversationId] = remaining;
+        spaceOf[conversationId] = spaceId;
+        markers[conversationId] = readAt;
+      } else {
+        delete counts[conversationId];
+        delete spaceOf[conversationId];
+        delete markers[conversationId];
+      }
+      return {
+        counts,
+        spaceOf,
+        markers,
+        held,
+        conversationMarks: { ...state.conversationMarks, [conversationId]: remaining },
+      };
+    });
+    return snapshot;
+  },
+  endConversationMark: (conversationId, spaceId, restore) =>
+    set((state) => {
+      const conversationMarks = { ...state.conversationMarks };
+      const left = conversationMarks[conversationId] ?? 0;
+      delete conversationMarks[conversationId];
+      if (!restore) return { conversationMarks };
+      const counts = { ...state.counts };
+      const spaceOf = { ...state.spaceOf };
+      const markers = { ...state.markers };
+      const arrived = Math.max(0, (counts[conversationId] ?? 0) - left);
+      const total = (restore.counts[conversationId] ?? 0) + arrived;
+      const marker = restore.markers[conversationId];
+      if (total > 0) {
+        counts[conversationId] = total;
+        spaceOf[conversationId] = spaceId;
+      }
+      if (marker !== undefined) markers[conversationId] = marker;
+      return { counts, spaceOf, markers, conversationMarks };
     }),
   held: {},
   setHeld: (conversationId) =>

@@ -136,6 +136,8 @@ new device:
 | <kbd>Escape</kbd> | Close the open panel: a plugin panel, the thread, a page such as Settings, or the notifications or a members list in the tool panel |
 | <kbd>?</kbd>, <kbd>Ctrl+/</kbd> | Show keyboard shortcuts |
 
+On the Unreads page, while the focus is on the page, <kbd>J</kbd> and <kbd>K</kbd> move through the messages, <kbd>E</kbd> marks the selected conversation read up to the newest message shown, <kbd>Enter</kbd> opens the selected message and <kbd>U</kbd> takes back the last mark, for 10 seconds. These keys belong to the page and stay what they are. Each runs a command (`workspace.unreads_next`, `workspace.unreads_previous`, `workspace.unreads_mark_group`, `workspace.unreads_open`, `workspace.unreads_undo`) that the palette offers on that page and that you can bind to another key as well.
+
 On a Mac, <kbd>Cmd</kbd> works wherever <kbd>Ctrl</kbd> is written. The timeline's own message
 keys, such as <kbd>r</kbd> for a thread and <kbd>e</kbd> to edit, are in [Keyboard](keyboard.md).
 

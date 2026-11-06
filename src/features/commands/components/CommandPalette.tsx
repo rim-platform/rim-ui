@@ -131,13 +131,14 @@ function CommandPaletteDialog() {
 
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const hasDirectOrigin = useApplicableDirectOrigin() !== null;
+  const unreadsOpen = useShellStore((s) => s.mainSurface.kind === "unreads");
   // Whether a panel is open is read when the palette opens; nothing opens one behind it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const panelOpen = useMemo(() => hasPanelToClose(), [isOpen]);
 
   const situation = useMemo(
-    () => ({ inDirectSpace, panelOpen, hasDirectOrigin }),
-    [inDirectSpace, panelOpen, hasDirectOrigin],
+    () => ({ inDirectSpace, panelOpen, hasDirectOrigin, unreadsOpen }),
+    [inDirectSpace, panelOpen, hasDirectOrigin, unreadsOpen],
   );
 
   // Pre-filter to palette-visible commands, merge with plugin commands

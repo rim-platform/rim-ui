@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -70,6 +70,31 @@ describe("ConversationList — effective notification level", () => {
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
     useUnreadStore.setState({ counts: {} });
+  });
+
+  it("offers Unreads with the total while something is unread, and opens the page", async () => {
+    serve();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ConversationList onNewChannel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const button = await screen.findByRole("button", { name: /^Unreads/ });
+    expect(button).toHaveTextContent("9");
+    fireEvent.click(button);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });
+  });
+
+  it("offers no Unreads with nothing unread", async () => {
+    useUnreadStore.setState({ counts: {} });
+    serve();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ConversationList onNewChannel={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await titleOf("loud");
+    expect(screen.queryByRole("button", { name: /^Unreads/ })).not.toBeInTheDocument();
   });
 
   it("bolds unread conversations that notify", async () => {

@@ -196,6 +196,19 @@ export function UnreadSection({ rows }: { rows: readonly WorkspaceUnread[] }) {
   return (
     <Section title="Unread">
       <ul className="space-y-2">
+        <li>
+          <button
+            type="button"
+            onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
+            className={ROW_CLASS}
+          >
+            <span className="min-w-0 flex-1 font-medium">See all unread</span>
+            <span className="shrink-0 text-xs text-rim-text-muted">
+              {rows.reduce((total, row) => total + row.messages, 0)}
+            </span>
+            <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
+          </button>
+        </li>
         {rows.map(({ workspace, messages, conversations }) => (
           <li key={workspace.id}>
             <button type="button" onClick={() => openWorkspace(workspace.id)} className={ROW_CLASS}>
