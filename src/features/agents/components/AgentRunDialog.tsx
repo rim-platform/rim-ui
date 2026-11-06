@@ -7,6 +7,8 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useListAuditLog } from "../../audit/api/useListAuditLog";
 import { useInstalledPlugins } from "../../plugins/api/usePluginList";
+import { COMMAND_RUN_ID, hasCapability } from "../../updater/api/serverCapabilities";
+import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServers } from "../../workspaces/api/useMyServers";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { plural, type AgentRun } from "../runtime/runs";
@@ -149,15 +151,19 @@ function HostLines({
   runId: string;
 }) {
   const userId = useAuthStore((s) => s.session?.userId ?? null);
+  const { info } = useServerInfo();
+  const noRuns = info !== undefined && !hasCapability(info, COMMAND_RUN_ID);
   const { data, isError, isPending } = useListAuditLog({
-    scope: userId === null ? null : { serverId: workspaceId, actorUserId: userId },
+    scope: userId === null || noRuns ? null : { serverId: workspaceId, actorUserId: userId },
     runId,
     limit: 100,
   });
   return (
     <div className="mt-2">
       <div className="text-xs font-medium text-rim-text">{workspaceName}</div>
-      {userId === null || isError ? (
+      {noRuns ? (
+        <p className="text-sm text-rim-text-muted">This host doesn&apos;t keep runs yet.</p>
+      ) : userId === null || isError ? (
         <p className="text-sm text-rim-text-muted">RIM couldn&apos;t get these from the host.</p>
       ) : isPending ? (
         <Loader2 role="status" aria-label="Loading" className="mt-1 h-4 w-4 animate-spin" />

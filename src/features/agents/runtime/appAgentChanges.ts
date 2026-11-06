@@ -19,6 +19,7 @@ import { EXECUTE_COMMAND_MUTATION } from "../../agent/tools/loader";
 import { fetchConversation } from "../../conversations/api/useConversation";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
+import { COMMAND_RUN_ID, serverHasCapability } from "../../updater/api/serverCapabilities";
 import { fetchServerInfo } from "../../updater/api/serverInfoApi";
 import { createAgentChanges, createCooldown, type AgentConfirmation } from "./agentChanges";
 import { connected, lookup, record, runId, workspaces } from "./appAgentReads";
@@ -125,6 +126,8 @@ export const appAgentChanges = createAgentChanges({
   runId,
   commandsOff,
   post: async ({ workspaceId, channelId, text, runId: run, proof }) => {
+    // An older server refuses the whole call for a field it doesn't know.
+    const withRun = await serverHasCapability(COMMAND_RUN_ID);
     const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
       EXECUTE_COMMAND_MUTATION,
       {
@@ -133,7 +136,7 @@ export const appAgentChanges = createAgentChanges({
           args: { server_id: workspaceId, conversation_id: channelId, text },
           commandContext: { workspaceId, conversationId: channelId },
           initiator: CommandInitiator.AGENT,
-          runId: run,
+          ...(withRun ? { runId: run } : {}),
           ...(proof ? { confirmation: proof } : {}),
         },
       },

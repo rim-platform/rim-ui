@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   audit: vi.fn(),
+  info: vi.fn(),
 }));
 vi.mock("../../workspaces/api/useMyServers", () => ({
   useMyServers: () => ({
@@ -20,6 +21,7 @@ vi.mock("../../plugins/api/usePluginList", () => ({
   }),
 }));
 vi.mock("../../audit/api/useListAuditLog", () => ({ useListAuditLog: mocks.audit }));
+vi.mock("../../updater/hooks/useServerInfo", () => ({ useServerInfo: () => mocks.info() }));
 vi.mock("./AgentGrantsDialog", () => ({
   AgentGrantsDialog: ({ agent }: { agent: { name: string } }) => <div>Grants of {agent.name}</div>,
 }));
@@ -75,6 +77,7 @@ describe("AgentRunDialog", () => {
   beforeEach(() => {
     useConnectedAgentsStore.setState({ agents: [AGENT] });
     useAuthStore.setState({ session: { userId: "me" } as never });
+    mocks.info.mockReturnValue({ info: { capabilities: ["command_run_id"] } });
     mocks.audit.mockReturnValue({ data: { items: [] }, isPending: false, isError: false });
   });
   afterEach(() => {
@@ -162,6 +165,13 @@ describe("AgentRunDialog", () => {
     expect(screen.getByText(/Arguments are redacted\./)).toHaveTextContent(
       "Those who can read this workspace's log can see these lines.",
     );
+  });
+
+  it("says a host without runs keeps none, and doesn't ask it", () => {
+    mocks.info.mockReturnValue({ info: { capabilities: [] } });
+    show([entry(0, { ...SEND, change: "sent" })]);
+    expect(screen.getByText("This host doesn't keep runs yet.")).toBeInTheDocument();
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ scope: null }));
   });
 
   it("shows a spinner while the host answers", () => {

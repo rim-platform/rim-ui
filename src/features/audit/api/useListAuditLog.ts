@@ -32,7 +32,6 @@ const LIST_AUDIT_LOG = gql`
         errorKind
         capabilityCheckOutcome
         confirmationOutcome
-        runId
         createdAt
       }
       nextCursor

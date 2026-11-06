@@ -29,11 +29,13 @@ vi.mock("../../relay/state/useRelayStore", () => ({
 }));
 vi.mock("../../plugins/chat/appMessageService", () => ({ appChatDeps: {} }));
 vi.mock("../../updater/api/serverInfoApi", () => ({
-  fetchServerInfo: () => Promise.resolve({ features: [] }),
+  fetchServerInfo: () => Promise.resolve({ features: [], capabilities: ["command_run_id"] }),
 }));
 vi.mock("../../desktop-shell/api/desktopShell", () => ({ desktopShowWindow: mocks.showWindow }));
 
 import { logger } from "../../../core/logger";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
@@ -169,6 +171,18 @@ describe("appAgentChanges", () => {
       "asked",
       "sent",
     ]);
+  });
+
+  it("leaves the run id out for a server that doesn't keep runs", async () => {
+    const kept = queryClient.getQueryData(queryKeys.serverInfo);
+    queryClient.setQueryData(queryKeys.serverInfo, { features: [], capabilities: [] });
+    mocks.request.mockResolvedValueOnce(challenge()).mockResolvedValueOnce(POSTED);
+    const answer = appAgentChanges.sendMessage(freshAgent("no-runs"), ARGS);
+    await requestOpen();
+    STORE.getState().approve();
+    expect(await answer).toMatchObject({ isError: false });
+    expect(inputs().every((input) => !("runId" in input))).toBe(true);
+    queryClient.setQueryData(queryKeys.serverInfo, kept);
   });
 
   it("uses the channel's id in the dialog when it has no title", async () => {

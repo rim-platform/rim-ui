@@ -29,6 +29,9 @@ export const CONVERSATION_MEMBER_REMOVALS = "conversation_member_removals";
 /** The capability of a server with the `notificationEvents` subscription. */
 export const NOTIFICATION_EVENTS = "notification_events";
 
+/** The capability of a server that keeps a command's `runId` and filters its audit log by it. */
+export const COMMAND_RUN_ID = "command_run_id";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;
