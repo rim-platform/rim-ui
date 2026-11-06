@@ -1,6 +1,7 @@
 import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import type { RemovalPrompt } from "../state";
+import { showInvisibleCharacters } from "../../../agents/runtime/invisibleCharacters";
 
 interface RemovedPluginDialogProps {
   prompt: RemovalPrompt;
@@ -16,7 +17,7 @@ export function RemovedPluginDialog({
   onRemove,
   onKeep,
 }: RemovedPluginDialogProps) {
-  const name = prompt.plugin.display_name;
+  const name = showInvisibleCharacters(prompt.plugin.display_name);
   return (
     <Dialog open onClose={onKeep} title={`${name} was removed`} maxWidth="max-w-md">
       <div className="space-y-3 text-xs text-rim-text-muted">

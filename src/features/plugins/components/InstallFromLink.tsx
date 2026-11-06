@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useState } from "react";
 import { Link2 } from "lucide-react";
 
@@ -169,11 +170,16 @@ function ReplaceDialog({
 }) {
   const changes = changesOf(fetched, current);
   return (
-    <Dialog open onClose={onCancel} title={`Replace ${current.display_name}?`} maxWidth="max-w-md">
+    <Dialog
+      open
+      onClose={onCancel}
+      title={`Replace ${showInvisibleCharacters(current.display_name)}?`}
+      maxWidth="max-w-md"
+    >
       <div className="space-y-3 text-xs text-rim-text-muted">
         <p>
-          This link installs another copy of {current.display_name} over the one installed. You
-          approve its permissions again afterwards.
+          This link installs another copy of {showInvisibleCharacters(current.display_name)} over
+          the one installed. You approve its permissions again afterwards.
         </p>
         <ul className="space-y-1 text-rim-text">
           <li>Version: {changes.version ?? `${current.version} (unchanged)`}</li>

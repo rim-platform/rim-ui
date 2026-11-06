@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useState } from "react";
 import { Shield } from "lucide-react";
 
@@ -112,7 +113,9 @@ export function PluginCapabilityPrompt({
             <Shield className="h-5 w-5 text-rim-accent" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-sm font-medium text-rim-text">{plugin.display_name}</span>
+            <span className="text-sm font-medium text-rim-text">
+              {showInvisibleCharacters(plugin.display_name || plugin.plugin_id)}
+            </span>
             <p className="text-xs text-rim-text-muted">
               v{plugin.version}
               {plugin.author ? ` by ${plugin.author}` : ""}
@@ -128,7 +131,7 @@ export function PluginCapabilityPrompt({
               From the plugin author:
             </figcaption>
             <blockquote className="whitespace-pre-line border-l-2 border-rim-line pl-3 text-xs text-rim-text-muted">
-              {clipDescription(plugin.description)}
+              {showInvisibleCharacters(clipDescription(plugin.description))}
             </blockquote>
           </figure>
         )}

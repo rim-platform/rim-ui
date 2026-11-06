@@ -24,6 +24,7 @@ import { RegistryInstallDialog } from "./RegistryInstallDialog";
 import { RemovedPluginDialog } from "./RemovedPluginDialog";
 import { RequiredPluginsDialog } from "./RequiredPluginsDialog";
 import { UpdatePromptDialog } from "./UpdatePromptDialog";
+import { showInvisibleCharacters } from "../../../agents/runtime/invisibleCharacters";
 
 const { handled, listed } = registrySession;
 
@@ -73,9 +74,12 @@ export function RegistryHost() {
       {
         install: (check, options) => installEntry(platform, check, options),
         stop: (plugin) => stopPlugin(platform, plugin),
-        updated: (plugin, version) => toast.success(`Updated ${plugin.display_name} to ${version}`),
+        updated: (plugin, version) =>
+          toast.success(`Updated ${showInvisibleCharacters(plugin.display_name)} to ${version}`),
         updateFailed: (plugin, reason) =>
-          toast.error(`${plugin.display_name} was not updated`, { description: reason }),
+          toast.error(`${showInvisibleCharacters(plugin.display_name)} was not updated`, {
+            description: reason,
+          }),
         promptUpdate: (prompt) => store().promptUpdate(prompt),
         promptRemoval: (prompt) => store().promptRemoval(prompt),
       },
@@ -126,7 +130,7 @@ export function RegistryHost() {
       await qc.invalidateQueries({ queryKey: queryKeys.plugins() });
       reloadCommands();
     } catch (err) {
-      toast.error(`${removal.plugin.display_name}: ${messageOf(err)}`);
+      toast.error(`${showInvisibleCharacters(removal.plugin.display_name)}: ${messageOf(err)}`);
     } finally {
       setRemoving(false);
       store().dropRemoval(removal.plugin.plugin_id);

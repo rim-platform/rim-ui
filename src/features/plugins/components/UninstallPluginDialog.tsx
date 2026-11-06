@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import type { PluginInfo } from "../types";
@@ -26,7 +27,7 @@ export function UninstallPluginDialog({
   onConfirm,
   onCancel,
 }: UninstallPluginDialogProps) {
-  const name = plugin.display_name || plugin.plugin_id;
+  const name = showInvisibleCharacters(plugin.display_name || plugin.plugin_id);
   return (
     <Dialog open onClose={onCancel} title={`Uninstall ${name}?`} maxWidth="max-w-md">
       <div className="space-y-3 text-xs text-rim-text-muted">

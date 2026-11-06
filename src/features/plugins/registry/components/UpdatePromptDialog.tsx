@@ -4,6 +4,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import { KIND_CONSENT_TEXT, listedSites } from "../../components/consentText";
 import type { UpdatePrompt } from "../state";
+import { showInvisibleCharacters } from "../../../agents/runtime/invisibleCharacters";
 
 interface UpdatePromptDialogProps {
   prompt: UpdatePrompt;
@@ -15,12 +16,13 @@ interface UpdatePromptDialogProps {
 /** An update that needs the person: what is new, with a warning when the publisher changed. */
 export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDialogProps) {
   const { plugin, check, plan, workspaceName } = prompt;
+  const name = showInvisibleCharacters(plugin.display_name);
   return (
-    <Dialog open onClose={onLater} title={`Update ${plugin.display_name}?`} maxWidth="max-w-md">
+    <Dialog open onClose={onLater} title={`Update ${name}?`} maxWidth="max-w-md">
       <div className="space-y-3 text-xs text-rim-text-muted">
         <p>
-          {workspaceName} updated {plugin.display_name} from {plugin.version} to{" "}
-          {check.statement.version}. This update needs your approval.
+          {workspaceName} updated {name} from {plugin.version} to {check.statement.version}. This
+          update needs your approval.
         </p>
         <ul className="space-y-1 text-rim-text">
           {plan.publisherChanged && (
