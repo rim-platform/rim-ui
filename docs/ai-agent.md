@@ -236,7 +236,34 @@ is off by default. It is optional, and RIM works the same without it. The web ap
 - **Disconnecting.** Each connected program has a **Disconnect** button in the tab. It stops the
   program reaching RIM. It takes nothing back: what the program has already read stays with it.
 
-Reading is not available yet: a connected program can connect and nothing more.
+A connected program can read only what you grant it, and it can't change anything:
+
+- **Grants.** Everything starts off. **Choose what it can read** on a program's row gives that
+  program one or more channels, or **All channels you can see** in a workspace. That includes private
+  channels you're in and channels you join later. Reads within a grant don't prompt. You can change
+  a grant at any time, and the change applies to the program's next call. Grants stay on this
+  device, sealed with your account. Only workspaces on your own server are offered: one hosted on
+  another server can't be granted yet.
+- **What it can ask.** Four tools, over the Model Context Protocol: `rim_list_workspaces`,
+  `rim_list_channels`, `rim_read_messages` and `rim_search_messages`. Each reads the workspace it
+  names, whichever one you have open. A message comes with its id, channel, thread, the author's
+  display name, its text, its times, and each attachment's name, type and size. Text that people
+  wrote is marked untrusted, which makes it less able to steer the program but cannot make that
+  impossible.
+- **Where it reads from.** The messages stored on this device. A channel not stored yet gets a
+  refusal saying to try again shortly, and RIM starts storing it. A channel you can no longer see
+  is refused, and a change can take up to 30 seconds to show.
+- **What stays closed.** Encrypted conversations, direct messages and groups are refused and
+  dropped from search. There is no grant that opens them. A refusal reads the same whether a channel
+  is closed, not granted, or does not exist.
+- **The record.** **What it was given** lists what RIM handed to that program and what it refused:
+  when, which tool, which channel, how many messages and their ids. It holds no message text and no
+  search text. It stays on this device for 30 days. **Clear the whole record** clears it for every
+  program and leaves one line saying you did. It is a record of what RIM handed over, not of what
+  the program did with it.
+
+The [contract for what agents are given](../../rim-server/docs/specs/agent-data-flow-v1.md) is
+rim-server's.
 
 There are limits to what this does:
 

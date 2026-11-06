@@ -205,7 +205,7 @@ describe("useAgentBridge", () => {
     expect(useConnectedAgentsStore.getState().agents).toHaveLength(1);
     const authorization = `Bearer ${answer.body.token}`;
     expect((await asked("/pair/poll", ids)).status).toBe(404);
-    expect((await asked("/mcp", {}, authorization)).status).toBe(501);
+    expect((await asked("/mcp", {}, authorization)).status).toBe(400);
     expect((await asked("/mcp", {}, null)).status).toBe(401);
 
     const [agent] = useConnectedAgentsStore.getState().agents;
@@ -268,7 +268,7 @@ describe("useAgentBridge", () => {
     await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
     const answer = await collected({ requestId: body.requestId, pollSecret: body.pollSecret });
     const authorization = `Bearer ${answer.body.token}`;
-    expect((await asked("/mcp", {}, authorization)).status).toBe(501);
+    expect((await asked("/mcp", {}, authorization)).status).toBe(400);
 
     await act(() => unlockTestVault({ endpoint: "http://other/api", principalId: "rimp1_other" }));
     expect((await asked("/mcp", {}, authorization)).status).toBe(401);
