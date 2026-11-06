@@ -65,6 +65,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Switch between comfortable, compact and ultra compact",
   ),
   localCommand("workspace.rename", "Rename Workspace…", "Give the open workspace a new name"),
+  localCommand("workspace.open_bots", "Open Bots", "Open the workspace's bots in Settings"),
   localCommand("workspace.leave", "Leave Workspace…", "Leave the open workspace"),
   localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];

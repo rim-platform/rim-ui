@@ -618,6 +618,14 @@ export type CreateCustomEmojiInput = {
   serverId: Scalars['ID']['input'];
 };
 
+/** Create a channel's incoming webhook. */
+export type CreateIncomingWebhookInput = {
+  /** The bot it posts as, an active bot of the channel's workspace. */
+  botUserId: Scalars['ID']['input'];
+  conversationId: Scalars['ID']['input'];
+  preset: WebhookPreset;
+};
+
 export type CreateInviteInput = {
   /**
    * When the invite stops admitting anyone: in the future and at most 30 days from now
@@ -696,6 +704,16 @@ export type CreatedBotToken = {
   botToken: BotToken;
   /** `rimbot_…`, shown this once. */
   token: Scalars['String']['output'];
+};
+
+/** A new incoming webhook and its token. */
+export type CreatedIncomingWebhook = {
+  /**
+   * `rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
+   * it is a secret.
+   */
+  token: Scalars['String']['output'];
+  webhook: IncomingWebhook;
 };
 
 export type CustomEmoji = {
@@ -1023,6 +1041,20 @@ export type InboxCursorInput = {
 export type InboxCursorOutput = {
   conversationId: Scalars['ID']['output'];
   lastActivityAt: Scalars['DateTime']['output'];
+};
+
+/** A URL that posts to one channel as one bot, without its token, which is shown once. */
+export type IncomingWebhook = {
+  /** The bot it posts as. */
+  botUserId: Scalars['ID']['output'];
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /** When it was last used, to the minute; null when it never was. */
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  preset: WebhookPreset;
+  /** When it was revoked; null until then. */
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 /** An abuse report filed with this server, by a local user or from the abuse address. */
@@ -1816,6 +1848,14 @@ export type Mutation = {
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
+  /**
+   * Create a channel's incoming webhook, bound to a bot of its workspace, and add the bot to the
+   * channel if it is not there. The token is shown this once. Owner or Moderator, and for a
+   * private channel one who is in it; `FORBIDDEN` for anyone else, `VALIDATION` for anything but
+   * a plaintext channel that is not archived and for a bot of another workspace or a deactivated
+   * one, `CONFLICT` when the channel already has a webhook that is not revoked.
+   */
+  createIncomingWebhook: CreatedIncomingWebhook;
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
@@ -1823,9 +1863,9 @@ export type Mutation = {
   createServer: Server;
   createUserCommand: Command;
   /**
-   * Deactivate a bot: its tokens stop working and it leaves the workspace and its channels. Its
-   * messages stay. Doing it again changes nothing. There is no way back. Owner or Moderator of
-   * its workspace.
+   * Deactivate a bot: its tokens stop working, its webhooks are revoked and it leaves the
+   * workspace and its channels. Its messages stay. Doing it again changes nothing. There is no
+   * way back. Owner or Moderator of its workspace.
    */
   deactivateBot: Bot;
   /** Decline the caller's pending invitation; `NOT_FOUND` when there is none. */
@@ -2161,6 +2201,11 @@ export type Mutation = {
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
   /**
+   * Revoke a webhook. Revoking it again changes nothing. `NOT_FOUND` for an unknown webhook and
+   * for one of a workspace the caller does not moderate.
+   */
+  revokeIncomingWebhook: IncomingWebhook;
+  /**
    * Revoke a workspace invite: from now on it admits nobody, and members who joined with it
    * stay. Owner of the invite's workspace only (`FORBIDDEN` for its other members);
    * `NOT_FOUND` for an unknown invite or one of a workspace the caller is not in. Revoking a
@@ -2493,6 +2538,11 @@ export type MutationCreateConversationArgs = {
 
 export type MutationCreateCustomEmojiArgs = {
   input: CreateCustomEmojiInput;
+};
+
+
+export type MutationCreateIncomingWebhookArgs = {
+  input: CreateIncomingWebhookInput;
 };
 
 
@@ -2897,6 +2947,11 @@ export type MutationRevokeBotTokenArgs = {
 
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
+};
+
+
+export type MutationRevokeIncomingWebhookArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -3619,6 +3674,11 @@ export type Query = {
   dmRequests: Array<DmRequest>;
   inboxConversations: ConversationPage;
   /**
+   * The workspace's incoming webhooks, revoked ones included, never their token. Owner or
+   * Moderator; `FORBIDDEN` for anyone else, `FEATURE_DISABLED` while the `bots` feature is off.
+   */
+  incomingWebhooks: Array<IncomingWebhook>;
+  /**
    * This server's IP deny list, expired blocks included, oldest first. Instance operators
    * only; anyone else gets `FORBIDDEN`.
    */
@@ -3925,6 +3985,11 @@ export type QueryInboxConversationsArgs = {
   cursor?: InputMaybe<InboxCursorInput>;
   dir: PageDir;
   limit: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryIncomingWebhooksArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -4580,7 +4645,8 @@ export type ServerInfo = {
    * (`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
    * `conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
    * (`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
-   * `ServerMember.bot`). A client ignores names it does not know.
+   * `ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`).
+   * A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**
@@ -5150,6 +5216,17 @@ export type UserPresenceGql = {
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
 };
+
+/** How an incoming webhook's body becomes text. */
+export enum WebhookPreset {
+  /**
+   * GitHub's published releases, pull requests opened, closed or merged and issues opened or
+   * closed, by the `X-GitHub-Event` header.
+   */
+  GITHUB = 'GITHUB',
+  /** `{"text": "..."}`, at most 4,000 characters. */
+  PLAIN = 'PLAIN'
+}
 
 /** A workspace's DM rules. */
 export type WorkspaceDmPolicy = {

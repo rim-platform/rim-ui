@@ -45,3 +45,32 @@ The fields `isBot` and `bot` exist only on a server that lists `bot_disclosure` 
 `serverInfo.capabilities`. Every read that asks for them (the member list, a conversation's
 messages, a thread, pinned messages, a lens) keeps a second document with them and uses it only
 there; see `version-skew.md`.
+
+## Managing bots
+
+Settings > Bots is for Owners and Moderators. It is listed under Workspace when the server lists the
+`bots` feature as enabled, and not in the direct space. "Open Bots" in the command palette opens it
+for the same people.
+
+- **New bot** asks for a name, **Who runs it** and **Where what it reads goes**, each statement 1 to
+  200 characters and required. Everyone in the workspace sees both as what the person who added the
+  bot says. The first token is shown in a dialog that holds it only while it is open.
+- **Edit** changes the name and the statements. **Deactivate** is final: its tokens and webhooks stop
+  working, it leaves the workspace, and its messages stay. A workspace holds at most 25 active bots.
+- **Tokens** lists each token's label, when it was made and last used ("Never" when unused), and
+  revokes one after a confirmation. A bot has at most 5 tokens that are not revoked. A new token is
+  shown once.
+- **Channels** ticks the channels the bot is in and adds or removes it on Save, which sits above the
+  list so Tab reaches it first. Encrypted channels are not listed. A private channel you aren't in
+  doesn't appear here. Adding a bot to a private channel lets it read that channel. The list loads up
+  to 1,000 channels and says when it was cut; the New webhook channel picker does the same.
+- **Incoming webhooks** is listed on a server that lists `incoming_webhooks`. **New webhook** takes a
+  channel without an active webhook, an active bot and a preset (Plain or GitHub), and shows the
+  URL once. It is built from the address of the server the app is signed in to, never the page's
+  own address. For the GitHub preset the dialog says to paste it as the Payload URL under the
+  repository's Settings > Webhooks, choose application/json and leave Secret empty.
+
+The token or URL is never kept in the query cache or logged. The dialog that shows it replaces
+the dialog it came from, has no close icon, and closes only through its Done button; the Tokens
+dialog comes back after it.
+

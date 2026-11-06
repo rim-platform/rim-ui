@@ -725,6 +725,18 @@ input CreateCustomEmojiInput {
 	imageBase64: String!
 }
 
+"""
+Create a channel's incoming webhook.
+"""
+input CreateIncomingWebhookInput {
+	conversationId: ID!
+	"""
+	The bot it posts as, an active bot of the channel's workspace.
+	"""
+	botUserId: ID!
+	preset: WebhookPreset!
+}
+
 input CreateInviteInput {
 	serverId: ID!
 	"""
@@ -809,6 +821,18 @@ type CreatedBotToken {
 	botToken: BotToken!
 	"""
 	`rimbot_…`, shown this once.
+	"""
+	token: String!
+}
+
+"""
+A new incoming webhook and its token.
+"""
+type CreatedIncomingWebhook {
+	webhook: IncomingWebhook!
+	"""
+	`rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
+	it is a secret.
 	"""
 	token: String!
 }
@@ -1227,6 +1251,28 @@ input InboxCursorInput {
 type InboxCursorOutput {
 	lastActivityAt: DateTime!
 	conversationId: ID!
+}
+
+"""
+A URL that posts to one channel as one bot, without its token, which is shown once.
+"""
+type IncomingWebhook {
+	id: ID!
+	conversationId: ID!
+	"""
+	The bot it posts as.
+	"""
+	botUserId: ID!
+	preset: WebhookPreset!
+	createdAt: DateTime!
+	"""
+	When it was last used, to the minute; null when it never was.
+	"""
+	lastUsedAt: DateTime
+	"""
+	When it was revoked; null until then.
+	"""
+	revokedAt: DateTime
 }
 
 """
@@ -2873,9 +2919,9 @@ type Mutation {
 	"""
 	updateBot(input: UpdateBotInput!): Bot!
 	"""
-	Deactivate a bot: its tokens stop working and it leaves the workspace and its channels. Its
-	messages stay. Doing it again changes nothing. There is no way back. Owner or Moderator of
-	its workspace.
+	Deactivate a bot: its tokens stop working, its webhooks are revoked and it leaves the
+	workspace and its channels. Its messages stay. Doing it again changes nothing. There is no
+	way back. Owner or Moderator of its workspace.
 	"""
 	deactivateBot(botUserId: ID!): Bot!
 	"""
@@ -2888,6 +2934,19 @@ type Mutation {
 	a token of a bot in a workspace the caller does not moderate.
 	"""
 	revokeBotToken(tokenId: ID!): BotToken!
+	"""
+	Create a channel's incoming webhook, bound to a bot of its workspace, and add the bot to the
+	channel if it is not there. The token is shown this once. Owner or Moderator, and for a
+	private channel one who is in it; `FORBIDDEN` for anyone else, `VALIDATION` for anything but
+	a plaintext channel that is not archived and for a bot of another workspace or a deactivated
+	one, `CONFLICT` when the channel already has a webhook that is not revoked.
+	"""
+	createIncomingWebhook(input: CreateIncomingWebhookInput!): CreatedIncomingWebhook!
+	"""
+	Revoke a webhook. Revoking it again changes nothing. `NOT_FOUND` for an unknown webhook and
+	for one of a workspace the caller does not moderate.
+	"""
+	revokeIncomingWebhook(id: ID!): IncomingWebhook!
 }
 
 input MuteConversationInput {
@@ -3775,6 +3834,11 @@ type Query {
 	while the `bots` feature is off.
 	"""
 	botTokens(botUserId: ID!): [BotToken!]!
+	"""
+	The workspace's incoming webhooks, revoked ones included, never their token. Owner or
+	Moderator; `FORBIDDEN` for anyone else, `FEATURE_DISABLED` while the `bots` feature is off.
+	"""
+	incomingWebhooks(serverId: ID!): [IncomingWebhook!]!
 }
 
 type ReactionGroup {
@@ -4323,7 +4387,8 @@ type ServerInfo {
 	(`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
 	`conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
 	(`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
-	`ServerMember.bot`). A client ignores names it does not know.
+	`ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`).
+	A client ignores names it does not know.
 	"""
 	capabilities: [String!]!
 }
@@ -4930,6 +4995,21 @@ type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
+}
+
+"""
+How an incoming webhook's body becomes text.
+"""
+enum WebhookPreset {
+	"""
+	`{"text": "..."}`, at most 4,000 characters.
+	"""
+	PLAIN
+	"""
+	GitHub's published releases, pull requests opened, closed or merged and issues opened or
+	closed, by the `X-GitHub-Event` header.
+	"""
+	GITHUB
 }
 
 """

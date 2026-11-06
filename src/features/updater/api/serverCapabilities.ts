@@ -37,6 +37,9 @@ export const NOTIFICATION_EVENTS = "notification_events";
  */
 export const BOT_DISCLOSURE = "bot_disclosure";
 
+/** The capability of a server with incoming webhooks (`incomingWebhooks` and its mutations). */
+export const INCOMING_WEBHOOKS = "incoming_webhooks";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

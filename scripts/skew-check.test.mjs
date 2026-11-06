@@ -170,4 +170,51 @@ describe("skew check", () => {
       "query ConversationMemberRemovals",
     ]);
   });
+
+  it("refuses only the bot management documents on a server without the bots API", () => {
+    const schema = schemaWithoutFields({
+      Query: ["bots", "botTokens", "incomingWebhooks"],
+      Mutation: [
+        "createBot",
+        "updateBot",
+        "deactivateBot",
+        "createBotToken",
+        "revokeBotToken",
+        "createIncomingWebhook",
+        "revokeIncomingWebhook",
+      ],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateBot",
+      "mutation CreateBotToken",
+      "mutation CreateIncomingWebhook",
+      "mutation DeactivateBot",
+      "mutation RevokeBotToken",
+      "mutation RevokeIncomingWebhook",
+      "mutation UpdateBot",
+      "query BotTokens",
+      "query Bots",
+      "query IncomingWebhooks",
+    ]);
+  });
+
+  it("refuses only the webhook documents on a server without incoming webhooks", () => {
+    const schema = schemaWithoutFields({
+      Query: ["incomingWebhooks"],
+      Mutation: ["createIncomingWebhook", "revokeIncomingWebhook"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateIncomingWebhook",
+      "mutation RevokeIncomingWebhook",
+      "query IncomingWebhooks",
+    ]);
+  });
 });
