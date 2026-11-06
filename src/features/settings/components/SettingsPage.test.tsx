@@ -73,7 +73,9 @@ const mockSetMainSurface = vi.fn();
 const mockShellState: {
   setMainSurface: typeof mockSetMainSurface;
   mainSurface: Record<string, unknown>;
+  shellWidth: string;
 } = {
+  shellWidth: "wide",
   setMainSurface: mockSetMainSurface,
   mainSurface: { kind: "settings" },
 };
@@ -190,6 +192,7 @@ describe("SettingsPage", () => {
     vi.clearAllMocks();
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
+    mockShellState.shellWidth = "wide";
     mockGate.canModerate = false;
     mockOperator.isOperator = false;
     mockWorkspace.workspaceId = "ws-1";
@@ -671,5 +674,31 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Profile" }));
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+  });
+
+  it("turns the section list into one menu above the content in a narrow window", async () => {
+    const user = userEvent.setup();
+    mockShellState.shellWidth = "narrow";
+    mockGate.canModerate = true;
+    renderSettings();
+
+    expect(screen.queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
+    const menu = screen.getByRole("combobox", { name: "Settings sections" });
+    expect(menu).toHaveValue("profile");
+    const labels = within(menu)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(labels).toEqual(expect.arrayContaining(["Profile", "Keybinds", "Plugins", "Workspace"]));
+
+    await user.selectOptions(menu, "keybinds");
+    expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
+    expect(menu).toHaveValue("keybinds");
+  });
+
+  it("keeps the section list beside the content in a medium window", () => {
+    mockShellState.shellWidth = "medium";
+    renderSettings();
+    expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 });

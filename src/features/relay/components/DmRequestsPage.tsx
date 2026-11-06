@@ -4,6 +4,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspace } from "../../workspaces/api/useWorkspace";
 import { usePendingDmRequestsIn } from "../api/useDmRequests";
 import { DmRequestInbox } from "./DmRequestInbox";
+import { NavMenuButton } from "../../../shell/components/NavMenuButton";
 
 interface DmRequestsPageProps {
   /** The workspace whose requests are shown; `null` for those from outside every workspace. */
@@ -22,7 +23,10 @@ export function DmRequestsPage({ workspaceId }: DmRequestsPageProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
-        <h1 className="text-sm font-medium text-rim-text">Message requests</h1>
+        <div className="flex items-center gap-2">
+          <NavMenuButton />
+          <h1 className="text-sm font-medium text-rim-text">Message requests</h1>
+        </div>
         <button
           type="button"
           onClick={() => setMainSurface({ kind: "conversation" })}

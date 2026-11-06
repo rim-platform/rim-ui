@@ -72,6 +72,36 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Open Agents",
     "Connect programs, choose what they can read and see their runs",
   ),
+  localCommand(
+    "workspace.open_audit_log",
+    "Open Audit Log",
+    "Open the workspace's record of who did what",
+  ),
+  localCommand(
+    "workspace.open_message_requests",
+    "Open Message Requests",
+    "Open the direct message requests waiting for an answer",
+  ),
+  localCommand(
+    "workspace.toggle_pinned_messages",
+    "Toggle Pinned Messages",
+    "Show or hide the open conversation's pinned messages",
+  ),
+  localCommand(
+    "workspace.toggle_notifications",
+    "Toggle Notifications",
+    "Show or hide the notification inbox",
+  ),
+  localCommand(
+    "workspace.toggle_conversation_members",
+    "Toggle Conversation Members",
+    "Show or hide the open conversation's members",
+  ),
+  localCommand(
+    "workspace.toggle_member_directory",
+    "Toggle Workspace Members",
+    "Show or hide the workspace's member directory",
+  ),
   localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];
 
@@ -132,7 +162,7 @@ export const BUILT_IN_COMMAND_TITLES: Readonly<Record<string, string>> = {
   "workspace.open_marketplace": "Open the plugin marketplace",
   "workspace.open_agent": "Open the AI agent",
   "workspace.cycle_recent_activity": "Jump to where someone last posted",
-  "workspace.toggle_sidebar": "Toggle the sidebar",
+  "workspace.toggle_sidebar": "Toggle the sidebar or navigation drawer",
   "workspace.reopen_last_thread": "Reopen the last thread",
   "workspace.focus_composer": "Focus the composer",
   "workspace.focus_message_list": "Focus the message list",

@@ -134,4 +134,11 @@ describe("PinnedMessagesPanel — context menu", () => {
       ]),
     );
   });
+
+  it("names its close button", async () => {
+    serve();
+    renderPanel();
+    await screen.findByText("the release is on Friday");
+    expect(screen.getByRole("button", { name: "Close pinned messages" })).toBeInTheDocument();
+  });
 });

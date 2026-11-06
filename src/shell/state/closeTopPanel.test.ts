@@ -14,6 +14,7 @@ describe("closeTopPanel", () => {
   });
 
   afterEach(() => {
+    useShellStore.setState({ shellWidth: "wide" });
     useWorkspaceStore.setState({ workspaceId: null });
     useNotificationsPanelStore.getState().setOpen(false);
     useMembersPanelStore.getState().setOpen(false);
@@ -51,5 +52,42 @@ describe("closeTopPanel", () => {
 
     expect(closeTopPanel()).toBe(false);
     expect(hasPanelToClose()).toBe(false);
+  });
+
+  it("closes the navigation drawer before anything behind it", () => {
+    const shell = () => useShellStore.getState();
+    shell().setSelectedConversationId("conv-1");
+    shell().openThreadForMessage("root-1");
+    useShellStore.setState({ shellWidth: "narrow" });
+    shell().setNavDrawerOpen(true);
+
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().navDrawerOpen).toBe(false);
+    expect(shell().isThreadOpen).toBe(true);
+  });
+
+  it("closes the pinned panel only where it opens over the conversation", () => {
+    const shell = () => useShellStore.getState();
+    shell().setSelectedConversationId("conv-1");
+    shell().setPinnedPanelOpen(true);
+
+    expect(closeTopPanel()).toBe(false);
+    expect(shell().pinnedPanelOpen).toBe(true);
+
+    useShellStore.setState({ shellWidth: "medium" });
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().pinnedPanelOpen).toBe(false);
+  });
+
+  it("leaves the drawer alone in zen mode, where it is not drawn", () => {
+    const shell = () => useShellStore.getState();
+    shell().setSelectedConversationId("conv-1");
+    shell().openThreadForMessage("root-1");
+    useShellStore.setState({ shellWidth: "narrow", zenMode: true });
+    shell().setNavDrawerOpen(true);
+
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().isThreadOpen).toBe(false);
+    expect(shell().navDrawerOpen).toBe(true);
   });
 });

@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { Archive, ChevronDown, ChevronRight, Compass, Plus } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { useJoinedChannels } from "../api/useChannels";
 import { useInboxConversations } from "../api/useInboxConversations";
@@ -16,8 +15,6 @@ import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { isContextMenuKey, useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useMutedStore } from "../state/useMutedStore";
-import { queryKeys } from "../../../core/query/keys";
-import type { MessagesPage } from "../../messages/api/useMessages";
 import { usePendingDmRequestsIn } from "../../relay/api/useDmRequests";
 import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
@@ -48,7 +45,16 @@ export function ConversationList(props: ConversationListProps) {
 function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const selectedId = useShellStore((s) => s.selectedConversationId);
-  const select = useShellStore((s) => s.setSelectedConversationId);
+  const setSelected = useShellStore((s) => s.setSelectedConversationId);
+  // A conversation the person chooses closes the navigation drawer of a narrow window, even
+  // when it is the one already open.
+  const select = useCallback<typeof setSelected>(
+    (id, options) => {
+      setSelected(id, options);
+      useShellStore.getState().setNavDrawerOpen(false);
+    },
+    [setSelected],
+  );
   const draftDirect = useShellStore((s) => s.draftDirect);
   const draft =
     draftDirect && "workspaceId" in draftDirect && draftDirect.workspaceId === workspaceId
@@ -66,7 +72,6 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   // Requests for DMs of this workspace, kept out of its conversations until accepted.
   const scopedRequests = usePendingDmRequestsIn(workspaceId ?? undefined);
   const requestCount = workspaceId ? scopedRequests.length : 0;
-  const qc = useQueryClient();
   const contextMenu = useContextMenu();
   const { bind: bindContextMenu, openUnder } = contextMenu;
   const { getItems: conversationMenuItems, dialogs: conversationDialogs } =
@@ -76,36 +81,6 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
       bindContextMenu(() => conversationMenuItems(conv, { label }), ROW_MENU),
     [bindContextMenu, conversationMenuItems],
   );
-
-  // Track the previous conversation so it can be snapshotted before switching
-  const prevSelectedIdRef = useRef<string | null>(null);
-
-  // Snapshot watermark for the conversation being LEFT, then clear its sidebar unread count optimistically.
-  // The markAsRead backend call fires only when the divider is dismissed.
-  useEffect(() => {
-    const prevId = prevSelectedIdRef.current;
-    prevSelectedIdRef.current = selectedId;
-
-    if (!prevId || !workspaceId || prevId === selectedId) return;
-
-    // Snapshot the sentAt of the last message in the conversation being left
-    const cached = qc.getQueryData<{ pages: MessagesPage[] }>(
-      queryKeys.messages(workspaceId, prevId),
-    );
-    if (cached?.pages && cached.pages.length > 0) {
-      // pages are in load order (newest first after the reverse), but getQueryData
-      // returns them as stored — first page = newest page (reverse display order).
-      // The last item of pages[0] is the newest message in the conversation.
-      const newestPage = cached.pages[0];
-      const lastItem = newestPage?.items?.[newestPage.items.length - 1];
-      if (lastItem?.sentAt) {
-        useUnreadStore.getState().setWatermark(prevId, lastItem.sentAt);
-      }
-    }
-
-    // Optimistically clear the sidebar unread badge for the conversation just left
-    useUnreadStore.getState().markRead(prevId);
-  }, [selectedId, workspaceId, qc]);
 
   const {
     data: channelsData,
@@ -166,18 +141,6 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
     setItemCount(allConversationIds.length);
     setFocusedIndex(-1);
   }
-
-  // Open the first conversation when nothing is open; a draft DM counts as open. A plugin
-  // panel the user has open stays over it.
-  const draftOpen = draftDirect !== null;
-  useEffect(() => {
-    if (!selectedId && !draftOpen) {
-      const first = channels[0] ?? messages[0];
-      if (first) {
-        select(first.id, { keepPluginPanel: true });
-      }
-    }
-  }, [selectedId, draftOpen, channels, messages, select]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (isContextMenuKey(e)) {

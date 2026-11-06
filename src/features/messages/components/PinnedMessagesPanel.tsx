@@ -111,6 +111,7 @@ export function PinnedMessagesPanel({
         <button
           type="button"
           onClick={onClose}
+          aria-label="Close pinned messages"
           className="rounded p-1 text-rim-text-muted transition hover:text-rim-text"
         >
           &times;

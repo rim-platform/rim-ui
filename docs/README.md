@@ -17,6 +17,8 @@ them.
   updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
   pane.
+- `navigation.md`: the window width classes, the navigation drawer, and every way into each page
+  and panel.
 - `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.
 - `bots.md`: how the client marks a bot and shows what the person who added it says.
 - `search-ui.md`: the search overlay, server search and the desktop's local search.
