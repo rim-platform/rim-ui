@@ -19,6 +19,23 @@ function show(name = "Claude Code", code = "482917", seconds = 120) {
 }
 
 describe("AgentPairDialogHost", () => {
+  it("gives focus back to where it was when the dialog closes", async () => {
+    render(
+      <>
+        <button type="button">Before</button>
+        <AgentPairDialogHost />
+      </>,
+    );
+    const before = screen.getByRole("button", { name: "Before" });
+    before.focus();
+    show();
+    await vi.waitFor(() =>
+      expect(screen.getByRole("button", { name: "Don't connect" })).toHaveFocus(),
+    );
+    act(() => usePendingPairingStore.setState({ pending: null }));
+    await vi.waitFor(() => expect(before).toHaveFocus());
+  });
+
   beforeEach(() => {
     usePendingPairingStore.setState({ pending: null, approve, refuse });
   });

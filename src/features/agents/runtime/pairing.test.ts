@@ -322,13 +322,14 @@ describe("createPairing", () => {
     expect(await pairing.request("Other")).toEqual(IN_PROGRESS);
   });
 
-  it("keeps a second request out while one is refused and uncollected, past the wait", async () => {
+  it("lets a new request replace a refused one nobody collects, once the wait is over", async () => {
     const { pairing } = setup();
-    const { requestId } = await started(pairing);
+    const { requestId, pollSecret } = await started(pairing);
     pairing.refuse(requestId);
-    expect(await pairing.request("Other")).toEqual(IN_PROGRESS);
+    expect(await pairing.request("Other")).toEqual(TRY_LATER);
     vi.advanceTimersByTime(WAIT_MS + 1);
-    expect(await pairing.request("Other")).toEqual(IN_PROGRESS);
+    expect((await pairing.request("Other")).status).toBe(200);
+    expect(await pairing.poll({ requestId, pollSecret })).toEqual(UNKNOWN);
   });
 
   it("lets a refused request that nobody collects expire", async () => {
@@ -563,8 +564,10 @@ describe("createPairing", () => {
 
     it.each([
       ["control characters", "Cla\u0000ude\u0007 Co\u007Fde", "Claude Code"],
-      ["line breaks and tabs, which are control characters", "Claude\n\tCode", "ClaudeCode"],
+      ["line breaks and tabs, which separate words", "Claude\n\tCode", "Claude Code"],
       ["whitespace between words", "  Claude     Code ", "Claude Code"],
+      ["a newline between words", "Claude\nCode", "Claude Code"],
+      ["a tab and a mark between words", "Claude\t\u200e Code", "Claude Code"],
       ["left-to-right and right-to-left marks", "‎Claude‏ Code؜", "Claude Code"],
       ["bidirectional embeddings and overrides", "‪Claude‫ ‭‮Code‬", "Claude Code"],
       ["bidirectional isolates", "⁦Claude⁧ ⁨Code⁩", "Claude Code"],

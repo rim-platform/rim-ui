@@ -89,7 +89,7 @@ function statusAnswer(status: string, extra: Record<string, unknown> = {}): Pair
  */
 function cleanName(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const collapsed = raw.replace(/\p{C}/gu, "").replace(/\s+/gu, " ").trim();
+  const collapsed = raw.replace(/\s+/gu, " ").replace(/\p{C}/gu, "").replace(/\s+/gu, " ").trim();
   const name = Array.from(collapsed).slice(0, NAME_LIMIT).join("").trim();
   return name === "" ? null : name;
 }
@@ -145,7 +145,8 @@ export function createPairing(deps: PairingDeps): Pairing {
       const name = cleanName(rawName);
       if (name === null) return BAD_NAME;
       settle();
-      if (current && current.phase !== "expired") return IN_PROGRESS;
+      // A person's refusal blocks only for the wait: the program may be gone and never poll it.
+      if (current && current.phase !== "expired" && current.phase !== "refused") return IN_PROGRESS;
       if (now() < retryAt) return TRY_LATER;
       const pollSecret = randomToken(SECRET_BYTES, random);
       const view: PendingView = {

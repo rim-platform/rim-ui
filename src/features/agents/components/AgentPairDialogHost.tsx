@@ -10,7 +10,7 @@ function secondsLeft(expiresAt: number): number {
 }
 
 /** The question a program's request to connect asks the person. */
-function AgentPairDialog({
+function AgentPairQuestion({
   view,
   onApprove,
   onRefuse,
@@ -27,7 +27,7 @@ function AgentPairDialog({
   }, [view.expiresAt]);
 
   return (
-    <Dialog open title="Connect this program to RIM?" maxWidth="max-w-md" onClose={onRefuse}>
+    <>
       <p className="break-words text-sm text-rim-text">
         A program on this computer that calls itself “{view.name}” is asking to connect.
       </p>
@@ -53,22 +53,35 @@ function AgentPairDialog({
         </Button>
       </div>
       <p className="mt-3 text-right text-xs text-rim-text-faint">Expires in {left} s</p>
-    </Dialog>
+    </>
   );
 }
 
-/** Shows the dialog of the request waiting for the person, on every screen of the app. */
+/**
+ * Shows the dialog of the request waiting for the person, on every screen of the app. The dialog
+ * stays mounted while closed, so closing it gives focus back to where it was.
+ */
 export function AgentPairDialogHost() {
   const view = usePendingPairingStore((s) => s.pending);
   const approve = usePendingPairingStore((s) => s.approve);
   const refuse = usePendingPairingStore((s) => s.refuse);
-  if (!view) return null;
   return (
-    <AgentPairDialog
-      key={view.requestId}
-      view={view}
-      onApprove={() => approve(view.requestId)}
-      onRefuse={() => refuse(view.requestId)}
-    />
+    <Dialog
+      open={view !== null}
+      title="Connect this program to RIM?"
+      maxWidth="max-w-md"
+      onClose={() => {
+        if (view) refuse(view.requestId);
+      }}
+    >
+      {view && (
+        <AgentPairQuestion
+          key={view.requestId}
+          view={view}
+          onApprove={() => approve(view.requestId)}
+          onRefuse={() => refuse(view.requestId)}
+        />
+      )}
+    </Dialog>
   );
 }
