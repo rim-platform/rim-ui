@@ -93,6 +93,57 @@ describe("WorkspaceRail", () => {
     expect(screen.getByTitle("Beta")).toHaveTextContent("B");
   });
 
+  it("opens Home from the first button of the rail, which is current while Home is open", async () => {
+    const user = userEvent.setup();
+    useShellStore.getState().reset();
+    renderWithQuery(<WorkspaceRail />);
+    const home = screen.getByRole("button", { name: "Home" });
+    expect(screen.getAllByRole("button")[0]).toBe(home);
+    expect(home).not.toHaveAttribute("aria-current");
+    await user.click(home);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    expect(home).toHaveAttribute("aria-current", "page");
+    useShellStore.getState().reset();
+  });
+
+  it("leaves Home when a workspace is chosen", async () => {
+    const user = userEvent.setup();
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    renderWithQuery(<WorkspaceRail />);
+    await user.click(screen.getByRole("button", { name: "Beta" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+  });
+
+  it("badges Home with the mentions and replies waiting across the workspaces", async () => {
+    useShellStore.getState().reset();
+    routeRequests(requestMock, {
+      "query MyNotifications": (vars) => ({
+        myNotifications: {
+          items: [
+            {
+              id: `n-${vars.serverId}`,
+              serverId: vars.serverId,
+              conversationId: "c1",
+              messageId: "m1",
+              reason: "MENTION",
+              createdAt: "2026-11-06T10:00:00Z",
+              readAt: null,
+              conversation: null,
+              message: null,
+            },
+          ],
+          next: null,
+          pageInfo: { hasNext: false },
+        },
+      }),
+    });
+    renderWithQuery(<WorkspaceRail />);
+    expect(
+      await screen.findByRole("button", { name: "Home (2 mentions and replies)" }),
+    ).toHaveTextContent("2");
+  });
+
   it("renders add workspace button", () => {
     renderWithQuery(<WorkspaceRail />);
     expect(screen.getByTitle("Add workspace")).toBeInTheDocument();

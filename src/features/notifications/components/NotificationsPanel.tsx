@@ -297,20 +297,30 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   );
 }
 
-function NotificationRow({
+/**
+ * One inbox entry as a button: its reason, conversation, time, and the author with a preview of
+ * the message, dotted while unread.
+ *
+ * @param workspaceName - The workspace to name before the conversation, when the list spans more
+ * than one.
+ * @param contextMenu - The entry's context menu bindings, if it has one.
+ */
+export function NotificationRow({
   item,
   resolveName,
   mentionName,
   currentUserId,
   onOpen,
   contextMenu,
+  workspaceName,
 }: {
   item: NotificationItem;
   resolveName: (userId: string) => string;
   mentionName: (id: string) => string | undefined;
   currentUserId: string | undefined;
   onOpen: () => void;
-  contextMenu: ContextMenuBindings;
+  contextMenu?: ContextMenuBindings;
+  workspaceName?: string;
 }) {
   const reason = REASONS[item.reason];
   const Icon = reason.icon;
@@ -345,6 +355,14 @@ function NotificationRow({
           <span className="flex items-center gap-1.5 text-[11px] text-rim-text-faint">
             <span className="shrink-0 whitespace-nowrap">{reason.label}</span>
             <span aria-hidden>·</span>
+            {workspaceName && (
+              <>
+                <span className="min-w-0 max-w-[40%] shrink-0 truncate" title={workspaceName}>
+                  {workspaceName}
+                </span>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <span
               className={cn("min-w-0 truncate", available ? "text-rim-text-muted" : "italic")}
               title={conversation}

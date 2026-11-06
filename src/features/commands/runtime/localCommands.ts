@@ -72,6 +72,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Open Agents",
     "Connect programs, choose what they can read and see their runs",
   ),
+  localCommand("workspace.open_home", "Open Home", "See what needs you across your workspaces"),
   localCommand(
     "workspace.open_audit_log",
     "Open Audit Log",

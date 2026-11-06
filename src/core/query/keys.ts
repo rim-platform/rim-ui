@@ -146,6 +146,7 @@ export const queryKeys = {
   notificationSettings: (serverId?: string) => ["notificationSettings", serverId] as const,
   notifications: (serverId?: string, unreadOnly?: boolean) =>
     ["notifications", serverId, unreadOnly ?? false] as const,
+  homeMentions: (serverId: string) => ["notifications", serverId, "home"] as const,
   unreadNotificationCount: (serverId?: string) => ["unreadNotificationCount", serverId] as const,
   // The relay: contacts, the people the caller blocked, the DM request inbox (keyed by status
   // filter; the `["dmRequests"]` prefix covers every list) and a person's identity as their relay

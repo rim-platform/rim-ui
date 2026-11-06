@@ -1,6 +1,7 @@
 import {
   useInfiniteQuery,
   useMutation,
+  queryOptions,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -413,8 +414,13 @@ export function useJoinRequests(serverId: string | null | undefined, enabled = t
  * @param enabled Whether to fetch at all.
  */
 export function useJoinRequestCount(serverId: string | null | undefined, enabled = true) {
+  return useQuery(joinRequestCountQueryOptions(serverId, enabled));
+}
+
+/** The query behind {@link useJoinRequestCount}. */
+export function joinRequestCountQueryOptions(serverId: string | null | undefined, enabled = true) {
   const id = serverId ?? undefined;
-  return useQuery({
+  return queryOptions({
     queryKey: queryKeys.joinRequestCount(id),
     enabled: Boolean(id) && enabled,
     retry: false,

@@ -161,6 +161,9 @@ const localHandlers: Record<
     if (shell.shellWidth === "narrow") shell.toggleNavDrawer();
     else shell.toggleSidebar();
   },
+  "workspace.open_home": () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+  },
   "workspace.open_audit_log": () => {
     useShellStore.getState().setMainSurface({ kind: "audit-log" });
   },
