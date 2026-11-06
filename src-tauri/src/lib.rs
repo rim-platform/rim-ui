@@ -105,6 +105,7 @@ pub fn run() {
             plugin_host::commands::plugin_execute_command,
             plugin_host::commands::plugin_suggested_keybinds,
             plugin_host::commands::plugin_install_from_git,
+            plugin_host::commands::plugin_pick_folder,
             plugin_host::commands::plugin_install_from_local,
             plugin_host::commands::plugin_trust_fingerprint,
             plugin_host::commands::plugin_update,
