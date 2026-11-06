@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 
+import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { serverInfoQueryClient } from "../../../test/serverInfo";
 import { INCOMING_WEBHOOKS } from "../../updater/api/serverCapabilities";
 import {
@@ -65,6 +67,23 @@ async function enabledButton(name: string) {
   const button = await screen.findByRole("button", { name });
   await waitFor(() => expect(button).toBeEnabled());
   return button;
+}
+
+/**
+ * Presses Tab from where focus is inside `dialog` until it comes back round, and returns what
+ * it reached; every stop must be inside the dialog.
+ */
+async function tabWithin(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+  await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+  const reached: HTMLElement[] = [document.activeElement as HTMLElement];
+  for (let i = 0; i < 150; i += 1) {
+    await user.tab();
+    const active = document.activeElement as HTMLElement;
+    expect(dialog).toContainElement(active);
+    if (reached.includes(active)) break;
+    reached.push(active);
+  }
+  return reached;
 }
 
 async function openNewBot() {
@@ -266,7 +285,7 @@ describe("BotsSettings", () => {
       expect(screen.getByText(/at most 5 tokens/)).toBeInTheDocument();
     });
 
-    it("shows a new token once", async () => {
+    it("shows a new token in place of the Tokens dialog, with no close icon and no Escape, and brings Tokens back on Done", async () => {
       serve([bot(1)], {
         "query BotTokens": () => ({ botTokens: [] }),
         "mutation CreateBotToken": () => ({
@@ -280,6 +299,11 @@ describe("BotsSettings", () => {
       });
       fireEvent.click(screen.getByRole("button", { name: "New token" }));
       expect(await screen.findByDisplayValue(SECRET)).toBeInTheDocument();
+      // Only the show-once dialog is open, and it has no close icon.
+      expect(screen.getAllByRole("dialog")).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.getByDisplayValue(SECRET)).toBeInTheDocument();
       expect(
         JSON.stringify(
           qc
@@ -288,6 +312,17 @@ describe("BotsSettings", () => {
             .map((m) => m.state.data),
         ),
       ).not.toContain(SECRET);
+
+      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      expect(screen.queryByDisplayValue(SECRET)).not.toBeInTheDocument();
+      const tokens = await screen.findByRole("dialog", { name: "Tokens of Bot 1" });
+      // Focus lands inside the Tokens dialog and Tab stays there.
+      await waitFor(() => expect(tokens).toContainElement(document.activeElement as HTMLElement));
+      const user = userEvent.setup();
+      for (let i = 0; i < 12; i += 1) {
+        await user.tab();
+        expect(tokens).toContainElement(document.activeElement as HTMLElement);
+      }
     });
   });
 
@@ -295,31 +330,18 @@ describe("BotsSettings", () => {
     const channels = [
       makeConversation({ id: "c-open", title: "general", memberIds: ["me"] }),
       makeConversation({ id: "c-in", title: "ops", memberIds: ["me", "bot-1"] }),
-      makeConversation({
-        id: "c-priv",
-        title: "secret",
-        isPrivate: true,
-        isMember: true,
-        memberIds: ["me"],
-      }),
-      makeConversation({
-        id: "c-other",
-        title: "elsewhere",
-        isPrivate: true,
-        isMember: false,
-        memberIds: ["u-x"],
-      }),
-      makeConversation({
-        id: "c-enc",
-        title: "sealed",
-        encryptedAt: "2026-10-01T00:00:00Z",
-      }),
+      makeConversation({ id: "c-priv", title: "secret", isPrivate: true, memberIds: ["me"] }),
+      makeConversation({ id: "c-enc", title: "sealed", encryptedAt: "2026-10-01T00:00:00Z" }),
     ];
 
     function serveChannels(extra: Record<string, (v: Record<string, unknown>) => unknown> = {}) {
       serve([bot(1)], {
-        "query Channels(": () => ({
-          channels: { items: channels, pageInfo: { hasNext: false, hasPrev: false } },
+        "query BotChannels": () => ({
+          channels: {
+            items: channels,
+            next: null,
+            pageInfo: { hasNext: false },
+          },
         }),
         ...extra,
       });
@@ -333,9 +355,65 @@ describe("BotsSettings", () => {
       expect(screen.getByRole("checkbox", { name: /general/ })).not.toBeChecked();
       expect(screen.queryByText("sealed")).not.toBeInTheDocument();
       expect(screen.getByText(/lets it read that channel/)).toBeInTheDocument();
-      expect(screen.getAllByText("Private")).toHaveLength(2);
-      expect(screen.getByRole("checkbox", { name: /elsewhere/ })).toBeDisabled();
-      expect(screen.getByText(/You are not in this private channel/)).toBeInTheDocument();
+      expect(screen.getAllByText("Private")).toHaveLength(1);
+      expect(screen.queryByText(/You are not in this private channel/)).not.toBeInTheDocument();
+    });
+
+    it("puts Save and Cancel before the list in Tab order", async () => {
+      serveChannels();
+      renderSettings();
+      fireEvent.click(await screen.findByRole("button", { name: "Channels" }));
+      await screen.findByRole("checkbox", { name: /ops/ });
+      const dialog = screen.getByRole("dialog");
+      const order = Array.from(
+        dialog.querySelectorAll<HTMLElement>("button, input, [tabindex]"),
+      ).map((el) => el.textContent || el.getAttribute("type"));
+      expect(order.indexOf("Save")).toBeLessThan(order.indexOf("checkbox"));
+      expect(order.indexOf("Cancel")).toBeLessThan(order.indexOf("checkbox"));
+    });
+
+    it("loads every page of the list and says when it was cut at 1,000", async () => {
+      const many = (from: number, n: number) =>
+        Array.from({ length: n }, (_, i) =>
+          makeConversation({ id: `c-${from + i}`, title: `chan ${from + i}`, memberIds: ["me"] }),
+        );
+      const cursor = { createdAt: "2026-11-01T00:00:00Z", conversationId: "x" };
+      serve([bot(1)], {
+        "query BotChannels": (v) => {
+          const page = v.cursor ? 2 : 1;
+          return {
+            channels: {
+              items: many(page * 100, page === 1 ? 100 : 5),
+              next: page === 1 ? cursor : null,
+              pageInfo: { hasNext: page === 1 },
+            },
+          };
+        },
+      });
+      renderSettings();
+      fireEvent.click(await screen.findByRole("button", { name: "Channels" }));
+      await screen.findByRole("checkbox", { name: /chan 204/ });
+      expect(screen.getAllByRole("checkbox")).toHaveLength(105);
+      expect(screen.queryByText(/The list was cut/)).not.toBeInTheDocument();
+      expect(callsTo(requestMock, "query BotChannels")).toHaveLength(2);
+    });
+
+    it("stops at 1,000 channels and says so", async () => {
+      serve([bot(1)], {
+        "query BotChannels": () => ({
+          channels: {
+            items: Array.from({ length: 100 }, (_, i) =>
+              makeConversation({ id: `c-${Math.random()}-${i}`, title: `c${i}`, memberIds: [] }),
+            ),
+            next: { createdAt: "2026-11-01T00:00:00Z", conversationId: "x" },
+            pageInfo: { hasNext: true },
+          },
+        }),
+      });
+      renderSettings();
+      fireEvent.click(await screen.findByRole("button", { name: "Channels" }));
+      expect(await screen.findByText(/The list was cut after 1,000/)).toBeInTheDocument();
+      expect(callsTo(requestMock, "query BotChannels")).toHaveLength(10);
     });
 
     it("adds and removes on Save, and names the channel that failed", async () => {
@@ -378,16 +456,18 @@ describe("BotsSettings", () => {
     });
     const channelsHandler = () => ({
       channels: {
+        next: null,
+        pageInfo: { hasNext: false },
         items: [
           makeConversation({ id: "c-open", title: "general", memberIds: ["me"] }),
           makeConversation({ id: "c-free", title: "releases", memberIds: ["me"] }),
         ],
-        pageInfo: { hasNext: false, hasPrev: false },
+        pageInfo: { hasNext: false },
       },
     });
 
     it("is not shown, and not asked for, on a server without incoming_webhooks", async () => {
-      serve([bot(1)], { "query Channels(": channelsHandler });
+      serve([bot(1)], { "query BotChannels": channelsHandler });
       renderSettings({ capabilities: [] });
       await screen.findByText("Bot 1");
       expect(screen.queryByText("Incoming webhooks")).not.toBeInTheDocument();
@@ -396,7 +476,7 @@ describe("BotsSettings", () => {
 
     it("lists webhooks with channel, bot, preset and last use, and confirms before revoking", async () => {
       serve([bot(1)], {
-        "query Channels(": channelsHandler,
+        "query BotChannels": channelsHandler,
         "query IncomingWebhooks": () => ({
           incomingWebhooks: [hook(), hook({ id: "h-2", revokedAt: "x" })],
         }),
@@ -417,7 +497,7 @@ describe("BotsSettings", () => {
 
     async function createHook(preset: "Plain" | "GitHub") {
       serve([bot(1)], {
-        "query Channels(": channelsHandler,
+        "query BotChannels": channelsHandler,
         "query IncomingWebhooks": () => ({ incomingWebhooks: [hook()] }),
         "mutation CreateIncomingWebhook": () => ({
           createIncomingWebhook: { webhook: hook({ id: "h-9" }), token: "rimhook_TOKEN" },
@@ -453,6 +533,87 @@ describe("BotsSettings", () => {
       await createHook("GitHub");
       expect(await screen.findByText(/paste this as the Payload URL/)).toBeInTheDocument();
       expect(screen.getByText(/application\/json, and leave Secret empty/)).toBeInTheDocument();
+    });
+  });
+
+  describe("keyboard", () => {
+    it("reaches every control of the Bots tab and its dialogs with Tab", async () => {
+      serve([bot(1), bot(2, { deactivatedAt: "2026-11-02T00:00:00Z" })], {
+        "query BotTokens": () => ({
+          botTokens: [
+            {
+              id: "t-1",
+              label: "ci",
+              createdAt: "2026-11-01T00:00:00Z",
+              lastUsedAt: null,
+              revokedAt: null,
+            },
+          ],
+        }),
+        "query BotChannels": () => ({
+          channels: {
+            items: [
+              makeConversation({ id: "c-1", title: "general", memberIds: ["me"] }),
+              makeConversation({ id: "c-2", title: "releases", memberIds: ["me"] }),
+            ],
+            next: null,
+            pageInfo: { hasNext: false },
+          },
+        }),
+        "query IncomingWebhooks": () => ({
+          incomingWebhooks: [
+            {
+              id: "h-1",
+              conversationId: "c-1",
+              botUserId: "bot-1",
+              preset: "PLAIN",
+              createdAt: "2026-11-01T00:00:00Z",
+              lastUsedAt: null,
+              revokedAt: null,
+            },
+          ],
+        }),
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      const user = userEvent.setup();
+      await screen.findByText("Bot 1");
+      await screen.findByText(/general · Bot 1 · Plain/);
+
+      const buttons = (root: HTMLElement) =>
+        within(root)
+          .getAllByRole("button")
+          .filter((b) => !b.hasAttribute("disabled"));
+      const page = document.body;
+      await expectReachableByKeyboard(user, [
+        ...buttons(page).filter((b) => !b.closest("details")),
+        screen.getByText(/Deactivated bots/),
+      ]);
+
+      // Each dialog: every control in it is reachable, and Tab stays inside it.
+      for (const name of ["Edit", "Tokens", "Channels", "Deactivate"]) {
+        fireEvent.click(
+          within(screen.getByRole("list", { name: "Bots" })).getByRole("button", { name }),
+        );
+        const dialog = await screen.findByRole("dialog");
+        await waitFor(() =>
+          expect(dialog.querySelectorAll("button, input, select").length).toBeGreaterThan(1),
+        );
+        const targets = Array.from(
+          dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])"),
+        );
+        const reached = await tabWithin(user, dialog);
+        expect(targets.filter((t) => !reached.includes(t))).toEqual([]);
+        fireEvent.keyDown(document, { key: "Escape" });
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      }
+
+      fireEvent.click(await enabledButton("New webhook"));
+      const webhook = await screen.findByRole("dialog");
+      const reached = await tabWithin(user, webhook);
+      const targets = Array.from(
+        webhook.querySelectorAll<HTMLElement>("select, button:not([disabled])"),
+      );
+      expect(targets.filter((t) => !reached.includes(t))).toEqual([]);
     });
   });
 });

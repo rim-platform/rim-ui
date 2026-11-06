@@ -126,12 +126,12 @@ describe("Dialog", () => {
     cancel.mockRestore();
   });
 
-  it("ignores Escape and a press on the backdrop when persistent, and closes from its own button", async () => {
+  it("ignores Escape and a press on the backdrop when persistent, and has no close icon", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     const { container } = render(
       <Dialog open persistent onClose={onClose} title="Keep">
-        <p>Content</p>
+        <button type="button">Done</button>
       </Dialog>,
     );
     await user.keyboard("{Escape}");
@@ -139,7 +139,18 @@ describe("Dialog", () => {
     expect(backdrop).not.toBeNull();
     await user.click(backdrop!);
     expect(onClose).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+  });
+
+  it("wraps a long title inside the dialog and keeps the close button", () => {
+    const title = "A".repeat(64);
+    render(
+      <Dialog open onClose={() => {}} title={title}>
+        <p>Content</p>
+      </Dialog>,
+    );
+    const heading = screen.getByRole("heading", { name: title });
+    expect(heading).toHaveClass("break-words", "min-w-0");
+    expect(screen.getByRole("button", { name: "Close" })).toHaveClass("shrink-0");
   });
 });

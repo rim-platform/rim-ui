@@ -150,7 +150,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
         <WebhooksSection serverId={serverId} bots={bots.data} />
       )}
 
-      {dialog?.kind === "create" && (
+      {!secret && dialog?.kind === "create" && (
         <BotFormDialog
           serverId={serverId}
           onClose={() => setDialog(null)}
@@ -163,7 +163,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
       {dialog?.kind === "edit" && (
         <BotFormDialog serverId={serverId} bot={dialog.bot} onClose={() => setDialog(null)} />
       )}
-      {dialog?.kind === "tokens" && (
+      {!secret && dialog?.kind === "tokens" && (
         <BotTokensDialog
           serverId={serverId}
           bot={dialog.bot}

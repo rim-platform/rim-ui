@@ -60,15 +60,17 @@ for the same people.
 - **Tokens** lists each token's label, when it was made and last used ("Never" when unused), and
   revokes one after a confirmation. A bot has at most 5 tokens that are not revoked. A new token is
   shown once.
-- **Channels** ticks the channels the bot is in and adds or removes it on Save. Encrypted channels
-  are not listed. A private channel the viewer is not in cannot be added to; adding a bot to a
-  private channel lets it read that channel.
+- **Channels** ticks the channels the bot is in and adds or removes it on Save, which sits above the
+  list so Tab reaches it first. Encrypted channels are not listed. A private channel you aren't in
+  doesn't appear here. Adding a bot to a private channel lets it read that channel. The list loads up
+  to 1,000 channels and says when it was cut; the New webhook channel picker does the same.
 - **Incoming webhooks** is listed on a server that lists `incoming_webhooks`. **New webhook** takes a
   channel without an active webhook, an active bot and a preset (Plain or GitHub), and shows the
   URL once. It is built from the address of the server the app is signed in to, never the page's
   own address. For the GitHub preset the dialog says to paste it as the Payload URL under the
   repository's Settings > Webhooks, choose application/json and leave Secret empty.
 
-The token or URL is never kept in the query cache or logged. The dialog that shows it closes only
-through its Done button.
+The token or URL is never kept in the query cache or logged. The dialog that shows it replaces
+the dialog it came from, has no close icon, and closes only through its Done button; the Tokens
+dialog comes back after it.
 

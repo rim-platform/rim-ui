@@ -9,7 +9,7 @@ interface DialogProps {
   onClose: () => void;
   title: string;
   maxWidth?: string;
-  /** Closes only through the dialog's own buttons: a press on the backdrop or Escape does nothing. */
+  /** Closes only through the dialog's own buttons: no close icon, and a press on the backdrop or Escape does nothing. */
   persistent?: boolean;
   children: React.ReactNode;
 }
@@ -123,18 +123,20 @@ export function Dialog({
           className={cn("w-full rounded-xl border border-rim-line bg-rim-panel p-5", maxWidth)}
         >
           {/* Header */}
-          <div className="mb-4 flex items-center justify-between">
-            <h3 id={titleId} className="text-sm font-medium text-rim-text">
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <h3 id={titleId} className="min-w-0 break-words text-sm font-medium text-rim-text">
               {title}
             </h3>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded p-1 text-rim-text-muted transition hover:text-rim-text"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            {!persistent && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="shrink-0 rounded p-1 text-rim-text-muted transition hover:text-rim-text"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {children}

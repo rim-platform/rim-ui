@@ -5,8 +5,8 @@ import { WebhookPreset, type Bot } from "../../../core/graphql/generated/schema-
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeDate } from "../../../shared/utils/formatDate";
-import { useChannels } from "../../conversations/api/useChannels";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
+import { useAllChannels } from "../api/useAllChannels";
 import { useIncomingWebhooks, useRevokeIncomingWebhook } from "../api/botsApi";
 import { NewWebhookDialog } from "./NewWebhookDialog";
 import { ShowOnceDialog } from "./ShowOnceDialog";
@@ -26,7 +26,7 @@ export const GITHUB_SETUP_NOTE =
  */
 export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bot[] }) {
   const webhooks = useIncomingWebhooks(serverId, true);
-  const channels = useChannels(serverId);
+  const channels = useAllChannels(serverId);
   const revoke = useRevokeIncomingWebhook(serverId);
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState<{ url: string; preset: WebhookPreset } | null>(null);
@@ -109,6 +109,7 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
         <NewWebhookDialog
           serverId={serverId}
           channels={freeChannels}
+          channelsCut={channels.data?.truncated}
           bots={activeBots}
           onClose={() => setCreating(false)}
           onCreated={(created) => {

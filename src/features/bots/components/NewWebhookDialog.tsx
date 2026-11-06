@@ -7,12 +7,14 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import type { ConversationSummary } from "../../conversations/types";
 import { createIncomingWebhook, useInvalidateBots } from "../api/botsApi";
 import { webhookUrl } from "../webhookUrl";
-import { channelBlockedReason } from "../channelAccess";
+import { ChannelsCutNotice } from "./ChannelsCutNotice";
 
 interface NewWebhookDialogProps {
   serverId: string;
   /** Channels that may get a webhook: no active one, not encrypted. */
   channels: ConversationSummary[];
+  /** The channel list was cut, so a channel may be missing. */
+  channelsCut?: boolean;
   /** Active bots. */
   bots: Bot[];
   /** Called with the new URL, shown once; the caller shows it and holds it in its state. */
@@ -28,6 +30,7 @@ const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider tex
 export function NewWebhookDialog({
   serverId,
   channels,
+  channelsCut = false,
   bots,
   onCreated,
   onClose,
@@ -39,9 +42,7 @@ export function NewWebhookDialog({
   const [pending, setPending] = useState(false);
   const invalidate = useInvalidateBots(serverId);
 
-  const channel = channels.find((c) => c.id === conversationId);
-  const blocked = channel ? channelBlockedReason(channel) : null;
-  const ready = Boolean(conversationId && botUserId) && !blocked;
+  const ready = Boolean(conversationId && botUserId);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,19 +72,14 @@ export function NewWebhookDialog({
           >
             <option value="">Choose a channel</option>
             {channels.map((c) => (
-              <option key={c.id} value={c.id} disabled={Boolean(channelBlockedReason(c))}>
+              <option key={c.id} value={c.id}>
                 {c.title ?? "Untitled"}
                 {c.isPrivate ? " (private)" : ""}
               </option>
             ))}
           </select>
         </label>
-        {channels.some((c) => channelBlockedReason(c)) && (
-          <p className="-mt-2 text-xs text-rim-text-muted">
-            A private channel you are not in cannot be chosen: you cannot post where you cannot
-            read.
-          </p>
-        )}
+        {channelsCut && <ChannelsCutNotice />}
         <label className="block">
           <span className={LABEL_CLASS}>Bot</span>
           <select
