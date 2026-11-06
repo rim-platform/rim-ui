@@ -39,7 +39,8 @@ function grantsToSave(
   return grants;
 }
 
-function Check({
+/** A checkbox whose label holds `children`. */
+export function Check({
   checked,
   disabled = false,
   onChange,
@@ -64,7 +65,8 @@ function Check({
   );
 }
 
-function Spinner() {
+/** Shows that a list is loading. */
+export function Spinner() {
   return (
     <div role="status" aria-label="Loading" className="flex justify-center py-3">
       <Loader2 className="h-4 w-4 animate-spin text-rim-text-muted" />

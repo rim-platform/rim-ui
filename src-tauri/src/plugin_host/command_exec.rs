@@ -441,6 +441,7 @@ mod tests {
             arguments: vec![],
             ai_callable: false,
             output_schema: None,
+            read_only: false,
         }
     }
 

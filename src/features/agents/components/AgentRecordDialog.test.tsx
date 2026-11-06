@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({ servers: [{ id: "w1", name: "Acme" }] }));
 vi.mock("../../workspaces/api/useMyServers", () => ({
   useMyServers: () => ({ data: mocks.servers }),
 }));
+vi.mock("../../plugins/api/usePluginList", () => ({
+  useInstalledPlugins: () => ({
+    data: [{ plugin_id: "dev.example.pods", display_name: "Po\u202Eds" }],
+  }),
+}));
 
 import { queryKeys } from "../../../core/query/keys";
 import { CLEARED_TOOL, useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordStore";
@@ -19,6 +24,7 @@ const AGENT: ConnectedAgent = {
   tokenHash: "hash",
   pairedAt: "2026-11-06T10:00:00.000Z",
   grants: {},
+  pluginApprovals: {},
 };
 
 const AT = "2026-11-06T10:00:00.000Z";
@@ -217,6 +223,84 @@ describe("AgentRecordDialog", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(useAgentRecordStore.getState().entries).toHaveLength(1);
     expect(lines()).toHaveLength(1);
+  });
+
+  describe("plugin commands", () => {
+    const POD = { pluginId: "dev.example.pods", commandId: "list" };
+
+    it.each([
+      ["done", "Ran"],
+      ["asked", "Asked to run"],
+      ["proposed", "Suggested"],
+      ["discarded", "You discarded it"],
+      ["expired", "Expired"],
+      ["busy", "You were busy"],
+      ["refused", "Refused"],
+    ] as const)("words %s as %s, with the plugin's name shown safely", (change, label) => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            change,
+            channelId: null,
+            plugin: POD,
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · ${label} · Po⟦U+202E⟧ds list`]);
+    });
+
+    it("names the channel a command ran in", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({ tool: "rim_run_plugin_command", change: "done", plugin: POD, messageIds: [] }),
+        ],
+      });
+      show();
+      expect(lines()[0]).toMatch(/Ran · Po⟦U\+202E⟧ds list · #/);
+    });
+
+    it("words a refused run with no change, and falls back on ids", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            refused: true,
+            channelId: null,
+            plugin: { pluginId: "dev.example.gone", commandId: "list" },
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Refused · dev.example.gone list`]);
+    });
+
+    it("words a call that gave no usable plugin id", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            refused: true,
+            channelId: null,
+            plugin: { pluginId: "", commandId: "" },
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Refused · an unknown plugin`]);
+    });
+
+    it("words the list for what it is", () => {
+      useAgentRecordStore.setState({
+        entries: [entry({ tool: "rim_list_plugin_commands", channelId: null, messageIds: [] })],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Read · the plugin commands approved for it`]);
+    });
   });
 
   it("offers to clear even when only another agent has entries", () => {

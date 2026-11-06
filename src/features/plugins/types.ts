@@ -99,6 +99,8 @@ export interface PluginCommandInfo {
   keybind_capable: boolean;
   dangerous: boolean;
   ai_callable: boolean;
+  /** The plugin's claim that the command changes nothing. RIM cannot verify it. */
+  read_only: boolean;
   arguments: PluginCommandArgument[];
   /** Context kinds the command runs in (`conversation`, `message`, `workspace`). */
   required_context?: string[];
@@ -182,6 +184,8 @@ export interface PluginInfo {
   ai_callable_commands: string[];
   /** True when the manifest changed since last consent — UI must prompt re-approval. */
   ai_consent_required: boolean;
+  /** The hash of what was installed, which an agent's approval is tied to. */
+  manifest_hash: string;
   /**
    * True when the on-disk bundle fingerprint differs from the TOFU fingerprint
    * recorded at install time.  The UI must surface a warning and require the user

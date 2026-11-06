@@ -93,6 +93,7 @@ export function installedHello(
     approved_ai_commands: [],
     ai_callable_commands: [],
     ai_consent_required: false,
+    manifest_hash: hash,
     fingerprint_changed: false,
     runtime_kind: "WebSandboxed",
     source: {

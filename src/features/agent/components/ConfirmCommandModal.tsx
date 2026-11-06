@@ -513,8 +513,52 @@ function textSize(text: string): string {
 }
 
 /**
- * What a program outside RIM asks to do: the warning, what it acts on and the whole text. Text is
- * rendered as plain text, with invisible characters shown by name; what is sent stays exact.
+ * The arguments a program outside RIM asks to run a command with, each one whole and with secrets
+ * masked, in a box that scrolls.
+ */
+function OutsideAgentArgs({ args }: { args: Record<string, unknown> }) {
+  const shown = useMemo(
+    () =>
+      Object.entries(maskForDisplay(args)).map(
+        ([name, value]) =>
+          [showInvisibleCharacters(name), showInvisibleCharacters(formatArgValue(value))] as const,
+      ),
+    [args],
+  );
+  if (shown.length === 0) {
+    return (
+      <div className="text-xs italic text-rim-text-faint" data-testid="outside-agent-args">
+        (no arguments)
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="text-xs text-rim-text-muted" data-testid="outside-agent-args-size">
+        {textSize(shown.map(([, value]) => value).join("\n"))}
+      </div>
+      <dl
+        role="group"
+        aria-label="The arguments"
+        tabIndex={0}
+        className="max-h-64 space-y-1 overflow-y-auto rounded border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
+        data-testid="outside-agent-args"
+      >
+        {shown.map(([name, value]) => (
+          <div key={name}>
+            <dt className="break-words font-mono text-xs text-rim-text-muted">{name}</dt>
+            <dd className="whitespace-pre-wrap break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  );
+}
+
+/**
+ * What a program outside RIM asks to do: the warning, what it acts on, what a plugin's author says
+ * about it, and the whole text or arguments. Text is rendered as plain text, with invisible
+ * characters shown by name; what is sent stays exact.
  */
 function OutsideAgentDetails({
   outside,
@@ -545,6 +589,24 @@ function OutsideAgentDetails({
           </Fragment>
         ))}
       </dl>
+      {outside.pluginWords && (
+        <div
+          role="group"
+          aria-label="In the plugin's words"
+          tabIndex={0}
+          className="max-h-32 overflow-y-auto text-sm"
+          data-testid="outside-agent-plugin-words"
+        >
+          <div className="text-xs text-rim-text-muted">In the plugin&apos;s words:</div>
+          <div className="whitespace-pre-wrap break-words text-rim-text">
+            {showInvisibleCharacters(outside.pluginWords.title)}
+          </div>
+          <div className="whitespace-pre-wrap break-words text-xs text-rim-text-muted">
+            {showInvisibleCharacters(outside.pluginWords.description)}
+          </div>
+        </div>
+      )}
+      {outside.args !== undefined && <OutsideAgentArgs args={outside.args} />}
       {shownText !== null && (
         <div className="text-xs text-rim-text-muted" data-testid="outside-agent-text-size">
           {textSize(outside.text ?? "")}

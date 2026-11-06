@@ -164,6 +164,18 @@ describe("manifest rules", () => {
     ).toThrow("WebSandboxed plugins cannot run programs or read files; use DesktopLocalProcess");
   });
 
+  it("reads read_only, false by default, and refuses it with dangerous", () => {
+    const base = vectors.vectors[0].manifest;
+    const command = { id: "c", title: "C", description: "" };
+    const read = (fields: object) =>
+      validateManifest({ ...base, commands: [{ ...command, ...fields }] }).commands[0].read_only;
+    expect(read({})).toBe(false);
+    expect(read({ read_only: true })).toBe(true);
+    expect(() => read({ read_only: true, dangerous: true })).toThrow(
+      "command `c` cannot be both read_only and dangerous",
+    );
+  });
+
   it("names sites without the default port", () => {
     expect(siteOf(parseNetworkOrigin("https://api.github.com:443"))).toBe("api.github.com");
     expect(siteOf(parseNetworkOrigin("wss://stream.example.com:8443"))).toBe(

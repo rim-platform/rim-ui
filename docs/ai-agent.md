@@ -99,7 +99,7 @@ workspace may run:
   checkboxes, **Approve all** and **Revoke all** change that, and the first approval asks in
   **Grant AI Access?** (**Grant Access**). **Revoke all grants** takes back every plugin's
   approvals. The agent calls an approved command without asking each time, except a dangerous
-  one, which it can only propose: it tells you, and you run it from the plugin's panel.
+  one, which it can only propose: it tells you, and you run it yourself in RIM.
   [Using a plugin](plugins.md#using-a-plugin) has the rest.
 
 It never sees user commands, macros or any command not marked callable. Kept off the AI surface on
@@ -237,7 +237,7 @@ is off by default. It is optional, and RIM works the same without it. The web ap
   program reaching RIM. It takes nothing back: what the program has already read stays with it.
 
 A connected program can read only what you grant it, and it can change nothing without you
-confirming that one change:
+confirming that one change, unless a plugin says a command you approved only reads:
 
 - **Grants.** Everything starts off. **Choose what it can read** on a program's row gives that
   program one or more channels, or **All channels you can see** in a workspace. That includes private
@@ -245,9 +245,10 @@ confirming that one change:
   a grant at any time, and the change applies to the program's next call. Grants stay on this
   device, sealed with your account. Only workspaces on your own server are offered: one hosted on
   another server can't be granted yet.
-- **What it can ask.** Five tools, over the Model Context Protocol: `rim_list_workspaces`,
-  `rim_list_channels`, `rim_read_messages`, `rim_search_messages` and `rim_send_message`. Each acts
-  on the workspace it names, whichever one you have open. A message comes with its id, channel,
+- **What it can ask.** Seven tools, over the Model Context Protocol: `rim_list_workspaces`,
+  `rim_list_channels`, `rim_read_messages`, `rim_search_messages`, `rim_send_message`,
+  `rim_list_plugin_commands` and `rim_run_plugin_command`. Each acts on the workspace it names,
+  whichever one you have open. A message comes with its id, channel,
   thread, the author's display name, its text, its times, and each attachment's name, type and size.
   Text that people wrote is marked untrusted, which makes it less able to steer the program but
   cannot make that impossible.
@@ -274,9 +275,27 @@ confirming that one change:
   goes out under your name, and the others in the channel are not told a program wrote it. The audit
   log records that an agent started it, which an Owner or Moderator can read. The server's AI
   command switch applies: on a server that has it off, sending is refused before you're asked.
+- **Plugin commands.** Nothing is approved to start with, and what you approved for the agent above
+  doesn't carry over. **Choose its plugin commands** on a program's row lists, for each turned-on
+  plugin, the commands it offers to agents, and you tick them one by one. A command the plugin
+  marks `read_only` runs without asking. That is the plugin's claim: RIM can't check it, and the
+  screen says so. Any other approved command opens a dialog like the one for sending, with the
+  plugin, the command, what the plugin says about it marked as the plugin's words, and every argument
+  in full, except values that look like secrets, which are masked. Discards, expiries, the 10 seconds
+  after them and a dialog already being open work as they do for sending, and the 10 seconds cover
+  both. A dangerous command is only suggested: the program tells you, and you run it yourself in RIM. "Uses:" lists the capabilities a command needs, and the plugin's heading
+  lists all it can use. A plugin holding `chat.read` can read every conversation you can and return it, whatever you chose the program can read, and the screen warns of this. One holding `chat.read.encrypted` can read an encrypted conversation
+  itself and return it, and the screen warns of this. When a plugin's manifest changes, its approvals stop working and the screen asks
+  you to choose again. The program gives any ids a command needs, and a command never uses what you
+  have open. One that needs a workspace or a conversation, or is given a `workspace_id` or `conversation_id`,
+  runs only where the program has a grant. A plugin can name such an argument anything else, or read
+  by itself what its capabilities allow, and a grant can't limit that.
+  What a command returns goes to the program marked untrusted, up to 512 KiB. A refusal reads the
+  same whether a command isn't approved, its plugin changed or is turned off, or it doesn't exist.
 - **The record.** **What it was given** lists what RIM handed to that program, what it asked to send
-  and what it refused: when, which tool, which channel, how many messages and their ids, and how a
-  request to send ended, with the message's id if it went out. **What agents were given** lists it
+  or run and what it refused: when, which tool, which channel, how many messages and their ids, how a
+  request to send ended, with the message's id if it went out, and which plugin command was run,
+  asked for or suggested. It never holds a command's arguments or what it returned. **What agents were given** lists it
   for every program, including those since disconnected. It holds no message text and no search
   text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most
   500 refusals, so a program can't push out what another was given, or bury what it was given in

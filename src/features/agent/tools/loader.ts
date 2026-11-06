@@ -403,6 +403,7 @@ function injectPluginTools(plugins: ReadonlyArray<PluginInfo>): void {
         keybind_capable: false,
         dangerous: false,
         ai_callable: true,
+        read_only: false,
         arguments: [],
       };
       const name = pluginToolName(plugin.manifest_id, commandId);

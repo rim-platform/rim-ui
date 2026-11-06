@@ -222,6 +222,7 @@ export function createPairing(deps: PairingDeps): Pairing {
           tokenHash,
           pairedAt: new Date(now()).toISOString(),
           grants: {},
+          pluginApprovals: {},
         },
       };
       request.deadline = now() + LIFETIME_MS;

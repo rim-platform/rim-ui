@@ -3023,6 +3023,113 @@
           }
         ]
       }
+    },
+    {
+      "name": "command marked read_only",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list_pods",
+            "title": "List pods",
+            "description": "Lists pods.",
+            "read_only": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "command marked read_only: false and dangerous",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list_pods",
+            "title": "List pods",
+            "description": "Lists pods.",
+            "read_only": false,
+            "dangerous": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "command both read_only and dangerous",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list_pods",
+            "title": "List pods",
+            "description": "Lists pods.",
+            "read_only": true,
+            "dangerous": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "command with read_only of the wrong type",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list_pods",
+            "title": "List pods",
+            "description": "Lists pods.",
+            "read_only": "yes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "command with a null read_only",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.pods",
+        "display_name": "Pods",
+        "version": "0.1.0",
+        "description": "Lists pods.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "commands": [
+          {
+            "id": "list_pods",
+            "title": "List pods",
+            "description": "Lists pods.",
+            "read_only": null
+          }
+        ]
+      }
     }
   ]
 }

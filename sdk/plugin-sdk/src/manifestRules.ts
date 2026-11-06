@@ -61,6 +61,8 @@ export interface ManifestCommand {
   arguments: unknown[];
   ai_callable: boolean;
   output_schema: unknown;
+  /** The plugin's claim that the command changes nothing. */
+  read_only: boolean;
 }
 
 export interface ManifestPanel {
@@ -248,6 +250,7 @@ function parseShape(raw: unknown): PluginManifest {
         arguments: withDefault(c, "arguments", [], asArray, at),
         ai_callable: withDefault(c, "ai_callable", false, asBool, at),
         output_schema: c.output_schema ?? null,
+        read_only: withDefault(c, "read_only", false, asBool, at),
       };
     }),
     keybind_suggestions: objects(raw, "keybind_suggestions", where).map((k, i) => {
@@ -761,7 +764,8 @@ export interface InstallContext {
  * (an encrypted chat capability with its plain one), commands that require only
  * declared capabilities, `network_origins`, a web plugin's entrypoint and panel
  * ids, no argument named like one the host adds from a required context, the
- * `settings_schema` rules, and the AI surface's install-id leak check.
+ * `settings_schema` rules, no command both `read_only` and `dangerous`, and the AI
+ * surface's install-id leak check.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
   if (RESERVED_ID_PREFIXES.some((prefix) => manifest.plugin_id.startsWith(prefix))) {
@@ -783,6 +787,9 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
   for (const command of manifest.commands) checkContextArguments(command);
   validateSettingsSchema(manifest.settings_schema);
   for (const command of manifest.commands) {
+    if (command.read_only && command.dangerous) {
+      throw new ManifestError(`command \`${command.id}\` cannot be both read_only and dangerous`);
+    }
     if (command.ai_callable) checkAiCommand(command);
   }
 }

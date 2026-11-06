@@ -49,6 +49,9 @@ pub struct PluginInfo {
     /// True when the manifest changed since the last consent; the UI must ask
     /// for approval again.
     pub ai_consent_required: bool,
+    /// The manifest's content hash, which an agent's approval is tied to. Empty
+    /// when the manifest could not be read.
+    pub manifest_hash: String,
     /// True when the bundle fingerprint on disk differs from the one recorded and
     /// trusted at install. The UI must surface a warning and require the user to
     /// explicitly trust the new version before spawning.
@@ -137,6 +140,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .map(|m| m.ai_callable_command_ids())
                 .unwrap_or_default(),
             ai_consent_required,
+            manifest_hash: manifest.map(|m| m.content_hash()).unwrap_or_default(),
             fingerprint_changed,
             current_fingerprint,
             context_actions: manifest
@@ -1076,6 +1080,56 @@ pub async fn plugin_run_ai_command(
     Ok(result.payload)
 }
 
+/// Runs a command for an agent outside RIM. The UI holds that agent's approval
+/// and passes the manifest hash it was given for; the hash, the `ai_callable`
+/// flag and `dangerous` are checked here. It runs with `Initiator::Agent`.
+/// Returns the plugin's result payload.
+///
+/// # Errors
+///
+/// [`PluginCommandError`] serialized as `{ kind, message, data? }`:
+/// `LIFECYCLE_ERROR` for a manifest or command the approval does not cover,
+/// `CONFIRMATION_REQUIRED` for a dangerous command, and the failures of
+/// [`command_exec::execute`].
+#[tauri::command]
+pub async fn plugin_run_outside_agent_command(
+    plugin_id: String,
+    command_id: String,
+    input: serde_json::Value,
+    approved_manifest_hash: String,
+    state: State<'_, PluginHostState>,
+) -> Result<serde_json::Value, PluginCommandError> {
+    check_outside_agent(&state, &plugin_id, &command_id, &approved_manifest_hash)?;
+
+    let result = command_exec::execute(
+        &state,
+        &plugin_id,
+        &command_id,
+        input,
+        false,
+        Some(&plugin_id),
+        Initiator::Agent,
+    )
+    .await?;
+    Ok(result.payload)
+}
+
+/// The same checks for a `WebSandboxed` plugin's command, which the UI then runs
+/// itself.
+///
+/// # Errors
+///
+/// The [`PluginCommandError`] of the check that refuses.
+#[tauri::command]
+pub fn plugin_check_outside_agent_command(
+    plugin_id: String,
+    command_id: String,
+    approved_manifest_hash: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), PluginCommandError> {
+    check_outside_agent(&state, &plugin_id, &command_id, &approved_manifest_hash)
+}
+
 /// The signed-in user, as the UI reports it to the plugin host.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1183,6 +1237,43 @@ fn check_ai_consent(
         );
         return Err(LifecycleError::UnknownAiCommand(command_id.to_string()));
     }
+    Ok(())
+}
+
+/// Checks a command an agent outside RIM asks for: the manifest is the one the
+/// approval was given for, and it declares the command as `ai_callable` and not
+/// `dangerous`. The built-in agent's approvals play no part.
+fn check_outside_agent(
+    state: &PluginHostState,
+    plugin_id: &str,
+    command_id: &str,
+    approved_manifest_hash: &str,
+) -> Result<(), PluginCommandError> {
+    let manifests = state
+        .manifests
+        .lock()
+        .map_err(|_| PluginCommandError::LockPoisoned)?;
+    let manifest = manifests
+        .get(plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?;
+    if manifest.content_hash() != approved_manifest_hash {
+        return Err(LifecycleError::AiConsentRequired.into());
+    }
+    let command = manifest
+        .commands
+        .iter()
+        .find(|command| command.id == command_id && command.ai_callable)
+        .ok_or_else(|| LifecycleError::UnknownAiCommand(command_id.to_string()))?;
+    if command.dangerous {
+        return Err(PluginCommandError::ConfirmationRequired(
+            command_id.to_string(),
+        ));
+    }
+    log::warn!(
+        "[AUDIT] event=plugin_outside_agent_invocation plugin_id={} command_id={}",
+        plugin_id,
+        command_id
+    );
     Ok(())
 }
 
@@ -2006,6 +2097,95 @@ mod tests {
             .unwrap();
         assert!(state_after.values.is_empty());
         assert_eq!(state_after.secrets.get("token"), Some(&false));
+    }
+
+    /// A host with `dev.example.outside` installed, declaring an `ai_callable`
+    /// command, a dangerous one and one not offered to agents, and the hash of its
+    /// manifest.
+    fn outside_agent_host() -> (settings::SettingsFixture, String) {
+        let schema = serde_json::json!({ "type": "object", "properties": {} });
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.outside",
+            "display_name": "Outside",
+            "version": "1.0.0",
+            "description": "test",
+            "author": null,
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main",
+            "commands": [
+                { "id": "run", "title": "Run", "description": "", "ai_callable": true, "output_schema": schema },
+                { "id": "wipe", "title": "Wipe", "description": "", "ai_callable": true, "dangerous": true, "output_schema": schema },
+                { "id": "local", "title": "Local", "description": "" },
+            ],
+        }))
+        .unwrap();
+        let hash = manifest.content_hash();
+        (settings::SettingsFixture::new(vec![manifest]), hash)
+    }
+
+    const OUTSIDE: &str = "dev.example.outside";
+
+    #[test]
+    fn an_outside_agent_passes_with_the_approved_hash_and_no_built_in_consent() {
+        let (host, hash) = outside_agent_host();
+        let approved = {
+            let store = host.state.store.lock().unwrap();
+            store.get(OUTSIDE).unwrap().approved_ai_commands.clone()
+        };
+        assert!(approved.is_empty());
+        check_outside_agent(&host.state, OUTSIDE, "run", &hash).unwrap();
+    }
+
+    #[test]
+    fn the_built_in_gate_stays_closed_for_what_an_outside_agent_may_run() {
+        let (host, hash) = outside_agent_host();
+        check_outside_agent(&host.state, OUTSIDE, "run", &hash).unwrap();
+        assert!(check_ai_consent(&host.state, OUTSIDE, "run").is_err());
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_changed_hash() {
+        let (host, _) = outside_agent_host();
+        let error = check_outside_agent(&host.state, OUTSIDE, "run", "another").unwrap_err();
+        assert!(matches!(
+            error,
+            PluginCommandError::Lifecycle(LifecycleError::AiConsentRequired)
+        ));
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_command_not_offered_to_agents() {
+        let (host, hash) = outside_agent_host();
+        for command in ["local", "absent"] {
+            let error = check_outside_agent(&host.state, OUTSIDE, command, &hash).unwrap_err();
+            assert!(matches!(
+                error,
+                PluginCommandError::Lifecycle(LifecycleError::UnknownAiCommand(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_dangerous_command_as_needing_confirmation() {
+        let (host, hash) = outside_agent_host();
+        let error = check_outside_agent(&host.state, OUTSIDE, "wipe", &hash).unwrap_err();
+        assert!(matches!(error, PluginCommandError::ConfirmationRequired(_)));
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["kind"],
+            "CONFIRMATION_REQUIRED"
+        );
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_an_unknown_plugin() {
+        let (host, hash) = outside_agent_host();
+        let error =
+            check_outside_agent(&host.state, "dev.example.other", "run", &hash).unwrap_err();
+        assert!(matches!(
+            error,
+            PluginCommandError::Lifecycle(LifecycleError::NotFound(_))
+        ));
     }
 
     const HELLO: &str = "dev.example.hello";
