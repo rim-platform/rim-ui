@@ -42,6 +42,7 @@ import {
 } from "../../features/conversations/state/directOrigin";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
+import { NavMenuButton } from "./NavMenuButton";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
 export function ConversationHeader() {
@@ -56,6 +57,7 @@ function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
   return (
     <div className="flex h-10 items-center border-b border-rim-line px-4">
       <div className="flex min-w-0 items-center gap-3">
+        <NavMenuButton />
         <BackToWorkspaceButton />
         <Avatar
           url={peer.avatarUrl}
@@ -172,6 +174,7 @@ function SelectedConversationHeader() {
   return (
     <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
       <div className="flex min-w-0 items-center gap-3">
+        <NavMenuButton />
         <BackToWorkspaceButton />
         {dmOtherUserId ? (
           <Avatar
@@ -188,7 +191,7 @@ function SelectedConversationHeader() {
         ) : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-rim-text">
+            <h2 className="truncate text-sm font-medium text-rim-text">
               {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
             </h2>
             {isChannel && conversation && (
@@ -243,7 +246,7 @@ function SelectedConversationHeader() {
         </div>
       </div>
       {conversationId && (
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {canInvite && <InviteButton onClick={() => setInviteOpen(true)} />}
           {isChannel && workspaceId && (
             <LensPicker serverId={workspaceId} conversationId={conversationId} />

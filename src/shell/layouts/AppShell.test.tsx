@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -113,7 +114,9 @@ vi.mock("../../features/workspaces/components/WorkspaceSelector", () => ({
 vi.mock("../../features/messages/components/MessageTimeline", () => ({
   MessageTimeline: () => null,
 }));
-vi.mock("../../features/threads/components/ThreadPanel", () => ({ ThreadPanel: () => null }));
+vi.mock("../../features/threads/components/ThreadPanel", () => ({
+  ThreadPanel: () => <div data-testid="thread-panel" />,
+}));
 vi.mock("../../features/conversations/components/ConversationInvitation", () => ({
   InvitationGate: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -144,12 +147,14 @@ vi.mock("../../features/plugins/components/PluginSlotContainer", () => ({
 vi.mock("../components/WorkspaceRail", () => ({
   WorkspaceRail: () => <div data-testid="workspace-rail" />,
 }));
-vi.mock("../components/SideRail", () => ({ SideRail: () => null }));
-vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => null }));
+vi.mock("../components/SideRail", () => ({ SideRail: () => <div data-testid="side-rail" /> }));
+vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => <div data-testid="tool-panel" /> }));
 vi.mock("../components/ConversationHeader", () => ({
   ConversationHeader: () => <div data-testid="conversation-header" />,
 }));
-vi.mock("../../features/settings/components/SettingsPage", () => ({ SettingsPage: () => null }));
+vi.mock("../../features/settings/components/SettingsPage", () => ({
+  SettingsPage: () => <div data-testid="settings-page" />,
+}));
 vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
@@ -394,5 +399,186 @@ describe("AppShell — the unlock gate", () => {
     renderShell();
     expect(screen.getByRole("status")).toHaveTextContent("Restoring session...");
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppShell — narrow and medium windows", () => {
+  let observers: ((width: number) => void)[] = [];
+  let width = 1400;
+
+  beforeEach(() => {
+    observers = [];
+    pinnedShouldThrow = false;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: ResizeObserverCallback;
+        constructor(callback: ResizeObserverCallback) {
+          this.callback = callback;
+        }
+        observe() {
+          observers.push((next) =>
+            this.callback(
+              [{ contentRect: { width: next } } as ResizeObserverEntry],
+              this as unknown as ResizeObserver,
+            ),
+          );
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => ({ width }) as DOMRect,
+    );
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    pluginList.data = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useShellStore.setState({ sidebarCollapsed: false });
+  });
+
+  function renderAt(px: number) {
+    width = px;
+    return renderShell();
+  }
+
+  function resizeTo(px: number) {
+    act(() => observers.forEach((fire) => fire(px)));
+  }
+
+  it("keeps every panel beside the conversation in a wide window", () => {
+    useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
+    renderAt(1400);
+    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("thread-panel")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+  });
+
+  it("opens the thread over the conversation in a medium window and keeps the side panel", async () => {
+    const user = userEvent.setup();
+    renderAt(900);
+    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
+
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+
+    const dialog = screen.getByRole("dialog", { name: "Thread" });
+    expect(within(dialog).getByTestId("thread-panel")).toBeInTheDocument();
+    expect(dialog).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().isThreadOpen).toBe(false);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("opens pinned messages and a tool-panel plugin as overlays in a medium window", async () => {
+    const user = userEvent.setup();
+    pluginList.data = [
+      {
+        plugin_id: "p",
+        manifest_id: "p",
+        display_name: "P",
+        version: "1.0.0",
+        description: "",
+        enabled: true,
+        capabilities: [],
+        approved_capabilities: ["ui.panel"],
+        approved_ai_commands: [],
+        ai_callable_commands: [],
+        ai_consent_required: false,
+        fingerprint_changed: false,
+        panels: [{ id: "notes", title: "Notes" }],
+      },
+    ];
+    useShellStore.setState({ pinnedPanelOpen: true });
+    useShellStore.getState().openPluginPanel("p", "notes", "tool_panel");
+    renderAt(900);
+
+    const pins = screen.getByRole("dialog", { name: "Pinned messages" });
+    expect(within(pins).getByTestId("pinned-panel")).toBeInTheDocument();
+    const plugin = screen.getByRole("dialog", { name: "Notes" });
+    expect(within(plugin).getByTestId("plugin-slot-notes")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().pinnedPanelOpen).toBe(false);
+  });
+
+  it("puts the navigation in a drawer in a narrow window", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ mainSurface: { kind: "settings" } });
+    renderAt(600);
+    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    expect(within(drawer).getByTestId("workspace-rail")).toBeInTheDocument();
+    expect(within(drawer).getByTestId("side-rail")).toBeInTheDocument();
+    expect(drawer).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveFocus();
+  });
+
+  it("shows the conversation list in the drawer and closes it when a conversation is chosen", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    expect(
+      within(screen.getByRole("dialog", { name: "Navigation" })).getByTestId("tool-panel"),
+    ).toBeInTheDocument();
+
+    act(() => useShellStore.getState().setSelectedConversationId("conv-2"));
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const backdrop = document.querySelector('[aria-hidden="true"].absolute') as HTMLElement;
+    await user.click(backdrop);
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("fills the main area with a thread in a narrow window", () => {
+    useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
+    renderAt(600);
+    expect(screen.getByRole("dialog", { name: "Thread" }).className).toContain("inset-0");
+  });
+
+  it("follows the window as it is resized and never writes the saved sidebar choice", () => {
+    useShellStore.setState({ sidebarCollapsed: true });
+    renderAt(1400);
+    expect(useShellStore.getState().shellWidth).toBe("wide");
+
+    resizeTo(600);
+    expect(useShellStore.getState().shellWidth).toBe("narrow");
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+
+    resizeTo(1400);
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+    expect(useShellStore.getState().sidebarCollapsed).toBe(true);
+    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+  });
+
+  it("opens the drawer when the tool panel is asked for in a narrow window", () => {
+    renderAt(600);
+    act(() => useShellStore.getState().setShowNewMessagePicker(true));
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
   });
 });
