@@ -80,6 +80,7 @@ export const appAgentChanges = createAgentChanges({
   isDirectSpace,
   connected,
   channelName,
+  busy: () => useConfirmationModalStore.getState().request !== null,
   post: async ({ workspaceId, channelId, text, proof }) => {
     const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
       EXECUTE_COMMAND_MUTATION,
@@ -87,6 +88,7 @@ export const appAgentChanges = createAgentChanges({
         input: {
           commandId: "chat.post_message",
           args: { server_id: workspaceId, conversation_id: channelId, text },
+          commandContext: { workspaceId, conversationId: channelId },
           initiator: CommandInitiator.AGENT,
           ...(proof ? { confirmation: proof } : {}),
         },

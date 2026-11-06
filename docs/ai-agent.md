@@ -246,11 +246,11 @@ confirming that one change:
   device, sealed with your account. Only workspaces on your own server are offered: one hosted on
   another server can't be granted yet.
 - **What it can ask.** Five tools, over the Model Context Protocol: `rim_list_workspaces`,
-  `rim_list_channels`, `rim_read_messages`, `rim_search_messages` and `rim_send_message`. The first
-  four read the workspace they name, whichever one you have open. A message comes with its id, channel, thread, the author's
-  display name, its text, its times, and each attachment's name, type and size. Text that people
-  wrote is marked untrusted, which makes it less able to steer the program but cannot make that
-  impossible.
+  `rim_list_channels`, `rim_read_messages`, `rim_search_messages` and `rim_send_message`. Each acts
+  on the workspace it names, whichever one you have open. A message comes with its id, channel,
+  thread, the author's display name, its text, its times, and each attachment's name, type and size.
+  Text that people wrote is marked untrusted, which makes it less able to steer the program but
+  cannot make that impossible.
 - **Where it reads from.** The messages stored on this device. A channel not stored yet gets a
   refusal saying to try again shortly, and RIM starts storing it. A channel you can no longer see
   is refused, and a change can take up to 30 seconds to show. A search of a whole workspace looks at
@@ -262,9 +262,9 @@ confirming that one change:
 - **Sending.** A program can ask to send a message to a channel its grant covers, and nowhere else:
   encrypted conversations, direct messages and groups are refused the same way, and nothing is sent.
   The app comes forward with a dialog showing the program's name, the workspace, the channel and the
-  whole text, with invisible and direction-changing characters shown by name. The text is what you
-  are confirming, and the program may have read something meant to steer it, so read it. **Run
-  anyway** stays disabled for the first second, so a click or key press meant for something else
+  whole text with its length, with invisible and direction-changing characters shown by name. The
+  text is what you are confirming, and the program may have read something meant to steer it, so
+  read it. **Send** stays disabled for the first second, so a click or key press meant for something else
   can't answer it. Cancel, Close and Escape discard the message, and if you don't answer it expires
   after 60 seconds. The program hears which of those happened. After a discard or an expiry, that
   program's next request within 10 seconds is refused. While any confirmation is open, a program's

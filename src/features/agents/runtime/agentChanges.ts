@@ -37,13 +37,15 @@ export interface AgentChangesDeps {
   connected: (agentId: string) => boolean;
   /** The channel's name as RIM knows it. */
   channelName: (workspaceId: string, channelId: string) => Promise<string>;
-  /** `executeCommand` for `chat.post_message`, initiator AGENT. No commandContext. */
+  /** `executeCommand` for `chat.post_message`, initiator AGENT, naming only the ids it was given. */
   post: (input: {
     workspaceId: string;
     channelId: string;
     text: string;
     proof?: ConfirmationProofInput;
   }) => Promise<CommandResult>;
+  /** Whether a confirmation is open now. */
+  busy: () => boolean;
   /** Shows the dialog. Answers "busy" at once when any confirmation is open. */
   confirm: (request: AgentConfirmation) => Promise<"approved" | "discarded" | "busy">;
   /** Keeps an entry. A failure before anything is posted refuses the call. */
@@ -135,7 +137,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
   function entry(
     call: Call,
     change: NonNullable<RecordEntry["change"]>,
-    options: { messageIds?: string[]; refused?: boolean } = {},
+    messageIds: string[] = [],
   ): RecordEntry {
     return {
       at: new Date(deps.now()).toISOString(),
@@ -145,8 +147,8 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
       workspaceId: call.workspaceId ?? "",
       channelId: call.channelId,
       query: false,
-      messageIds: options.messageIds ?? [],
-      refused: options.refused ?? false,
+      messageIds,
+      refused: change === "refused",
       change,
     };
   }
@@ -170,7 +172,7 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
 
   function sent(call: Call, channelId: string, result: CommandResult): Promise<ToolOutcome> {
     const messageId = messageIdOf(result);
-    return ended(entry(call, "sent", { messageIds: messageId === null ? [] : [messageId] }), {
+    return ended(entry(call, "sent", messageId === null ? [] : [messageId]), {
       isError: false,
       payload: { outcome: "sent", channelId, messageId },
     });
@@ -208,14 +210,18 @@ export function createAgentChanges(deps: AgentChangesDeps): AgentChanges {
         typeof text !== "string" ||
         text.trim() === ""
       ) {
-        return ended(entry(call, "refused", { refused: true }), INVALID);
+        return ended(entry(call, "refused"), INVALID);
       }
 
       const last = lastEnded.get(agent.id);
       if (last !== undefined && deps.now() - last < COOLDOWN_MS) return COOLING_DOWN;
 
       const workspace = await grantedWorkspace(agent, workspaceId, channelId);
-      if (workspace === null) return ended(entry(call, "refused", { refused: true }), denied());
+      if (workspace === null) return ended(entry(call, "refused"), denied());
+
+      // Before asking the server, whose limit on unanswered challenges would otherwise let requests
+      // made during a dialog push out the challenge that dialog holds.
+      if (deps.busy()) return BUSY;
 
       try {
         await keep(entry(call, "asked"));

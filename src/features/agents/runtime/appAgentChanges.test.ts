@@ -103,13 +103,14 @@ describe("appAgentChanges", () => {
     vi.restoreAllMocks();
   });
 
-  it("asks the server as an agent, with the ids in the args and no context", async () => {
+  it("asks the server as an agent, naming only the ids it was given", async () => {
     mocks.request.mockResolvedValueOnce(POSTED);
     await appAgentChanges.sendMessage(AGENT, ARGS);
     expect(inputs()).toEqual([
       {
         commandId: "chat.post_message",
         args: { server_id: "w1", conversation_id: "c1", text: "hello" },
+        commandContext: { workspaceId: "w1", conversationId: "c1" },
         initiator: CommandInitiator.AGENT,
       },
     ]);
@@ -144,6 +145,7 @@ describe("appAgentChanges", () => {
     expect(inputs()[1]).toEqual({
       commandId: "chat.post_message",
       args: { server_id: "w1", conversation_id: "c1", text: "hello" },
+      commandContext: { workspaceId: "w1", conversationId: "c1" },
       initiator: CommandInitiator.AGENT,
       confirmation: { inBandToken: { token: "tok", argsHash: "hash" } },
     });

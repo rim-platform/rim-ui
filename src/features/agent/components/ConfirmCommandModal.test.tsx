@@ -854,7 +854,14 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
     expect(confirm).toBeDisabled();
     pass(1);
     expect(confirm).toBeEnabled();
-    expect(confirm).toHaveTextContent("Run anyway");
+    expect(confirm).toHaveTextContent("Send");
+  });
+
+  it("says how long the text is", () => {
+    open("one\ntwo");
+    expect(screen.getByTestId("outside-agent-text-size")).toHaveTextContent(
+      "2 lines, 7 characters.",
+    );
   });
 
   it("does nothing for a click or Ctrl+Enter in the first second", async () => {

@@ -34,6 +34,16 @@ describe("showInvisibleCharacters", () => {
     expect(showInvisibleCharacters("\u202E\u200B")).toBe("⟦U+202E⟧⟦U+200B⟧");
   });
 
+  it.each([
+    ["a Hangul filler", "\u3164", "U+3164"],
+    ["a Hangul choseong filler", "\u115F", "U+115F"],
+    ["a Hangul jungseong filler", "\u1160", "U+1160"],
+    ["a supplementary variation selector", "\u{E0100}", "U+E0100"],
+    ["a tag character", "\u{E0041}", "U+E0041"],
+  ])("names %s, which draws nothing", (_what, character, name) => {
+    expect(showInvisibleCharacters(`a${character}b`)).toBe(`a⟦${name}⟧b`);
+  });
+
   it("leaves variation selectors alone", () => {
     expect(showInvisibleCharacters("❤\uFE0F")).toBe("❤\uFE0F");
     expect(showInvisibleCharacters("a\uFE00b")).toBe("a\uFE00b");

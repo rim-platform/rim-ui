@@ -136,6 +136,7 @@ describe("createAgentChanges", () => {
       isDirectSpace: vi.fn(() => false),
       connected: vi.fn(() => true),
       channelName: vi.fn(() => Promise.resolve("general")),
+      busy: vi.fn(() => false),
       post: vi.fn(() => Promise.resolve(posted())),
       confirm: vi.fn(() => Promise.resolve("approved" as const)),
       record: vi.fn((entry: RecordEntry) => {
@@ -318,7 +319,7 @@ describe("createAgentChanges", () => {
       expect((outcome.payload as { message: string }).message).toContain("Denied by policy");
       expect(deps.confirm).not.toHaveBeenCalled();
       expect(changesRecorded()).toEqual(["asked", "refused"]);
-      expect(entries[1].refused).toBe(false);
+      expect(entries[1].refused).toBe(true);
     });
 
     it("says when a failure is safe to retry", async () => {
@@ -380,6 +381,14 @@ describe("createAgentChanges", () => {
       deps.channelName.mockRejectedValue(new Error("down"));
       await changes.sendMessage(ALL, ARGS);
       expect(deps.confirm).toHaveBeenCalledWith(expect.objectContaining({ channelName: "c1" }));
+    });
+
+    it("answers busy without asking the server or recording while a dialog is open", async () => {
+      deps.busy.mockReturnValueOnce(true);
+      expect(await changes.sendMessage(ALL, ARGS)).toEqual(BUSY);
+      expect(deps.post).not.toHaveBeenCalled();
+      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(entries).toEqual([]);
     });
 
     it("answers busy with no cooldown and no proof sent", async () => {
@@ -467,7 +476,7 @@ describe("createAgentChanges", () => {
       expect(await changes.sendMessage(ALL, ARGS)).toEqual(DENIED);
       expect(proofs()).toEqual([undefined]);
       expect(changesRecorded()).toEqual(["asked", "refused"]);
-      expect(entries[1].refused).toBe(false);
+      expect(entries[1].refused).toBe(true);
     });
 
     it("answers a stale proof as an expiry, with its cooldown", async () => {

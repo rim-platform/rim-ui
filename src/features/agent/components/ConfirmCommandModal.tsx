@@ -451,7 +451,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 <span>Executing…</span>
               ) : (
                 <>
-                  <span>{visuals.confirmLabel}</span>
+                  <span>{outside?.text === undefined ? visuals.confirmLabel : "Send"}</span>
                   <span className="text-rim-void/70">{confirmShortcutLabel()}</span>
                 </>
               )}
@@ -501,6 +501,13 @@ function ExpiresIn({ expiresAt }: { expiresAt: string }) {
   );
 }
 
+/** How long a text is, so what lies below a scrolled box isn't missed. */
+function textSize(text: string): string {
+  const lines = text.split("\n").length;
+  const characters = Array.from(text).length;
+  return `${lines} ${lines === 1 ? "line" : "lines"}, ${characters} ${characters === 1 ? "character" : "characters"}. Scroll to read it all.`;
+}
+
 /**
  * What a program outside RIM asks to do: the warning, what it acts on and the whole text. Text is
  * rendered as plain text, with invisible characters shown by name; what is sent stays exact.
@@ -534,6 +541,11 @@ function OutsideAgentDetails({
           </Fragment>
         ))}
       </dl>
+      {shownText !== null && (
+        <div className="text-xs text-rim-text-muted" data-testid="outside-agent-text-size">
+          {textSize(outside.text ?? "")}
+        </div>
+      )}
       {shownText !== null && (
         <div
           role="group"
