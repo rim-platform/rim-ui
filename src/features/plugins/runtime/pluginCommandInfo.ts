@@ -3,6 +3,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { toast } from "../../../shared/toast";
 import type { CommandResult } from "../../commands/types";
 import type { PluginCommandInfo, PluginInfo } from "../types";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 
 /** A plugin command with the name of the plugin that declares it. */
 export interface FoundPluginCommand extends PluginCommandInfo {
@@ -17,7 +18,7 @@ export function findPluginCommand(qualifiedId: string): FoundPluginCommand | nul
   const plugins = queryClient.getQueryData<PluginInfo[]>(queryKeys.plugins()) ?? [];
   for (const plugin of plugins) {
     const command = plugin.commands?.find((c) => c.qualified_id === qualifiedId);
-    if (command) return { ...command, pluginName: plugin.display_name };
+    if (command) return { ...command, pluginName: showInvisibleCharacters(plugin.display_name) };
   }
   return null;
 }

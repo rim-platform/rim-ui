@@ -6,6 +6,7 @@ import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { usePluginList } from "./usePluginList";
 import type { KeybindContext } from "../../commands/types";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 
 export interface PluginSuggestedKeybind {
   pluginId: string;
@@ -62,9 +63,9 @@ export function usePluginSuggestedKeybinds(): PluginSuggestedKeybind[] {
         const command = plugin.commands?.find((c) => c.qualified_id === rk.command_id);
         suggestions.push({
           pluginId: rk.plugin_id,
-          pluginName: plugin.display_name,
+          pluginName: showInvisibleCharacters(plugin.display_name),
           commandId: rk.command_id,
-          commandTitle: command?.title ?? rk.command_id,
+          commandTitle: showInvisibleCharacters(command?.title ?? rk.command_id),
           keystroke: rk.keystroke,
           context: (rk.context as KeybindContext) || "GLOBAL",
         });

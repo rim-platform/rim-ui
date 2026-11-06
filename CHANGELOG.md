@@ -62,6 +62,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The plugins menu, the palette and suggested keybinds show the marks hidden in plugin names and titles.
 - Opening a conversation starts at your first unread message, from where the server says you
   stopped, and it only counts as read once you've reached the end of what's new. A setting keeps
   conversations unread until you mark them. It needs a workspace server that lists `read_marker`
