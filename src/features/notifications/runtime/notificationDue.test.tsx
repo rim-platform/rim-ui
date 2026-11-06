@@ -571,19 +571,23 @@ describe("NotificationDue rendering", () => {
 
     function answerMembers() {
       requestMock.mockImplementation((document: unknown) =>
-        String(document).includes("query ServerMembers")
+        String(document).includes("query ServerInfo")
           ? Promise.resolve({
-              serverMembers: [
-                { userId: "u-alice", username: "alice", displayName: "Alice" },
-                {
-                  userId: "u-carol",
-                  username: "carol",
-                  displayName: "Carol",
-                  principalId: "p-carol",
-                },
-              ],
+              serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
             })
-          : new Promise(() => {}),
+          : String(document).includes("query ServerMembers")
+            ? Promise.resolve({
+                serverMembers: [
+                  { userId: "u-alice", username: "alice", displayName: "Alice" },
+                  {
+                    userId: "u-carol",
+                    username: "carol",
+                    displayName: "Carol",
+                    principalId: "p-carol",
+                  },
+                ],
+              })
+            : new Promise(() => {}),
       );
     }
 

@@ -6,6 +6,11 @@ import type { ReactNode } from "react";
 import { queryKeys } from "../../../core/query/keys";
 
 const requestMock = vi.fn();
+const botsMock = vi.hoisted(() => ({ listed: false }));
+vi.mock("../../updater/api/serverCapabilities", () => ({
+  botDisclosureDocument: async (documents: { plain: string; withBots: string }) =>
+    botsMock.listed ? documents.withBots : documents.plain,
+}));
 
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
@@ -89,6 +94,16 @@ describe("lens api hooks", () => {
       lensId: "lens-1",
       limit: 50,
     });
+  });
+
+  it("asks for the authors' bot disclosure only of a server that lists it", async () => {
+    botsMock.listed = true;
+    requestMock.mockResolvedValue({ applyChannelLens: [] });
+    const { result } = renderHook(() => useApplyLens("ws-1", "conv-1", "lens-1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    botsMock.listed = false;
+    expect(requestMock.mock.calls[0][0]).toContain("query ApplyChannelLensWithBots");
+    expect(requestMock.mock.calls[0][0]).toContain("isBot");
   });
 
   it("creates a lens and invalidates the conversation's lens list", async () => {

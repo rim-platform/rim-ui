@@ -91,9 +91,11 @@ describe("skew check", () => {
   it("keeps every message query valid on a server without Message.editedAt", () => {
     const refused = refusedOperations(schemaWithoutEditTimes(), documents);
     expect(refused.map((r) => r.label).sort()).toEqual([
+      "query MessagesWithBots",
       "query MessagesWithEdits",
       "query MessagesWithFlags",
       "query ServerInfo",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithEdits",
       "query ThreadMessagesWithFlags",
     ]);
@@ -106,8 +108,28 @@ describe("skew check", () => {
       "query MessageChangesWithFlags",
       "query MessageReportWithAutomatic",
       "query MessageReportsWithAutomatic",
+      "query MessagesWithBots",
       "query MessagesWithFlags",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithFlags",
+    ]);
+  });
+
+  it("refuses only the bot disclosure documents on a server without bot_disclosure", () => {
+    const schema = schemaWithoutFields({
+      User: ["isBot", "bot"],
+      ServerMember: ["isBot", "bot"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "query ApplyChannelLensWithBots",
+      "query MessagesWithBots",
+      "query PinnedMessagesWithBots",
+      "query ServerMembersWithBots",
+      "query ThreadMessagesWithBots",
     ]);
   });
 
@@ -146,6 +168,53 @@ describe("skew check", () => {
     const schema = schemaWithoutFields({ Query: ["conversationMemberRemovals"] });
     expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
       "query ConversationMemberRemovals",
+    ]);
+  });
+
+  it("refuses only the bot management documents on a server without the bots API", () => {
+    const schema = schemaWithoutFields({
+      Query: ["bots", "botTokens", "incomingWebhooks"],
+      Mutation: [
+        "createBot",
+        "updateBot",
+        "deactivateBot",
+        "createBotToken",
+        "revokeBotToken",
+        "createIncomingWebhook",
+        "revokeIncomingWebhook",
+      ],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateBot",
+      "mutation CreateBotToken",
+      "mutation CreateIncomingWebhook",
+      "mutation DeactivateBot",
+      "mutation RevokeBotToken",
+      "mutation RevokeIncomingWebhook",
+      "mutation UpdateBot",
+      "query BotTokens",
+      "query Bots",
+      "query IncomingWebhooks",
+    ]);
+  });
+
+  it("refuses only the webhook documents on a server without incoming webhooks", () => {
+    const schema = schemaWithoutFields({
+      Query: ["incomingWebhooks"],
+      Mutation: ["createIncomingWebhook", "revokeIncomingWebhook"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateIncomingWebhook",
+      "mutation RevokeIncomingWebhook",
+      "query IncomingWebhooks",
     ]);
   });
 });

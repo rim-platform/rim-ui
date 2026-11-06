@@ -18,6 +18,7 @@ them.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
   pane.
 - `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.
+- `bots.md`: how the client marks a bot and shows what the person who added it says.
 - `search-ui.md`: the search overlay, server search and the desktop's local search.
 - `error-boundaries.md`: the three tiers of React error boundary and their reset keys.
 - `version-skew.md`: which operations an older server refuses, and `npm run skew:check`.
