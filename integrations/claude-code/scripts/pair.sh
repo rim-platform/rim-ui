@@ -15,7 +15,7 @@ BASE_URL=${RIM_BRIDGE_URL:-http://127.0.0.1:47821}
 WAIT_SECONDS=${RIM_PAIR_WAIT_SECONDS:-60}
 POLL_SECONDS=2
 
-STATE_DIR=${XDG_RUNTIME_DIR:-${HOME:-/tmp}/.cache}/rim-claude-code
+STATE_DIR=${XDG_RUNTIME_DIR:-$HOME/.cache}/rim-claude-code
 STATE_FILE=$STATE_DIR/pairing
 WORK=
 
@@ -189,6 +189,12 @@ cmd_disconnect() {
   fi
   say 'NOT_SET_UP: RIM isn'"'"'t set up in Claude Code.'
 }
+
+# Only this computer: the address can be changed for tests, never to reach another machine.
+case $BASE_URL in
+  http://127.0.0.1:*) ;;
+  *) say 'FAILED: RIM is only reached on this computer.' 1 ;;
+esac
 
 case ${1:-} in
   start) shift; cmd_start "$@" ;;

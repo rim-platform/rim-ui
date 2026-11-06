@@ -186,6 +186,12 @@ describe.skipIf(process.platform === "win32")("pair.sh", () => {
     expect(readdirSync(runtime)).toEqual(["rim-claude-code"]);
   });
 
+  it("refuses an address that is not on this computer, and contacts nothing", async () => {
+    const result = await run(["start"], { RIM_BRIDGE_URL: "http://example.invalid:47821" });
+    expect(result.stdout).toBe("FAILED: RIM is only reached on this computer.");
+    expect(result.code).toBe(1);
+  });
+
   describe("start", () => {
     const rows: [number, string][] = [
       [423, "LOCKED: RIM is locked. Unlock it in the desktop app, then try again."],
