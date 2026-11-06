@@ -10,7 +10,7 @@ function topPanelClose(): (() => void) | null {
   const { workspaceId } = useWorkspaceStore.getState();
   const onConversation = shell.mainSurface.kind === "conversation";
   // The navigation drawer of a narrow window sits in front of everything else.
-  if (shell.navDrawerOpen) return () => shell.setNavDrawerOpen(false);
+  if (shell.navDrawerOpen && !shell.zenMode) return () => shell.setNavDrawerOpen(false);
   // A main-area plugin panel covers the conversation, and the thread beside it.
   if (onConversation && shell.activePluginPanel?.slot === "main_area") {
     return shell.closePluginPanel;

@@ -78,4 +78,16 @@ describe("closeTopPanel", () => {
     expect(closeTopPanel()).toBe(true);
     expect(shell().pinnedPanelOpen).toBe(false);
   });
+
+  it("leaves the drawer alone in zen mode, where it is not drawn", () => {
+    const shell = () => useShellStore.getState();
+    shell().setSelectedConversationId("conv-1");
+    shell().openThreadForMessage("root-1");
+    useShellStore.setState({ shellWidth: "narrow", zenMode: true });
+    shell().setNavDrawerOpen(true);
+
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().isThreadOpen).toBe(false);
+    expect(shell().navDrawerOpen).toBe(true);
+  });
 });

@@ -3,7 +3,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -111,11 +111,28 @@ vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {}
 vi.mock("../../features/workspaces/components/WorkspaceSelector", () => ({
   WorkspaceSelector: () => null,
 }));
+const mounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../../features/messages/components/MessageTimeline", () => ({
-  MessageTimeline: () => null,
+  MessageTimeline: () => {
+    useEffect(() => {
+      mounts.count += 1;
+    }, []);
+    return null;
+  },
 }));
+const threadFocus = vi.hoisted(() => ({ on: false }));
 vi.mock("../../features/threads/components/ThreadPanel", () => ({
-  ThreadPanel: () => <div data-testid="thread-panel" />,
+  ThreadPanel: () => {
+    const ref = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+      if (threadFocus.on) ref.current?.focus();
+    }, []);
+    return (
+      <div data-testid="thread-panel">
+        <input ref={ref} data-testid="thread-input" />
+      </div>
+    );
+  },
 }));
 vi.mock("../../features/conversations/components/ConversationInvitation", () => ({
   InvitationGate: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -476,13 +493,13 @@ describe("AppShell — narrow and medium windows", () => {
     opener.focus();
     act(() => useShellStore.getState().openThreadForMessage("m1"));
 
-    const dialog = screen.getByRole("dialog", { name: "Thread" });
+    const dialog = screen.getByRole("region", { name: "Thread" });
     expect(within(dialog).getByTestId("thread-panel")).toBeInTheDocument();
     expect(dialog).toHaveFocus();
 
     await user.keyboard("{Escape}");
     expect(useShellStore.getState().isThreadOpen).toBe(false);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Thread" })).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
     opener.remove();
   });
@@ -510,9 +527,9 @@ describe("AppShell — narrow and medium windows", () => {
     useShellStore.getState().openPluginPanel("p", "notes", "tool_panel");
     renderAt(900);
 
-    const pins = screen.getByRole("dialog", { name: "Pinned messages" });
+    const pins = screen.getByRole("region", { name: "Pinned messages" });
     expect(within(pins).getByTestId("pinned-panel")).toBeInTheDocument();
-    const plugin = screen.getByRole("dialog", { name: "Notes" });
+    const plugin = screen.getByRole("region", { name: "Notes" });
     expect(within(plugin).getByTestId("plugin-slot-notes")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
@@ -521,7 +538,7 @@ describe("AppShell — narrow and medium windows", () => {
 
   it("puts the navigation in a drawer in a narrow window", async () => {
     const user = userEvent.setup();
-    useShellStore.setState({ mainSurface: { kind: "settings" } });
+    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
     renderAt(600);
     expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
@@ -557,7 +574,7 @@ describe("AppShell — narrow and medium windows", () => {
   it("fills the main area with a thread in a narrow window", () => {
     useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
     renderAt(600);
-    expect(screen.getByRole("dialog", { name: "Thread" }).className).toContain("inset-0");
+    expect(screen.getByRole("region", { name: "Thread" }).className).toContain("inset-0");
   });
 
   it("follows the window as it is resized and never writes the saved sidebar choice", () => {
@@ -580,5 +597,106 @@ describe("AppShell — narrow and medium windows", () => {
     renderAt(600);
     act(() => useShellStore.getState().setShowNewMessagePicker(true));
     expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+  });
+
+  it("keeps the conversation mounted across a resize through every width class", () => {
+    mounts.count = 0;
+    renderAt(1400);
+    expect(mounts.count).toBe(1);
+    resizeTo(900);
+    resizeTo(600);
+    resizeTo(1400);
+    expect(mounts.count).toBe(1);
+  });
+
+  it("keeps a main-area page mounted when the window narrows", () => {
+    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
+    renderAt(1400);
+    const text = screen.getByText("Marketplace coming soon!");
+    resizeTo(600);
+    expect(screen.getByText("Marketplace coming soon!")).toBe(text);
+  });
+
+  it("keeps Tab inside the drawer and closes it on Escape from the page body", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    expect(drawer).toHaveAttribute("aria-modal", "true");
+    const first = document.createElement("button");
+    first.textContent = "first";
+    const last = document.createElement("button");
+    last.textContent = "last";
+    drawer.prepend(first);
+    drawer.append(last);
+
+    last.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+
+    (document.activeElement as HTMLElement).blur();
+    await user.tab();
+    expect(first).toHaveFocus();
+
+    (document.activeElement as HTMLElement).blur();
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("leaves Escape to an open menu above the drawer", async () => {
+    const user = userEvent.setup();
+    renderAt(600);
+    act(() => useShellStore.getState().setNavDrawerOpen(true));
+    const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
+    document.body.append(menu);
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+    menu.remove();
+  });
+
+  it("does not close the thread for an Escape from a portal outside it", async () => {
+    renderAt(900);
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    const picker = document.createElement("input");
+    document.body.append(picker);
+    picker.focus();
+    const region = screen.getByRole("region", { name: "Thread" });
+    // A synthetic event whose React ancestry runs through the overlay, but whose DOM does not.
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true });
+    picker.dispatchEvent(event);
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    expect(region).toBeInTheDocument();
+    picker.remove();
+  });
+
+  it("returns focus past a child that took focus itself when the overlay opened", () => {
+    renderAt(900);
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    threadFocus.on = true;
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    expect(screen.getByTestId("thread-input")).toHaveFocus();
+    act(() => useShellStore.getState().closeThread());
+    threadFocus.on = false;
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("leaves focus alone that the person moved elsewhere", () => {
+    renderAt(900);
+    const opener = document.createElement("button");
+    const elsewhere = document.createElement("textarea");
+    document.body.append(opener, elsewhere);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    elsewhere.focus();
+    act(() => useShellStore.getState().closeThread());
+    expect(elsewhere).toHaveFocus();
+    opener.remove();
+    elsewhere.remove();
   });
 });

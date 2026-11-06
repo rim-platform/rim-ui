@@ -15,7 +15,8 @@ interface OverlayPanelProps {
 /**
  * A panel that opens over the right side of the main area instead of taking width from it:
  * up to 420 px wide, or the whole main area in a narrow window. Focus moves in when it opens and
- * back when it closes, and Escape closes it. The parent must be positioned.
+ * back when it closes, and Escape closes it. It is a region, not a modal dialog: the rest of the
+ * app stays usable, and Escape pressed outside it still closes it. The parent must be positioned.
  */
 export function OverlayPanel({ label, onClose, children }: OverlayPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -24,7 +25,7 @@ export function OverlayPanel({ label, onClose, children }: OverlayPanelProps) {
   return (
     <div
       ref={ref}
-      role="dialog"
+      role="region"
       aria-label={label}
       tabIndex={-1}
       onKeyDown={(event) => closeOnEscape(event, onClose)}

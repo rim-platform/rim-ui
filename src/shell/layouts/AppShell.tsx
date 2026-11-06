@@ -214,11 +214,10 @@ function UnlockedShell() {
 }
 
 /**
- * The main area and, when the window is not wide, the panels that open over it. A wide window
- * renders the main area alone.
+ * The main area and, when the window is not wide, the panels that open over it. The wrapper is
+ * the same at every width, so the main area is not remounted when the window is resized.
  */
 function MainColumn({ overlays, children }: { overlays: ReactNode; children: ReactNode }) {
-  if (overlays === null) return <>{children}</>;
   return (
     <div className="relative flex min-w-0 flex-1">
       {children}
@@ -566,34 +565,28 @@ function WorkspaceShell() {
 
           {mainSurface.kind === "settings" && (
             <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <NarrowPage title="Settings">
-                <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
-                  <SettingsPage />
-                </SurfaceErrorBoundary>
-              </NarrowPage>
+              <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
+                <SettingsPage />
+              </SurfaceErrorBoundary>
             </main>
           )}
 
           {mainSurface.kind === "audit-log" && (
             <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <NarrowPage title="Audit log">
-                <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
-                  <AuditLogPage />
-                </SurfaceErrorBoundary>
-              </NarrowPage>
+              <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
+                <AuditLogPage />
+              </SurfaceErrorBoundary>
             </main>
           )}
 
           {mainSurface.kind === "dm-requests" && (
             <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <NarrowPage title="Message requests">
-                <SurfaceErrorBoundary
-                  surface="Message requests"
-                  resetKeys={[mainSurface.workspaceId]}
-                >
-                  <DmRequestsPage workspaceId={mainSurface.workspaceId} />
-                </SurfaceErrorBoundary>
-              </NarrowPage>
+              <SurfaceErrorBoundary
+                surface="Message requests"
+                resetKeys={[mainSurface.workspaceId]}
+              >
+                <DmRequestsPage workspaceId={mainSurface.workspaceId} />
+              </SurfaceErrorBoundary>
             </main>
           )}
 

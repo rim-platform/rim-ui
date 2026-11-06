@@ -86,6 +86,7 @@ import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
+import { OverlayPanel } from "../../../shell/components/OverlayPanel";
 
 const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
 
@@ -343,6 +344,27 @@ describe("KeybindProvider with the default profile", () => {
       expect(dispatched()).toEqual(["workspace.close_panel"]);
     } finally {
       shell.mainSurface = { kind: "conversation" };
+    }
+  });
+
+  it("closes a thread overlay on Escape pressed outside it", () => {
+    const shell = useShellStore.getState() as unknown as { isThreadOpen: boolean };
+    shell.isThreadOpen = true;
+    try {
+      const { getByRole } = renderWith(
+        <>
+          <textarea aria-label="composer" />
+          <OverlayPanel label="Thread" onClose={() => {}}>
+            <div />
+          </OverlayPanel>
+        </>,
+      );
+      const composer = getByRole("textbox", { name: "composer" });
+      composer.focus();
+      press(composer, "Escape");
+      expect(dispatched()).toEqual(["workspace.close_panel"]);
+    } finally {
+      shell.isThreadOpen = false;
     }
   });
 

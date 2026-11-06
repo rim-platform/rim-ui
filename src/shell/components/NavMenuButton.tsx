@@ -29,19 +29,21 @@ export function NavMenuButton() {
 }
 
 /**
- * A page in a narrow window: under a slim header that carries the navigation button, for a page
- * that has none of its own. In any other window it is the page alone.
+ * A page that has no header of its own, under a slim header with the navigation button in a
+ * narrow window. The page sits in the same wrapper at every width.
  *
  * @param title - The page's name.
  */
 export function NarrowPage({ title, children }: { title: string; children: ReactNode }) {
-  if (useShellWidth() !== "narrow") return <>{children}</>;
+  const narrow = useShellWidth() === "narrow";
   return (
     <>
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-rim-line px-3">
-        <NavMenuButton />
-        <span className="truncate text-sm font-medium text-rim-text">{title}</span>
-      </div>
+      {narrow && (
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-rim-line px-3">
+          <NavMenuButton />
+          <span className="truncate text-sm font-medium text-rim-text">{title}</span>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </>
   );

@@ -1,7 +1,9 @@
 # Navigation and window width
 
 Every place in the app can be reached from a visible control or a command, at every window
-width. Commands run from the palette, from a keybind, from a macro and from the AI agent.
+width. Commands run from the palette and from a keybind. The commands this app adds itself, such as the
+ones for the audit log and the panels, are not on the server's list, so macros and the AI agent do
+not get them.
 
 ## Window widths
 
@@ -12,14 +14,14 @@ choices, such as the collapsed sidebar and zen mode, are never changed by the cl
 |---|---|---|
 | wide | 1100 px and up | Nothing: the workspace rail, side rail and tool panel sit beside the conversation, and a thread, the pinned messages and a plugin panel take their own columns. |
 | medium | 760 to 1099 px | The side panel stays. A thread, the pinned messages and a plugin panel in the tool panel slot open over the right of the main area, up to 420 px wide, full height. Escape closes the one in front, and focus returns to where it was. |
-| narrow | under 760 px | The workspace rail, side rail and tool panel are hidden. A menu button in each page's header opens them as a drawer over the main area. A press outside the drawer, Escape, or choosing a conversation, a page or a plugin panel closes it. A thread, the pinned messages and a plugin panel fill the main area. Settings lists its sections in one menu above the content. |
+| narrow | under 760 px | The workspace rail, side rail and tool panel are hidden. A menu button in each page's header (a slim bar on pages without one) opens them as a drawer over the main area. A press outside the drawer, Escape, or choosing a conversation, a page or a plugin panel closes it. A thread, the pinned messages and a plugin panel fill the main area. Settings lists its sections in one menu above the content. |
 
 The drawer holds the same workspace rail, side rail (inbox, plugins, notifications, search,
 audit log, settings, account menu) and conversation list as the wide layout. When the notification
 inbox, a member list or a new-message or new-channel dialog is asked for in a narrow window, the
 drawer opens to show it.
 
-These are narrow desktop and browser windows. The web app has no phone layout: there are no
+These are narrow windows. The web app has no phone layout: there are no
 gestures and no bottom bar.
 
 ## Ways in
