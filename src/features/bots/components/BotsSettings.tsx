@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { Bot } from "../../../core/graphql/generated/schema-types";
@@ -77,6 +77,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
   const deactivate = useDeactivateBot(serverId);
   const { info } = useServerInfo();
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const newBotRef = useRef<HTMLButtonElement>(null);
   const [secret, setSecret] = useState<{ title: string; label: string; value: string } | null>(
     null,
   );
@@ -93,6 +94,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
             Bots in this workspace
           </h2>
           <Button
+            ref={newBotRef}
             variant="primary"
             size="sm"
             onClick={() => setDialog({ kind: "create" })}
@@ -200,7 +202,11 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           title={secret.title}
           label={secret.label}
           value={secret.value}
-          onClose={() => setSecret(null)}
+          onClose={() => {
+            setSecret(null);
+            // The form it came from is gone, so focus goes to what opened it.
+            if (!dialog) setTimeout(() => newBotRef.current?.focus());
+          }}
         />
       )}
     </div>
