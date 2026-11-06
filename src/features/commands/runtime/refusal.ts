@@ -60,6 +60,7 @@ export function showCommandRefusal(title: string, err: unknown, retry?: () => vo
   switch (refusal?.kind) {
     case "DENIED":
       toast.error(`${title}: not done`, {
+        card: "denied",
         description: refusal.missing
           ? `You don't have the \`${refusal.missing}\` permission.`
           : graphqlErrorMessage(err, "You don't have permission to do this."),
@@ -67,6 +68,7 @@ export function showCommandRefusal(title: string, err: unknown, retry?: () => vo
       return;
     case "FAILED":
       toast.warning(`${title}: failed`, {
+        card: "failed",
         description: refusal.retrySafe
           ? `${asSentence(message)} It is safe to try again.`
           : `${asSentence(message)} It may have gone through, so check before trying again.`,
@@ -75,6 +77,7 @@ export function showCommandRefusal(title: string, err: unknown, retry?: () => vo
       return;
     case "EXPIRED":
       toast.info(`${title}: expired`, {
+        card: "ended",
         description: "You didn't confirm in time. Nothing ran.",
         action: retry ? { label: "Ask again", onClick: retry } : undefined,
       });

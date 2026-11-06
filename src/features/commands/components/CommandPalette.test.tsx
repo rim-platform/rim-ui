@@ -227,6 +227,7 @@ describe("executeSelected — toast surfacing (CommandPalette dispatch logic)", 
     });
 
     expect(toast.error).toHaveBeenCalledWith("Run Test Command: not done", {
+      card: "denied",
       description: "Only moderators can run this command",
     });
   });

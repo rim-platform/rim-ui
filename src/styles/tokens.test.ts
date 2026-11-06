@@ -45,4 +45,24 @@ describe("colour tokens", () => {
   it("rim-void reads on rim-accent fills at 4.5:1", () => {
     expect(contrast(token("void"), token("accent"))).toBeGreaterThanOrEqual(4.5);
   });
+
+  const CARD_TITLES: Record<string, string> = {
+    running: "text",
+    confirm: "warm",
+    denied: "danger",
+    failed: "warm",
+    done: "success",
+    ended: "text-muted",
+  };
+  for (const [state, title] of Object.entries(CARD_TITLES)) {
+    for (const foreground of new Set(["text", "text-muted", title])) {
+      it(`rim-${foreground} reads on rim-card-${state} at 4.5:1`, () => {
+        expect(contrast(token(foreground), token(`card-${state}`))).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  it("rim-panel reads on rim-signal fills at 4.5:1", () => {
+    expect(contrast(token("panel"), token("signal"))).toBeGreaterThanOrEqual(4.5);
+  });
 });

@@ -54,6 +54,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A refused command now shows a card that says which kind of refusal it was: not allowed, failed, or expired.
 - The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
   say when you'd use them.
 - A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched

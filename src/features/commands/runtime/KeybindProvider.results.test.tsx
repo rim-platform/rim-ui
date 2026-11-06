@@ -144,6 +144,7 @@ describe("KeybindProvider with a read command bound", () => {
 
     await vi.waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("chat.list_channels: not done", {
+        card: "denied",
         description: "Only moderators can do this",
       }),
     );
