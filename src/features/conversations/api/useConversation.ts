@@ -89,6 +89,8 @@ export function fetchConversation(
   return qc.fetchQuery({
     queryKey: queryKeys.conversation(workspaceId, conversationId),
     staleTime: 30_000,
+    // Offline it fails at once, so the caller can fall back, rather than waiting to come online.
+    networkMode: "always",
     queryFn: () => requestConversation(workspaceId, conversationId),
   });
 }

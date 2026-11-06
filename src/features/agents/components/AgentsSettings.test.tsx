@@ -29,6 +29,7 @@ const AGENT: ConnectedAgent = {
   name: "Claude Code",
   tokenHash: "hash-1",
   pairedAt: "2026-11-06T10:00:00.000Z",
+  grants: {},
 };
 
 interface Status {
@@ -241,5 +242,16 @@ describe("AgentsSettings", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(useConnectedAgentsStore.getState().agents).toEqual([AGENT]);
+  });
+
+  it("offers each connected agent what it can read and what it was given", async () => {
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    await renderedSwitch();
+    expect(
+      screen.getByRole("button", { name: "Choose what Claude Code can read" }),
+    ).toHaveTextContent("Choose what it can read");
+    expect(screen.getByRole("button", { name: "What Claude Code was given" })).toHaveTextContent(
+      "What it was given",
+    );
   });
 });

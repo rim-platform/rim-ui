@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
+import type { AgentGrants } from "../runtime/grants";
 
 /** A program on this computer the person connected to RIM. */
 export interface ConnectedAgent {
@@ -12,12 +13,15 @@ export interface ConnectedAgent {
   tokenHash: string;
   /** When it was connected, ISO 8601. */
   pairedAt: string;
+  /** What it may read. Everything starts off. */
+  grants: AgentGrants;
 }
 
 interface ConnectedAgentsState {
   agents: ConnectedAgent[];
   add: (agent: ConnectedAgent) => void;
   revoke: (id: string) => void;
+  setGrants: (id: string, grants: AgentGrants) => void;
 }
 
 /** The programs connected to this account on this device, sealed under the account vault. */
@@ -27,6 +31,10 @@ export const useConnectedAgentsStore = create<ConnectedAgentsState>()(
       agents: [],
       add: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
       revoke: (id) => set((state) => ({ agents: state.agents.filter((agent) => agent.id !== id) })),
+      setGrants: (id, grants) =>
+        set((state) => ({
+          agents: state.agents.map((agent) => (agent.id === id ? { ...agent, grants } : agent)),
+        })),
     }),
     {
       name: "rim-connected-agents",

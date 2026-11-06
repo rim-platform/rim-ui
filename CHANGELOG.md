@@ -24,6 +24,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A connected agent can ask to send a message to a channel it has a grant for: you see the whole
+  text in a dialog and confirm each one.
 - Settings > Bots creates and manages a workspace's bots, their tokens and channels, and incoming
   webhooks with a GitHub preset. Owners and Moderators see it on a server that has bots turned on,
   and the webhooks section on one that lists `incoming_webhooks`. A token or webhook URL is shown
@@ -42,6 +44,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Settings > Agents lets a program on this computer, such as Claude Code, ask to connect to the desktop
   app. It is off by default. You compare a code and approve it, and you can disconnect it at any time.
 - A Claude Code plugin in `integrations/claude-code` connects Claude Code to the desktop app: it shows the code to compare and adds RIM as an MCP server.
+- A connected agent can read the channels you choose in Settings > Agents, from the messages on this device. It
+  can't change anything, and it can't read encrypted conversations. "What it was given" shows what RIM handed over.
 
 ### Changed
 
