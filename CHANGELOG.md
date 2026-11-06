@@ -24,6 +24,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A connected agent can ask to send a message to a channel it has a grant for: you see the whole
+  text in a dialog and confirm each one.
 - Settings > Bots creates and manages a workspace's bots, their tokens and channels, and incoming
   webhooks with a GitHub preset. Owners and Moderators see it on a server that has bots turned on,
   and the webhooks section on one that lists `incoming_webhooks`. A token or webhook URL is shown

@@ -12,7 +12,7 @@ import { pinnedEncrypted } from "../../e2ee/runtime/pins";
 import { appChatDeps } from "../../plugins/chat/appMessageService";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
 import { fetchMyServers } from "../../workspaces/api/useMyServers";
-import { useAgentRecordStore } from "../state/useAgentRecordStore";
+import { useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { createAgentReads, type AgentChannel } from "./agentReads";
 import type { GrantChannel } from "./grants";
@@ -38,7 +38,7 @@ async function grantChannel(
  * failure of its own is not, does it fall back on the app's lists: a server saying no is the
  * person no longer seeing it.
  */
-async function lookup(workspaceId: string, channelId: string): Promise<GrantChannel | null> {
+export async function lookup(workspaceId: string, channelId: string): Promise<GrantChannel | null> {
   let conversation: ConversationSummary | undefined;
   try {
     conversation = await fetchConversation(queryClient, workspaceId, channelId);
@@ -60,17 +60,29 @@ async function channels(workspaceId: string): Promise<AgentChannel[]> {
   );
 }
 
+/** The workspaces an agent can be answered about: those on this server, without direct spaces. */
+export async function workspaces(): Promise<{ id: string; name: string }[]> {
+  return (await fetchMyServers()).filter((server) => !isDirectSpace(server.id));
+}
+
+/** Whether the agent is connected to the unlocked account. */
+export function connected(agentId: string): boolean {
+  return useConnectedAgentsStore.getState().agents.some((agent) => agent.id === agentId);
+}
+
+/** Adds an entry to the record and writes it out. */
+export async function record(entry: RecordEntry): Promise<void> {
+  useAgentRecordStore.getState().add(entry);
+  await flushSealedStorage();
+}
+
 /** The reads this app answers agents with. */
 export const appAgentReads = createAgentReads({
   chat: appChatDeps,
   lookup,
-  workspaces: async () => (await fetchMyServers()).filter((server) => !isDirectSpace(server.id)),
+  workspaces,
   channels,
   isDirectSpace,
-  connected: (agentId) =>
-    useConnectedAgentsStore.getState().agents.some((agent) => agent.id === agentId),
-  record: async (entry) => {
-    useAgentRecordStore.getState().add(entry);
-    await flushSealedStorage();
-  },
+  connected,
+  record,
 });

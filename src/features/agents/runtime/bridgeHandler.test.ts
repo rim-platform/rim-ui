@@ -24,6 +24,7 @@ const mcp = {
     readMessages: vi.fn(),
     searchMessages: vi.fn(),
   },
+  changes: { sendMessage: vi.fn() },
 };
 
 function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {

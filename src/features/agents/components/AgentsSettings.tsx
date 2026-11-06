@@ -4,6 +4,7 @@ import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
+import { rejectOutsideAgentConfirmation } from "../../agent/state/confirmationModalStore";
 import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
 import {
   agentBridgeSetEnabled,
@@ -53,7 +54,10 @@ export function AgentsSettings() {
     agentBridgeSetEnabled(enabled)
       .then((current) => {
         setStatus(current);
-        if (!enabled) usePendingPairingStore.getState().reset();
+        if (!enabled) {
+          usePendingPairingStore.getState().reset();
+          rejectOutsideAgentConfirmation();
+        }
       })
       .catch(() => {
         logger.warn("[RIM:agents] could not save whether agents may connect");

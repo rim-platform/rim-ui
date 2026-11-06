@@ -31,6 +31,16 @@ function target(entry: RecordEntry, qc: QueryClient, workspaceName: (id: string)
   return entry.query ? workspaceName(entry.workspaceId) : "an unknown channel";
 }
 
+/** What a line of the record says about a change. */
+const CHANGE_LABELS: Record<NonNullable<RecordEntry["change"]>, string> = {
+  asked: "Asked to send",
+  sent: "Sent",
+  discarded: "You discarded it",
+  expired: "Expired",
+  busy: "You were busy",
+  refused: "Refused",
+};
+
 /** One line of the record. */
 function entryLine(
   entry: RecordEntry,
@@ -39,6 +49,12 @@ function entryLine(
 ): string {
   const time = new Date(entry.at).toLocaleString();
   if (entry.tool === CLEARED_TOOL) return `${time} · You cleared the record`;
+  if (entry.change) {
+    const channel = entry.channelId
+      ? `#${channelLabel(qc, entry.workspaceId, entry.channelId)}`
+      : "an unknown channel";
+    return `${time} · ${CHANGE_LABELS[entry.change]} · ${channel}`;
+  }
   const line = `${time} · ${entry.query ? "Searched" : "Read"} · ${target(entry, qc, workspaceName)}`;
   if (entry.refused) return `${line} · refused`;
   if (entry.tool === "rim_list_workspaces" || entry.tool === "rim_list_channels") return line;
@@ -47,8 +63,8 @@ function entryLine(
 }
 
 /**
- * What RIM handed to one agent, or to every agent including those since disconnected, newest
- * first, and the way to clear the whole record.
+ * What RIM handed to one agent and what it asked to do, or the same for every agent including
+ * those since disconnected, newest first, and the way to clear the whole record.
  *
  * @param agent - The agent to show, or `null` for the whole record.
  */
@@ -91,14 +107,18 @@ export function AgentRecordDialog({
   return (
     <Dialog
       open
-      title={agent ? `What ${agent.name} was given` : "What agents were given"}
+      title={
+        agent
+          ? `What ${agent.name} was given and what it asked to do`
+          : "What agents were given and what they asked to do"
+      }
       maxWidth="max-w-2xl"
       onClose={onClose}
     >
       <p className="text-sm text-rim-text-muted">
         {agent
-          ? "What RIM handed to this agent. RIM can't see what it did with it."
-          : "What RIM handed to agents, including those no longer connected. RIM can't see what they did with it."}
+          ? "What RIM handed to this agent and what it asked to do. RIM can't see what it did with it."
+          : "What RIM handed to agents, including those no longer connected, and what they asked to do. RIM can't see what they did with it."}
       </p>
       {shown.length === 0 ? (
         <p className="mt-3 text-sm text-rim-text-muted">Nothing yet.</p>

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { isVaultUnlocked, onVaultLock } from "../../../core/accountVault/accountVault";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
+import { rejectOutsideAgentConfirmation } from "../../agent/state/confirmationModalStore";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
 import { BUILD_VERSION } from "../../updater/api/updaterApi";
 import {
@@ -16,6 +17,7 @@ import {
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { secureRandom } from "./agentCrypto";
+import { appAgentChanges } from "./appAgentChanges";
 import { appAgentReads } from "./appAgentReads";
 import { handleBridgeRequest } from "./bridgeHandler";
 import { createPairing } from "./pairing";
@@ -32,8 +34,8 @@ async function stillListening(): Promise<boolean> {
 
 /**
  * Answers what agents ask through the bridge. It takes each request, answers nothing once the
- * bridge has stopped listening, forgets pairing when the account locks, and brings the window
- * forward for a request that needs the person.
+ * bridge has stopped listening, forgets pairing and ends an agent's open confirmation when the
+ * account locks, and brings the window forward for a request that needs the person.
  */
 export function useAgentBridge(): void {
   useEffect(() => {
@@ -64,7 +66,10 @@ export function useAgentBridge(): void {
       refuse: pairing.refuse,
       reset: pairing.reset,
     });
-    const stopLock = onVaultLock(() => pairing.reset());
+    const stopLock = onVaultLock(() => {
+      pairing.reset();
+      rejectOutsideAgentConfirmation();
+    });
 
     const onRequest = async (request: BridgeRequest) => {
       try {
@@ -79,7 +84,7 @@ export function useAgentBridge(): void {
         unlocked: isVaultUnlocked,
         pairing,
         agents: () => useConnectedAgentsStore.getState().agents,
-        mcp: { reads: appAgentReads, version: BUILD_VERSION },
+        mcp: { reads: appAgentReads, changes: appAgentChanges, version: BUILD_VERSION },
       });
       await agentBridgeAnswer(request.id, answer.status, answer.body).catch(() => {
         logger.warn("[RIM:agents] could not answer a request");
@@ -103,6 +108,7 @@ export function useAgentBridge(): void {
       stop?.();
       stopLock();
       pairing.reset();
+      rejectOutsideAgentConfirmation();
       usePendingPairingStore.setState(usePendingPairingStore.getInitialState(), true);
     };
   }, []);

@@ -23,6 +23,7 @@ import { lockVault } from "../../../core/accountVault/accountVault";
 import { readSealedItem } from "../../../core/accountVault/sealedStorage";
 import { logger } from "../../../core/logger";
 import { unlockTestVault } from "../../../test/accountVault";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { AGENT_BRIDGE_REQUEST_EVENT } from "../api/agentBridge";
 import { AgentPairDialogHost } from "../components/AgentPairDialogHost";
 import { AgentsSettings } from "../components/AgentsSettings";
@@ -259,6 +260,60 @@ describe("useAgentBridge", () => {
       (await asked("/pair/poll", { requestId: body.requestId, pollSecret: body.pollSecret }))
         .status,
     ).toBe(404);
+  });
+
+  describe("an open confirmation", () => {
+    function openOutside(outside = true) {
+      return useConfirmationModalStore.getState().open({
+        commandId: "chat.post_message",
+        toolName: "send a message",
+        args: {},
+        token: "tok",
+        argsHash: "hash",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        ...(outside ? { outsideAgent: { name: "Claude Code", target: [], text: "hi" } } : {}),
+      });
+    }
+
+    afterEach(() => {
+      useConfirmationModalStore.getState().reset();
+    });
+
+    it("ends as not approved when the account locks", async () => {
+      await renderBridge();
+      const decision = openOutside();
+      act(() => lockVault());
+      await expect(decision).resolves.toEqual({ approved: false });
+      expect(useConfirmationModalStore.getState().request).toBeNull();
+    });
+
+    it("ends as not approved when the switch goes off", async () => {
+      const user = userEvent.setup();
+      render(<AgentsSettings />);
+      await renderBridge();
+      const toggle = screen.getByRole("switch", { name: "Let agents on this computer connect" });
+      await waitFor(() => expect(toggle).toBeChecked());
+      const decision = openOutside();
+      await user.click(toggle);
+      await expect(decision).resolves.toEqual({ approved: false });
+      expect(useConfirmationModalStore.getState().request).toBeNull();
+    });
+
+    it("ends as not approved when the bridge goes away", async () => {
+      const { unmount } = await renderBridge();
+      const decision = openOutside();
+      unmount();
+      await expect(decision).resolves.toEqual({ approved: false });
+    });
+
+    it("stays open when it is not a program's, whatever else happens", async () => {
+      await renderBridge();
+      const decision = openOutside(false);
+      act(() => lockVault());
+      expect(useConfirmationModalStore.getState().request).not.toBeNull();
+      useConfirmationModalStore.getState().approve();
+      await expect(decision).resolves.toEqual({ approved: true });
+    });
   });
 
   it("gives not_paired to a token after another account unlocks", async () => {

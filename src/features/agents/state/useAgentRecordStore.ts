@@ -13,7 +13,10 @@ const MAX_REFUSED_PER_AGENT = 500;
 /** The `tool` of the entry clearing the record leaves. */
 export const CLEARED_TOOL = "cleared";
 
-/** One thing RIM handed to an agent, or refused it. Holds no message text and no query text. */
+/**
+ * One thing RIM handed to an agent, refused it, or was asked to do for it. Holds no message text
+ * and no query text.
+ */
 export interface RecordEntry {
   /** When, ISO 8601. */
   at: string;
@@ -27,7 +30,10 @@ export interface RecordEntry {
   /** Whether it was a search. */
   query: boolean;
   messageIds: string[];
+  /** Whether a grant or validation check refused it. */
   refused: boolean;
+  /** For a request to change something: that it was asked, or how it ended. */
+  change?: "asked" | "sent" | "discarded" | "expired" | "busy" | "refused";
 }
 
 interface AgentRecordState {
