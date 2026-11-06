@@ -236,7 +236,8 @@ is off by default. It is optional, and RIM works the same without it. The web ap
 - **Disconnecting.** Each connected program has a **Disconnect** button in the tab. It stops the
   program reaching RIM. It takes nothing back: what the program has already read stays with it.
 
-A connected program can read only what you grant it, and it can't change anything:
+A connected program can read only what you grant it, and it can change nothing without you
+confirming that one change:
 
 - **Grants.** Everything starts off. **Choose what it can read** on a program's row gives that
   program one or more channels, or **All channels you can see** in a workspace. That includes private
@@ -244,9 +245,9 @@ A connected program can read only what you grant it, and it can't change anythin
   a grant at any time, and the change applies to the program's next call. Grants stay on this
   device, sealed with your account. Only workspaces on your own server are offered: one hosted on
   another server can't be granted yet.
-- **What it can ask.** Four tools, over the Model Context Protocol: `rim_list_workspaces`,
-  `rim_list_channels`, `rim_read_messages` and `rim_search_messages`. Each reads the workspace it
-  names, whichever one you have open. A message comes with its id, channel, thread, the author's
+- **What it can ask.** Five tools, over the Model Context Protocol: `rim_list_workspaces`,
+  `rim_list_channels`, `rim_read_messages`, `rim_search_messages` and `rim_send_message`. The first
+  four read the workspace they name, whichever one you have open. A message comes with its id, channel, thread, the author's
   display name, its text, its times, and each attachment's name, type and size. Text that people
   wrote is marked untrusted, which makes it less able to steer the program but cannot make that
   impossible.
@@ -258,9 +259,24 @@ A connected program can read only what you grant it, and it can't change anythin
 - **What stays closed.** Encrypted conversations, direct messages and groups are refused and
   dropped from search. There is no grant that opens them. A refusal reads the same whether a channel
   is closed, not granted, or does not exist.
-- **The record.** **What it was given** lists what RIM handed to that program and what it refused:
-  when, which tool, which channel, how many messages and their ids. **What agents were given** lists
-  it for every program, including those since disconnected. It holds no message text and no search
+- **Sending.** A program can ask to send a message to a channel its grant covers, and nowhere else:
+  encrypted conversations, direct messages and groups are refused the same way, and nothing is sent.
+  The app comes forward with a dialog showing the program's name, the workspace, the channel and the
+  whole text, with invisible and direction-changing characters shown by name. The text is what you
+  are confirming, and the program may have read something meant to steer it, so read it. **Run
+  anyway** stays disabled for the first second, so a click or key press meant for something else
+  can't answer it. Cancel, Close and Escape discard the message, and if you don't answer it expires
+  after 60 seconds. The program hears which of those happened. After a discard or an expiry, that
+  program's next request within 10 seconds is refused. While any confirmation is open, a program's
+  request is refused and can be retried; your own commands replace a program's dialog, which ends as
+  discarded. Locking the account or turning the switch off also ends it as discarded. The message
+  goes out under your name, and the others in the channel are not told a program wrote it. The audit
+  log records that an agent started it, which an Owner or Moderator can read. The server's AI
+  command switch applies: on a server that has it off, sending is refused.
+- **The record.** **What it was given** lists what RIM handed to that program, what it asked to send
+  and what it refused: when, which tool, which channel, how many messages and their ids, and how a
+  request to send ended, with the message's id if it went out. **What agents were given** lists it
+  for every program, including those since disconnected. It holds no message text and no search
   text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most
   500 refusals, so a program can't push out what another was given, or bury what it was given in
   refused calls. **Clear the whole record** clears it for every program and leaves one line saying

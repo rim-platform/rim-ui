@@ -68,7 +68,9 @@ describe("AgentRecordDialog", () => {
         <AgentRecordDialog agent={null} onClose={() => undefined} />
       </QueryClientProvider>,
     );
-    expect(screen.getByText("What agents were given")).toBeInTheDocument();
+    expect(
+      screen.getByText("What agents were given and what they asked to do"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^Old Tool · /)).toBeInTheDocument();
   });
 
@@ -78,9 +80,13 @@ describe("AgentRecordDialog", () => {
 
   it("says what the record is", () => {
     show();
-    expect(screen.getByRole("dialog", { name: "What Claude Code was given" })).toBeInTheDocument();
     expect(
-      screen.getByText("What RIM handed to this agent. RIM can't see what it did with it."),
+      screen.getByRole("dialog", { name: "What Claude Code was given and what it asked to do" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "What RIM handed to this agent and what it asked to do. RIM can't see what it did with it.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -104,6 +110,37 @@ describe("AgentRecordDialog", () => {
       `${TIME} · Read · unseen · 0 messages`,
       `${TIME} · Read · general · 1 message`,
     ]);
+  });
+
+  it.each([
+    ["asked", "Asked to send"],
+    ["sent", "Sent"],
+    ["discarded", "You discarded it"],
+    ["expired", "Expired"],
+    ["busy", "You were busy"],
+    ["refused", "Refused"],
+  ] as const)("words a change that %s", (change, words) => {
+    useAgentRecordStore.setState({
+      entries: [entry({ tool: "rim_send_message", change, messageIds: [] })],
+    });
+    show();
+    expect(lines()).toEqual([`${TIME} · ${words} · #general`]);
+  });
+
+  it("words a refused request that named no channel", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({
+          tool: "rim_send_message",
+          channelId: null,
+          change: "refused",
+          refused: true,
+          messageIds: [],
+        }),
+      ],
+    });
+    show();
+    expect(lines()).toEqual([`${TIME} · Refused · an unknown channel`]);
   });
 
   it("shows the refused line", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ShieldAlert, X } from "lucide-react";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
@@ -7,6 +7,7 @@ import { cn } from "../../../shared/ui/cn";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
 import { Z } from "../../../shared/ui/zIndex";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import {
   useConfirmationModalStore,
   type ConfirmationRequest,
@@ -25,6 +26,8 @@ const FOCUSABLE_SELECTOR =
 const ARG_DISPLAY_LIMIT = 10;
 const ARG_VALUE_TRUNCATE_AT = 200;
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+/** How long Confirm stays disabled when a program outside RIM asked for the dialog. */
+const OUTSIDE_AGENT_ARM_MS = 1_000;
 
 interface SeverityVisuals {
   borderAccent: string;
@@ -92,7 +95,9 @@ interface ContainerProps {
 
 /**
  * Confirmation dialog for a command the server holds with `CONFIRMATION_REQUIRED`, whether
- * the AI agent or the user started it. A `RESTRICTED` command needs its verb typed first.
+ * the AI agent, the user or a program outside RIM started it. A `RESTRICTED` command needs its
+ * verb typed first. For a program outside RIM, Confirm waits a second and the dialog shows exactly
+ * what would go out.
  */
 export function ConfirmCommandModal() {
   const request = useConfirmationModalStore((s) => s.request);
@@ -107,6 +112,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const currentConversationId = useShellStore((s) => s.selectedConversationId);
 
   const byUser = request.initiator === "user";
+  const outside = request.outsideAgent;
+  const fromOutside = outside !== undefined;
   // The server holds a user's command only when it is dangerous or stricter, so an unknown
   // sensitivity is shown as MUTATING.
   const sensitivity = request.sensitivity ?? (byUser ? CommandSensitivity.MUTATING : undefined);
@@ -133,7 +140,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const [typedVerb, setTypedVerb] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const verbOk = !requireType || verbMatches(typedVerb, expectedVerb);
-  const confirmEnabled = !submitting && verbOk;
+  // Compared with the request's token, so a new request is never armed by the previous one's wait.
+  const [armedToken, setArmedToken] = useState<string | null>(null);
+  const armed = !fromOutside || armedToken === request.token;
+  const confirmEnabled = !submitting && verbOk && armed;
 
   // Refs for focus management.
   const panelRef = useRef<HTMLDivElement>(null);
@@ -149,6 +159,12 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
       requestIdRef.current = request.token;
     }
   }, [request.token]);
+
+  useEffect(() => {
+    if (!fromOutside) return;
+    const t = setTimeout(() => setArmedToken(request.token), OUTSIDE_AGENT_ARM_MS);
+    return () => clearTimeout(t);
+  }, [fromOutside, request.token]);
 
   // Body scroll lock + focus restoration on unmount. Mirrors Dialog.
   useEffect(() => {
@@ -260,6 +276,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           data-dangerous={request.dangerous ? "true" : undefined}
           className={cn(
             "w-full max-w-lg rounded-xl border border-rim-line border-l-4 bg-rim-panel",
+            fromOutside && "max-h-full overflow-y-auto",
             request.dangerous ? "border-l-rim-danger" : visuals.borderAccent,
           )}
         >
@@ -291,8 +308,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           <div className="space-y-4 px-6 py-5">
             {/* Title + subtitle */}
             <div>
-              <h2 id={titleId} className="text-xl font-medium text-rim-text">
-                {byUser ? "Confirm:" : "Agent wants to:"}{" "}
+              <h2 id={titleId} className="break-words text-xl font-medium text-rim-text">
+                {outside ? `${outside.name} wants to:` : byUser ? "Confirm:" : "Agent wants to:"}{" "}
                 <span className="text-rim-accent">{request.toolName}</span>
               </h2>
               {/* `description` is the human-facing consequence line, written
@@ -308,7 +325,12 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 tool-result origin, then the word to type */}
             <span id={descId} className="sr-only">
               {request.dangerous ? "Dangerous command. " : ""}
-              {visuals.srLabel}. {byUser ? "Initiated by you." : "Initiated by AI agent."}
+              {visuals.srLabel}.{" "}
+              {outside
+                ? "Initiated by a program outside RIM."
+                : byUser
+                  ? "Initiated by you."
+                  : "Initiated by AI agent."}
               {crossChannel
                 ? ` Destination differs from active conversation; will post in conversation ${crossChannel.targetId.slice(0, 8)}.`
                 : ""}
@@ -328,8 +350,9 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                   )}
                   data-testid="initiator-chip"
                 >
-                  <Bot className="h-3 w-3" /> AGENT
+                  <Bot className="h-3 w-3" /> AGENT{fromOutside && " outside RIM"}
                 </span>
+                {fromOutside && <ExpiresIn key={request.token} expiresAt={request.expiresAt} />}
               </div>
             )}
 
@@ -366,8 +389,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               </div>
             )}
 
-            {/* Arguments block */}
-            <ArgsBlock args={maskedArgs} />
+            {/* What a program outside RIM asks for, or the arguments block */}
+            {outside ? <OutsideAgentDetails outside={outside} /> : <ArgsBlock args={maskedArgs} />}
 
             {/* Type-to-confirm input */}
             {requireType && (
@@ -453,6 +476,76 @@ function RimSystemBadge() {
     >
       RIM
     </span>
+  );
+}
+
+function secondsUntil(time: number): number {
+  return Math.max(0, Math.ceil((time - Date.now()) / 1000));
+}
+
+/** The seconds left until `expiresAt`, updating each second. */
+function ExpiresIn({ expiresAt }: { expiresAt: string }) {
+  const expiry = Date.parse(expiresAt);
+  const [left, setLeft] = useState(() => secondsUntil(expiry));
+
+  useEffect(() => {
+    const t = setInterval(() => setLeft(secondsUntil(expiry)), 1000);
+    return () => clearInterval(t);
+  }, [expiry]);
+
+  if (!Number.isFinite(expiry)) return null;
+  return (
+    <span className="text-xs text-rim-text-muted" data-testid="outside-agent-expiry">
+      Expires in {left} s
+    </span>
+  );
+}
+
+/**
+ * What a program outside RIM asks to do: the warning, what it acts on and the whole text. Text is
+ * rendered as plain text, with invisible characters shown by name; what is sent stays exact.
+ */
+function OutsideAgentDetails({
+  outside,
+}: {
+  outside: NonNullable<ConfirmationRequest["outsideAgent"]>;
+}) {
+  const shownText = useMemo(
+    () => (outside.text === undefined ? null : showInvisibleCharacters(outside.text)),
+    [outside.text],
+  );
+  return (
+    <>
+      <div
+        className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
+        data-testid="outside-agent-warning"
+      >
+        <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <div>
+          This came from a program outside RIM. It may have read text meant to steer it, so check
+          that this is what you want.
+        </div>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+        {outside.target.map(({ label, value }) => (
+          <Fragment key={label}>
+            <dt className="text-rim-text-muted">{label}</dt>
+            <dd className="break-words text-rim-text">{showInvisibleCharacters(value)}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      {shownText !== null && (
+        <div
+          role="group"
+          aria-label="The text to send"
+          tabIndex={0}
+          className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
+          data-testid="outside-agent-text"
+        >
+          {shownText}
+        </div>
+      )}
+    </>
   );
 }
 

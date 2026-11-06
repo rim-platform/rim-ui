@@ -63,15 +63,18 @@ const DENIED_TEXT =
 const NOT_STORED_TEXT = "This channel is not stored on this device yet. Try again shortly.";
 const FAILED_TEXT = "RIM could not read this.";
 
-function denied(): ToolOutcome {
+/** The one refusal for a conversation an agent may not reach, whatever the reason. */
+export function denied(): ToolOutcome {
   return { isError: true, payload: { refusal: "DENIED", message: DENIED_TEXT } };
 }
 
-function failed(message: string = FAILED_TEXT): ToolOutcome {
+/** A refusal for a technical reason. */
+export function failed(message: string = FAILED_TEXT): ToolOutcome {
   return { isError: true, payload: { refusal: "FAILED", message } };
 }
 
-function errorName(error: unknown): string {
+/** What may be logged about a failure: its class, and nothing it carried. */
+export function errorName(error: unknown): string {
   return error instanceof Error ? error.name : "unknown";
 }
 
@@ -86,7 +89,8 @@ function limitOf(value: unknown): number | null {
     : null;
 }
 
-function idOf(value: unknown): string | null {
+/** The id an agent gave, or `null` when it is not shaped like one RIM could have issued. */
+export function idOf(value: unknown): string | null {
   return typeof value === "string" && ID_SHAPE.test(value) ? value : null;
 }
 

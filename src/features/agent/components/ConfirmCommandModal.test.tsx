@@ -747,3 +747,202 @@ describe("ConfirmCommandModal — confirm shortcut", () => {
     expect(screen.getByTestId("confirm-button")).toHaveTextContent("⌘↵");
   });
 });
+
+describe("ConfirmCommandModal — a program outside RIM", () => {
+  const LONG_TEXT = `${"word ".repeat(100)}the end`;
+
+  function makeOutsideRequest(text: string = "hello") {
+    return makeRequest({
+      commandId: "chat.post_message",
+      toolName: "send a message",
+      args: {},
+      verb: null,
+      initiator: "agent",
+      nlDescription: undefined,
+      outsideAgent: {
+        name: "Claude Code",
+        target: [
+          { label: "Workspace", value: "Acme" },
+          { label: "Channel", value: "general" },
+        ],
+        text,
+      },
+    });
+  }
+
+  /** Renders the dialog for a request and keeps its decision. */
+  function open(text?: string) {
+    render(<ConfirmCommandModal />);
+    let decision!: Promise<{ approved: boolean }>;
+    act(() => {
+      decision = useConfirmationModalStore.getState().open(makeOutsideRequest(text));
+    });
+    return decision;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+  });
+
+  afterEach(() => {
+    act(() => useConfirmationModalStore.getState().reset());
+    vi.useRealTimers();
+  });
+
+  function pass(ms: number) {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  }
+
+  it("names who asks, what it acts on and says it came from outside RIM", () => {
+    open();
+    expect(screen.getByRole("heading")).toHaveTextContent("Claude Code wants to: send a message");
+    expect(screen.getByTestId("initiator-chip")).toHaveTextContent("AGENT outside RIM");
+    expect(screen.getByText("Workspace").nextElementSibling).toHaveTextContent("Acme");
+    expect(screen.getByText("Channel").nextElementSibling).toHaveTextContent("general");
+    expect(screen.getByTestId("outside-agent-warning")).toHaveTextContent(
+      "This came from a program outside RIM. It may have read text meant to steer it, so check that this is what you want.",
+    );
+    expect(screen.queryByTestId("args-block")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("type-to-confirm-block")).not.toBeInTheDocument();
+  });
+
+  it("shows the whole text past where arguments are cut", () => {
+    open(LONG_TEXT);
+    expect(LONG_TEXT.length).toBeGreaterThan(200);
+    expect(screen.getByTestId("outside-agent-text").textContent).toBe(LONG_TEXT);
+  });
+
+  it("keeps the text's lines, and can be reached by keyboard to scroll it", () => {
+    open("one\n\ttwo");
+    const text = screen.getByTestId("outside-agent-text");
+    expect(text.textContent).toBe("one\n\ttwo");
+    expect(text).toHaveClass("whitespace-pre-wrap", "max-h-64", "overflow-y-auto");
+    expect(text).toHaveAttribute("tabindex", "0");
+  });
+
+  it("shows text as written, never as Markdown or HTML", () => {
+    const written = "**bold** [link](https://example.com) <img src=x onerror=alert(1)>";
+    open(written);
+    const text = screen.getByTestId("outside-agent-text");
+    expect(text.textContent).toBe(written);
+    expect(text.children).toHaveLength(0);
+  });
+
+  it("shows a direction-changing character by name, and in a name it acts on", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      const request = makeOutsideRequest("safe\u202Etxt.exe");
+      request.outsideAgent!.target[1].value = "gen\u202Eeral";
+      void useConfirmationModalStore.getState().open(request);
+    });
+    expect(screen.getByTestId("outside-agent-text").textContent).toBe("safe⟦U+202E⟧txt.exe");
+    expect(screen.getByText("gen⟦U+202E⟧eral")).toBeInTheDocument();
+  });
+
+  it("leaves what is confirmed exact in the request", () => {
+    open("safe\u202Etxt");
+    expect(useConfirmationModalStore.getState().request?.outsideAgent?.text).toBe("safe\u202Etxt");
+  });
+
+  it("keeps Confirm disabled for a second, then enables it", () => {
+    open();
+    const confirm = screen.getByTestId("confirm-button");
+    expect(confirm).toBeDisabled();
+    pass(999);
+    expect(confirm).toBeDisabled();
+    pass(1);
+    expect(confirm).toBeEnabled();
+    expect(confirm).toHaveTextContent("Run anyway");
+  });
+
+  it("does nothing for a click or Ctrl+Enter in the first second", async () => {
+    const decision = open();
+    const settled = vi.fn();
+    void decision.then(settled);
+    fireEvent.click(screen.getByTestId("confirm-button"));
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", metaKey: true });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(settled).not.toHaveBeenCalled();
+    expect(useConfirmationModalStore.getState().request).not.toBeNull();
+  });
+
+  it("confirms by click or Ctrl+Enter after the second", async () => {
+    const byClick = open();
+    pass(1_000);
+    fireEvent.click(screen.getByTestId("confirm-button"));
+    await expect(byClick).resolves.toEqual({ approved: true });
+
+    let byKey!: Promise<{ approved: boolean }>;
+    act(() => {
+      byKey = useConfirmationModalStore.getState().open(makeOutsideRequest());
+    });
+    pass(1_000);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", ctrlKey: true });
+    await expect(byKey).resolves.toEqual({ approved: true });
+  });
+
+  it("makes a new request wait its own second", () => {
+    open();
+    pass(1_000);
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeOutsideRequest());
+    });
+    expect(screen.getByTestId("confirm-button")).toBeDisabled();
+    pass(1_000);
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+  });
+
+  it("does not make a person's own dialog wait", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore
+        .getState()
+        .open(makeRequest({ initiator: "user", verb: null }));
+    });
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+    expect(screen.queryByTestId("outside-agent-warning")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outside-agent-expiry")).not.toBeInTheDocument();
+  });
+
+  it("does not make the built-in agent's dialog wait", () => {
+    render(<ConfirmCommandModal />);
+    act(() => {
+      void useConfirmationModalStore.getState().open(makeRequest());
+    });
+    expect(screen.getByTestId("confirm-button")).toBeEnabled();
+  });
+
+  it("discards on Escape, even in the first second", async () => {
+    const decision = open();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await expect(decision).resolves.toEqual({ approved: false });
+  });
+
+  it("does not close from the backdrop", () => {
+    open();
+    fireEvent.click(screen.getByTestId("confirm-cmd-backdrop"));
+    expect(useConfirmationModalStore.getState().request).not.toBeNull();
+  });
+
+  it("starts focus on Close", () => {
+    open();
+    pass(50);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+  });
+
+  it("counts down each second and ends at the expiry", async () => {
+    const decision = open();
+    expect(screen.getByTestId("outside-agent-expiry")).toHaveTextContent("Expires in 60 s");
+    pass(1_000);
+    expect(screen.getByTestId("outside-agent-expiry")).toHaveTextContent("Expires in 59 s");
+    pass(59_000);
+    await expect(decision).resolves.toEqual({ approved: false });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});

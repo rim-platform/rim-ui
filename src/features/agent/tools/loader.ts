@@ -41,7 +41,7 @@ function clearRegistry(): void {
 // "challenge payload missing" branch and no dangerous command can ever be
 // confirmed. This selection set must stay exhaustive; losing any of {token, argsHash,
 // expiresAt} breaks the in-band-proof flow.
-const EXECUTE_COMMAND_MUTATION = gql`
+export const EXECUTE_COMMAND_MUTATION = gql`
   mutation AgentExecuteCommand($input: ExecuteCommandInput!) {
     executeCommand(input: $input) {
       status
