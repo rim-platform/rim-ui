@@ -31,7 +31,8 @@
  */
 
 import { useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Plus } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import { useEdgeStore } from "../../../core/graphql/edgeRefusals";
 import { ADDRESS_BLOCKED_MESSAGE } from "../../../core/graphql/errors";
@@ -52,6 +53,8 @@ import { ServerChoice } from "./ServerChoice";
 import { AbuseContact } from "./AbuseContact";
 import { RegistrationFullNotice } from "./RegistrationFullNotice";
 import { NoKeysHere } from "./NoKeysHere";
+import { WayInRow } from "./WayInRow";
+import { useDeviceKeyAccounts } from "../../key-identity/api/useDeviceKeyAccounts";
 
 /**
  * Top-level component for the `/login` route.
@@ -70,6 +73,9 @@ export function LoginPage() {
   const full = serverInfo.info?.registrationFull === true;
   const blocked = useEdgeStore((s) => s.blocked);
   const sessionEnded = useAuthStore((s) => s.sessionEnded);
+  // The same query the account cards read, so it asks the device nothing more.
+  const accounts = useDeviceKeyAccounts();
+  const hasAccounts = capabilities.deviceKeys && (accounts.data?.length ?? 0) > 0;
 
   // If already authenticated, send directly to the intended destination.
   useEffect(() => {
@@ -105,24 +111,23 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-      <div className="w-full max-w-lg space-y-6">
+    <div className="flex min-h-full justify-center bg-rim-void px-4 py-12">
+      <main className="w-full max-w-[440px] space-y-5">
         <InstanceNotice />
 
-        <header className="text-center">
+        <header className="flex flex-col items-center gap-2.5 text-center">
           <BrandHeading />
-          <p className="mt-1 text-sm text-rim-text-muted">Sign in to your workspace</p>
+          <h2 className="text-[22px] font-semibold text-rim-text">Sign in to your workspace</h2>
+          <HealthIndicator />
         </header>
-
-        <HealthIndicator />
 
         {blocked && (
           <div
             role="alert"
-            className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+            className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-[13px] leading-normal text-rim-danger"
           >
-            <p className="font-medium">{ADDRESS_BLOCKED_MESSAGE}</p>
-            <p className="mt-1 text-xs">
+            <p className="font-semibold">{ADDRESS_BLOCKED_MESSAGE}</p>
+            <p className="mt-1">
               The server refuses every request from this network address. Ask whoever runs it if you
               think this is a mistake.
             </p>
@@ -132,7 +137,7 @@ export function LoginPage() {
         {needsConnection && (
           <p
             role="status"
-            className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text"
+            className="rounded-[10px] border border-rim-line bg-rim-panel-soft px-3 py-2.5 text-[13px] text-rim-text"
           >
             {NEEDS_CONNECTION_MESSAGE}
           </p>
@@ -141,48 +146,52 @@ export function LoginPage() {
         {sessionEnded && (
           <p
             role="status"
-            className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text"
+            className="rounded-[10px] border border-rim-line bg-rim-panel-soft px-3 py-2.5 text-[13px] text-rim-text"
           >
             {SESSION_ENDED_MESSAGE}
           </p>
         )}
 
         {noKeysHere ? (
-          <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+          <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
+            <h3 className="mb-2 text-[15px] font-semibold text-rim-text">
+              This browser can&apos;t sign in
+            </h3>
             <NoKeysHere />
           </div>
         ) : (
-          <section
-            aria-label="Sign in with a key"
-            className="space-y-4 rounded-xl border border-rim-line bg-rim-panel p-6 empty:hidden"
-          >
+          <section aria-label="Sign in with a key" className="space-y-5 empty:hidden">
             <DeviceKeySignIn onSuccess={handleLoginSuccess} />
-            <LinkThisDevice onSuccess={handleLoginSuccess} />
-            <RecoverAccount onSuccess={handleLoginSuccess} />
           </section>
         )}
+
+        <section
+          aria-label="Other ways in"
+          className="hidden flex-col gap-2 has-[[data-way-in]]:flex"
+        >
+          <h3 className="mb-0.5 ml-0.5 text-[11px] font-medium uppercase tracking-[0.08em] text-rim-text-muted">
+            {hasAccounts ? "Not this account?" : "Choose how to start"}
+          </h3>
+          {!noKeysHere && <LinkThisDevice onSuccess={handleLoginSuccess} />}
+          {!noKeysHere && <RecoverAccount onSuccess={handleLoginSuccess} />}
+          {!full && canCreate && (
+            <WayInRow
+              to="/join"
+              title="Create account"
+              hint="New here. You need no email."
+              icon={<Plus className="h-4 w-4 text-rim-success" />}
+            />
+          )}
+        </section>
 
         {full ? (
           <RegistrationFullNotice />
         ) : canCreate ? (
-          <div className="space-y-3 text-center">
-            <div className="flex items-center gap-3 text-xs text-rim-text-faint">
-              <span className="flex-1 border-t border-rim-line" />
-              <span>OR</span>
-              <span className="flex-1 border-t border-rim-line" />
-            </div>
-            <Link
-              to="/join"
-              className="inline-block rounded-lg border border-rim-line bg-rim-void px-4 py-2 text-sm text-rim-text-muted transition hover:text-rim-text"
-            >
-              Create account
-            </Link>
-            {inviteOnly && (
-              <p className="text-xs text-rim-text-muted">
-                Creating an account here takes an invite code or link from someone on this server.
-              </p>
-            )}
-          </div>
+          inviteOnly && (
+            <p className="text-xs text-rim-text-muted">
+              Creating an account here takes an invite code or link from someone on this server.
+            </p>
+          )
         ) : noKeysHere ? null : isPow ? (
           <p className="text-center text-xs text-rim-text-muted">
             No account? Create one in the RIM desktop app, or ask for an invite.
@@ -193,10 +202,11 @@ export function LoginPage() {
           </p>
         )}
 
-        <AbuseContact />
-
-        <ServerChoice />
-      </div>
+        <footer className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-0.5 pt-1">
+          <ServerChoice />
+          <AbuseContact />
+        </footer>
+      </main>
     </div>
   );
 }

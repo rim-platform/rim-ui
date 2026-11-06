@@ -215,7 +215,7 @@ export function JoinForm({
 
   return (
     <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-      <div className="w-full max-w-lg space-y-6">
+      <div className="w-full max-w-[440px] space-y-6">
         <InstanceNotice />
 
         <header className="text-center">
@@ -238,7 +238,7 @@ export function JoinForm({
           </p>
         )}
 
-        <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+        <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
           {finishedUserId && joinOutcome ? (
             joinError ? (
               <div role="alert" className="space-y-3 text-sm">

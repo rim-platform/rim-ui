@@ -17,7 +17,7 @@ export function StorageRefusedPrompt({
     <div
       role="alertdialog"
       aria-label="This browser may clear your keys"
-      className="space-y-3 rounded-lg border border-rim-warm/30 bg-rim-warm/10 p-3"
+      className="space-y-3 rounded-[14px] border border-rim-warm/40 bg-rim-panel-soft p-5"
     >
       <div className="flex items-start gap-2">
         <HardDrive className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
