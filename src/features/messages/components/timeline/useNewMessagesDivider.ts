@@ -5,6 +5,7 @@ import { useUnreadStore } from "../../../conversations/state/useUnreadStore";
 import { useMarkAsRead } from "../../../conversations/api/useMarkAsRead";
 import { queryKeys } from "../../../../core/query/keys";
 import { isAfter } from "../../../../shared/utils/timestamps";
+import { isTimelineNotice } from "../../../e2ee/utils/timeline";
 import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 import type { MessagesPage } from "../../api/useMessages";
 import { newestMessage } from "./useMarkSeen";
@@ -15,7 +16,15 @@ export const MAX_EXTRA_PAGES_TO_MARKER = 3;
 interface UseNewMessagesDividerOptions {
   workspaceId: string | null;
   conversationId: string | null;
-  items: { sentAt: string; membershipNotice?: unknown; e2eeNotice?: unknown }[];
+  items: {
+    sentAt: string;
+    membershipNotice?: unknown;
+    e2eeNotice?: unknown;
+    authorId?: string;
+    threadId?: string | null;
+    isDeleted?: boolean;
+  }[];
+  currentUserId: string | undefined;
   isLensActive: boolean;
   /** Whether the user is currently at the bottom of the list (owned by the scroll hook). */
   isAtBottomRef: React.RefObject<boolean>;
@@ -32,7 +41,7 @@ interface UseNewMessagesDividerOptions {
  *
  * The line is the host's read marker while the conversation counts as unread, otherwise the local
  * watermark. Opening waits for the marker, no longer than the first page took to load, then for
- * older pages until the marker is among the loaded messages, at most
+ * older pages until everything the count says is unread is among the loaded messages, at most
  * {@link MAX_EXTRA_PAGES_TO_MARKER} of them. A marker in use is kept as the watermark, so the line
  * stays where it is once the conversation has been marked read.
  */
@@ -40,6 +49,7 @@ export function useNewMessagesDivider({
   workspaceId,
   conversationId,
   items,
+  currentUserId,
   isLensActive,
   isAtBottomRef,
   firstPagePending,
@@ -99,8 +109,23 @@ export function useNewMessagesDivider({
     void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
   }, [markerMissing, workspaceId, conversationId, qc]);
 
-  // Row 0 is the first unread only when nothing older remains to load.
-  const olderUnread = marker !== null && firstNewIndex === 0 && hasNextPage;
+  // What the loaded rows hold of what the store counts: top-level messages after the line, not
+  // deleted, by someone else.
+  const loadedUnread = useMemo(() => {
+    if (marker === null) return 0;
+    return items.filter(
+      (m) =>
+        !isTimelineNotice(m) &&
+        !m.threadId &&
+        !m.isDeleted &&
+        m.authorId !== currentUserId &&
+        isAfter(m.sentAt, marker),
+    ).length;
+  }, [items, marker, currentUserId]);
+
+  // Row 0 is the first unread when nothing older remains to load, or when every unread message
+  // the store counts is already among the loaded ones.
+  const olderUnread = marker !== null && firstNewIndex === 0 && hasNextPage && loadedUnread < count;
   const [extraPages, setExtraPages] = useState({ conversationId, pages: 0 });
   const pagesLoaded = extraPages.conversationId === conversationId ? extraPages.pages : 0;
   const loadingOlder = olderUnread && pagesLoaded < MAX_EXTRA_PAGES_TO_MARKER;
