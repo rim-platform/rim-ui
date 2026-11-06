@@ -3,7 +3,8 @@ import { useEffect, useRef, type RefObject } from "react";
 /**
  * Moves focus into the overlay `ref` points at when it mounts, unless something inside already
  * took it, and returns focus to the element that had it before the overlay opened when the
- * overlay unmounts. Focus the person moved elsewhere meanwhile stays where it is.
+ * overlay unmounts. When that element is gone, focus goes to the composer or the main page. Focus
+ * the person moved elsewhere meanwhile stays where it is.
  *
  * @param ref - The overlay's root element, which must be focusable.
  */
@@ -21,9 +22,14 @@ export function useOverlayFocus(ref: RefObject<HTMLElement | null>): void {
       const opener = openerRef.current;
       const active = document.activeElement;
       const abandoned = !active || active === document.body || overlay?.contains(active);
-      if (abandoned && opener instanceof HTMLElement && opener.isConnected) {
-        opener.focus({ preventScroll: true });
-      }
+      if (!abandoned) return;
+      const target =
+        opener instanceof HTMLElement && opener.isConnected && opener !== document.body
+          ? opener
+          : document.querySelector<HTMLElement>(
+              '[data-composer-input], [data-panel="mainSurface"]',
+            );
+      target?.focus({ preventScroll: true });
     };
   }, [ref]);
 }

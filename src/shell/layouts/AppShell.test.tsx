@@ -8,6 +8,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../state/useShellStore";
+import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 import type { PluginInfo } from "../../features/plugins/types";
 import { createTestQueryClient } from "../../test/utils";
@@ -200,6 +202,16 @@ vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
   PinnedMessagesPanel: () => {
     if (pinnedShouldThrow) throw new Error("pinned boom");
     return <div data-testid="pinned-panel">pinned ok</div>;
+  },
+}));
+
+vi.mock("../../features/conversations/components/ConversationSelectionRuntime", () => ({
+  ConversationSelectionRuntime: () => {
+    useEffect(() => {
+      const shell = useShellStore.getState();
+      if (shell.selectedConversationId === null) shell.setSelectedConversationId("conv-first");
+    }, []);
+    return null;
   },
 }));
 
@@ -698,5 +710,64 @@ describe("AppShell — narrow and medium windows", () => {
     expect(elsewhere).toHaveFocus();
     opener.remove();
     elsewhere.remove();
+  });
+
+  it("keeps the drawer open after the first press although the conversation opens at load", () => {
+    useShellStore.setState({ selectedConversationId: null });
+    renderAt(600);
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-first");
+
+    act(() => useShellStore.getState().toggleNavDrawer());
+    expect(screen.getByRole("dialog", { name: "Navigation" })).toBeInTheDocument();
+  });
+
+  it("opens the drawer for a panel asked for after the drawer was closed with another open", () => {
+    renderAt(600);
+    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+
+    act(() => useShellStore.getState().setNavDrawerOpen(false));
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+
+    act(() => useMembersPanelStore.getState().setOpen(true));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+    act(() => useShellStore.getState().setNavDrawerOpen(false));
+    expect(useMembersPanelStore.getState().open).toBe(false);
+  });
+
+  it("leaves an open panel alone when the window widens and the drawer goes", () => {
+    renderAt(600);
+    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    resizeTo(1400);
+    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    act(() => useNotificationsPanelStore.getState().setOpen(false));
+  });
+
+  it("leaves an Escape to a picker that is open over the thread", async () => {
+    const user = userEvent.setup();
+    renderAt(900);
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    const picker = document.createElement("div");
+    picker.setAttribute("role", "dialog");
+    document.body.append(picker);
+    screen.getByTestId("thread-input").focus();
+
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().isThreadOpen).toBe(true);
+    picker.remove();
+  });
+
+  it("returns focus to the composer when the element that opened the overlay is gone", () => {
+    renderAt(900);
+    const composer = document.createElement("textarea");
+    composer.setAttribute("data-composer-input", "");
+    const opener = document.createElement("button");
+    document.body.append(composer, opener);
+    opener.focus();
+    act(() => useShellStore.getState().openThreadForMessage("m1"));
+    opener.remove();
+    act(() => useShellStore.getState().closeThread());
+    expect(composer).toHaveFocus();
+    composer.remove();
   });
 });

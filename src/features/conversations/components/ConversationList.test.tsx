@@ -36,6 +36,7 @@ const prefetch = vi.hoisted(() => ({ usePrefetchMessages: vi.fn() }));
 vi.mock("../../../core/events/usePrefetchMessages", () => prefetch);
 
 import { ConversationList } from "./ConversationList";
+import { ConversationSelectionRuntime } from "./ConversationSelectionRuntime";
 
 const general = makeConversation({ id: "c-general", title: "general", memberCount: 12 });
 const secret = makeConversation({ id: "c-secret", title: "secret", isPrivate: true });
@@ -87,6 +88,7 @@ function renderList(defaultWorkspace?: string) {
   }
   render(
     <QueryClientProvider client={qc}>
+      <ConversationSelectionRuntime />
       <ConversationList onNewChannel={vi.fn()} />
     </QueryClientProvider>,
   );
@@ -435,5 +437,52 @@ describe("ConversationList — guest gate", () => {
     serveAs(ServerMemberRoleGql.OWNER);
     renderList("ws-1");
     expect(await screen.findByRole("button", { name: "New channel" })).toBeInTheDocument();
+  });
+});
+
+describe("ConversationList — navigation drawer", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    useShellStore.getState().reset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+    useShellStore.getState().reset();
+  });
+
+  it("closes the drawer when the conversation already open is chosen again", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: "c-general", navDrawerOpen: true });
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByText("general"));
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("does not close the drawer when the first conversation opens by itself", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: null, navDrawerOpen: true });
+    renderList();
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+  });
+
+  it("opens the first conversation with no list mounted", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: null });
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ConversationSelectionRuntime />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
   });
 });

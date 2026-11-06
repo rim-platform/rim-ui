@@ -87,6 +87,7 @@ import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
 import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
 import { useObserveShellWidth, useShellWidth } from "../hooks/useShellWidth";
+import { ConversationSelectionRuntime } from "../../features/conversations/components/ConversationSelectionRuntime";
 import { NavDrawer } from "../components/NavDrawer";
 import { NarrowPage } from "../components/NavMenuButton";
 import { OverlayPanel } from "../components/OverlayPanel";
@@ -249,17 +250,40 @@ function useNavDrawerTriggers() {
     useShellStore.getState().setNavDrawerOpen(false);
   }, [selectedConversationId, drafting, surfaceKey, panelKey]);
 
-  const membersOpen = useMembersPanelStore((s) => s.open);
-  const notificationsOpen = useNotificationsPanelStore((s) => s.open);
-  const directoryOpen = useMemberDirectoryStore((s) => s.open);
-  const showNewMessage = useShellStore((s) => s.showNewMessagePicker);
-  const showNewChannel = useShellStore((s) => s.showNewChannelDialog);
-  const wantsToolPanel =
-    membersOpen || notificationsOpen || directoryOpen || showNewMessage || showNewChannel;
+  const flags = [
+    useMembersPanelStore((s) => s.open),
+    useNotificationsPanelStore((s) => s.open),
+    useMemberDirectoryStore((s) => s.open),
+    useShellStore((s) => s.showNewMessagePicker),
+    useShellStore((s) => s.showNewChannelDialog),
+  ];
+  const [membersOpen, notificationsOpen, directoryOpen, showNewMessage, showNewChannel] = flags;
+  const previousFlags = useRef(flags);
+  // Opens the drawer when any one of the tool panel's panels or dialogs turns on.
   useEffect(() => {
+    const turnedOn = flags.some((on, i) => on && !previousFlags.current[i]);
+    previousFlags.current = flags;
     const shell = useShellStore.getState();
-    if (wantsToolPanel && shell.shellWidth === "narrow") shell.setNavDrawerOpen(true);
-  }, [wantsToolPanel]);
+    if (turnedOn && shell.shellWidth === "narrow") shell.setNavDrawerOpen(true);
+    // The flags are the dependencies; `flags` is rebuilt each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [membersOpen, notificationsOpen, directoryOpen, showNewMessage, showNewChannel]);
+
+  // Closing the drawer of a narrow window closes what lived in its tool panel, so the command
+  // that opens one of them starts from a clean state.
+  const drawerOpen = useShellStore((s) => s.navDrawerOpen);
+  const wasDrawerOpen = useRef(drawerOpen);
+  useEffect(() => {
+    const closed = wasDrawerOpen.current && !drawerOpen;
+    wasDrawerOpen.current = drawerOpen;
+    const shell = useShellStore.getState();
+    if (!closed || shell.shellWidth !== "narrow") return;
+    useMembersPanelStore.getState().setOpen(false);
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().setOpen(false);
+    shell.setShowNewMessagePicker(false);
+    shell.setShowNewChannelDialog(false);
+  }, [drawerOpen]);
 }
 
 function WorkspaceShell() {
@@ -334,6 +358,7 @@ function WorkspaceShell() {
 
   return (
     <KeybindProvider>
+      <ConversationSelectionRuntime />
       <div
         ref={shellRef}
         className="flex min-h-0 min-w-0 flex-1 flex-col bg-rim-void text-rim-text"

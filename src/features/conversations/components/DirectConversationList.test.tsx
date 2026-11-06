@@ -31,6 +31,7 @@ vi.mock("../../workspaces/hooks/useMemberLookup", () => ({
 
 import { makeDmRequest } from "../../relay/__fixtures__/dmRequests";
 import { DirectConversationList } from "./DirectConversationList";
+import { ConversationSelectionRuntime } from "./ConversationSelectionRuntime";
 
 function dm(id: string, serverId: string) {
   return {
@@ -76,7 +77,12 @@ beforeEach(() => {
 
 describe("DirectConversationList", () => {
   it("lists the DMs of this relay's direct space and those homed on other relays", async () => {
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
     expect(await screen.findByText("Carol")).toBeInTheDocument();
     expect(await screen.findByText("Alice")).toBeInTheDocument();
     expect(inbox.fetchInboxConversations).toHaveBeenCalledWith("remote-space");
@@ -84,7 +90,12 @@ describe("DirectConversationList", () => {
 
   it("switches to the conversation's own space when it is opened", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
     await user.click(await screen.findByText("Alice"));
     await waitFor(() => expect(useWorkspaceStore.getState().workspaceId).toBe("remote-space"));
     expect(useShellStore.getState().selectedConversationId).toBe("remote-dm");
@@ -94,7 +105,12 @@ describe("DirectConversationList", () => {
     useShellStore.getState().setSelectedConversationId(null);
     useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
     const user = userEvent.setup();
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
 
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("local-dm"));
     expect(useShellStore.getState().activePluginPanel).not.toBeNull();
@@ -107,7 +123,12 @@ describe("DirectConversationList", () => {
   it("shows an open draft first and opens no conversation while it is open", async () => {
     const dan = { principalId: "rimp1_dan", relayUrls: [], name: "Dan" };
     useShellStore.getState().openDraftDirect({ spaceId: "direct-1", member: dan });
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
 
     const draftRow = (await screen.findByText("New message to Dan")).closest("li")!;
     expect(draftRow).toHaveAttribute("aria-selected", "true");
@@ -128,7 +149,12 @@ describe("DirectConversationList", () => {
       makeDmRequest("r3", "rims1_other", "remote-ws"),
     ]);
     const user = userEvent.setup();
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
     await user.click(await screen.findByRole("button", { name: "Requests (2)" }));
     expect(useShellStore.getState().mainSurface).toEqual({
       kind: "dm-requests",
@@ -137,14 +163,24 @@ describe("DirectConversationList", () => {
   });
 
   it("shows no requests row without pending requests", async () => {
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
     await screen.findByText("Carol");
     await waitFor(() => expect(relayApi.fetchDmRequests).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: /^Requests/ })).not.toBeInTheDocument();
   });
 
   it("opens a row's menu with right click, about the conversation's own space", async () => {
-    renderWithProviders(<DirectConversationList />);
+    renderWithProviders(
+      <>
+        <ConversationSelectionRuntime />
+        <DirectConversationList />
+      </>,
+    );
     fireEvent.contextMenu((await screen.findByText("Alice")).closest("button")!);
     const menu = screen.getByRole("menu", { name: "Conversation actions" });
     const labels = within(menu)
