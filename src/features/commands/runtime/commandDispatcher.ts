@@ -148,6 +148,9 @@ const localHandlers: Record<
   "workspace.open_marketplace": () => {
     useShellStore.getState().setMainSurface({ kind: "marketplace" });
   },
+  "workspace.open_agents": () => {
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" });
+  },
   "workspace.toggle_sidebar": () => {
     useShellStore.getState().toggleSidebar();
   },

@@ -129,11 +129,12 @@ describe("KeybindSettings and plugin commands", () => {
   it("offers this app's own commands too and keeps their bindings on this device", async () => {
     const { user, picker } = await openPicker();
     for (const { id, title } of LOCAL_COMMANDS) {
-      if (id === QUIT_COMMAND_ID) continue;
+      if (id === QUIT_COMMAND_ID || id === "workspace.open_agents") continue;
       expect(within(picker).getByRole("option", { name: title })).toBeInTheDocument();
     }
-    // The web app has no window to quit.
+    // The web app has no window to quit and no connected programs.
     expect(within(picker).queryByRole("option", { name: "Quit RIM" })).not.toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: "Open Agents" })).not.toBeInTheDocument();
     screen.getByRole("textbox", { name: "Keystroke" }).focus();
     await user.keyboard("{Control>}{Alt>}v{/Alt}{/Control}");
     await user.selectOptions(picker, "workspace.toggle_vim_mode");

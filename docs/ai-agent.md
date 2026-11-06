@@ -302,6 +302,7 @@ confirming that one change, unless a plugin says a command you approved only rea
   refused calls. **Clear the whole record** clears it for every program and leaves one line saying
   you did. It is a record of what RIM handed over, not of what
   the program did with it.
+- **Opening it.** The command **Open Agents** opens this screen from the palette or a key you bind it to. No program gets a tool that opens it.
 - **Runs.** **Its runs** (or **All runs**) groups the record into runs: one program's calls with no
   more than 15 minutes between them. A run is a grouping by time, not a task: RIM doesn't see where a
   program's task starts or ends, nor what it did between two calls, which model it used, or where

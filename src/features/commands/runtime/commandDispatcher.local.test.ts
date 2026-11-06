@@ -48,6 +48,11 @@ describe("this app's own commands", () => {
     }
   });
 
+  it("opens the agents settings", () => {
+    runDesktopLocalCommand("workspace.open_agents");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
+  });
+
   it("goes to the previous unread conversation, wrapping to the last one", () => {
     serveConversations(["a", "b", "c", "d"]);
     useUnreadStore.setState({ counts: { a: 1, c: 2 } });
