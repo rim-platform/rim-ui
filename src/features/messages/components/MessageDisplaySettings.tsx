@@ -53,6 +53,8 @@ export function MessageDisplaySettings() {
               <div className="text-sm font-medium text-rim-text">Only when I mark it read</div>
               <div className="text-xs text-rim-text-muted">
                 Conversations stay unread until you mark them, even after you read to the end.
+                This needs a server that keeps read markers: on an older one, reading still marks
+                them.
               </div>
             </div>
             <ToggleSwitch
