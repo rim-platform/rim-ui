@@ -286,4 +286,31 @@ describe("useMemberLookup", () => {
       useKnownHandles.setState({ byUser: {} });
     }
   });
+
+  it("carries a bot's mark and disclosure, and none for a person", () => {
+    vi.mocked(useCurrentUser).mockReturnValue({ data: undefined } as ReturnType<
+      typeof useCurrentUser
+    >);
+    const base = {
+      memberRole: ServerMemberRoleGql.GUEST,
+      joinedAt: "2026-01-01T00:00:00Z",
+      avatarUrl: null,
+      statusText: null,
+      bio: null,
+      displayName: null,
+    };
+    const bot = { runBy: "us", readsGoTo: "our server", addedByName: "Ivana" };
+    vi.mocked(useServerMembers).mockReturnValue({
+      data: [
+        { ...base, userId: "bot-1", username: "helper", isBot: true, bot },
+        { ...base, userId: "u-bob", username: "bob", isBot: false, bot: null },
+      ],
+    } as ReturnType<typeof useServerMembers>);
+
+    const { result } = renderHook(() => useMemberLookup("ws-1"));
+    expect(result.current.resolve("bot-1").isBot).toBe(true);
+    expect(result.current.resolve("bot-1").bot).toEqual(bot);
+    expect(result.current.resolve("u-bob").isBot).toBe(false);
+    expect(result.current.resolve("u-bob").bot).toBeNull();
+  });
 });

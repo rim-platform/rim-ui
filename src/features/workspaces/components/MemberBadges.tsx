@@ -1,6 +1,7 @@
 import { Crown, Shield } from "lucide-react";
 
 import { formatTime } from "../../../shared/utils/formatTime";
+import { BotBadge } from "../../../shared/ui/BotBadge";
 import { cn } from "../../../shared/ui/cn";
 import { ServerMemberRoleGql, roleLabel } from "../role";
 import { isTimeoutActive } from "../timeout";
@@ -51,6 +52,8 @@ export function RoleBadge({
     </span>
   );
 }
+
+export { BotBadge };
 
 /**
  * The role badge for owners, moderators and guests, for a role that arrives as free text.

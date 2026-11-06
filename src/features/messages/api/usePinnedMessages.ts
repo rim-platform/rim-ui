@@ -3,7 +3,8 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
-import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { MESSAGE_BOT_FIELDS, MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { botDisclosureDocument } from "../../updater/api/serverCapabilities";
 import type { MessageItem } from "../../../core/types/messages";
 
 const PINNED_MESSAGES_QUERY = gql`
@@ -13,6 +14,18 @@ const PINNED_MESSAGES_QUERY = gql`
     }
   }
   ${MESSAGE_WITH_REACTIONS}
+`;
+
+/** The same with the authors' bot disclosure, for a server that lists `bot_disclosure`. */
+const PINNED_MESSAGES_WITH_BOTS_QUERY = gql`
+  query PinnedMessagesWithBots($serverId: ID!, $conversationId: ID!) {
+    pinnedMessages(serverId: $serverId, conversationId: $conversationId) {
+      ...MessageWithReactions
+      ...MessageBotFields
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+  ${MESSAGE_BOT_FIELDS}
 `;
 
 interface PinnedMessagesResponse {
@@ -25,7 +38,11 @@ export function usePinnedMessages(workspaceId?: string, conversationId?: string)
     enabled: Boolean(workspaceId && conversationId),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<PinnedMessagesResponse>(PINNED_MESSAGES_QUERY, {
+      const document = await botDisclosureDocument({
+        plain: PINNED_MESSAGES_QUERY,
+        withBots: PINNED_MESSAGES_WITH_BOTS_QUERY,
+      });
+      const res = await graphqlClient.request<PinnedMessagesResponse>(document, {
         serverId: workspaceId!,
         conversationId: conversationId!,
       });

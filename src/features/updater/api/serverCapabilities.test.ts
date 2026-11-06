@@ -9,6 +9,8 @@ import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import {
+  BOT_DISCLOSURE,
+  botDisclosureDocument,
   hasCapability,
   MESSAGE_EDITED_AT,
   MESSAGE_FLAG,
@@ -61,10 +63,11 @@ describe("messageReadDocument", () => {
     queryClient.clear();
   });
 
-  const documents = { plain: "plain", withEdits: "edits", withFlags: "flags" };
+  const documents = { plain: "plain", withEdits: "edits", withFlags: "flags", withBots: "bots" };
 
   it("picks the newest document the server's capabilities allow", async () => {
     const cases = [
+      { capabilities: [MESSAGE_EDITED_AT, MESSAGE_FLAG, BOT_DISCLOSURE], document: "bots" },
       { capabilities: [MESSAGE_EDITED_AT, MESSAGE_FLAG], document: "flags" },
       { capabilities: [MESSAGE_EDITED_AT], document: "edits" },
       { capabilities: [], document: "plain" },
@@ -73,5 +76,22 @@ describe("messageReadDocument", () => {
       queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
       await expect(messageReadDocument(documents)).resolves.toBe(document);
     }
+  });
+});
+
+describe("botDisclosureDocument", () => {
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it("asks for the bot fields only of a server that lists bot_disclosure", async () => {
+    const documents = { plain: "plain", withBots: "bots" };
+    queryClient.setQueryData(
+      queryKeys.serverInfo,
+      fakeServerInfo({}, { capabilities: [BOT_DISCLOSURE] }),
+    );
+    await expect(botDisclosureDocument(documents)).resolves.toBe("bots");
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities: [] }));
+    await expect(botDisclosureDocument(documents)).resolves.toBe("plain");
   });
 });

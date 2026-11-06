@@ -5,12 +5,16 @@ import { toast } from "../../shared/toast";
 import { isDirectSpace } from "../relay/state/useRelayStore";
 import type { KnownServerInfo } from "../updater/api/serverInfoApi";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../updater/api/serverCapabilities";
+import { botsOfferedFor } from "../bots/availability";
 import type { ServerDetail } from "./api/useWorkspace";
 import { isOwner } from "./role";
 import { useWorkspaceActionStore, type WorkspaceAction } from "./state/useWorkspaceActionStore";
 import { useWorkspaceStore } from "./state/useWorkspaceStore";
 
 export type { WorkspaceAction };
+
+/** The command that opens Settings > Bots. */
+export const OPEN_BOTS_COMMAND_ID = "workspace.open_bots";
 
 /** What decides whether the viewer may leave or rename a workspace. */
 export interface WorkspaceActionFacts {
@@ -67,9 +71,12 @@ export function workspaceActionOffered(
 
 /**
  * Whether the palette offers `commandId` now: `workspace.leave` and `workspace.rename` for the
- * open workspace when allowed, every other command always.
+ * open workspace when allowed, `workspace.open_bots` to those who can see Settings > Bots,
+ * every other command always.
  */
 export function workspaceCommandOffered(commandId: string): boolean {
+  if (commandId === OPEN_BOTS_COMMAND_ID)
+    return botsOfferedFor(useWorkspaceStore.getState().workspaceId);
   if (commandId !== "workspace.leave" && commandId !== "workspace.rename") return true;
   const action = commandId === "workspace.leave" ? "leave" : "rename";
   return workspaceActionOffered(action, useWorkspaceStore.getState().workspaceId);

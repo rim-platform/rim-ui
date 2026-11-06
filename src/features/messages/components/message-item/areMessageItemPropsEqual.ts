@@ -24,6 +24,10 @@ export function sameAuthor(a: MessageAuthorView, b: MessageAuthorView): boolean 
       a.inDirectSpace === b.inDirectSpace &&
       a.joinedAt === b.joinedAt &&
       a.bio === b.bio &&
+      a.isBot === b.isBot &&
+      a.bot?.runBy === b.bot?.runBy &&
+      a.bot?.readsGoTo === b.bot?.readsGoTo &&
+      a.bot?.addedByName === b.bot?.addedByName &&
       a.presenceStatus === b.presenceStatus &&
       a.isCurrentUser === b.isCurrentUser)
   );

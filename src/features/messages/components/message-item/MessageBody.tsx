@@ -128,16 +128,18 @@ export const MessageText = memo(function MessageText({
         avatarUrl={member?.avatarUrl}
         statusText={member?.statusText}
         role={member?.role}
+        isBot={member?.isBot}
+        bot={member?.bot}
         joinedAt={member?.joinedAt}
         bio={member?.bio}
         isCurrentUser={member?.isCurrentUser}
         onSendDm={
-          member?.isFormerMember || activeBan(member?.ban)
+          member?.isBot || member?.isFormerMember || activeBan(member?.ban)
             ? undefined
             : () => void openDirectWithMember(mentionCard.userId)
         }
         blockAction={
-          member?.isCurrentUser || member?.isFormerMember
+          member?.isCurrentUser || member?.isFormerMember || member?.isBot
             ? undefined
             : () => blockActionFor(mentionCard.userId)
         }
