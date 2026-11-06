@@ -26,6 +26,7 @@ import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { toast } from "../../../shared/toast";
+import { BotBadge } from "../../../shared/ui/BotBadge";
 import { showCommandRefusal } from "../../commands/runtime/refusal";
 import type { CommandDefinition } from "../../commands/types";
 
@@ -38,6 +39,8 @@ interface MentionSuggestion {
   handle: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  /** The member is a bot. */
+  isBot?: boolean;
 }
 
 interface CommandSuggestion {
@@ -669,6 +672,7 @@ export function ComposerInput({
                   size="sm"
                 />
                 <span className="font-medium">{m.displayName ?? m.mention}</span>
+                {m.isBot && <BotBadge />}
                 {m.mention && <span className="text-rim-text-faint">@{m.mention}</span>}
               </button>
             ))}

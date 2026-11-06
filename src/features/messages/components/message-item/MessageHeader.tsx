@@ -10,7 +10,7 @@ import { formatTime } from "../../../../shared/utils/formatTime";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { blockActionFor } from "../../../relay/blocking/blockPerson";
 import { LockMark } from "../../../e2ee/components/LockMark";
-import { MessageRoleBadge } from "../../../workspaces/components/MemberBadges";
+import { BotBadge, MessageRoleBadge } from "../../../workspaces/components/MemberBadges";
 import { sameAuthor } from "./areMessageItemPropsEqual";
 import { useAuthorPresence } from "./useAuthorPresence";
 import type { ForwardedFromInfo, MessageAuthorView, MessageItemHandlers } from "./types";
@@ -43,17 +43,21 @@ function AuthorHoverCard({ authorId, author, children }: AuthorHoverProps) {
       avatarUrl={author.avatarUrl}
       statusText={author.statusText}
       role={author.role}
+      isBot={author.isBot}
+      bot={author.bot}
       joinedAt={author.joinedAt}
       bio={author.bio}
       presenceStatus={presence}
       isCurrentUser={author.isCurrentUser}
       onSendDm={
-        author.isFormerMember || activeBan(author.ban)
+        author.isBot || author.isFormerMember || activeBan(author.ban)
           ? undefined
           : () => void openDirectWithMember(authorId)
       }
       blockAction={
-        author.isCurrentUser || author.isFormerMember ? undefined : () => blockActionFor(authorId)
+        author.isCurrentUser || author.isFormerMember || author.isBot
+          ? undefined
+          : () => blockActionFor(authorId)
       }
     >
       {children}
@@ -142,8 +146,12 @@ export const MessageHeader = memo(function MessageHeader({
           {author.name}
         </span>
       </AuthorHoverCard>
-      {!author.inDirectSpace && !author.isFormerMember && !activeBan(author.ban) && (
-        <MessageRoleBadge role={author.role} className="self-center" />
+      {author.isBot ? (
+        <BotBadge className="self-center" />
+      ) : (
+        !author.inDirectSpace &&
+        !author.isFormerMember &&
+        !activeBan(author.ban) && <MessageRoleBadge role={author.role} className="self-center" />
       )}
       {author.inDirectSpace && !author.isCurrentUser && author.handle && (
         <span className="text-xs text-rim-text-faint truncate max-w-[160px]">
