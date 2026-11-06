@@ -41,7 +41,7 @@ function wrap(ui: ReactNode) {
 }
 
 async function openAndSubmit() {
-  await userEvent.click(screen.getByRole("button", { name: /link this device with its code/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
   await waitFor(() => expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"));
   await userEvent.click(screen.getByLabelText(/link code/i));
   await userEvent.paste(CODE);
@@ -172,7 +172,7 @@ describe("LinkThisDevice", () => {
       },
     );
     wrap(<LinkThisDevice onSuccess={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: /link this browser with its code/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
     expect(screen.getByText(/keys kept in a browser are weaker/i)).toBeInTheDocument();
     expect(screen.getByText(/this browser gets its own key/i)).toBeInTheDocument();
     await waitFor(() =>

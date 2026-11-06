@@ -29,6 +29,7 @@ import { rememberPendingPublicLink } from "../pendingPublicLink";
 import { useAuthStore } from "../state/useAuthStore";
 import { RegistrationMode } from "../types";
 import { BrandHeading } from "./BrandHeading";
+import { WorkspaceInitials } from "./WorkspaceInitials";
 import { RestoringSession } from "./RestoringSession";
 
 interface PublicLinkJoinProps {
@@ -37,7 +38,7 @@ interface PublicLinkJoinProps {
 }
 
 const ERROR_BOX =
-  "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
+  "rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger";
 
 /**
  * The `/join/:token` page for a workspace's public link. Once the session cookie is checked it
@@ -115,13 +116,16 @@ function linkSubtitle(preview: PublicJoinLinkPreviewData): string {
 function LinkCard({ token, preview }: { token: string; preview: PublicJoinLinkPreviewData }) {
   return (
     <Centered>
-      <div className="w-full max-w-lg space-y-6">
+      <div className="w-full max-w-[440px] space-y-6">
         <header className="text-center">
           <BrandHeading />
           <p className="mt-1 text-sm text-rim-text-muted">{linkSubtitle(preview)}</p>
-          <h2 className="mt-2 text-lg font-semibold text-rim-text">{preview.name}</h2>
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <WorkspaceInitials name={preview.name} />
+            <h2 className="text-lg font-semibold text-rim-text">{preview.name}</h2>
+          </div>
         </header>
-        <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+        <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
           <ViewerAction token={token} preview={preview} />
         </div>
       </div>
@@ -166,7 +170,7 @@ function SignedOut({ token, asks }: { token: string; asks: boolean }) {
         No account yet? Create one first, then you come back to this link.
       </p>
       {inviteOnly && (
-        <p className="text-xs text-rim-text-faint">
+        <p className="text-xs text-rim-text-muted">
           This server creates accounts only with an invite from someone on it. This link lets
           accounts that already exist join; it does not create one.
         </p>
@@ -366,7 +370,7 @@ function AskToJoin({ token }: { token: string }) {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           aria-invalid={tooLong}
-          className="w-full resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent"
+          className="w-full resize-none rounded-[9px] border border-rim-line-strong bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus:border-rim-accent"
         />
         <p className={tooLong ? "text-xs text-rim-danger" : "text-xs text-rim-text-faint"}>
           {message.length} / {JOIN_REQUEST_MESSAGE_MAX}

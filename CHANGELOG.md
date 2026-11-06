@@ -54,6 +54,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
+  say when you'd use them.
 - A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched
   from another host.
 - A command the server refuses now says why: "not done" when you lack a permission, naming it, with

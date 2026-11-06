@@ -68,7 +68,7 @@ export function RecoveryKitView({ kit }: { kit: RecoveryKitText }) {
           // A phrase may repeat a word, so its position is the key.
           <li
             key={i}
-            className="flex items-baseline gap-2 rounded-md border border-rim-line bg-rim-void px-2 py-1.5 font-mono text-sm text-rim-text"
+            className="flex items-baseline gap-2 rounded-md border border-rim-line-strong bg-rim-void px-2 py-1.5 font-mono text-sm text-rim-text"
           >
             <span className="w-5 shrink-0 text-right text-xs text-rim-text-faint">{i + 1}.</span>
             <span>{word}</span>
