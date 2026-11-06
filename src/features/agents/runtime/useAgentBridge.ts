@@ -5,6 +5,7 @@ import { isVaultUnlocked, onVaultLock } from "../../../core/accountVault/account
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
+import { BUILD_VERSION } from "../../updater/api/updaterApi";
 import {
   AGENT_BRIDGE_REQUEST_EVENT,
   agentBridgeAck,
@@ -15,6 +16,7 @@ import {
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { secureRandom } from "./agentCrypto";
+import { appAgentReads } from "./appAgentReads";
 import { handleBridgeRequest } from "./bridgeHandler";
 import { createPairing } from "./pairing";
 
@@ -77,6 +79,7 @@ export function useAgentBridge(): void {
         unlocked: isVaultUnlocked,
         pairing,
         agents: () => useConnectedAgentsStore.getState().agents,
+        mcp: { reads: appAgentReads, version: BUILD_VERSION },
       });
       await agentBridgeAnswer(request.id, answer.status, answer.body).catch(() => {
         logger.warn("[RIM:agents] could not answer a request");

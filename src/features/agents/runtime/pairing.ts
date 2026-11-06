@@ -221,6 +221,7 @@ export function createPairing(deps: PairingDeps): Pairing {
           name: request.view.name,
           tokenHash,
           pairedAt: new Date(now()).toISOString(),
+          grants: {},
         },
       };
       request.deadline = now() + LIFETIME_MS;

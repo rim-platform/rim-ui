@@ -15,8 +15,19 @@ let unlocked: boolean;
 let agents: ConnectedAgent[];
 let pairing: Pairing;
 
+const listWorkspaces = vi.fn();
+const mcp = {
+  version: "1.2.3",
+  reads: {
+    listWorkspaces,
+    listChannels: vi.fn(),
+    readMessages: vi.fn(),
+    searchMessages: vi.fn(),
+  },
+};
+
 function deps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
-  return { unlocked: () => unlocked, pairing, agents: () => agents, ...overrides };
+  return { unlocked: () => unlocked, pairing, agents: () => agents, mcp, ...overrides };
 }
 
 async function ask(
@@ -175,17 +186,46 @@ describe("handleBridgeRequest", () => {
       expect(await ask("/mcp", {}, authorization)).toEqual(NOT_PAIRED);
     });
 
-    it("says not_implemented for a paired token", async () => {
+    it("answers the protocol for a paired token", async () => {
       const token = await pairedToken();
-      expect(await ask("/mcp", {}, `Bearer ${token}`)).toEqual({
-        status: 501,
-        body: { error: "not_implemented" },
-      });
+      const { status, body } = await ask(
+        "/mcp",
+        { jsonrpc: "2.0", id: 1, method: "ping" },
+        `Bearer ${token}`,
+      );
+      expect(status).toBe(200);
+      expect(body).toEqual({ jsonrpc: "2.0", id: 1, result: {} });
     });
 
-    it("looks at no body", async () => {
+    it("answers a notification with an empty body", async () => {
       const token = await pairedToken();
-      expect((await ask("/mcp", "not json", `Bearer ${token}`)).status).toBe(501);
+      const answer = await handleBridgeRequest(
+        {
+          id: 1,
+          path: "/mcp",
+          authorization: `Bearer ${token}`,
+          body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+        },
+        deps(),
+      );
+      expect(answer).toEqual({ status: 202, body: "" });
+    });
+
+    it("hands the tools the agent the token belongs to, as the store holds it now", async () => {
+      const token = await pairedToken();
+      listWorkspaces.mockResolvedValue({ isError: false, payload: {} });
+      agents[0] = { ...agents[0], grants: { w1: { all: true, channelIds: [] } } };
+      await ask(
+        "/mcp",
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "rim_list_workspaces" } },
+        `Bearer ${token}`,
+      );
+      expect(listWorkspaces).toHaveBeenCalledWith(agents[0]);
+    });
+
+    it("looks at no body without a paired token", async () => {
+      const token = await pairedToken();
+      expect((await ask("/mcp", "not json", `Bearer ${token}`)).status).toBe(400);
       expect(await ask("/mcp", "not json", null)).toEqual(NOT_PAIRED);
     });
 

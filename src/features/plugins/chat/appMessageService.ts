@@ -26,7 +26,12 @@ import { provisionalPrincipalId } from "../web/principal";
 import { ErrorCode, RpcError } from "../web/rpc";
 import { mentionsForSend } from "./chatMentions";
 import type { PluginChatMessage, PluginMessagePage } from "./chatTypes";
-import { createMessageService, type ChatCache, type ChatPost } from "./messageService";
+import {
+  createMessageService,
+  type ChatCache,
+  type ChatDeps,
+  type ChatPost,
+} from "./messageService";
 
 type PluginView = typeof PluginViewModule;
 
@@ -210,11 +215,14 @@ async function recordEncryptedReads(pluginId: string, count: number): Promise<vo
   }
 }
 
-/** The message service both plugin hosts in this app call. */
-export const appMessageService = createMessageService({
+/** What the message service uses in this app. */
+export const appChatDeps: ChatDeps = {
   workspaceId: () => useWorkspaceStore.getState().workspaceId,
   encrypted: conversationEncrypted,
   cache: chatCache,
   post: postAsUser,
   recordEncryptedReads,
-});
+};
+
+/** The message service both plugin hosts in this app call. */
+export const appMessageService = createMessageService(appChatDeps);

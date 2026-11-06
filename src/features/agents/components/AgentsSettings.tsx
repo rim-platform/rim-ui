@@ -10,8 +10,11 @@ import {
   agentBridgeStatus,
   type AgentBridgeStatus,
 } from "../api/agentBridge";
+import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
+import { AgentGrantsDialog } from "./AgentGrantsDialog";
+import { AgentRecordDialog } from "./AgentRecordDialog";
 
 const SWITCH_LABEL = "Let agents on this computer connect";
 
@@ -22,6 +25,10 @@ export function AgentsSettings() {
   const [status, setStatus] = useState<AgentBridgeStatus | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   const [disconnecting, setDisconnecting] = useState<ConnectedAgent | null>(null);
+  const [choosing, setChoosing] = useState<ConnectedAgent | null>(null);
+  const [viewing, setViewing] = useState<ConnectedAgent | null>(null);
+  const [viewingAll, setViewingAll] = useState(false);
+  const hasRecord = useAgentRecordStore((s) => s.entries.length > 0);
   const saving = useRef(false);
 
   useEffect(() => {
@@ -115,21 +122,52 @@ export function AgentsSettings() {
                     Connected {new Date(agent.pairedAt).toLocaleString()}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  aria-label={`Disconnect ${agent.name}`}
-                  className="shrink-0"
-                  onClick={() => setDisconnecting(agent)}
-                >
-                  Disconnect
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Choose what ${agent.name} can read`}
+                    onClick={() => setChoosing(agent)}
+                  >
+                    Choose what it can read
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`What ${agent.name} was given`}
+                    onClick={() => setViewing(agent)}
+                  >
+                    What it was given
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Disconnect ${agent.name}`}
+                    onClick={() => setDisconnecting(agent)}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         </div>
       )}
+
+      {hasRecord && (
+        <div>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setViewingAll(true)}>
+            What agents were given
+          </Button>
+        </div>
+      )}
+
+      {choosing && <AgentGrantsDialog agent={choosing} onClose={() => setChoosing(null)} />}
+      {viewing && <AgentRecordDialog agent={viewing} onClose={() => setViewing(null)} />}
+      {viewingAll && <AgentRecordDialog agent={null} onClose={() => setViewingAll(false)} />}
 
       {disconnecting && (
         <ConfirmActionDialog
