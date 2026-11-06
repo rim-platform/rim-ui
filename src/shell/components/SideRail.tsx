@@ -117,7 +117,7 @@ export function SideRail() {
             >
               <Icon className="h-5 w-5" />
               {badge > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rim-danger px-1 text-[10px] font-bold leading-none text-white">
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rim-danger-solid px-1 text-[10px] font-bold leading-none text-white">
                   {badge > 99 ? "99+" : badge}
                 </span>
               )}

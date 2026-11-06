@@ -54,6 +54,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched
+  from another host.
 - A command the server refuses now says why: "not done" when you lack a permission, naming it, with
   no Retry; "failed" for a technical problem, with Retry only when repeating it is safe; and "expired"
   when a confirmation ran out, in neutral colours. A keybind whose command is refused now says so

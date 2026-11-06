@@ -211,7 +211,7 @@ function UserCommandEditor({
         <button
           onClick={handleSave}
           disabled={!title || chosenSteps.length === 0 || updateMutation.isPending}
-          className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+          className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
         >
           {updateMutation.isPending ? "Saving..." : "Save"}
         </button>
@@ -363,7 +363,7 @@ export function UserCommandSettings() {
                 Boolean(idError) ||
                 createMutation.isPending
               }
-              className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+              className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Creating..." : "Create"}
             </button>

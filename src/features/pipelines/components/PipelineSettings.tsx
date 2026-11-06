@@ -472,7 +472,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
           type="button"
           onClick={handleSave}
           disabled={isSaving || !name.trim()}
-          className="rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:opacity-50"
+          className="rounded-lg bg-rim-text px-4 py-2 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
         >
           {isSaving ? "Saving..." : "Save"}
         </button>
@@ -559,7 +559,7 @@ export function PipelineSettings() {
           type="button"
           onClick={() => setEditing("new")}
           disabled={pipelineLimit?.full}
-          className="flex items-center gap-1 rounded-lg bg-rim-accent px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center gap-1 rounded-lg bg-rim-text px-3 py-1.5 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-4 w-4" /> New Pipeline
         </button>

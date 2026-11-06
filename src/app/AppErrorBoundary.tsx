@@ -55,7 +55,7 @@ export class AppErrorBoundary extends Component<Props, State> {
                 <button
                   type="button"
                   onClick={() => this.setState({ error: null })}
-                  className="rounded-lg bg-rim-accent px-4 py-1.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong"
+                  className="rounded-lg bg-rim-text px-4 py-1.5 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90"
                 >
                   Try Again
                 </button>

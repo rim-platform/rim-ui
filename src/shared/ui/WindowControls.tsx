@@ -63,7 +63,7 @@ export function WindowControls({ className }: WindowControlsProps) {
         type="button"
         tabIndex={-1}
         onClick={handleClose}
-        className={cn(baseBtn, "hover:bg-rim-danger hover:text-rim-text")}
+        className={cn(baseBtn, "hover:bg-rim-danger-solid hover:text-white")}
         aria-label="Close"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
