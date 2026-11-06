@@ -1,4 +1,5 @@
 mod account_lock;
+mod agent_bridge;
 mod agent_proxy;
 mod desktop_shell;
 mod e2ee;
@@ -78,6 +79,7 @@ pub fn run() {
             app.manage(relay::pow::PowState::default());
             app.manage(vault);
             desktop_shell::setup(app.handle());
+            agent_bridge::setup(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -268,6 +270,10 @@ pub fn run() {
             desktop_shell::desktop_show_window,
             desktop_shell::desktop_start_at_login,
             desktop_shell::desktop_set_start_at_login,
+            agent_bridge::agent_bridge_status,
+            agent_bridge::agent_bridge_set_enabled,
+            agent_bridge::agent_bridge_ack,
+            agent_bridge::agent_bridge_answer,
         ])
         .build(context)
         .expect("error while building tauri application")
