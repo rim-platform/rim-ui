@@ -41,7 +41,7 @@ function wrap(ui: ReactNode) {
 }
 
 async function openAndSubmit() {
-  await userEvent.click(screen.getByRole("button", { name: /link this device with its code/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
   await waitFor(() => expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"));
   await userEvent.click(screen.getByLabelText(/link code/i));
   await userEvent.paste(CODE);
@@ -125,6 +125,12 @@ describe("LinkThisDevice", () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
+  it("keeps its open form marked as one of the other ways in, so the sign-in page keeps it", async () => {
+    wrap(<LinkThisDevice onSuccess={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
+    expect(screen.getByLabelText(/link code/i).closest("[data-way-in]")).not.toBeNull();
+  });
+
   it("explains a code that was used up", async () => {
     api.linkNewDevice.mockRejectedValue(new DeviceLinkError("codeUnusable"));
     wrap(<LinkThisDevice onSuccess={vi.fn()} />);
@@ -172,7 +178,7 @@ describe("LinkThisDevice", () => {
       },
     );
     wrap(<LinkThisDevice onSuccess={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: /link this browser with its code/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^link this device$/i }));
     expect(screen.getByText(/keys kept in a browser are weaker/i)).toBeInTheDocument();
     expect(screen.getByText(/this browser gets its own key/i)).toBeInTheDocument();
     await waitFor(() =>

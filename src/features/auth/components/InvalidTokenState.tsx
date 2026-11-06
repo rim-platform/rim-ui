@@ -49,19 +49,19 @@ export function InvalidTokenState({ code, onRetry }: InvalidTokenStateProps) {
   const navigate = useNavigate();
   return (
     <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-      <div className="w-full max-w-sm space-y-6">
+      <div className="w-full max-w-[440px] space-y-6">
         <BrandHeading />
-        <div className="space-y-4 rounded-xl border border-rim-line bg-rim-panel p-6 text-center">
+        <div className="space-y-4 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5 text-center">
           <p role="alert" className="text-sm text-rim-text">
             {COPY[code]}
           </p>
           <div className="flex flex-col gap-2">
             {code === "NETWORK" && onRetry && (
-              <Button type="button" variant="secondary" onClick={onRetry}>
+              <Button type="button" onClick={onRetry}>
                 Try again
               </Button>
             )}
-            <Button type="button" onClick={() => navigate("/")}>
+            <Button type="button" variant="secondary" onClick={() => navigate("/")}>
               Go to RIM
             </Button>
           </div>

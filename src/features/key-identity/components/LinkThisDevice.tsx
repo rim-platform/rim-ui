@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link2 } from "lucide-react";
 
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { FORBIDDEN, graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -7,13 +8,15 @@ import { queryKeys } from "../../../core/query/keys";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
 import { PasswordSignInForm } from "../../auth/components/PasswordSignIn";
+import { WAY_IN_PROPS } from "../../auth/components/wayIn";
+import { WayInRow } from "../../auth/components/WayInRow";
 import { DeviceLinkError, linkNewDevice } from "../api/deviceLink";
 import { defaultDeviceName, SignInCancelled } from "../api/keyIdentity";
 import { BrowserKeyNotice } from "./BrowserKeyNotice";
 import { Fingerprint } from "./Fingerprint";
 
 const inputClass =
-  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
+  "w-full rounded-[9px] border border-rim-line-strong bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent";
 
 /**
  * "Link this device" on the sign-in screen: opens a form for the code shown on another device
@@ -26,7 +29,10 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
   const inBrowser = platform === "web";
   if (deviceKeyStore === "unsupported") {
     return (
-      <p className="text-center text-xs text-rim-text-faint">
+      <p
+        {...WAY_IN_PROPS}
+        className="rounded-[10px] border border-rim-line bg-rim-panel px-3 py-2.5 text-xs text-rim-text-muted"
+      >
         This browser cannot be linked to your account: it has no Ed25519 keys in WebCrypto, or no
         IndexedDB to keep one in (a private window may block it). Use a current browser, or the
         desktop app.
@@ -35,21 +41,24 @@ export function LinkThisDevice({ onSuccess }: { onSuccess: (userId: string) => v
   }
   if (!capabilities.deviceKeys) return null;
   return open ? (
-    <LinkThisDeviceForm
-      inBrowser={inBrowser}
-      onSuccess={onSuccess}
-      onCancel={() => setOpen(false)}
-    />
+    <div {...WAY_IN_PROPS}>
+      <LinkThisDeviceForm
+        inBrowser={inBrowser}
+        onSuccess={onSuccess}
+        onCancel={() => setOpen(false)}
+      />
+    </div>
   ) : (
-    <button
-      type="button"
+    <WayInRow
+      title="Link this device"
+      hint={
+        inBrowser
+          ? "You're signed in on the desktop app. Use a code from it."
+          : "You're signed in on another device. Use a code from it."
+      }
+      icon={<Link2 className="h-4 w-4" />}
       onClick={() => setOpen(true)}
-      className="block w-full text-center text-sm text-rim-text-muted transition hover:text-rim-text"
-    >
-      {inBrowser
-        ? "Signed in on the desktop app? Link this browser with its code"
-        : "Have another device signed in? Link this device with its code"}
-    </button>
+    />
   );
 }
 
@@ -151,7 +160,7 @@ export function LinkThisDeviceForm({
 
   if (asking) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
         <p className="text-sm text-rim-text-muted">
           {here} is linked. Enter the account&apos;s password to sign in.
         </p>
@@ -172,8 +181,8 @@ export function LinkThisDeviceForm({
 
   if (busy) {
     return (
-      <div className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4">
-        <p className="text-sm font-medium text-rim-text">Link this device</p>
+      <div className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
+        <p className="text-[15px] font-semibold text-rim-text">Link this device</p>
         {fingerprint ? (
           <>
             <p className="text-xs text-rim-text-muted">Confirm this code on your other device:</p>
@@ -196,16 +205,16 @@ export function LinkThisDeviceForm({
   return (
     <form
       onSubmit={(e) => void link(e)}
-      className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4"
+      className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5"
     >
-      <p className="text-sm font-medium text-rim-text">Link this device</p>
+      <p className="text-[15px] font-semibold text-rim-text">Link this device</p>
       <p className="text-xs text-rim-text-muted">
         On a computer that is signed in and holds your account&apos;s identity key, open Settings
         &gt; Security &gt; Link a device, and paste the code it shows here. {here} gets its own key;
         nothing else moves over.
       </p>
       {inBrowser && <BrowserKeyNotice />}
-      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+      <label className="block text-[13px] font-medium text-rim-text">
         Link code
         <textarea
           value={code}
@@ -213,22 +222,22 @@ export function LinkThisDeviceForm({
           rows={3}
           spellCheck={false}
           placeholder="rim-link:1:…"
-          className={`mt-1 font-mono ${inputClass}`}
+          className={`mt-1.5 font-mono ${inputClass}`}
         />
       </label>
-      <label className="block text-xs font-medium uppercase tracking-wider text-rim-text-faint">
+      <label className="block text-[13px] font-medium text-rim-text">
         Name of this device
         <input
           value={deviceName}
           maxLength={64}
           onChange={(e) => setDeviceName(e.target.value)}
-          className={`mt-1 ${inputClass}`}
+          className={`mt-1.5 ${inputClass}`}
         />
       </label>
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
         >
           {error}
         </p>

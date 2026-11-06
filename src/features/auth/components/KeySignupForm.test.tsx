@@ -324,7 +324,9 @@ describe("KeySignupForm", () => {
       await user.click(screen.getByRole("button", { name: /^create account$/i }));
 
       const status = await screen.findByRole("status");
-      expect(status).toHaveTextContent(/proving this is a real device/i);
+      expect(status).toHaveTextContent(/checking this is a real device/i);
+      expect(status).toHaveTextContent(/an invite takes the place of it/i);
+      expect(within(status).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
       expect(status).not.toHaveTextContent(/million/);
       act(() => {
         vi.advanceTimersByTime(11_000);

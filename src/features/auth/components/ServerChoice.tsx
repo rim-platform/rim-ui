@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { endpointHost, getGraphqlEndpoint, usesMovedRelay } from "../../../core/graphql/config";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { Button } from "../../../shared/ui/Button";
+import { cn } from "../../../shared/ui/cn";
 import {
   CLIENT_API_VERSION,
   fetchServerInfoAt,
@@ -20,7 +21,7 @@ type Probe =
   | { status: "found"; endpoint: string; host: string; info: KnownServerInfo };
 
 const LINK_BUTTON =
-  "underline underline-offset-2 transition hover:text-rim-text-muted disabled:opacity-50";
+  "text-rim-text-muted underline underline-offset-2 transition hover:text-rim-text disabled:opacity-50";
 
 /**
  * The server the desktop app signs in to, with a way to check and move to another one and
@@ -67,21 +68,26 @@ function ServerChoicePanel() {
   }
 
   return (
-    <div className="space-y-3 text-center text-xs text-rim-text-faint">
-      <p>
-        Server: <span className="text-rim-text-muted">{host}</span>
+    <div className={cn("space-y-3 text-xs text-rim-text-muted", open && "w-full")}>
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>
+          Server: <span className="font-mono">{host}</span>
+        </span>
+        {!open && (
+          <>
+            <span aria-hidden="true">·</span>
+            <button type="button" onClick={() => setOpen(true)} className={LINK_BUTTON}>
+              Use another server
+            </button>
+          </>
+        )}
       </p>
 
-      {!open && (
-        <div className="flex justify-center gap-4">
-          <button type="button" onClick={() => setOpen(true)} className={LINK_BUTTON}>
-            Use another server
+      {!open && usesMovedRelay() && (
+        <div className="flex gap-4">
+          <button type="button" onClick={() => switchServer(null)} className={LINK_BUTTON}>
+            Back to the default server
           </button>
-          {usesMovedRelay() && (
-            <button type="button" onClick={() => switchServer(null)} className={LINK_BUTTON}>
-              Back to the default server
-            </button>
-          )}
         </div>
       )}
 
@@ -89,7 +95,7 @@ function ServerChoicePanel() {
         <form
           aria-label="Use another server"
           onSubmit={(e) => void check(e)}
-          className="space-y-3 rounded-xl border border-rim-line bg-rim-panel p-4 text-left"
+          className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-[18px] text-left"
         >
           <JoinField
             label="Server address"
@@ -107,7 +113,7 @@ function ServerChoicePanel() {
           {probe.status === "failed" && (
             <p
               role="alert"
-              className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+              className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
             >
               No RIM server answered at {probe.host}. Check the address and that the server is
               running.
@@ -117,7 +123,7 @@ function ServerChoicePanel() {
           {probe.status === "found" && (
             <div
               role="status"
-              className="space-y-1 rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
+              className="space-y-1 rounded-[10px] border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text"
             >
               <p>
                 {probe.host} runs RIM {probe.info.version}, API {probe.info.apiVersion}.

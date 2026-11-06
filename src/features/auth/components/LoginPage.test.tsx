@@ -12,6 +12,7 @@ vi.mock("../../system/api/useHealthCheck", () => ({
 
 vi.mock("../../../core/graphql/config", () => ({
   getGraphqlEndpoint: () => "http://localhost:8080/api",
+  endpointHost: (endpoint: string) => new URL(endpoint).host,
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -55,6 +56,12 @@ vi.mock("../api/useServerConfig", () => ({
   useServerConfig: () => mockUseServerConfig(),
 }));
 
+// The accounts this device holds a key for.
+const accountsOnDevice = vi.hoisted(() => ({ value: [] as string[] }));
+vi.mock("../../key-identity/api/useDeviceKeyAccounts", () => ({
+  useDeviceKeyAccounts: () => ({ data: accountsOnDevice.value }),
+}));
+
 // Whether this app can create identity keys, and the key store while the browser is probed.
 const keys = vi.hoisted(() => ({
   value: true,
@@ -62,7 +69,7 @@ const keys = vi.hoisted(() => ({
 }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({
-    capabilities: { identityKeys: keys.value },
+    capabilities: { identityKeys: keys.value, deviceKeys: accountsOnDevice.value.length > 0 },
     deviceKeyStore: keys.store,
   }),
 }));
@@ -283,7 +290,7 @@ describe("LoginPage", () => {
     try {
       renderPage();
       expect(screen.getByRole("alert")).toHaveTextContent("This address is blocked on this server");
-      expect(screen.getByText("Address blocked")).toBeInTheDocument();
+      expect(screen.getByText("address blocked")).toBeInTheDocument();
     } finally {
       useEdgeStore.setState({ blocked: false });
     }
@@ -300,8 +307,24 @@ describe("LoginPage", () => {
 
     const card = screen.getByRole("region", { name: "Sign in with a key" });
     expect(card).toContainElement(screen.getByRole("button", { name: "Device key sign-in" }));
-    expect(card).toContainElement(screen.getByRole("button", { name: "Link this device" }));
-    expect(card).toContainElement(screen.getByRole("button", { name: "Recover an account" }));
+    const ways = screen.getByRole("region", { name: "Other ways in" });
+    expect(ways).toContainElement(screen.getByRole("button", { name: "Link this device" }));
+    expect(ways).toContainElement(screen.getByRole("button", { name: "Recover an account" }));
+  });
+
+  it("heads the other ways in by whether the device holds an account", () => {
+    keyOptions.value = true;
+    const { unmount } = renderPage();
+    expect(screen.getByRole("heading", { name: "Choose how to start" })).toBeInTheDocument();
+    unmount();
+
+    accountsOnDevice.value = ["rimp1_alice"];
+    try {
+      renderPage();
+      expect(screen.getByRole("heading", { name: "Not this account?" })).toBeInTheDocument();
+    } finally {
+      accountsOnDevice.value = [];
+    }
   });
 
   it("leaves the key card empty where no key way renders", () => {

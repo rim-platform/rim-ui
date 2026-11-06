@@ -158,7 +158,7 @@ interface Proving {
   startedAt: number;
 }
 
-/** "Proving this is a real device…" with the time it has taken, and a way to stop it. */
+/** "Checking this is a real device" with the time it has taken, and a way to stop it. */
 function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -169,16 +169,28 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
   return (
     <div
       role="status"
-      className="space-y-2 rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text-muted"
+      className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5 text-[13px] leading-normal text-rim-text-muted"
     >
+      <p className="text-[15px] font-semibold text-rim-text">Checking this is a real device</p>
+      <div
+        role="progressbar"
+        aria-label="Working"
+        className="h-1.5 overflow-hidden rounded-full bg-rim-line"
+      >
+        <div className="h-full w-2/5 animate-pulse rounded-full motion-reduce:animate-none bg-rim-accent" />
+      </div>
+      <p>
+        This computer is doing a short piece of work that keeps out mass sign-ups. An invite takes
+        the place of it.
+      </p>
       <div className="flex items-center justify-between gap-3">
-        <span>Proving this is a real device… {seconds} s</span>
+        <span>{seconds} s</span>
         <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>
       {seconds >= SLOW_PROOF_SECONDS && (
-        <p className="text-xs text-rim-text-faint">
+        <p className="text-xs text-rim-text-muted">
           This relay asks every new account for about {triesInWords(proving.bits)} hashes, to keep
           out automated sign-ups. That takes seconds in the desktop app and can take tens of seconds
           in a browser.
@@ -480,7 +492,7 @@ export function KeySignupForm({
       {formError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          className="flex items-center justify-between gap-3 rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
         >
           <span>{formError}</span>
           {canRetry && draft && (

@@ -11,7 +11,7 @@ export function InstanceNotice() {
     <p
       role="note"
       aria-label="Notice from this server"
-      className="whitespace-pre-line break-words rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text-muted"
+      className="whitespace-pre-line break-words rounded-[10px] border border-rim-accent/30 bg-rim-accent/10 px-3 py-2.5 text-[13px] leading-normal text-rim-text"
     >
       {notice}
     </p>
