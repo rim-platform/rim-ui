@@ -14,7 +14,8 @@ export type ServerFeatureKey =
   | "avatars"
   | "plugin_link_fetch"
   | "text_art_check"
-  | "avatar_check";
+  | "avatar_check"
+  | "bots";
 
 /** Each known feature's name, in the order the server lists them. */
 export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
@@ -28,6 +29,7 @@ export const SERVER_FEATURE_LABELS: Record<ServerFeatureKey, string> = {
   plugin_link_fetch: "Plugin link installation",
   text_art_check: "Text art check",
   avatar_check: "Profile picture check",
+  bots: "Bots",
 };
 
 /** The features whose name is a plural, so a sentence about them says "are". */
@@ -37,6 +39,7 @@ const PLURAL: ReadonlySet<string> = new Set([
   "workspace_plugins",
   "ai_commands",
   "avatars",
+  "bots",
 ]);
 
 /** Whether `key` names a feature this client knows. */

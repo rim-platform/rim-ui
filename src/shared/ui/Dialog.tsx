@@ -9,13 +9,22 @@ interface DialogProps {
   onClose: () => void;
   title: string;
   maxWidth?: string;
+  /** Closes only through the dialog's own buttons: a press on the backdrop or Escape does nothing. */
+  persistent?: boolean;
   children: React.ReactNode;
 }
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  maxWidth = "max-w-sm",
+  persistent = false,
+  children,
+}: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<Element | null>(null);
   const titleId = useId();
@@ -56,7 +65,7 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
 
   // Close on Escape
   useEffect(() => {
-    if (!open) return;
+    if (!open || persistent) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         onClose();
@@ -64,7 +73,7 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, persistent]);
 
   // Focus trap
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -97,7 +106,7 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
       <div
         className="fixed inset-0 bg-black/50"
         style={{ zIndex: Z.OVERLAY_BACKDROP }}
-        onClick={onClose}
+        onClick={persistent ? undefined : onClose}
       />
 
       {/* Container */}

@@ -125,4 +125,21 @@ describe("Dialog", () => {
     request.mockRestore();
     cancel.mockRestore();
   });
+
+  it("ignores Escape and a press on the backdrop when persistent, and closes from its own button", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <Dialog open persistent onClose={onClose} title="Keep">
+        <p>Content</p>
+      </Dialog>,
+    );
+    await user.keyboard("{Escape}");
+    const backdrop = container.ownerDocument.querySelector<HTMLElement>(".bg-black\\/50");
+    expect(backdrop).not.toBeNull();
+    await user.click(backdrop!);
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
