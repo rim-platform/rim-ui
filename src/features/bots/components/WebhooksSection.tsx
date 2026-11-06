@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { WebhookPreset, type Bot } from "../../../core/graphql/generated/schema-types";
@@ -29,7 +29,6 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   const channels = useAllChannels(serverId);
   const revoke = useRevokeIncomingWebhook(serverId);
   const [creating, setCreating] = useState(false);
-  const newWebhookRef = useRef<HTMLButtonElement>(null);
   const [shown, setShown] = useState<{ url: string; preset: WebhookPreset } | null>(null);
   const [toRevoke, setToRevoke] = useState<string | null>(null);
 
@@ -50,7 +49,6 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           Incoming webhooks
         </h3>
         <Button
-          ref={newWebhookRef}
           variant="secondary"
           size="sm"
           onClick={() => setCreating(true)}
@@ -125,11 +123,7 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           title="Webhook URL"
           label="URL"
           value={shown.url}
-          onClose={() => {
-            setShown(null);
-            // The form it came from is gone, so focus goes to what opened it.
-            setTimeout(() => newWebhookRef.current?.focus());
-          }}
+          onClose={() => setShown(null)}
         >
           {shown.preset === WebhookPreset.GITHUB && (
             <p className="text-sm text-rim-text-muted">{GITHUB_SETUP_NOTE}</p>

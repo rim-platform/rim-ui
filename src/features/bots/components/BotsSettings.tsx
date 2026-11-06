@@ -188,7 +188,11 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           onClose={() => setDialog(null)}
           onConfirm={() =>
             deactivate.mutate(dialog.bot.userId, {
-              onSuccess: () => setDialog(null),
+              onSuccess: () => {
+                setDialog(null);
+                // The row that opened this has moved to the deactivated list.
+                setTimeout(() => newBotRef.current?.focus());
+              },
               onError: (err) => {
                 setDialog(null);
                 toast.error(graphqlErrorMessage(err, "Could not deactivate the bot"));
@@ -202,11 +206,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           title={secret.title}
           label={secret.label}
           value={secret.value}
-          onClose={() => {
-            setSecret(null);
-            // The form it came from is gone, so focus goes to what opened it.
-            if (!dialog) setTimeout(() => newBotRef.current?.focus());
-          }}
+          onClose={() => setSecret(null)}
         />
       )}
     </div>

@@ -26,34 +26,29 @@ export function Dialog({
   children,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<Element | null>(null);
   const titleId = useId();
 
-  // Save previous focus, move focus into the panel when opening, prevent body scroll
+  // Move focus into the panel and stop the body scrolling while open. On closing or unmounting,
+  // focus goes back where it was, or into the dialog still open if that element is gone.
   useEffect(() => {
-    let frame: number | undefined;
-    if (open) {
-      previousFocusRef.current = document.activeElement;
-      document.body.style.overflow = "hidden";
-      // Next frame, focus the first focusable unless focus is already inside (e.g. `autoFocus`)
-      frame = requestAnimationFrame(() => {
-        const panel = panelRef.current;
-        if (!panel || panel.contains(document.activeElement)) return;
-        panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
-      });
-    } else {
-      document.body.style.overflow = "";
-      if (previousFocusRef.current) {
-        const el = previousFocusRef.current as HTMLElement;
-        if (typeof el.focus === "function") {
-          el.focus();
-        }
-        previousFocusRef.current = null;
-      }
-    }
+    if (!open) return;
+    const previous = document.activeElement;
+    document.body.style.overflow = "hidden";
+    // Next frame, focus the first focusable unless focus is already inside (e.g. `autoFocus`)
+    const frame = requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    });
     return () => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
+      cancelAnimationFrame(frame);
       document.body.style.overflow = "";
+      if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body) {
+        previous.focus();
+        return;
+      }
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      dialogs[dialogs.length - 1]?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
     };
   }, [open]);
 
@@ -74,6 +69,22 @@ export function Dialog({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose, persistent]);
+
+  // Focus lost to the page, when the element it was on is removed: Tab brings it back in.
+  useEffect(() => {
+    if (!open) return;
+    function handleLostFocus(e: KeyboardEvent) {
+      if (e.key !== "Tab" || document.activeElement !== document.body) return;
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== panelRef.current) return;
+      const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (!first) return;
+      e.preventDefault();
+      first.focus();
+    }
+    document.addEventListener("keydown", handleLostFocus);
+    return () => document.removeEventListener("keydown", handleLostFocus);
+  }, [open]);
 
   // Focus trap
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -113,6 +124,10 @@ export function Dialog({
       <div
         className="fixed inset-0 flex items-center justify-center p-4"
         style={{ zIndex: Z.OVERLAY_CONTENT }}
+        // A press beside the panel keeps focus in it, so Tab stays in the dialog.
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) e.preventDefault();
+        }}
       >
         <div
           ref={panelRef}

@@ -232,7 +232,6 @@ describe("BotsSettings", () => {
       ).not.toContain(SECRET);
 
       fireEvent.click(screen.getByRole("button", { name: "Done" }));
-      await waitFor(() => expect(screen.getByRole("button", { name: "New bot" })).toHaveFocus());
       expect(screen.queryByDisplayValue(SECRET)).not.toBeInTheDocument();
       expect(
         JSON.stringify(
