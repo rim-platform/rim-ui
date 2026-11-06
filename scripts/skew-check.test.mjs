@@ -91,9 +91,11 @@ describe("skew check", () => {
   it("keeps every message query valid on a server without Message.editedAt", () => {
     const refused = refusedOperations(schemaWithoutEditTimes(), documents);
     expect(refused.map((r) => r.label).sort()).toEqual([
+      "query MessagesWithBots",
       "query MessagesWithEdits",
       "query MessagesWithFlags",
       "query ServerInfo",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithEdits",
       "query ThreadMessagesWithFlags",
     ]);
@@ -106,8 +108,28 @@ describe("skew check", () => {
       "query MessageChangesWithFlags",
       "query MessageReportWithAutomatic",
       "query MessageReportsWithAutomatic",
+      "query MessagesWithBots",
       "query MessagesWithFlags",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithFlags",
+    ]);
+  });
+
+  it("refuses only the bot disclosure documents on a server without bot_disclosure", () => {
+    const schema = schemaWithoutFields({
+      User: ["isBot", "bot"],
+      ServerMember: ["isBot", "bot"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "query ApplyChannelLensWithBots",
+      "query MessagesWithBots",
+      "query PinnedMessagesWithBots",
+      "query ServerMembersWithBots",
+      "query ThreadMessagesWithBots",
     ]);
   });
 

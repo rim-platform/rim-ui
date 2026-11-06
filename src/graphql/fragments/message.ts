@@ -78,6 +78,23 @@ export const MESSAGE_FIELDS = gql`
   ${ENCRYPTION_FIELDS}
 `;
 
+/**
+ * The bot disclosure of a message's author, merged into the `author` selection of
+ * `MessageFields`. Asked for only from a server that lists `bot_disclosure`.
+ */
+export const MESSAGE_BOT_FIELDS = gql`
+  fragment MessageBotFields on Message {
+    author {
+      isBot
+      bot {
+        runBy
+        readsGoTo
+        addedByName
+      }
+    }
+  }
+`;
+
 export const REACTION_FIELDS = gql`
   fragment ReactionFields on ReactionGroup {
     emoji

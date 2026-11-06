@@ -24,6 +24,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Bots are marked in messages and member lists, and show who runs them and where what they read
+  goes, as the person who added them says. The marks and the statements need a workspace server
+  that lists `bot_disclosure` in `serverInfo.capabilities`; on an older one nothing is marked,
+  because it has no bots.
 - Closing the desktop app's window now asks whether RIM stays running in the system tray or quits,
   and Settings > Desktop can set the answer. Everyone sees this once, the first time they close the
   window after updating. Ctrl+Q quits, after a confirmation.

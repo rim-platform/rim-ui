@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import type { BotInfo, ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import {
   handleDomain,
   personName,
@@ -28,6 +28,10 @@ type MemberInfo = {
   statusText?: string | null;
   bio?: string | null;
   joinedAt?: string;
+  /** Whether the person is a bot. */
+  isBot?: boolean;
+  /** What the person who added a bot says about it. */
+  bot?: BotInfo | null;
 };
 
 type CurrentUser = NonNullable<ReturnType<typeof useCurrentUser>["data"]>;
@@ -88,12 +92,16 @@ export function buildMemberLookup({
           statusText: member.statusText,
           bio: member.bio,
           joinedAt: member.joinedAt,
+          isBot: member.isBot,
+          bot: member.bot,
         });
       } else {
         const existing = map.get(member.userId)!;
         existing.role = inDirectSpace ? undefined : member.memberRole;
         existing.timeoutUntil = member.timeoutUntil ?? null;
         existing.joinedAt = member.joinedAt;
+        existing.isBot = member.isBot;
+        existing.bot = member.bot;
         if (member.avatarUrl) {
           existing.avatarUrl = member.avatarUrl;
         }

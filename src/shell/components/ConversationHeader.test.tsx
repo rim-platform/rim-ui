@@ -16,6 +16,11 @@ import { useShellStore } from "../state/useShellStore";
 
 const requestMock = vi.fn();
 
+/** The server info read of a server that lists no capabilities. */
+const NO_CAPABILITIES = {
+  serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
+};
+
 vi.mock("../../core/graphql/client", () => ({
   graphqlClient: {
     request: (...args: unknown[]) => requestMock(...args),
@@ -58,6 +63,7 @@ describe("ConversationHeader — keyboard", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({
           server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.OWNER },
@@ -87,6 +93,7 @@ describe("ConversationHeader — keyboard", () => {
 
 function serveConversation(conversation: ConversationSummary, viewerRole?: ServerMemberRoleGql) {
   requestMock.mockImplementation((document: string) => {
+    if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
     if (document.includes("query Conversation(")) {
       return Promise.resolve({ conversation });
     }
@@ -313,6 +320,7 @@ describe("ConversationHeader — group without a title", () => {
       memberCount: 3,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
       if (document.includes("query ServerMembers"))
         return Promise.resolve({ serverMembers: workspaceMembers });
@@ -335,6 +343,7 @@ describe("ConversationHeader — group without a title", () => {
       memberCount: 1,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
       if (document.includes("query ServerMembers"))
         return Promise.resolve({ serverMembers: workspaceMembers });
@@ -375,6 +384,7 @@ describe("ConversationHeader — DM sent as a request", () => {
       memberCount: 2,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query ConversationDmRequestPending")) {
         return Promise.resolve({ conversation: { id: dm.id, dmRequestPending: pending } });
       }
@@ -415,6 +425,7 @@ describe("ConversationHeader — invite gate", () => {
     [ServerMemberRoleGql.GUEST, false],
   ])("viewer %s: Invite member shown = %s", async (role, shown) => {
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
       }
@@ -434,6 +445,7 @@ describe("ConversationHeader — draft DM", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({
           server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
@@ -489,6 +501,7 @@ describe("ConversationHeader — way back from a DM", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) {
         return Promise.resolve({
           conversation: makeConversation({

@@ -27,14 +27,20 @@ export function ProfileCard({
       avatarUrl={info.avatarUrl}
       statusText={info.statusText}
       role={info.role}
+      isBot={info.isBot}
+      bot={info.bot}
       joinedAt={info.joinedAt}
       bio={info.bio}
       presenceStatus={presence}
       isCurrentUser={info.isCurrentUser}
-      onSendDm={() => {
-        onClose();
-        void openDirectWithMember(userId);
-      }}
+      onSendDm={
+        info.isBot
+          ? undefined
+          : () => {
+              onClose();
+              void openDirectWithMember(userId);
+            }
+      }
       blockAction={() => {
         const block = blockActionFor(userId, workspaceId);
         return (

@@ -540,6 +540,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                           inDirectSpace,
                           joinedAt: member.joinedAt,
                           bio: member.bio,
+                          isBot: member.isBot ?? msg.author?.isBot,
+                          bot: member.bot ?? msg.author?.bot,
                           isCurrentUser:
                             currentUserId !== undefined && msg.authorId === currentUserId,
                         },
