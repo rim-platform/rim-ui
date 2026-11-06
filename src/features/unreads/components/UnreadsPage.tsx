@@ -208,7 +208,10 @@ export function UnreadsPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const nothing = !isPending && shown.length === 0 && mutedCount === 0 && failed.length === 0;
+  const settledEmpty = !isPending && shown.length === 0 && failed.length === 0;
+  const onlyMuted = settledEmpty && mutedCount > 0;
+  const nothingAnywhere = settledEmpty && groups.length === 0;
+  const nothingInFilter = settledEmpty && mutedCount === 0 && !nothingAnywhere;
 
   return (
     <div ref={rootRef} className="flex h-full flex-col">
@@ -264,12 +267,35 @@ export function UnreadsPage() {
             className="space-y-3.5 focus-visible:outline-none"
           >
             {isPending && <p className="text-sm text-rim-text-muted">Loading…</p>}
-            {nothing && (
+            {nothingAnywhere && (
               <div className="rounded-xl border border-rim-line bg-rim-panel p-6 text-center">
                 <p className="text-sm font-semibold text-rim-text">You&apos;ve read everything</p>
                 <p className="mt-1 text-xs text-rim-text-muted">
                   New messages appear here until you mark them.
                 </p>
+              </div>
+            )}
+            {nothingInFilter && (
+              <div className="rounded-xl border border-rim-line bg-rim-panel p-6 text-center">
+                <p className="text-sm font-semibold text-rim-text">Nothing unread here</p>
+                <p className="mt-1 text-xs text-rim-text-muted">
+                  The other workspaces still have unread messages.
+                </p>
+              </div>
+            )}
+            {onlyMuted && (
+              <div className="space-y-3 rounded-xl border border-rim-line bg-rim-panel p-6 text-center">
+                <p className="text-sm font-semibold text-rim-text">
+                  Nothing unread outside muted conversations.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowMuted(true)}
+                >
+                  {`Show muted (${mutedCount})`}
+                </Button>
               </div>
             )}
             {shown.map((group) => (
@@ -288,9 +314,9 @@ export function UnreadsPage() {
             ))}
           </div>
 
-          {!isPending && !nothing && (
+          {!isPending && !nothingAnywhere && (
             <div className="flex flex-wrap items-center gap-3">
-              {mutedCount > 0 && (
+              {mutedCount > 0 && !onlyMuted && (
                 <Button
                   type="button"
                   size="sm"

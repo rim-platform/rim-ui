@@ -379,6 +379,8 @@ export function applyWorkspaceEvent(
             };
           },
         );
+        // Only top-level messages count as unread, and the server no longer counts this one.
+        void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
       }
       break;
     }

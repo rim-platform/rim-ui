@@ -26,7 +26,13 @@ let queryClient: QueryClient;
 
 interface Props {
   conversationId: string;
-  items: { sentAt: string }[];
+  items: {
+    sentAt: string;
+    authorId?: string;
+    membershipNotice?: unknown;
+    threadId?: string | null;
+    isDeleted?: boolean;
+  }[];
   firstPagePending: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -47,6 +53,7 @@ function renderDivider(overrides: Partial<Props> = {}) {
         workspaceId: "ws-1",
         isLensActive: false,
         isAtBottomRef: atBottom,
+        currentUserId: "me",
         fetchNextPage,
         ...props,
       }),
@@ -252,6 +259,72 @@ describe("useNewMessagesDivider: older pages", () => {
       );
     rerender({ ...props, conversationId: "conv-2" });
     expect(fetchNextPage).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useNewMessagesDivider: everything unread is loaded", () => {
+  const MARKER = "2026-01-01T00:00:00Z";
+  const page = (n: number) => Array.from({ length: n }, (_, i) => message(i));
+  const withCount = (count: number) =>
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": count }, { "conv-1": MARKER });
+
+  it("exactly on a page boundary: the first unread is here, with no label or more pages", () => {
+    withCount(50);
+    const { result } = renderDivider({ items: page(50), hasNextPage: true });
+    expect(result.current.firstNewIndex).toBe(0);
+    expect(result.current.moreAbove).toBe(false);
+    expect(result.current.awaitingFirstNew).toBe(false);
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it("one more than the page holds: loads older ones", () => {
+    withCount(51);
+    const { result } = renderDivider({ items: page(50), hasNextPage: true });
+    expect(result.current.awaitingFirstNew).toBe(true);
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not count what the store does not", () => {
+    withCount(3);
+    const { result } = renderDivider({
+      items: [
+        { ...message(0), authorId: "me" },
+        { ...message(1), membershipNotice: {} },
+        { ...message(2), threadId: "t-1" },
+        { ...message(3), isDeleted: true },
+        message(4),
+        message(5),
+      ],
+      hasNextPage: true,
+    });
+    expect(result.current.awaitingFirstNew).toBe(true);
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("a count that arrived before the pages decides once they are in", () => {
+    withCount(4);
+    const props = {
+      conversationId: "conv-1",
+      firstPagePending: true,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    };
+    const { result, rerender } = renderDivider({ ...props, items: [] });
+    expect(result.current.moreAbove).toBe(false);
+    expect(fetchNextPage).not.toHaveBeenCalled();
+
+    rerender({ ...props, firstPagePending: false, hasNextPage: true, items: page(4) });
+    expect(result.current.firstNewIndex).toBe(0);
+    expect(result.current.moreAbove).toBe(false);
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it("a page that reaches the marker needs no count at all", () => {
+    withCount(99);
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 99 }, { "conv-1": message(0).sentAt });
+    const { result } = renderDivider({ items: page(3), hasNextPage: true });
+    expect(result.current.firstNewIndex).toBe(1);
+    expect(fetchNextPage).not.toHaveBeenCalled();
   });
 });
 

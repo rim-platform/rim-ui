@@ -350,6 +350,57 @@ describe("UnreadsPage: muted", () => {
   });
 });
 
+describe("UnreadsPage: when nothing shows", () => {
+  it("says so with the button when only muted conversations are unread", async () => {
+    serve(
+      { quiet: { items: [message("q1", 1)] } },
+      { "ws-1": [channel("quiet", "quiet")] },
+      { muted: ["quiet"] },
+    );
+    useUnreadStore.getState().setCounts("ws-1", { quiet: 4 }, { quiet: MARKER });
+    renderPage();
+    expect(
+      await screen.findByText("Nothing unread outside muted conversations."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("You've read everything")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Show muted (1)" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show muted (1)" }));
+    expect(await screen.findByRole("group", { name: "#quiet" })).toBeInTheDocument();
+    expect(
+      screen.queryByText("Nothing unread outside muted conversations."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide muted (1)" })).toBeInTheDocument();
+  });
+
+  it("says you've read everything only when nothing is unread anywhere", async () => {
+    serve({ fin: { items: [message("f1", 1)] } }, { "ws-2": [channel("fin", "finance", "ws-2")] });
+    useUnreadStore.getState().setCounts("ws-1", {}, {});
+    useUnreadStore.getState().setCounts("ws-2", { fin: 1 }, { fin: MARKER });
+    renderPage();
+    await screen.findByRole("group", { name: "#finance" });
+    fireEvent.click(screen.getByRole("button", { name: "Rim Dev" }));
+    expect(await screen.findByText("Nothing unread here")).toBeInTheDocument();
+    expect(screen.queryByText("You've read everything")).not.toBeInTheDocument();
+  });
+
+  it("claims nothing while a workspace has not answered", async () => {
+    serve({}, { "ws-1": [channel("quiet", "quiet")] }, { muted: ["quiet"] });
+    const answer = requestMock.getMockImplementation()!;
+    requestMock.mockImplementation(async (document: unknown, variables: Record<string, string>) => {
+      if (String(document).includes("query Channels")) throw new Error("no");
+      return answer(document, variables);
+    });
+    useUnreadStore.getState().setCounts("ws-1", { quiet: 4 }, { quiet: MARKER });
+    renderPage();
+    expect(await screen.findByText("Couldn't load Rim Dev.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Nothing unread outside muted conversations."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("You've read everything")).not.toBeInTheDocument();
+  });
+});
+
 describe("UnreadsPage: what only its count can say", () => {
   it("an older host shows the count and Open to read, and reads no messages", async () => {
     host.markers = false;

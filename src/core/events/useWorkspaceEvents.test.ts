@@ -1267,3 +1267,31 @@ describe("ReadMarkerRewound", () => {
     emit.mockRestore();
   });
 });
+
+describe("MessageDeleted and the unread counts", () => {
+  const deleted = (thread_id: string | null) =>
+    ({
+      type: "MessageDeleted",
+      workspace_id: "ws-1",
+      conversation_id: "conv-1",
+      message_id: "m-1",
+      thread_id,
+    }) as WorkspaceEvent;
+
+  it("reads the counts again when a top-level message is deleted", () => {
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(deleted(null), qc, "ws-1");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.unreadCounts("ws-1") });
+    expect(invalidate.mock.calls.filter(([f]) => f?.queryKey?.[0] === "unreadCounts")).toHaveLength(
+      1,
+    );
+  });
+
+  it("leaves them alone for a thread reply, which never counts as unread", () => {
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    applyWorkspaceEvent(deleted("t-1"), qc, "ws-1");
+    expect(invalidate.mock.calls.filter(([f]) => f?.queryKey?.[0] === "unreadCounts")).toEqual([]);
+  });
+});

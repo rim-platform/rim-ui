@@ -166,6 +166,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     workspaceId,
     conversationId,
     items,
+    currentUserId,
     isLensActive,
     isAtBottomRef,
     firstPagePending: timeline.isPending,
