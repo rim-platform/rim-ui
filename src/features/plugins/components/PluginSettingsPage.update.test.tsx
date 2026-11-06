@@ -40,6 +40,7 @@ vi.mock("../web/webPluginHost", () => ({
 import { invoke } from "@tauri-apps/api/core";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { webPluginHost } from "../web/webPluginHost";
+import { openPluginRows } from "./openPluginRows";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 
 const mockInvoke = vi.mocked(invoke);
@@ -88,11 +89,13 @@ function onPlatform(platform: "desktop" | "web") {
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <PluginSettingsPage />
     </QueryClientProvider>,
   );
+  openPluginRows();
+  return view;
 }
 
 function updateCalls() {
@@ -234,7 +237,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     ];
     renderPage();
 
-    expect(screen.getAllByRole("button", { name: /^More actions for / })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /^Uninstall / })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 
@@ -263,7 +266,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     listed = [makePlugin({ runtime_kind: "WebSandboxed" })];
     renderPage();
 
-    expect(screen.getByRole("button", { name: /^More actions for / })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Uninstall / })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 });

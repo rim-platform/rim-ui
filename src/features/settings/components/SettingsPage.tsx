@@ -1,5 +1,5 @@
 import { useCanManageBots } from "../../bots/availability";
-import { useState, useEffect, useId, Suspense } from "react";
+import { useState, useEffect, useId, useRef, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -401,6 +401,7 @@ export function SettingsPage() {
     .map((group) => ({ group, items: visibleTabs.filter((tab) => tab.group === group) }))
     .filter(({ items }) => items.length > 0);
   const groupIdPrefix = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // When the caller navigates to settings again (e.g. "Manage plugins" while
   // settings is already open), the surface updates but the component stays
@@ -408,12 +409,15 @@ export function SettingsPage() {
   useEffect(() => {
     if (mainSurface.kind === "settings") {
       setActiveTab(resolveTab(mainSurface));
+      // Tab starts on the page, not wherever focus was before the tab was opened.
+      const panel = rootRef.current?.closest<HTMLElement>('[data-panel="mainSurface"]');
+      if (panel && !panel.contains(document.activeElement)) panel.focus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainSurface]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={rootRef} className="flex h-full flex-col">
       {/* Header */}
       <div
         className={cn(

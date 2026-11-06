@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { WebhookPreset, type Bot } from "../../../core/graphql/generated/schema-types";
@@ -31,6 +31,10 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   const [creating, setCreating] = useState(false);
   const [shown, setShown] = useState<{ url: string; preset: WebhookPreset } | null>(null);
   const [toRevoke, setToRevoke] = useState<string | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const newRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes once the list has been fetched again: a webhook's Revoke button, or New webhook.
+  const [refocus, setRefocus] = useState<{ revokeOf: string | null } | null>(null);
 
   const channelName = (id: string) =>
     channels.data?.items.find((c) => c.id === id)?.title ?? "A channel you are not in";
@@ -42,13 +46,27 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   );
   const activeBots = bots.filter((b) => !b.deactivatedAt);
 
+  useEffect(() => {
+    if (!refocus || webhooks.isFetching) return;
+    setTimeout(() => {
+      const revoke = refocus.revokeOf
+        ? Array.from(
+            sectionRef.current?.querySelectorAll<HTMLElement>("[data-webhook-revoke]") ?? [],
+          ).find((el) => el.dataset.webhookRevoke === refocus.revokeOf)
+        : null;
+      (revoke ?? newRef.current)?.focus();
+    });
+    setRefocus(null);
+  }, [refocus, webhooks.isFetching]);
+
   return (
-    <section className="space-y-3" aria-labelledby="webhooks-heading">
+    <section ref={sectionRef} className="space-y-3" aria-labelledby="webhooks-heading">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id="webhooks-heading" className="text-base font-semibold text-rim-text">
           Incoming webhooks
         </h3>
         <Button
+          ref={newRef}
           variant="secondary"
           size="sm"
           onClick={() => setCreating(true)}
@@ -96,6 +114,7 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
               <Button
                 size="sm"
                 variant="secondary"
+                data-webhook-revoke={w.id}
                 onClick={() => setToRevoke(w.id)}
                 aria-label={`Revoke the webhook of ${channelName(w.conversationId)}`}
               >
@@ -138,15 +157,20 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           danger
           isPending={revoke.isPending}
           onClose={() => setToRevoke(null)}
-          onConfirm={() =>
+          onConfirm={() => {
+            const at = active.findIndex((w) => w.id === toRevoke);
+            const next = active[at + 1]?.id ?? null;
             revoke.mutate(toRevoke, {
-              onSuccess: () => setToRevoke(null),
+              onSuccess: () => {
+                setToRevoke(null);
+                setRefocus({ revokeOf: next });
+              },
               onError: (err) => {
                 setToRevoke(null);
                 toast.error(graphqlErrorMessage(err, "Could not revoke the webhook"));
               },
-            })
-          }
+            });
+          }}
         />
       )}
     </section>

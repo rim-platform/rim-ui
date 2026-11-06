@@ -119,6 +119,33 @@ describe("AgentRunDialog", () => {
     expect(screen.getByText("Suggested Pods delete")).toBeInTheDocument();
   });
 
+  it("shows each way a step ended as its own card, and a read as a plain row", () => {
+    const plugin = { pluginId: "dev.example.pods", commandId: "restart" };
+    show([
+      entry(0),
+      entry(1, { ...SEND, change: "asked" }),
+      entry(2, { ...SEND, change: "sent" }),
+      entry(3, { ...SEND, change: "asked", plugin }),
+      entry(4, { ...SEND, change: "discarded", plugin }),
+      entry(5, { ...SEND, change: "expired" }),
+      entry(6, { ...SEND, change: "refused" }),
+      entry(7, { ...SEND, change: "asked", channelId: "c2" }),
+      entry(8, { refused: true, channelId: "c9" }),
+    ]);
+    const stateOf = (text: string) =>
+      screen.getByText(text).closest("[data-state]")?.getAttribute("data-state");
+    expect(stateOf("Asked to send to #releases → Sent")).toBe("done");
+    expect(stateOf("Asked to run Pods restart → You discarded it")).toBe("ended");
+    expect(stateOf("Expired #releases")).toBe("ended");
+    expect(stateOf("Refused #releases")).toBe("denied");
+    expect(stateOf("Refused a request")).toBe("denied");
+    expect(screen.getByText(/No answer recorded/).closest("[data-state]")).toHaveAttribute(
+      "data-state",
+      "ended",
+    );
+    expect(screen.getByText("1 read in #releases (2 messages)").closest("[data-state]")).toBeNull();
+  });
+
   it("folds refused calls", () => {
     show([entry(0, { refused: true }), entry(1, { refused: true })]);
     expect(screen.getByText("2 refused requests")).toBeInTheDocument();
@@ -161,7 +188,9 @@ describe("AgentRunDialog", () => {
     expect(mocks.audit).toHaveBeenCalledWith(
       expect.objectContaining({ scope: { serverId: "w1", actorUserId: "me" }, runId: "r_1" }),
     );
-    expect(screen.getByText(/chat\.post_message · SUCCESS/)).toBeInTheDocument();
+    const command = screen.getByText("chat.post_message");
+    expect(command).toHaveClass("font-mono");
+    expect(command.parentElement).toHaveTextContent(/chat\.post_message · SUCCESS/);
     expect(screen.getByText(/Arguments are redacted\./)).toHaveTextContent(
       "Those who can read this workspace's log can see these lines.",
     );
