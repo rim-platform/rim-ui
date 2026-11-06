@@ -204,7 +204,7 @@ describe("AgentsSettings", () => {
     const rows = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Claude Code");
-    expect(rows[0]).toHaveTextContent(`Connected ${new Date(AGENT.pairedAt).toLocaleDateString()}`);
+    expect(rows[0]).toHaveTextContent(`Connected ${new Date(AGENT.pairedAt).toLocaleString()}`);
     expect(rows[1]).toHaveTextContent("<b>Other</b>");
     expect(screen.queryByText(NOTHING)).not.toBeInTheDocument();
     expect(screen.queryByText(OFF_LINE)).not.toBeInTheDocument();

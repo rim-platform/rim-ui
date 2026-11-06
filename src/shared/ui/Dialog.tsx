@@ -39,19 +39,18 @@ export function Dialog({ open, onClose, title, maxWidth = "max-w-sm", children }
         if (!panel || panel.contains(document.activeElement)) return;
         panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
       });
-    } else {
-      document.body.style.overflow = "";
-      if (previousFocusRef.current) {
-        const el = previousFocusRef.current as HTMLElement;
-        if (typeof el.focus === "function") {
-          el.focus();
-        }
-        previousFocusRef.current = null;
-      }
     }
     return () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
       document.body.style.overflow = "";
+      if (!open) return;
+      // Closing, by `open` going false or by unmounting. Focus went with the panel, so give it
+      // back, unless something else, such as the next dialog, has already taken it.
+      const previous = previousFocusRef.current as HTMLElement | null;
+      previousFocusRef.current = null;
+      if (document.activeElement === document.body || !document.activeElement) {
+        previous?.focus?.();
+      }
     };
   }, [open]);
 

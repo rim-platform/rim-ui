@@ -119,7 +119,7 @@ export function AgentsSettings() {
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="break-words text-sm font-medium text-rim-text">{agent.name}</div>
                   <div className="text-xs text-rim-text-muted">
-                    Connected {new Date(agent.pairedAt).toLocaleDateString()}
+                    Connected {new Date(agent.pairedAt).toLocaleString()}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
