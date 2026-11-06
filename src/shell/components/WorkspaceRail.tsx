@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MessagesSquare, Plus } from "lucide-react";
+import { House, MessagesSquare, Plus } from "lucide-react";
 
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
@@ -18,6 +18,7 @@ import {
 import { cn } from "../../shared/ui/cn";
 import { useContextMenu } from "../../shared/ui/contextMenu/useContextMenu";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
+import { useHomeMentionCount } from "../../features/home/api/useHomeMentions";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
 
@@ -35,7 +36,16 @@ function UnreadBadge({ count }: { count: number }) {
 
 export function WorkspaceRail() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const setWorkspaceId = useWorkspaceStore((s) => s.setWorkspaceId);
+  const openWorkspace = useWorkspaceStore((s) => s.setWorkspaceId);
+  // Choosing a workspace on the rail leaves Home for it.
+  const setWorkspaceId = useCallback(
+    (id: string) => {
+      openWorkspace(id);
+      const shell = useShellStore.getState();
+      if (shell.mainSurface.kind === "home") shell.setMainSurface({ kind: "conversation" });
+    },
+    [openWorkspace],
+  );
   const { data: servers } = useMyServers();
   const [showCreate, setShowCreate] = useState(false);
   const directSpaceId = useRelayStore((s) => s.info?.directSpaceId ?? null);
@@ -64,6 +74,8 @@ export function WorkspaceRail() {
   const directUnread = useUnreadStore((s) =>
     unreadTotal(s.counts, s.spaceOf, (space) => directSpaceIds.includes(space)),
   );
+  const homeSurface = useShellStore((s) => s.mainSurface.kind === "home");
+  const homeCount = useHomeMentionCount();
   const counts = useUnreadStore((s) => s.counts);
   const spaceOf = useUnreadStore((s) => s.spaceOf);
   const [dialog, setDialog] = useState<{ kind: WorkspaceMenuDialog; workspaceId: string } | null>(
@@ -80,6 +92,23 @@ export function WorkspaceRail() {
         onKeyDown={handleVerticalStripKeys}
         className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2 outline-none"
       >
+        <button
+          type="button"
+          title="Home"
+          aria-label={homeCount > 0 ? `Home (${homeCount} mentions and replies)` : "Home"}
+          aria-current={homeSurface ? "page" : undefined}
+          onClick={() => useShellStore.getState().setMainSurface({ kind: "home" })}
+          className={cn(
+            "relative flex h-9 w-9 items-center justify-center rounded-xl transition",
+            homeSurface
+              ? "bg-gradient-to-br from-rim-accent to-rim-accent text-rim-void"
+              : "bg-rim-panel-soft text-rim-text-muted hover:bg-white/10 hover:text-rim-text",
+          )}
+        >
+          <House className="h-4 w-4" />
+          {homeCount > 0 && <UnreadBadge count={homeCount} />}
+        </button>
+
         {directSpaceId && (
           <button
             type="button"

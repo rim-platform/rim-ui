@@ -51,6 +51,7 @@ const SURFACE_COMMANDS: Record<MainSurface["kind"], string> = {
   plugin: openPluginPanelCommandId("some-plugin", "some-panel"),
   marketplace: "workspace.open_marketplace",
   "audit-log": "workspace.open_audit_log",
+  home: "workspace.open_home",
   "dm-requests": "workspace.open_message_requests",
 };
 
@@ -120,6 +121,9 @@ describe("every way into the app is reachable", () => {
   });
 
   it("opens the pages by their commands", () => {
+    runDesktopLocalCommand("workspace.open_home");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+
     runDesktopLocalCommand("workspace.open_audit_log");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
 
