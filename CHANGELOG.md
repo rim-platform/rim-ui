@@ -37,6 +37,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A command the server refuses now says why: "not done" when you lack a permission, naming it, with
+  no Retry; "failed" for a technical problem, with Retry only when repeating it is safe; and "expired"
+  when a confirmation ran out, in neutral colours. A keybind whose command is refused now says so
+  instead of doing nothing. The AI agent is told the same, so it does not retry a decision.
 - Notifications now come from all your workspaces, not only the open one, following each
   workspace's notification settings. One from another workspace names it in its title and updates
   its badge on the rail. This needs a server that lists `notification_events` for workspaces on
