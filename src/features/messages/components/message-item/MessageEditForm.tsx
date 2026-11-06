@@ -37,6 +37,21 @@ export const MessageEditForm = memo(function MessageEditForm({
     });
   }, [initialText]);
 
+  // The form unmounts when the edit ends; focus it left behind goes back to the message's row,
+  // or the list or panel that holds it.
+  useEffect(
+    () => () => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const row = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+      const target =
+        row?.closest<HTMLElement>("[tabindex]") ??
+        document.querySelector<HTMLElement>("[data-message-list]");
+      target?.focus({ preventScroll: true });
+    },
+    [messageId],
+  );
+
   function submit() {
     const trimmed = editText.trim();
     if (trimmed && trimmed !== initialText) {

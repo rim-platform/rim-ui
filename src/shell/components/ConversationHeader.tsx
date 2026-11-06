@@ -42,6 +42,9 @@ import {
 } from "../../features/conversations/state/directOrigin";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
+import { NavMenuButton } from "./NavMenuButton";
+import { useShellWidth } from "../hooks/useShellWidth";
+import { cn } from "../../shared/ui/cn";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
 export function ConversationHeader() {
@@ -53,9 +56,16 @@ export function ConversationHeader() {
 function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
   const peer = useDraftPeer(draft);
   const { data: workspace } = useWorkspace(draftSpaceId(draft));
+  const narrow = useShellWidth() === "narrow";
   return (
-    <div className="flex h-10 items-center border-b border-rim-line px-4">
+    <div
+      className={cn(
+        "flex items-center border-b border-rim-line px-4",
+        narrow ? "h-auto min-h-10 flex-wrap py-1" : "h-10",
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
+        <NavMenuButton />
         <BackToWorkspaceButton />
         <Avatar
           url={peer.avatarUrl}
@@ -83,6 +93,7 @@ function SelectedConversationHeader() {
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
   const toggleMembers = useMembersPanelStore((s) => s.toggle);
+  const narrow = useShellWidth() === "narrow";
 
   // A DM shows the other person's name, a group without a title its members' names.
   let displayTitle = conversation?.title ?? undefined;
@@ -170,8 +181,14 @@ function SelectedConversationHeader() {
   );
 
   return (
-    <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
-      <div className="flex min-w-0 items-center gap-3">
+    <div
+      className={cn(
+        "flex items-center justify-between border-b border-rim-line px-4",
+        narrow ? "h-auto min-h-10 flex-wrap gap-y-1 py-1" : "h-10",
+      )}
+    >
+      <div className={cn("flex min-w-0 items-center gap-3", narrow && "w-full")}>
+        <NavMenuButton />
         <BackToWorkspaceButton />
         {dmOtherUserId ? (
           <Avatar
@@ -188,7 +205,7 @@ function SelectedConversationHeader() {
         ) : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-rim-text">
+            <h2 className="truncate text-sm font-medium text-rim-text">
               {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
             </h2>
             {isChannel && conversation && (
@@ -196,7 +213,7 @@ function SelectedConversationHeader() {
                 type="button"
                 onClick={toggleMembers}
                 aria-label={memberCountLabel(conversation.memberCount)}
-                className="text-xs text-rim-text-faint transition hover:text-rim-text"
+                className="whitespace-nowrap text-xs text-rim-text-faint transition hover:text-rim-text"
               >
                 {memberCountLabel(conversation.memberCount)}
               </button>
@@ -243,7 +260,7 @@ function SelectedConversationHeader() {
         </div>
       </div>
       {conversationId && (
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {canInvite && <InviteButton onClick={() => setInviteOpen(true)} />}
           {isChannel && workspaceId && (
             <LensPicker serverId={workspaceId} conversationId={conversationId} />
