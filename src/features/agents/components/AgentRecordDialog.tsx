@@ -64,7 +64,11 @@ function entryLine(
   if (entry.tool === CLEARED_TOOL) return `${time} · You cleared the record`;
   if (entry.plugin) {
     const { pluginId, commandId } = entry.plugin;
-    return `${time} · ${pluginChangeLabel(entry)} · ${pluginName(pluginId)} ${commandId}`.trimEnd();
+    const line =
+      `${time} · ${pluginChangeLabel(entry)} · ${pluginName(pluginId)} ${commandId}`.trimEnd();
+    return entry.channelId
+      ? `${line} · #${channelLabel(qc, entry.workspaceId, entry.channelId)}`
+      : line;
   }
   if (entry.change) {
     const channel = entry.channelId

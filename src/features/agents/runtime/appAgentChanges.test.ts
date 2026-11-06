@@ -28,9 +28,13 @@ vi.mock("../../relay/state/useRelayStore", () => ({
   isDirectSpace: (id: string) => mocks.direct.has(id),
 }));
 vi.mock("../../plugins/chat/appMessageService", () => ({ appChatDeps: {} }));
+vi.mock("../../updater/api/serverInfoApi", () => ({
+  fetchServerInfo: () => Promise.resolve({ features: [] }),
+}));
 vi.mock("../../desktop-shell/api/desktopShell", () => ({ desktopShowWindow: mocks.showWindow }));
 
 import { logger } from "../../../core/logger";
+import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
@@ -107,7 +111,10 @@ describe("appAgentChanges", () => {
 
   it("asks the server as an agent, naming only the ids it was given", async () => {
     mocks.request.mockResolvedValueOnce(POSTED);
-    await appAgentChanges.sendMessage(AGENT, ARGS);
+    const answer = appAgentChanges.sendMessage(AGENT, ARGS);
+    await requestOpen();
+    STORE.getState().approve();
+    await answer;
     expect(inputs()).toEqual([
       {
         commandId: "chat.post_message",
@@ -130,8 +137,8 @@ describe("appAgentChanges", () => {
       toolName: "send a message",
       args: {},
       verb: null,
-      token: "tok",
-      argsHash: "hash",
+      token: expect.any(String),
+      argsHash: "",
       outsideAgent: {
         name: "Claude Code",
         target: [
@@ -142,6 +149,7 @@ describe("appAgentChanges", () => {
       },
     });
     expect(mocks.showWindow).toHaveBeenCalledOnce();
+    expect(mocks.request).not.toHaveBeenCalled();
 
     STORE.getState().approve();
     expect(await answer).toMatchObject({ isError: false, payload: { messageId: "m1" } });
@@ -192,6 +200,15 @@ describe("appAgentChanges", () => {
     expect(mocks.showWindow).not.toHaveBeenCalled();
     STORE.getState().approve();
     await expect(own).resolves.toEqual({ approved: true });
+  });
+
+  it("answers busy while any other dialog is open", async () => {
+    const stop = trackOpenDialog();
+    const outcome = await appAgentChanges.sendMessage(freshAgent("other-dialog"), ARGS);
+    stop();
+    expect(outcome.payload).toMatchObject({ refusal: "FAILED", retrySafe: true });
+    expect(STORE.getState().request).toBeNull();
+    expect(mocks.request).not.toHaveBeenCalled();
   });
 
   it("goes on when the window cannot be brought forward", async () => {

@@ -259,6 +259,12 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
       const pluginId = idOf(args.pluginId);
       const commandId = idOf(args.commandId);
 
+      /** Where the command acts, once a grant has been checked to cover it. Ids only, never other arguments. */
+      const where: { workspaceId: string; channelId: string | null } = {
+        workspaceId: "",
+        channelId: null,
+      };
+
       function entry(
         change: RecordEntry["change"],
         refused: boolean = change === "refused",
@@ -268,8 +274,8 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
           agentId: agent.id,
           agentName: agent.name,
           tool: RUN_TOOL,
-          workspaceId: "",
-          channelId: null,
+          workspaceId: where.workspaceId,
+          channelId: where.channelId,
           query: false,
           messageIds: [],
           refused,
@@ -329,6 +335,7 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
       if (needed.includes("workspace_id")) {
         const workspaceId = input.workspace_id as string;
         if (!hasGrantIn(grants, workspaceId)) return ended(refusedEntry(), NOT_APPROVED);
+        where.workspaceId = workspaceId;
         if (needed.includes("conversation_id")) {
           const channelId = input.conversation_id as string;
           if (!grantMayCover(grants, workspaceId, channelId)) {
@@ -338,6 +345,7 @@ export function createAgentPlugins(deps: AgentPluginsDeps): AgentPlugins {
           if (!grantCovers(grants, workspaceId, channel)) {
             return ended(refusedEntry(), NOT_APPROVED);
           }
+          where.channelId = channelId;
         }
       }
 

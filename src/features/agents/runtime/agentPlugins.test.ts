@@ -143,7 +143,6 @@ function assertNothingInTheRecord() {
   const kept = JSON.stringify(entries);
   expect(kept).not.toContain(SECRET_ARGUMENT);
   expect(kept).not.toContain(SECRET_OUTPUT);
-  expect(entries.every((entry) => entry.workspaceId === "" && entry.channelId === null)).toBe(true);
 }
 
 describe("createAgentPlugins", () => {
@@ -346,6 +345,7 @@ describe("createAgentPlugins", () => {
         post: () => Promise.resolve(held as never),
         runId: () => "r_test",
         busy: () => false,
+        commandsOff: () => Promise.resolve(false),
         confirm: () => Promise.resolve("discarded"),
         record: () => Promise.resolve(),
         cooldown: deps.cooldown,
@@ -481,6 +481,11 @@ describe("createAgentPlugins", () => {
       });
       expect(elsewhere).toEqual(NOT_APPROVED);
       expect(deps.run).not.toHaveBeenCalled();
+    });
+
+    it("records the channel a command ran in, once a grant covers it", async () => {
+      await runOf("in_conversation", { workspace_id: "w1", conversation_id: "c1" });
+      expect(entries.at(-1)).toMatchObject({ workspaceId: "w1", channelId: "c1", change: "done" });
     });
 
     it("names only what is missing", async () => {
