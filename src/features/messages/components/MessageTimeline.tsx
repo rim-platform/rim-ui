@@ -91,6 +91,8 @@ function usePendingPeer(): string | null {
   return pending && conversation ? (directPeerId(conversation, currentUserId) ?? null) : null;
 }
 
+const NO_ITEMS: TimelineMessage[] = [];
+
 function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
@@ -155,7 +157,11 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const isAtBottomRef = useRef(true);
   const {
     firstNewIndex,
+    firstNewKnown,
+    awaitingFirstNew,
+    moreAbove,
     dividerFading,
+    markShownRead,
     onScrollPosition: onDividerScrollPosition,
   } = useNewMessagesDivider({
     workspaceId,
@@ -163,11 +169,17 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     items,
     isLensActive,
     isAtBottomRef,
+    firstPagePending: timeline.isPending,
+    hasNextPage: timeline.hasNextPage,
+    isFetchingNextPage: timeline.isFetchingNextPage,
+    fetchNextPage: timeline.fetchNextPage,
   });
+  // What the viewer can be said to have in front of them: nothing until the list opens.
+  const shownItems = awaitingFirstNew ? NO_ITEMS : items;
   const { onScrollPosition: onSeenScrollPosition } = useMarkSeen({
     workspaceId,
     conversationId,
-    items,
+    items: shownItems,
     isLensActive,
     currentUserId,
     isAtBottomRef,
@@ -207,6 +219,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     currentUserId,
     displayDensity,
     firstNewIndex,
+    firstNewKnown,
     hasNextPage: timeline.hasNextPage,
     isFetchingNextPage: timeline.isFetchingNextPage,
     fetchNextPage: timeline.fetchNextPage,
@@ -216,7 +229,11 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     hintBarShown: navigationMode,
     pointerPressRef: pointerEntryRef,
   });
-  const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
+  const highlightedMessageId = useHighlightedMessage({
+    items: shownItems,
+    scrollContainerRef,
+    scrollToIndex,
+  });
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
@@ -365,7 +382,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     );
   }
 
-  if (timeline.isPending) {
+  if (timeline.isPending || awaitingFirstNew) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-rim-text-muted">
         {isLensActive ? "Applying lens..." : "Loading messages..."}
@@ -515,7 +532,13 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                     className={cn("absolute left-0 top-0 w-full", row.index > 0 && "pt-0.5")}
                     style={{ transform: `translateY(${row.start}px)` }}
                   >
-                    {row.index === firstNewIndex && <NewMessagesDivider fading={dividerFading} />}
+                    {row.index === firstNewIndex && (
+                      <NewMessagesDivider
+                        fading={dividerFading}
+                        moreAbove={moreAbove}
+                        onMarkRead={markShownRead ?? undefined}
+                      />
+                    )}
                     <MessageItem
                       view={{
                         message: msg,

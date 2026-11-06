@@ -131,6 +131,7 @@ export const queryKeys = {
   serverConfig: () => ["serverConfig"] as const,
   // The server's release and API version; read once per session.
   serverInfo: ["serverInfo"] as const,
+  hostCapabilities: (hostServerId: string) => ["hostCapabilities", hostServerId] as const,
   // When the signed-in account's probation ends; under `me` so a refresh of the account covers it.
   probation: (userId?: string) => ["me", "probation", userId] as const,
   // Until when the operators locked the signed-in account's profile. Its own root, so a refresh

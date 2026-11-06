@@ -91,6 +91,7 @@ describe("skew check", () => {
   it("keeps every message query valid on a server without Message.editedAt", () => {
     const refused = refusedOperations(schemaWithoutEditTimes(), documents);
     expect(refused.map((r) => r.label).sort()).toEqual([
+      "query HostCapabilities",
       "query MessagesWithBots",
       "query MessagesWithEdits",
       "query MessagesWithFlags",
@@ -112,6 +113,13 @@ describe("skew check", () => {
       "query MessagesWithFlags",
       "query ThreadMessagesWithBots",
       "query ThreadMessagesWithFlags",
+    ]);
+  });
+
+  it("refuses only the marker document on a server without read_marker", () => {
+    const schema = schemaWithoutFields({ UnreadCount: ["unreadAfter"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query UnreadCountsWithMarkers",
     ]);
   });
 

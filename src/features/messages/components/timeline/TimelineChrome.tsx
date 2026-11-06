@@ -2,7 +2,23 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "../../../../shared/ui/cn";
 
-export function NewMessagesDivider({ fading }: { fading: boolean }) {
+/**
+ * The line above the first unread message.
+ *
+ * @param fading - Whether it is on its way out.
+ * @param moreAbove - Whether unread messages older than the loaded ones remain.
+ * @param onMarkRead - Marks the conversation read; left out where reading marks it by itself.
+ */
+export function NewMessagesDivider({
+  fading,
+  moreAbove = false,
+  onMarkRead,
+}: {
+  fading: boolean;
+  moreAbove?: boolean;
+  onMarkRead?: () => void;
+}) {
+  const label = moreAbove ? "More new messages above" : "New messages";
   return (
     <div
       className={cn(
@@ -10,11 +26,20 @@ export function NewMessagesDivider({ fading }: { fading: boolean }) {
         fading ? "opacity-0" : "opacity-100",
       )}
       role="separator"
-      aria-label="New messages"
+      aria-label={label}
       data-new-messages-divider
     >
       <div className="flex-1 border-t border-rim-warm/40" />
-      <span className="select-none text-xs font-medium text-rim-warm">New messages</span>
+      <span className="select-none text-xs font-medium text-rim-warm">{label}</span>
+      {onMarkRead && (
+        <button
+          type="button"
+          onClick={onMarkRead}
+          className="rounded border border-rim-warm/40 px-2 py-0.5 text-xs font-medium text-rim-warm transition hover:bg-rim-warm/10"
+        >
+          Mark as read
+        </button>
+      )}
       <div className="flex-1 border-t border-rim-warm/40" />
     </div>
   );

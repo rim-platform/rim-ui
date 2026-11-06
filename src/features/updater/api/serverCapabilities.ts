@@ -1,7 +1,10 @@
 import { onlineManager } from "@tanstack/react-query";
+import { gql } from "graphql-request";
 
+import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
+import { hostOf } from "../../relay/state/useRelayStore";
 import { fetchServerInfo, type KnownServerInfo } from "./serverInfoApi";
 
 /** The capability of a server with `Message.editedAt`. */
@@ -42,6 +45,9 @@ export const BOT_DISCLOSURE = "bot_disclosure";
 
 /** The capability of a server with incoming webhooks (`incomingWebhooks` and its mutations). */
 export const INCOMING_WEBHOOKS = "incoming_webhooks";
+
+/** The capability of a server with `UnreadCount.unreadAfter`, `markAsUnread` and the `ReadMarkerRewound` event. */
+export const READ_MARKER = "read_marker";
 
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
@@ -90,6 +96,49 @@ export async function serverHasCapability(capability: string): Promise<boolean> 
       retry: false,
     });
     return hasCapability(info, capability);
+  } catch {
+    return false;
+  }
+}
+
+const HOST_CAPABILITIES_QUERY = gql`
+  query HostCapabilities {
+    serverInfo {
+      capabilities
+    }
+  }
+`;
+
+/** How long a host's capabilities are kept before they are read from it again. */
+const HOST_CAPABILITIES_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Whether the server that hosts `spaceId` lists `capability`: the connected server for a space it
+ * hosts, otherwise that host, asked through the same route as the space's other requests. False
+ * when it cannot be read, or for a host older than capabilities, which refuses the question.
+ */
+export async function spaceHasCapability(spaceId: string, capability: string): Promise<boolean> {
+  const host = hostOf(spaceId);
+  if (!host) return serverHasCapability(capability);
+  const queryKey = queryKeys.hostCapabilities(host);
+  if (!onlineManager.isOnline()) {
+    return queryClient.getQueryData<string[]>(queryKey)?.includes(capability) ?? false;
+  }
+  try {
+    const capabilities = await queryClient.fetchQuery({
+      queryKey,
+      staleTime: HOST_CAPABILITIES_STALE_MS,
+      retry: false,
+      queryFn: async () => {
+        // The operation declares no variable: `workspaceId` only routes the request to the host.
+        const res = await graphqlClient.request<{ serverInfo: { capabilities: string[] } }>(
+          HOST_CAPABILITIES_QUERY,
+          { workspaceId: spaceId },
+        );
+        return res.serverInfo.capabilities;
+      },
+    });
+    return capabilities.includes(capability);
   } catch {
     return false;
   }

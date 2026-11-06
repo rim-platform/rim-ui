@@ -42,7 +42,10 @@ describe("useAllWorkspaceUnreadCounts", () => {
         "ws-3-conv": "ws-3",
       }),
     );
-    const fetched = requestMock.mock.calls.map(([, variables]) => variables.workspaceId).sort();
+    const fetched = requestMock.mock.calls
+      .filter(([document]) => String(document).includes("unreadCounts("))
+      .map(([, variables]) => variables.workspaceId)
+      .sort();
     expect(fetched).toEqual(["ws-2", "ws-3"]);
     expect(useUnreadStore.getState().counts).toEqual({ "ws-2-conv": 2, "ws-3-conv": 2 });
   });

@@ -46,13 +46,21 @@ function WorkspaceSelection() {
     }
   }, [selectedId, draftOpen, channels, messages]);
 
-  // Snapshots the watermark of the conversation being left, then clears its unread count
-  // optimistically. The markAsRead call itself fires when the divider is dismissed.
+  // Snapshots the watermark of the conversation being left and clears its unread count locally.
+  // A conversation its host still counts as unread stays so: there the read marker is the line,
+  // and only reading to the end or marking it read moves it.
   const previousId = useRef<string | null>(null);
   useEffect(() => {
     const prevId = previousId.current;
     previousId.current = selectedId;
     if (!prevId || !workspaceId || prevId === selectedId) return;
+
+    const unread = useUnreadStore.getState();
+    const space = unread.spaceOf[prevId] ?? workspaceId;
+    if (unread.countSources[space] === "markers" && (unread.counts[prevId] ?? 0) > 0) {
+      unread.clearWatermark(prevId);
+      return;
+    }
 
     const cached = qc.getQueryData<{ pages: MessagesPage[] }>(
       queryKeys.messages(workspaceId, prevId),
