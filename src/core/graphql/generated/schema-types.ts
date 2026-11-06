@@ -66,6 +66,11 @@ export type AuditLogEntry = {
   id: Scalars['ID']['output'];
   initiator: Scalars['String']['output'];
   outcome: AuditOutcomeGql;
+  /**
+   * The identifier the desktop app gave the stretch of an agent's calls this entry belongs to.
+   * Null unless the initiator was `AGENT`.
+   */
+  runId?: Maybe<Scalars['String']['output']>;
   sensitivity: Scalars['String']['output'];
   serverId: Scalars['ID']['output'];
   typedVerb?: Maybe<TypedVerbGql>;
@@ -74,6 +79,7 @@ export type AuditLogEntry = {
 export type AuditLogFilterInput = {
   actorUserId?: InputMaybe<Scalars['ID']['input']>;
   commandId?: InputMaybe<Scalars['String']['input']>;
+  runId?: InputMaybe<Scalars['String']['input']>;
   serverId?: InputMaybe<Scalars['ID']['input']>;
   since?: InputMaybe<Scalars['String']['input']>;
   typedVerb?: InputMaybe<TypedVerbGql>;
@@ -127,6 +133,43 @@ export type BlockedPrincipal = {
   userId?: Maybe<Scalars['ID']['output']>;
   /** That account's username; null when no account here holds the principal. */
   username?: Maybe<Scalars['String']['output']>;
+};
+
+/** A bot account of a workspace. */
+export type Bot = {
+  /** Who added it. */
+  addedByName?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  /** When it was deactivated; null while it is active. */
+  deactivatedAt?: Maybe<Scalars['DateTime']['output']>;
+  name: Scalars['String']['output'];
+  /** Where what it reads goes, as the person who added it says. */
+  readsGoTo: Scalars['String']['output'];
+  /** Who runs it, as the person who added it says. */
+  runBy: Scalars['String']['output'];
+  serverId: Scalars['ID']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+/** What the person who added a bot says about it. RIM cannot check it. */
+export type BotInfo = {
+  /** Who added it. */
+  addedByName?: Maybe<Scalars['String']['output']>;
+  /** Where what it reads goes. */
+  readsGoTo: Scalars['String']['output'];
+  /** Who runs it. */
+  runBy: Scalars['String']['output'];
+};
+
+/** A bot's token, without its secret, which is shown once when it is created. */
+export type BotToken = {
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  label: Scalars['String']['output'];
+  /** When it was last used, to the minute; null when it never was. */
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** When it was revoked; null while it works. */
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 export type ChannelCursorInput = {
@@ -526,6 +569,16 @@ export type CreateAttachmentInput = {
   sizeBytes: Scalars['Int']['input'];
 };
 
+/** Create a bot in a workspace. */
+export type CreateBotInput = {
+  name: Scalars['String']['input'];
+  /** Where what it reads goes: 1 to 200 characters of plain text. */
+  readsGoTo: Scalars['String']['input'];
+  /** Who runs it: 1 to 200 characters of plain text. */
+  runBy: Scalars['String']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
 export type CreateChannelLensInput = {
   conversationId: Scalars['ID']['input'];
   filterSpec: FilterSpecInput;
@@ -629,6 +682,20 @@ export type CreateUserCommandInput = {
   description: Scalars['String']['input'];
   steps: Array<UserCommandStepInput>;
   title: Scalars['String']['input'];
+};
+
+/** A new bot and its first token. */
+export type CreatedBot = {
+  bot: Bot;
+  /** `rimbot_…`, shown this once. */
+  token: Scalars['String']['output'];
+};
+
+/** A new token of a bot. */
+export type CreatedBotToken = {
+  botToken: BotToken;
+  /** `rimbot_…`, shown this once. */
+  token: Scalars['String']['output'];
 };
 
 export type CustomEmoji = {
@@ -863,6 +930,11 @@ export type ExecuteCommandInput = {
    */
   initiator?: InputMaybe<CommandInitiator>;
   isPipe?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * An identifier the desktop app gives one stretch of an agent's calls. Kept on the audit
+   * entry when the initiator is `AGENT`, and ignored otherwise.
+   */
+  runId?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ExecuteMacroInput = {
@@ -1729,6 +1801,18 @@ export type Mutation = {
   /** Called by the new device right after its first `loginWithKey`. */
   completeDeviceLink: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
+  /**
+   * Create a bot, a guest of the workspace in no channel, and its first token, shown this once.
+   * Owner or Moderator; `FORBIDDEN` for anyone else, `VALIDATION` for the direct space, a bad
+   * field or a workspace with 25 active bots, `FEATURE_DISABLED` while the `bots` feature is
+   * off.
+   */
+  createBot: CreatedBot;
+  /**
+   * Create a token for an active bot, shown this once; a label is 1 to 64 characters and a bot
+   * has at most 5 active tokens (`VALIDATION`). Owner or Moderator of its workspace.
+   */
+  createBotToken: CreatedBotToken;
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
@@ -1738,6 +1822,12 @@ export type Mutation = {
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
+  /**
+   * Deactivate a bot: its tokens stop working and it leaves the workspace and its channels. Its
+   * messages stay. Doing it again changes nothing. There is no way back. Owner or Moderator of
+   * its workspace.
+   */
+  deactivateBot: Bot;
   /** Decline the caller's pending invitation; `NOT_FOUND` when there is none. */
   declineConversationInvite: Scalars['Boolean']['output'];
   /**
@@ -2063,6 +2153,11 @@ export type Mutation = {
    * an instance operator). Audited (`admin.resolve_report`).
    */
   resolveReport: MessageReport;
+  /**
+   * Revoke a token. Revoking it again changes nothing. `NOT_FOUND` for an unknown token and for
+   * a token of a bot in a workspace the caller does not moderate.
+   */
+  revokeBotToken: BotToken;
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
   /**
@@ -2201,6 +2296,8 @@ export type Mutation = {
   unblockPrincipal: Scalars['Boolean']['output'];
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
+  /** Change a bot's name or what is said about it. Owner or Moderator of its workspace. */
+  updateBot: Bot;
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
   updateKeybind: Keybind;
@@ -2373,6 +2470,17 @@ export type MutationCreateAttachmentArgs = {
 };
 
 
+export type MutationCreateBotArgs = {
+  input: CreateBotInput;
+};
+
+
+export type MutationCreateBotTokenArgs = {
+  botUserId: Scalars['ID']['input'];
+  label: Scalars['String']['input'];
+};
+
+
 export type MutationCreateChannelLensArgs = {
   input: CreateChannelLensInput;
 };
@@ -2415,6 +2523,11 @@ export type MutationCreateServerArgs = {
 
 export type MutationCreateUserCommandArgs = {
   input: CreateUserCommandInput;
+};
+
+
+export type MutationDeactivateBotArgs = {
+  botUserId: Scalars['ID']['input'];
 };
 
 
@@ -2777,6 +2890,11 @@ export type MutationResolveReportArgs = {
 };
 
 
+export type MutationRevokeBotTokenArgs = {
+  tokenId: Scalars['ID']['input'];
+};
+
+
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
 };
@@ -2938,6 +3056,11 @@ export type MutationUnmuteConversationArgs = {
 
 export type MutationUnpinMessageArgs = {
   input: UnpinMessageInput;
+};
+
+
+export type MutationUpdateBotArgs = {
+  input: UpdateBotInput;
 };
 
 
@@ -3425,6 +3548,17 @@ export enum PublicJoinLinkViewer {
 
 export type Query = {
   applyChannelLens: Array<Message>;
+  /**
+   * The bot's tokens, revoked ones included, never their secret. Owner or Moderator of its
+   * workspace; `FORBIDDEN` for anyone else, `NOT_FOUND` for an unknown bot, `FEATURE_DISABLED`
+   * while the `bots` feature is off.
+   */
+  botTokens: Array<BotToken>;
+  /**
+   * The workspace's bots, deactivated ones included. Any member; `FORBIDDEN` for anyone else,
+   * `FEATURE_DISABLED` while the `bots` feature is off.
+   */
+  bots: Array<Bot>;
   channelLenses: Array<ChannelLens>;
   channels: ChannelPage;
   /**
@@ -3707,6 +3841,16 @@ export type QueryApplyChannelLensArgs = {
   conversationId: Scalars['ID']['input'];
   lensId: Scalars['ID']['input'];
   limit?: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryBotTokensArgs = {
+  botUserId: Scalars['ID']['input'];
+};
+
+
+export type QueryBotsArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -4395,7 +4539,7 @@ export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
    * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`,
-   * `text_art_check` or `avatar_check`. A client ignores a name it does not know.
+   * `text_art_check`, `avatar_check` or `bots`. A client ignores a name it does not know.
    */
   key: Scalars['String']['output'];
   /** Why an unavailable feature is unavailable; null otherwise. */
@@ -4546,7 +4690,11 @@ export type ServerMember = {
   /** End of the active ban; null for a permanent ban or no ban. */
   bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
+  /** What the person who added this bot says about it; null for anyone but a bot. */
+  bot?: Maybe<BotInfo>;
   displayName?: Maybe<Scalars['String']['output']>;
+  /** Whether this member is a bot, an account nobody signs in to. */
+  isBot: Scalars['Boolean']['output'];
   joinedAt: Scalars['DateTime']['output'];
   memberRole: ServerMemberRoleGql;
   /** The member's key identity (`rimp1_…`), once enrolled; null for a password-only account. */
@@ -4797,6 +4945,14 @@ export type UnreadCount = {
   count: Scalars['Int']['output'];
 };
 
+/** Change a bot; a field left out stays as it is. */
+export type UpdateBotInput = {
+  botUserId: Scalars['ID']['input'];
+  name?: InputMaybe<Scalars['String']['input']>;
+  readsGoTo?: InputMaybe<Scalars['String']['input']>;
+  runBy?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type UpdateChannelLensInput = {
   filterSpec?: InputMaybe<FilterSpecInput>;
   isShared?: InputMaybe<Scalars['Boolean']['input']>;
@@ -4918,6 +5074,8 @@ export type User = {
   /** End of the active workspace ban; null for a permanent ban or no ban. */
   bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
+  /** What the person who added this bot says about it; null for anyone but a bot. */
+  bot?: Maybe<BotInfo>;
   /**
    * When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);
    * null while none is pending, and always null except on `me`. Once it runs, the account is
@@ -4931,7 +5089,7 @@ export type User = {
    * handle domain, or a person from another server's username at their home server and that
    * server's handle domain. Null when it is not known (a person from another server whose
    * home server did not say, or whose handle domain does not point back at it) and for a
-   * deleted account.
+   * deleted account or a bot.
    */
   handle?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
@@ -4941,6 +5099,8 @@ export type User = {
    * everyone else.
    */
   instanceOperator: Scalars['Boolean']['output'];
+  /** Whether this account is a bot, which nobody signs in to. */
+  isBot: Scalars['Boolean']['output'];
   /**
    * Key-based principal id (`rimp1_...`); null only for a purged account that never had one.
    * Plugins see this id, and the host maps a provisional `rimp0_` id to it once.

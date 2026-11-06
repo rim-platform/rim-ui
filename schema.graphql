@@ -57,6 +57,11 @@ type AuditLogEntry {
 	errorKind: String
 	capabilityCheckOutcome: String
 	confirmationOutcome: String
+	"""
+	The identifier the desktop app gave the stretch of an agent's calls this entry belongs to.
+	Null unless the initiator was `AGENT`.
+	"""
+	runId: String
 	createdAt: String!
 }
 
@@ -65,6 +70,7 @@ input AuditLogFilterInput {
 	serverId: ID
 	commandId: String
 	typedVerb: TypedVerbGql
+	runId: String
 	since: String
 	until: String
 }
@@ -130,6 +136,67 @@ type BlockedPrincipal {
 	When the caller blocked the principal.
 	"""
 	blockedAt: DateTime!
+}
+
+"""
+A bot account of a workspace.
+"""
+type Bot {
+	userId: ID!
+	serverId: ID!
+	name: String!
+	"""
+	Who runs it, as the person who added it says.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes, as the person who added it says.
+	"""
+	readsGoTo: String!
+	"""
+	Who added it.
+	"""
+	addedByName: String
+	createdAt: DateTime!
+	"""
+	When it was deactivated; null while it is active.
+	"""
+	deactivatedAt: DateTime
+}
+
+"""
+What the person who added a bot says about it. RIM cannot check it.
+"""
+type BotInfo {
+	"""
+	Who runs it.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes.
+	"""
+	readsGoTo: String!
+	"""
+	Who added it.
+	"""
+	addedByName: String
+}
+
+"""
+A bot's token, without its secret, which is shown once when it is created.
+"""
+type BotToken {
+	id: ID!
+	label: String!
+	createdAt: DateTime!
+	"""
+	When it was last used, to the minute; null when it never was.
+	"""
+	lastUsedAt: DateTime
+	"""
+	When it was revoked; null while it works.
+	"""
+	revokedAt: DateTime
 }
 
 input ChannelCursorInput {
@@ -593,6 +660,22 @@ input CreateAttachmentInput {
 	blobSha256: String
 }
 
+"""
+Create a bot in a workspace.
+"""
+input CreateBotInput {
+	serverId: ID!
+	name: String!
+	"""
+	Who runs it: 1 to 200 characters of plain text.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes: 1 to 200 characters of plain text.
+	"""
+	readsGoTo: String!
+}
+
 input CreateChannelLensInput {
 	serverId: ID!
 	conversationId: ID!
@@ -706,6 +789,28 @@ input CreateUserCommandInput {
 	title: String!
 	description: String!
 	steps: [UserCommandStepInput!]!
+}
+
+"""
+A new bot and its first token.
+"""
+type CreatedBot {
+	bot: Bot!
+	"""
+	`rimbot_…`, shown this once.
+	"""
+	token: String!
+}
+
+"""
+A new token of a bot.
+"""
+type CreatedBotToken {
+	botToken: BotToken!
+	"""
+	`rimbot_…`, shown this once.
+	"""
+	token: String!
 }
 
 type CustomEmoji {
@@ -1029,6 +1134,11 @@ input ExecuteCommandInput {
 	instance has the AI command surface off.
 	"""
 	initiator: CommandInitiator
+	"""
+	An identifier the desktop app gives one stretch of an agent's calls. Kept on the audit
+	entry when the initiator is `AGENT`, and ignored otherwise.
+	"""
+	runId: String
 }
 
 input ExecuteMacroInput {
@@ -2751,6 +2861,33 @@ type Mutation {
 	- `CONFLICT`: the owner owns another workspace of that name.
 	"""
 	renameWorkspace(serverId: ID!, name: String!): Server!
+	"""
+	Create a bot, a guest of the workspace in no channel, and its first token, shown this once.
+	Owner or Moderator; `FORBIDDEN` for anyone else, `VALIDATION` for the direct space, a bad
+	field or a workspace with 25 active bots, `FEATURE_DISABLED` while the `bots` feature is
+	off.
+	"""
+	createBot(input: CreateBotInput!): CreatedBot!
+	"""
+	Change a bot's name or what is said about it. Owner or Moderator of its workspace.
+	"""
+	updateBot(input: UpdateBotInput!): Bot!
+	"""
+	Deactivate a bot: its tokens stop working and it leaves the workspace and its channels. Its
+	messages stay. Doing it again changes nothing. There is no way back. Owner or Moderator of
+	its workspace.
+	"""
+	deactivateBot(botUserId: ID!): Bot!
+	"""
+	Create a token for an active bot, shown this once; a label is 1 to 64 characters and a bot
+	has at most 5 active tokens (`VALIDATION`). Owner or Moderator of its workspace.
+	"""
+	createBotToken(botUserId: ID!, label: String!): CreatedBotToken!
+	"""
+	Revoke a token. Revoking it again changes nothing. `NOT_FOUND` for an unknown token and for
+	a token of a bot in a workspace the caller does not moderate.
+	"""
+	revokeBotToken(tokenId: ID!): BotToken!
 }
 
 input MuteConversationInput {
@@ -3627,6 +3764,17 @@ type Query {
 	own keep key.
 	"""
 	sessionKeepKey: String
+	"""
+	The workspace's bots, deactivated ones included. Any member; `FORBIDDEN` for anyone else,
+	`FEATURE_DISABLED` while the `bots` feature is off.
+	"""
+	bots(serverId: ID!): [Bot!]!
+	"""
+	The bot's tokens, revoked ones included, never their secret. Owner or Moderator of its
+	workspace; `FORBIDDEN` for anyone else, `NOT_FOUND` for an unknown bot, `FEATURE_DISABLED`
+	while the `bots` feature is off.
+	"""
+	botTokens(botUserId: ID!): [BotToken!]!
 }
 
 type ReactionGroup {
@@ -4066,7 +4214,7 @@ type ServerFeatureInfo {
 	"""
 	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
 	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`,
-	`text_art_check` or `avatar_check`. A client ignores a name it does not know.
+	`text_art_check`, `avatar_check` or `bots`. A client ignores a name it does not know.
 	"""
 	key: String!
 	state: ServerFeatureState!
@@ -4283,6 +4431,14 @@ type ServerMember {
 	End of the active ban; null for a permanent ban or no ban.
 	"""
 	bannedUntil: DateTime
+	"""
+	Whether this member is a bot, an account nobody signs in to.
+	"""
+	isBot: Boolean!
+	"""
+	What the person who added this bot says about it; null for anyone but a bot.
+	"""
+	bot: BotInfo
 }
 
 """
@@ -4534,6 +4690,16 @@ type UnreadCount {
 	count: Int!
 }
 
+"""
+Change a bot; a field left out stays as it is.
+"""
+input UpdateBotInput {
+	botUserId: ID!
+	name: String
+	runBy: String
+	readsGoTo: String
+}
+
 input UpdateChannelLensInput {
 	serverId: ID!
 	lensId: ID!
@@ -4701,9 +4867,13 @@ type User {
 	handle domain, or a person from another server's username at their home server and that
 	server's handle domain. Null when it is not known (a person from another server whose
 	home server did not say, or whose handle domain does not point back at it) and for a
-	deleted account.
+	deleted account or a bot.
 	"""
 	handle: String
+	"""
+	Whether this account is a bot, which nobody signs in to.
+	"""
+	isBot: Boolean!
 	"""
 	Whether this message's author is banned in its workspace; false outside message authors.
 	"""
@@ -4716,6 +4886,10 @@ type User {
 	The active ban's reason, readable only by workspace moderators.
 	"""
 	banReason: String
+	"""
+	What the person who added this bot says about it; null for anyone but a bot.
+	"""
+	bot: BotInfo
 }
 
 """
