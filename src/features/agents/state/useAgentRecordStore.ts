@@ -5,8 +5,10 @@ import { registerSealedStore, sealedStateStorage } from "../../../core/accountVa
 
 /** How long an entry is kept. */
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-/** Most entries kept. */
-const MAX_ENTRIES = 5000;
+/** Most entries kept for one agent, so one agent's calls cannot push out another's. */
+const MAX_PER_AGENT = 2000;
+/** Most refused entries kept for one agent, so refused calls cannot push out what it was given. */
+const MAX_REFUSED_PER_AGENT = 500;
 
 /** The `tool` of the entry clearing the record leaves. */
 export const CLEARED_TOOL = "cleared";
@@ -34,10 +36,26 @@ interface AgentRecordState {
   clear: () => void;
 }
 
-/** @returns The entries younger than the age limit, at most the newest {@link MAX_ENTRIES}. */
+/** @returns The entries younger than the age limit, within the limits for each agent. */
 function kept(entries: RecordEntry[]): RecordEntry[] {
   const oldest = Date.now() - MAX_AGE_MS;
-  return entries.filter((entry) => Date.parse(entry.at) >= oldest).slice(-MAX_ENTRIES);
+  const refused = new Map<string, number>();
+  const counted = new Map<string, number>();
+  const result: RecordEntry[] = [];
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index];
+    if (Date.parse(entry.at) < oldest) continue;
+    if (entry.refused) {
+      const count = (refused.get(entry.agentId) ?? 0) + 1;
+      refused.set(entry.agentId, count);
+      if (count > MAX_REFUSED_PER_AGENT) continue;
+    }
+    const count = (counted.get(entry.agentId) ?? 0) + 1;
+    counted.set(entry.agentId, count);
+    if (count > MAX_PER_AGENT) continue;
+    result.push(entry);
+  }
+  return result.reverse();
 }
 
 /** What RIM handed to agents on this device, oldest first, sealed under the account vault. */

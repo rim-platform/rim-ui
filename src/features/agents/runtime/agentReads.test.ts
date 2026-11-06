@@ -326,7 +326,7 @@ describe("rim_search_messages", () => {
 
   it("searches the given workspace with the plain read capability", async () => {
     await reads().searchMessages(ALL, query);
-    expect(cache.search).toHaveBeenCalledWith("w1", "the secret query", null, 50, {
+    expect(cache.search).toHaveBeenCalledWith("w1", "the secret query", null, 100, {
       encryptedAllowed: false,
       knownEncrypted: [],
     });
@@ -374,6 +374,33 @@ describe("rim_search_messages", () => {
       refused: false,
       messageIds: ["m1", "m5"],
     });
+  });
+
+  it("looks past hits outside the grant, then keeps to the limit", async () => {
+    cache.search.mockResolvedValue([
+      { ...message("outside"), conversationId: "c-other" },
+      { ...message("m1"), conversationId: "c1" },
+      { ...message("m2"), conversationId: "c1" },
+    ]);
+    const outcome = await reads().searchMessages(BY_ID, { ...query, limit: 1 });
+    expect(cache.search).toHaveBeenCalledWith(
+      "w1",
+      "the secret query",
+      null,
+      100,
+      expect.anything(),
+    );
+    expect((outcome.payload as { messages: { id: string }[] }).messages.map((m) => m.id)).toEqual([
+      "m1",
+    ]);
+  });
+
+  it("refuses a limit outside the range, with no search", async () => {
+    for (const limit of [0, 101, 1.5, "10"]) {
+      const outcome = await reads().searchMessages(ALL, { ...query, limit });
+      expect((outcome.payload as { refusal: string }).refusal).toBe("FAILED");
+    }
+    expect(cache.search).not.toHaveBeenCalled();
   });
 
   it("drops direct messages and encrypted channels from search under all", async () => {
@@ -455,7 +482,7 @@ describe("rim_search_messages", () => {
         "w1",
         "the secret query",
         null,
-        50,
+        100,
         expect.anything(),
       );
     });

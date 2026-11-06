@@ -252,18 +252,23 @@ A connected program can read only what you grant it, and it can't change anythin
   impossible.
 - **Where it reads from.** The messages stored on this device. A channel not stored yet gets a
   refusal saying to try again shortly, and RIM starts storing it. A channel you can no longer see
-  is refused, and a change can take up to 30 seconds to show.
+  is refused, and a change can take up to 30 seconds to show. A search of a whole workspace looks at
+  the first 100 hits and keeps those within the grant, so it can miss some: naming the channel
+  doesn't.
 - **What stays closed.** Encrypted conversations, direct messages and groups are refused and
   dropped from search. There is no grant that opens them. A refusal reads the same whether a channel
   is closed, not granted, or does not exist.
 - **The record.** **What it was given** lists what RIM handed to that program and what it refused:
-  when, which tool, which channel, how many messages and their ids. It holds no message text and no
-  search text. It stays on this device for 30 days. **Clear the whole record** clears it for every
-  program and leaves one line saying you did. It is a record of what RIM handed over, not of what
+  when, which tool, which channel, how many messages and their ids. **What agents were given** lists
+  it for every program, including those since disconnected. It holds no message text and no search
+  text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most
+  500 refusals, so a program can't push out what another was given, or bury what it was given in
+  refused calls. **Clear the whole record** clears it for every program and leaves one line saying
+  you did. It is a record of what RIM handed over, not of what
   the program did with it.
 
-The [contract for what agents are given](../../rim-server/docs/specs/agent-data-flow-v1.md) is
-rim-server's.
+The [contract for what agents are given](https://github.com/rim-platform/rim-server/blob/master/docs/specs/agent-data-flow-v1.md)
+is rim-server's.
 
 There are limits to what this does:
 

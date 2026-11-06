@@ -46,12 +46,17 @@ function entryLine(
   return `${line} · ${count} ${count === 1 ? "message" : "messages"}`;
 }
 
-/** What RIM handed to one agent, newest first, and the way to clear the whole record. */
+/**
+ * What RIM handed to one agent, or to every agent including those since disconnected, newest
+ * first, and the way to clear the whole record.
+ *
+ * @param agent - The agent to show, or `null` for the whole record.
+ */
 export function AgentRecordDialog({
   agent,
   onClose,
 }: {
-  agent: ConnectedAgent;
+  agent: ConnectedAgent | null;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -63,7 +68,7 @@ export function AgentRecordDialog({
   const workspaceName = (id: string) =>
     servers?.find((server) => server.id === id)?.name ?? (id || "an unknown workspace");
   const shown = entries
-    .filter((entry) => entry.agentId === agent.id || entry.tool === CLEARED_TOOL)
+    .filter((entry) => !agent || entry.agentId === agent.id || entry.tool === CLEARED_TOOL)
     .slice(-SHOWN)
     .reverse();
 
@@ -84,9 +89,16 @@ export function AgentRecordDialog({
   }
 
   return (
-    <Dialog open title={`What ${agent.name} was given`} maxWidth="max-w-2xl" onClose={onClose}>
+    <Dialog
+      open
+      title={agent ? `What ${agent.name} was given` : "What agents were given"}
+      maxWidth="max-w-2xl"
+      onClose={onClose}
+    >
       <p className="text-sm text-rim-text-muted">
-        What RIM handed to this agent. RIM can&apos;t see what it did with it.
+        {agent
+          ? "What RIM handed to this agent. RIM can't see what it did with it."
+          : "What RIM handed to agents, including those no longer connected. RIM can't see what they did with it."}
       </p>
       {shown.length === 0 ? (
         <p className="mt-3 text-sm text-rim-text-muted">Nothing yet.</p>
@@ -94,6 +106,7 @@ export function AgentRecordDialog({
         <ul className="mt-3 max-h-[50vh] space-y-1 overflow-y-auto text-sm text-rim-text">
           {shown.map((entry, index) => (
             <li key={`${entry.at}-${index}`} className="break-words">
+              {!agent && entry.tool !== CLEARED_TOOL && `${entry.agentName} · `}
               {entryLine(entry, qc, workspaceName)}
             </li>
           ))}

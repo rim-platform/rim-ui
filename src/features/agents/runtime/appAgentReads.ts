@@ -34,15 +34,16 @@ async function grantChannel(
 }
 
 /**
- * The conversation by id from its workspace's server. Only when no server answered does it fall
- * back on the app's lists: a server saying no is the person no longer seeing it.
+ * The conversation by id from its workspace's server. Only when no server gave an answer, which a
+ * failure of its own is not, does it fall back on the app's lists: a server saying no is the
+ * person no longer seeing it.
  */
 async function lookup(workspaceId: string, channelId: string): Promise<GrantChannel | null> {
   let conversation: ConversationSummary | undefined;
   try {
     conversation = await fetchConversation(queryClient, workspaceId, channelId);
   } catch (error) {
-    if (error instanceof ClientError) return null;
+    if (error instanceof ClientError && error.response.status < 500) return null;
     conversation = findCachedConversation(queryClient, workspaceId, channelId);
   }
   return conversation ? grantChannel(workspaceId, conversation) : null;

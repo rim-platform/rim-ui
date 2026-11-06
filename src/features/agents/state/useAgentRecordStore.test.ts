@@ -46,15 +46,37 @@ describe("useAgentRecordStore", () => {
     ]);
   });
 
-  it("keeps at most the newest 5,000", () => {
+  it("keeps at most the newest 2,000 for an agent", () => {
     useAgentRecordStore.setState({
-      entries: Array.from({ length: 5000 }, (_, i) => entry(NOW - 1000 + i, `m${i}`)),
+      entries: Array.from({ length: 2000 }, (_, i) => entry(NOW - 1000 + i, `m${i}`)),
     });
     useAgentRecordStore.getState().add(entry(NOW, "newest"));
     const { entries } = useAgentRecordStore.getState();
-    expect(entries).toHaveLength(5000);
+    expect(entries).toHaveLength(2000);
     expect(entries[0].messageIds).toEqual(["m1"]);
-    expect(entries[4999].messageIds).toEqual(["newest"]);
+    expect(entries[1999].messageIds).toEqual(["newest"]);
+  });
+
+  it("does not let refused calls push out what an agent was given", () => {
+    const { add } = useAgentRecordStore.getState();
+    add({ ...entry(NOW), messageIds: ["read"] });
+    for (let i = 0; i < 600; i++) add({ ...entry(NOW), refused: true });
+    const { entries } = useAgentRecordStore.getState();
+    expect(entries.filter((e) => e.refused)).toHaveLength(500);
+    expect(entries.some((e) => e.messageIds.includes("read"))).toBe(true);
+  });
+
+  it("does not let one agent's calls push out another's", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        { ...entry(NOW), agentId: "other" },
+        ...Array.from({ length: 2000 }, () => entry(NOW)),
+      ],
+    });
+    useAgentRecordStore.getState().add(entry(NOW));
+    const { entries } = useAgentRecordStore.getState();
+    expect(entries.filter((e) => e.agentId === "other")).toHaveLength(1);
+    expect(entries.filter((e) => e.agentId !== "other")).toHaveLength(2000);
   });
 
   it("leaves one entry saying it was cleared, and nothing else", () => {

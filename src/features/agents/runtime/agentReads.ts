@@ -51,6 +51,8 @@ export interface AgentReads {
 }
 
 const DEFAULT_LIMIT = 50;
+/** Most hits asked for in a search of a whole workspace, before those outside the grant go. */
+const WORKSPACE_SEARCH_HITS = 100;
 /** The capabilities every read runs with: plain reading, so encrypted conversations are refused. */
 const READ_ONLY = [CHAT_READ] as const;
 /** The shape of an id RIM could have issued. Anything else is treated as unknown, and not kept. */
@@ -71,6 +73,17 @@ function failed(message: string = FAILED_TEXT): ToolOutcome {
 
 function errorName(error: unknown): string {
   return error instanceof Error ? error.name : "unknown";
+}
+
+/** The limit an agent gave or the default, or `null` when it gave one outside the range. */
+function limitOf(value: unknown): number | null {
+  const limit = value ?? DEFAULT_LIMIT;
+  return typeof limit === "number" &&
+    Number.isInteger(limit) &&
+    limit >= 1 &&
+    limit <= WORKSPACE_SEARCH_HITS
+    ? limit
+    : null;
 }
 
 function idOf(value: unknown): string | null {
@@ -301,6 +314,8 @@ export function createAgentReads(deps: AgentReadsDeps): AgentReads {
         ? await covered(agent, workspaceId, channelId)
         : workspaceGranted(agent, workspaceId);
       if (workspaceId === null || !allowed) return refuse(call, denied());
+      const limit = limitOf(args.limit);
+      if (limit === null) return refuse(call, failed());
       let hits: PluginChatMessage[];
       try {
         const answer = (await serviceFor(workspaceId).call(
@@ -309,11 +324,13 @@ export function createAgentReads(deps: AgentReadsDeps): AgentReads {
           {
             query: args.query,
             conversationId: channelId,
-            limit: args.limit ?? DEFAULT_LIMIT,
+            limit: named ? limit : WORKSPACE_SEARCH_HITS,
           },
           READ_ONLY,
         )) as { messages: PluginChatMessage[] };
-        hits = named ? answer.messages : await keepCovered(agent, workspaceId, answer.messages);
+        hits = named
+          ? answer.messages
+          : (await keepCovered(agent, workspaceId, answer.messages)).slice(0, limit);
       } catch (error) {
         return refuse(call, refusalFor(error));
       }

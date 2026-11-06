@@ -10,6 +10,7 @@ import {
   agentBridgeStatus,
   type AgentBridgeStatus,
 } from "../api/agentBridge";
+import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentGrantsDialog } from "./AgentGrantsDialog";
@@ -26,6 +27,8 @@ export function AgentsSettings() {
   const [disconnecting, setDisconnecting] = useState<ConnectedAgent | null>(null);
   const [choosing, setChoosing] = useState<ConnectedAgent | null>(null);
   const [viewing, setViewing] = useState<ConnectedAgent | null>(null);
+  const [viewingAll, setViewingAll] = useState(false);
+  const hasRecord = useAgentRecordStore((s) => s.entries.length > 0);
   const saving = useRef(false);
 
   useEffect(() => {
@@ -154,8 +157,17 @@ export function AgentsSettings() {
         </div>
       )}
 
+      {hasRecord && (
+        <div>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setViewingAll(true)}>
+            What agents were given
+          </Button>
+        </div>
+      )}
+
       {choosing && <AgentGrantsDialog agent={choosing} onClose={() => setChoosing(null)} />}
       {viewing && <AgentRecordDialog agent={viewing} onClose={() => setViewing(null)} />}
+      {viewingAll && <AgentRecordDialog agent={null} onClose={() => setViewingAll(false)} />}
 
       {disconnecting && (
         <ConfirmActionDialog

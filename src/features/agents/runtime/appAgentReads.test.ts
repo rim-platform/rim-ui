@@ -119,6 +119,14 @@ describe("appAgentReads", () => {
     expect(mocks.findCachedConversation).not.toHaveBeenCalled();
   });
 
+  it("falls back on the app's lists when the server fails rather than answers", async () => {
+    mocks.fetchConversation.mockRejectedValue(
+      new ClientError({ status: 503, errors: [] } as never, { query: "" }),
+    );
+    mocks.findCachedConversation.mockReturnValue(conversation());
+    expect((await read()).isError).toBe(false);
+  });
+
   it("falls back on the app's lists when no server answered", async () => {
     mocks.fetchConversation.mockRejectedValue(new TypeError("no network"));
     mocks.findCachedConversation.mockReturnValue(conversation());

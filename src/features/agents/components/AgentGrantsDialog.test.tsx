@@ -20,7 +20,9 @@ const ALL = "All channels you can see";
 const ALL_NOTE = "Includes private channels you're in, and channels you join later.";
 const INTRO =
   "Everything starts off. Reads don't prompt after this, and you can change this at any time.";
-const CLOSED = "Encrypted DMs and groups stay closed. Agents can't read them yet.";
+const NO_MORE = { hasNext: false, hasPrev: false };
+const CLOSED =
+  "Encrypted conversations, direct messages and groups stay closed. Agents can't read them.";
 const PROVIDER =
   "What it reads goes to the model provider it uses. Once it has the content, RIM can't see or limit where it goes next.";
 
@@ -69,7 +71,19 @@ describe("AgentGrantsDialog", () => {
     mocks.fetchMyServers.mockReturnValue(loaded([{ id: "w1", name: "Acme" }]));
     mocks.fetchChannels.mockResolvedValue({
       items: [channel("c1", "general"), channel("c2", "team", { isPrivate: true })],
+      pageInfo: NO_MORE,
     });
+  });
+
+  it("says when a workspace has more channels than it lists", async () => {
+    mocks.fetchChannels.mockResolvedValue({
+      items: [channel("c1", "general")],
+      pageInfo: { hasNext: true, hasPrev: false },
+    });
+    show();
+    expect(
+      await screen.findByText(/Only the first 1 channels are listed here/),
+    ).toBeInTheDocument();
   });
 
   it("names the agent and shows the fixed words", async () => {
@@ -108,6 +122,7 @@ describe("AgentGrantsDialog", () => {
   it("offers no encrypted channel", async () => {
     mocks.fetchChannels.mockResolvedValue({
       items: [channel("c1", "general"), channel("c3", "hidden", { encryptedAt: "2026-11-01" })],
+      pageInfo: NO_MORE,
     });
     show();
     await checkbox(/general/);
@@ -245,7 +260,7 @@ describe("AgentGrantsDialog", () => {
     );
     mocks.fetchChannels.mockImplementation(async (id: string) => {
       if (id === "w2") throw new Error("no");
-      return { items: [channel("c1", "general")] };
+      return { items: [channel("c1", "general")], pageInfo: NO_MORE };
     });
     show(agent({ w2: { all: false, channelIds: ["kept"] } }));
     const other = screen.getByRole("region", { name: "Other" });

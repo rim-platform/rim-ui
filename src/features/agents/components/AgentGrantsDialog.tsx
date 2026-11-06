@@ -118,6 +118,12 @@ function WorkspaceGrants({
           )}
         </Check>
       ))}
+      {list.data?.pageInfo.hasNext && (
+        <p className="px-2 py-1.5 text-xs text-rim-text-muted">
+          Only the first {list.data.items.length} channels are listed here. All channels you can see
+          also covers the rest.
+        </p>
+      )}
     </section>
   );
 }
@@ -174,7 +180,8 @@ export function AgentGrantsDialog({
         ))}
       </div>
       <p className="mt-3 text-xs text-rim-text-muted">
-        Encrypted DMs and groups stay closed. Agents can&apos;t read them yet.
+        Encrypted conversations, direct messages and groups stay closed. Agents can&apos;t read
+        them.
       </p>
       <p className="mt-1 text-xs text-rim-text-muted">
         What it reads goes to the model provider it uses. Once it has the content, RIM can&apos;t

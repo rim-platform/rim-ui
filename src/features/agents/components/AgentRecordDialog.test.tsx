@@ -56,6 +56,22 @@ function lines() {
 }
 
 describe("AgentRecordDialog", () => {
+  it("shows every agent's entries by name, with no agent given", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({ messageIds: ["a"] }),
+        entry({ agentId: "gone", agentName: "Old Tool", messageIds: ["b"] }),
+      ],
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AgentRecordDialog agent={null} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("What agents were given")).toBeInTheDocument();
+    expect(screen.getByText(/^Old Tool · /)).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     useAgentRecordStore.setState({ entries: [] });
   });
