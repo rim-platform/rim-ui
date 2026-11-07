@@ -20,9 +20,9 @@ or its code to **Create account** in the app.
 Choose **Create account** on the sign-in page, or open your invite link. A workspace invite says
 "You're joining \<workspace\>" and who invited you. On an invite-only server the sign-in page says
 that creating an account takes an invite code or link. Where the app can hold keys (the desktop
-app, and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key:
-no password and no email. The device keeps a key that signs you in, and a recovery kit gets the
-account back if you lose it.
+app, and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key
+and a password, and no email. The device keeps a key that signs you in together with the
+password, and a recovery kit gets the account back if you lose it.
 
 - **Invite code**, only when you did not open an invite link: the code you were given, or the
   whole invite link, which the app reads the code from. An invite-only server needs it; elsewhere
@@ -38,6 +38,9 @@ account back if you lose it.
 - **Display name (optional)**: at most 64 characters. Left blank, your username is shown.
 - **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
   browser, a name such as "Firefox on Linux". It names this device in your device list.
+- **Password**: a **PIN** of at least 6 digits or a **Passphrase** of at least 12 characters,
+  typed twice. You enter it every time you sign in, and if you forget it, your recovery phrase
+  resets it. **Keep me signed in on this device** decides whether this device stays signed in.
 - **I accept the terms of use**, with a link to the server's terms, only when the server has
   terms. The account is not created without it.
 - **I am at least N**, only when the server asks for a minimum age: you confirm you are at least
@@ -92,8 +95,9 @@ A server can hold a new account back for a while. A bar then says "New account: 
 workspaces and message strangers after \<time\>."
 
 **The direct space.** On a server that relays between servers, as the public relay does,
-**Direct messages** at the top of the workspace rail opens your direct space. It holds the DMs and
-groups that belong to no workspace, with people on this server or, through it, on other servers.
+**Direct messages**, under **Home** at the top of the workspace rail, opens your direct space. It
+holds the DMs and groups that belong to no workspace, with people on this server or, through it,
+on other servers.
 Its badge counts unread messages before you open it. The rail shows once a workspace is open.
 
 ## Join or create a workspace
@@ -178,7 +182,7 @@ hours · M in the last 7 days · K requests waiting". **Issue a new link**, afte
 "The current link stops working everywhere you posted it.", ends the current link at once;
 people who joined with it stay, and open requests stay open.
 
-**Creating a channel.** **New channel** (the **+** beside Channels in the tool panel, or
+**Creating a channel.** **New channel** (the **+** beside Channels in the conversation list, or
 <kbd>Ctrl+Shift+C</kbd>) asks for a **Channel name**. The **Private** switch says "Only invited
 members can see this channel. This cannot be changed later." **Add members (optional)** picks
 people to add, and **Create** opens the channel. **Browse channels**, the compass beside
@@ -190,8 +194,9 @@ channel by its creator; everyone else reads it.
 
 ## Talk
 
-**Channels.** A public channel is readable by every member of the workspace. The tool panel lists
-the channels you joined; one you have not joined shows **Join channel** above its timeline.
+**Channels.** A public channel is readable by every member of the workspace. The conversation
+list shows the channels you joined; one you have not joined shows **Join channel** above its
+timeline.
 
 **Replies.** **Reply** in a message's menu, the reply arrow on hover, or <kbd>r</kbd> on a
 selected message quotes it above the composer; what you send next shows that quote, and choosing
@@ -205,7 +210,7 @@ the thread. A message with a thread shows how many replies it has under it (**3 
 hover, to open the pane. The thread's reply box works like the composer: `@` mentions, `:` emoji,
 **Insert emoji** and **Attach file**. Commands with `/` run from the conversation's composer only.
 
-**DMs and groups.** **New message** (the **+** at the top of the tool panel, or
+**DMs and groups.** **New message** (the **+** at the top of the conversation list, or
 <kbd>Ctrl+Shift+G</kbd>) lists the workspace's members. Pick one person for a DM or several for a
 group, then choose **Start conversation** or **Start group** (or press <kbd>Ctrl+Enter</kbd>). A
 DM opens as a draft and is created when you send its first message. A group is named
@@ -281,16 +286,27 @@ workspace's name, and its badge on the rail updates.
 
 From left to right:
 
-- **Workspace rail**: **Home**, **Direct messages**, one button per workspace with its unread
-  count, and **Add workspace**. At its foot: **Audit log** while a workspace is open, **Settings**,
-  and your avatar, whose menu has **Set status...**, **Settings** and **Sign out**.
-- **Top bar**, above everything else: the search box in the middle, which says what it searches,
-  and **Plugins** and **Notifications** on the right. In the desktop app it is also the window's
-  title bar.
-- **Tool panel**: Conversations, with Channels, archived channels and your DMs and groups, and
-  **Workspace members** and **New message** at the top. Member lists take its place while open.
-- **Main surface**: the conversation's header, timeline and composer. Settings, message requests
-  and some plugin panels take its place, and a thread opens in a pane to its right.
+- **Top bar**, across the top: **Back** and **Forward** on the left, the search box in the
+  middle, which says what it searches, and **Plugins** and **Notifications** on the right. In the
+  desktop app it is also the window's title bar. In a narrow window a menu button at its left
+  opens the rail and the conversation list.
+- **Workspace rail**, down the left edge: **Home**, **Direct messages** under it, one button per
+  workspace with its unread count, and **Add workspace**. At its foot: **Audit log** while a
+  workspace is open, **Settings**, and your avatar, whose menu has **Set status...**, **Settings**
+  and **Sign out**.
+- **Conversation list**: the open workspace's channels, archived channels and your DMs and groups,
+  with **Workspace members** and **New message** at the top, and **Unreads** above the channels
+  while something is unread. A **Bots** section under the channels lists the workspace's bots.
+  Member lists take its place while open.
+- **Main area**: the conversation's header, timeline and composer. Home, Settings, message
+  requests and some plugin panels take its place, and a thread opens in a pane to its right.
+
+**Home** shows what matters to you across your workspaces: what waits for you, mentions and
+replies, and what's unread, until you change it. **Edit Home** adds boxes such as a channel you
+watch, your direct messages or buttons for your most-used commands, and every device shows the
+same Home ([Home](home.md)). **See all unread** on Home, or **Unreads** in the conversation list,
+opens every unread message on one page. Looking at it marks nothing read: **Mark as read** on a
+conversation does, and a conversation's menu also has **Mark as unread**.
 
 A person has one menu wherever they appear: right-click their name or avatar on a message, an
 @mention of them, or their row in a conversation's members or in **Workspace members** (the row's
@@ -374,6 +390,11 @@ When a device is lost:
 
 ## Next
 
+- [Home](home.md): making Home your own.
+- [Connect an AI agent](agents.md): letting a program such as Claude Code read the channels you
+  choose and post with your approval.
+- [Post alerts from other services](webhooks.md): GitHub, Grafana or any service posting into a
+  channel.
 - [Plugins](plugins.md): the official plugins, and installing, using, trusting and removing one.
 - [End-to-end encrypted DMs and groups on the desktop](e2ee-desktop.md), and
   [in the web app](e2ee-web.md): channels are never end-to-end encrypted, DMs and groups can be.
