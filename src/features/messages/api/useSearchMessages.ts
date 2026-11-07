@@ -124,7 +124,7 @@ const LOCAL_SUPPLEMENT_LIMIT = 100;
 const EMPTY_DIRECTORY: ConversationDirectory = { byId: new Map(), idByName: new Map() };
 
 /** The query as typed, once it has been still for 300ms. */
-function useDebouncedQuery(query: string): string {
+export function useDebouncedQuery(query: string): string {
   const [debouncedQuery, setDebouncedQuery] = useState(query);
 
   useEffect(() => {
@@ -133,6 +133,31 @@ function useDebouncedQuery(query: string): string {
   }, [query]);
 
   return debouncedQuery;
+}
+
+/**
+ * The newest messages of one workspace that match `query`, one page of at most `limit`, from
+ * the server only. The request goes to the workspace's own host, as every request about a
+ * workspace does.
+ *
+ * @param serverId - The workspace searched.
+ * @param query - The text with its operators, passed to the server unchanged.
+ * @param limit - The most results.
+ * @param signal - Aborts the request.
+ */
+export async function fetchMessageSearchPage(
+  serverId: string,
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<SearchResultPage> {
+  const input: SearchMessagesInput = { serverId, query, limit, dir: PageDir.AFTER };
+  const res = await graphqlClient.request<SearchMessagesResponse>({
+    document: SEARCH_MESSAGES_QUERY,
+    variables: { input },
+    signal,
+  });
+  return res.searchMessages;
 }
 
 /**

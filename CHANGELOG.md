@@ -71,6 +71,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The top bar's search field opens one search box: channels and people, messages and commands
+  as you type, the open workspace or all of them (Tab), and Search all messages for the full
+  search. Ctrl+K opens it with commands first, as the command palette. Back and Forward in the
+  top bar move between the places you opened; bind them in Settings > Keybinds.
 - One top bar holds search, plugins and notifications; the tool column is gone, and Settings and
   your account are at the bottom of the rail. Ctrl+B now hides the conversation list.
 - The plugins menu, the palette and suggested keybinds show the marks hidden in plugin names and titles.

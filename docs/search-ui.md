@@ -5,6 +5,60 @@ Covers the frontend of full-text message search: the paginated
 sanitization, and the operator-discovery affordance. Backend contract and operator
 semantics: `../rim-server/docs/search.md`.
 
+## The search box
+
+The top bar's search field opens the search box under it. It is the command palette's dialog
+(`CommandPalette.tsx`) with search first: <kbd>Ctrl+Shift+F</kbd> (`workspace.open_search`) and a
+click on the field open it so, and <kbd>Ctrl+K</kbd> (`workspace.open_command_palette`) opens the
+same box with commands first. Typing <kbd>&gt;</kbd> at the start, or <kbd>Ctrl+K</kbd> in an
+open box, switches it to commands; <kbd>Backspace</kbd> in an empty field switches back.
+
+While you type, the results come in three groups, at most 5 each:
+
+1. **Channels and people**: the conversations of the scope, by name, from the lists the
+   conversation list and the palette's pickers already hold.
+2. **Messages**: the newest matches from the server search below, after the same 300 ms pause.
+   In one workspace, this is the search `SearchOverlay` runs (`useMessageSearchResults`), with
+   this device's local matches added in the desktop app.
+3. **Commands**: the palette's own list and ranking.
+
+**Scope.** The chip beside the field shows it: the open workspace, the direct messages in the
+direct space, or All workspaces. <kbd>Tab</kbd> or a click on the chip switches between the open
+workspace and all of them; from Home and Unreads the box starts with all of them. Across
+workspaces, Channels and people also lists the channels joined in every workspace on the rail,
+the direct messages and the workspaces.
+
+Messages across workspaces asks each workspace for its 5 newest matches and shows the 5 newest of
+all, from the server only, with these limits:
+
+- It waits for at least 2 characters and the 300 ms pause; below that it says "Type at least 2
+  characters to search messages in every workspace." A new text aborts the requests still
+  running (the query client's abort signal).
+- It asks at most 10 workspaces per pause: the open one first, then the rest in rail order
+  (Direct messages, this server's workspaces, then other servers'). Past 10 it says "Searched 10
+  of your \<n\> workspaces. Pick one to search the rest."
+- A workspace that fails, or does not answer within 8 seconds, leaves the others' results and
+  adds a line naming it, such as "Couldn't search Pixel Guild."; it never shows an error toast.
+- Each request goes to its workspace's own host, as the overlay's does
+  (`fetchMessageSearchPage`, routed by the client's space router), never through another
+  server. The timeout also ends the wait for a workspace on another server, whose transport does
+  not take the abort signal.
+
+**Encrypted conversations.** The server cannot search them, so the box says what it covers under
+Messages. In the web app, which keeps no copy of them: "Encrypted messages can't be searched in
+the web app." In the desktop app, in one workspace: "Encrypted messages: only those saved on this
+device."; across workspaces, where the local index is not asked: "Encrypted messages are searched
+one workspace at a time." With the server out of reach, it says it is showing matches saved on
+this device, as the overlay does.
+
+**Keys.** The field is a combobox: the arrow keys move through every row of every group, the
+active row is its `aria-activedescendant`, each group is announced by its title, <kbd>Enter</kbd>
+opens the row (a conversation, a workspace, a message in its conversation, or runs the command)
+and <kbd>Esc</kbd> closes the box. The footer reads "Enter open · Tab all workspaces · >
+commands only", and **Search all messages** opens `SearchOverlay`, below, with the text as typed,
+filters included. <kbd>Ctrl+F</kbd> (`workspace.search_in_channel`) still opens the overlay on
+the open conversation.
+
 ## Recency ordering, not relevance
 
 `searchMessages` results are paginated by **recency** (`sentAt DESC, id DESC`), the

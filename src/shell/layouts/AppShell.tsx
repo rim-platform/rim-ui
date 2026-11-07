@@ -84,6 +84,7 @@ import { UnreadsPage } from "../../features/unreads/components/UnreadsPage";
 import { DmRequestsPage } from "../../features/relay/components/DmRequestsPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
+import { useNavigationHistory } from "../navigation/history";
 import { cn } from "../../shared/ui/cn";
 import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
@@ -332,6 +333,7 @@ function WorkspaceShell() {
   const { zenContentHidden, handleZenTransitionEnd } = useZenModeTransition(zenMode);
   useAutoFocusComposer(mainSurface.kind);
   useGlobalKeyHandlers();
+  useNavigationHistory();
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 

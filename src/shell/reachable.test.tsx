@@ -21,6 +21,7 @@ import {
   type SettingsTabAccess,
 } from "../features/settings/components/SettingsPage";
 import { useMemberDirectoryStore } from "../features/workspaces/state/useMemberDirectoryStore";
+import { BUILT_IN_PROFILES, DEFAULT_BINDINGS } from "../features/commands/profiles/builtInProfiles";
 import { useWorkspaceStore } from "../features/workspaces/state/useWorkspaceStore";
 import { useShellStore, type MainSurface } from "./state/useShellStore";
 
@@ -70,6 +71,8 @@ const ENTRY_COMMANDS: Record<string, string> = {
   bots: "workspace.open_bots",
   webhooks: "workspace.open_bots",
   "sidebar and drawer": "workspace.toggle_sidebar",
+  back: "workspace.go_back",
+  forward: "workspace.go_forward",
 };
 
 function isKnownCommand(id: string): boolean {
@@ -172,6 +175,17 @@ describe("every way into the app is reachable", () => {
     expect(useShellStore.getState().sidebarCollapsed).toBe(false);
     runDesktopLocalCommand("workspace.toggle_sidebar");
     expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("leaves Back and Forward without a default keystroke, Alt+Left staying Back to Workspace", () => {
+    for (const profile of Object.values(BUILT_IN_PROFILES)) {
+      const ids = profile.bindings.map((binding) => binding.commandId);
+      expect(ids).not.toContain("workspace.go_back");
+      expect(ids).not.toContain("workspace.go_forward");
+    }
+    expect(
+      DEFAULT_BINDINGS.find((binding) => binding.keystroke === "Alt+ArrowLeft")?.commandId,
+    ).toBe("workspace.back_to_workspace");
   });
 
   it("collapses the sidebar in a wide window as before", () => {
