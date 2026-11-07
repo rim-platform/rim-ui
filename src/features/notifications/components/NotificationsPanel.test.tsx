@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
 import {
@@ -112,11 +113,15 @@ function serve(pages: Handler, extra: Record<string, Handler> = {}) {
   });
 }
 
+/** The spy the rendered panel calls to close the inbox. */
+const closeInbox = vi.fn();
+
 function renderPanel() {
+  closeInbox.mockReset();
   const qc = createTestQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <NotificationsPanel workspaceId="ws-1" onClose={vi.fn()} />
+      <NotificationsPanel workspaceId="ws-1" onClose={closeInbox} />
     </QueryClientProvider>,
   );
   return qc;
@@ -309,7 +314,7 @@ describe("NotificationsPanel", () => {
     );
   });
 
-  it("clicking an entry opens its message and marks it read", async () => {
+  it("clicking an entry opens its message, marks it read and closes the inbox", async () => {
     let read = false;
     serve(() => page([notification({ readAt: read ? "2026-10-05T10:00:00Z" : null })]), {
       "mutation MarkNotificationsRead": () => {
@@ -329,6 +334,7 @@ describe("NotificationsPanel", () => {
     expect(shell.mainSurface).toEqual({ kind: "conversation" });
     expect(shell.selectedConversationId).toBe("c-general");
     expect(shell.highlightedMessageId).toBe("m-1");
+    expect(closeInbox).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByText("Unread")).not.toBeInTheDocument());
   });
 
@@ -406,6 +412,7 @@ describe("NotificationsPanel", () => {
     );
     expect(useShellStore.getState().selectedConversationId).toBeNull();
     expect(useShellStore.getState().highlightedMessageId).toBeNull();
+    expect(closeInbox).not.toHaveBeenCalled();
   });
 });
 
@@ -442,7 +449,7 @@ describe("NotificationBellButton", () => {
     expect(await screen.findByRole("button", { name: "Notifications" })).not.toHaveTextContent("3");
   });
 
-  it("toggles the inbox and returns to the conversation surface", async () => {
+  it("toggles the inbox under the bell and leaves the page behind it open", async () => {
     routeRequests(requestMock, {
       "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
     });
@@ -453,11 +460,56 @@ describe("NotificationBellButton", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    expect(bell).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(bell);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
     expect(useNotificationsPanelStore.getState().open).toBe(true);
+    expect(bell).toHaveAttribute("aria-expanded", "true");
+    const inbox = screen.getByRole("region", { name: "Notifications" });
+    expect(bell).toHaveAttribute("aria-controls", inbox.id);
+    expect(inbox).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(bell);
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(screen.queryByRole("region", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("closes the inbox on Escape and gives focus back to the bell", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    bell.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("region", { name: "Notifications" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(bell).toHaveFocus();
+  });
+
+  it("closes the inbox on a press outside it", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(screen.getByRole("region", { name: "Notifications" }));
+    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    await user.click(document.body);
     expect(useNotificationsPanelStore.getState().open).toBe(false);
   });
 });

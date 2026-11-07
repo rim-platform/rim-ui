@@ -1,12 +1,11 @@
-import type { ReactNode } from "react";
 import { Menu } from "lucide-react";
 
 import { useShellWidth } from "../hooks/useShellWidth";
 import { useShellStore } from "../state/useShellStore";
 
 /**
- * The button that opens the navigation drawer. It renders only in a narrow window, where the
- * rails and the tool panel are not beside the main area.
+ * The top bar's button that opens the navigation drawer. It renders only in a narrow window,
+ * where the workspace rail and the tool panel are not beside the main area.
  */
 export function NavMenuButton() {
   const narrow = useShellWidth() === "narrow";
@@ -25,26 +24,5 @@ export function NavMenuButton() {
     >
       <Menu className="h-4 w-4" />
     </button>
-  );
-}
-
-/**
- * A page that has no header of its own, under a slim header with the navigation button in a
- * narrow window. The page sits in the same wrapper at every width.
- *
- * @param title - The page's name.
- */
-export function NarrowPage({ title, children }: { title: string; children: ReactNode }) {
-  const narrow = useShellWidth() === "narrow";
-  return (
-    <>
-      {narrow && (
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-rim-line px-3">
-          <NavMenuButton />
-          <span className="truncate text-sm font-medium text-rim-text">{title}</span>
-        </div>
-      )}
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-    </>
   );
 }

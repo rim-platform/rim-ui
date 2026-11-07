@@ -186,7 +186,7 @@ without their tool results, in the app's local storage; the settings; and the en
 
 The RIM server runs the agent's built-in commands as it runs yours and records each in its audit
 log with the initiator `agent`. Arguments that look secret are stored as `[REDACTED]`, by the same
-rules as the dialog. The **Audit log** in the side rail shows your own entries, and a workspace's
+rules as the dialog. The **Audit log** at the foot of the workspace rail shows your own entries, and a workspace's
 Owners and Moderators see all of the workspace's. Each entry names who ran it and, for an action
 on a member, that member. Masking keeps values out of the dialog and the log, not out of the
 provider: the model wrote those arguments. Plugin commands run on this device;

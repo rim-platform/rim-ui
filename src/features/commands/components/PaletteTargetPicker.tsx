@@ -64,7 +64,7 @@ interface Targets {
   isPending: boolean;
 }
 
-/** The names of the people in `conversations`, as the side rail shows them. */
+/** The names of the people in `conversations`, as the conversation list shows them. */
 function useConversationLabels(conversations: readonly ConversationSummary[]) {
   const userId = useAuthStore((s) => s.session?.userId);
   const { data: me } = useCurrentUser();

@@ -42,7 +42,6 @@ import {
 } from "../../features/conversations/state/directOrigin";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
-import { NavMenuButton } from "./NavMenuButton";
 import { useShellWidth } from "../hooks/useShellWidth";
 import { cn } from "../../shared/ui/cn";
 
@@ -65,7 +64,6 @@ function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <NavMenuButton />
         <BackToWorkspaceButton />
         <Avatar
           url={peer.avatarUrl}
@@ -188,7 +186,6 @@ function SelectedConversationHeader() {
       )}
     >
       <div className={cn("flex min-w-0 items-center gap-3", narrow && "w-full")}>
-        <NavMenuButton />
         <BackToWorkspaceButton />
         {dmOtherUserId ? (
           <Avatar

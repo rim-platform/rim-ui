@@ -23,7 +23,6 @@ import { canModerate } from "../../workspaces/role";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useListAuditLog, type AuditLogScope } from "../api/useListAuditLog";
 import { auditTargetUserId, shortUserId } from "../auditTarget";
-import { NavMenuButton } from "../../../shell/components/NavMenuButton";
 import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 
 // ── Typed verb display config ──────────────────────────────────────────────
@@ -369,7 +368,6 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
         className={cn("flex h-10 items-center justify-between border-b border-rim-line", gutter)}
       >
         <div className="flex items-center gap-2">
-          <NavMenuButton />
           <button
             type="button"
             onClick={handleClose}

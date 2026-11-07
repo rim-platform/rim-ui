@@ -22,6 +22,7 @@ import { useHomeMentionCount } from "../../features/home/api/useHomeMentions";
 import { useHoverContextStore } from "../state/useHoverContextStore";
 import { useShellStore } from "../state/useShellStore";
 import { firstLetter } from "../../shared/utils/initials";
+import { RailFooter } from "./RailFooter";
 
 /** The unread count over a rail button. */
 function UnreadBadge({ count }: { count: number }) {
@@ -76,7 +77,8 @@ export function WorkspaceRail() {
   ];
   const labels = workspaceLabels(workspaces);
   const acrossWorkspaces = useShellStore((s) => spansWorkspaces(s.mainSurface.kind));
-  const inDirectSpace = useIsDirectSpace(workspaceId) && !acrossWorkspaces;
+  const directSpaceOpen = useIsDirectSpace(workspaceId);
+  const inDirectSpace = directSpaceOpen && !acrossWorkspaces;
   const directSpaceIds = useDirectSpaceIds();
   const directUnread = useUnreadStore((s) =>
     unreadTotal(s.counts, s.spaceOf, (space) => directSpaceIds.includes(space)),
@@ -97,7 +99,7 @@ export function WorkspaceRail() {
         tabIndex={-1}
         onFocus={() => useShellStore.getState().setFocusedSurface("workspaceRail")}
         onKeyDown={handleVerticalStripKeys}
-        className="flex w-12 shrink-0 flex-col items-center border-r border-rim-line bg-rim-void py-3 gap-2 outline-none"
+        className="flex w-12 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-rim-line bg-rim-void py-3 outline-none [scrollbar-width:none] *:shrink-0"
       >
         <button
           type="button"
@@ -137,10 +139,12 @@ export function WorkspaceRail() {
           </button>
         )}
 
+        {directSpaceId && <div aria-hidden className="h-px w-6 shrink-0 bg-rim-line" />}
+
         {workspaces.map((server, index) => {
           const active = server.id === workspaceId && !acrossWorkspaces;
           const label = labels[index];
-          // The open workspace's unread messages are on the Inbox button instead.
+          // The open workspace's unread messages show in its conversation list instead.
           const unread = active ? 0 : unreadTotal(counts, spaceOf, (space) => space === server.id);
           return (
             <WorkspaceRailButton
@@ -156,16 +160,18 @@ export function WorkspaceRail() {
           );
         })}
 
-        <div className="mt-auto">
-          <button
-            type="button"
-            title="Add workspace"
-            aria-label="Add workspace"
-            onClick={() => setShowCreate(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-rim-text-muted transition hover:bg-white/10 hover:text-rim-text"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+        <button
+          type="button"
+          title="Add workspace"
+          aria-label="Add workspace"
+          onClick={() => setShowCreate(true)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-rim-text-muted transition hover:bg-white/10 hover:text-rim-text"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+
+        <div className="mt-auto pt-2">
+          <RailFooter auditLog={Boolean(workspaceId) && !directSpaceOpen && !acrossWorkspaces} />
         </div>
 
         {showCreate && <AddWorkspaceDialog onClose={() => setShowCreate(false)} />}

@@ -211,11 +211,10 @@ Plugins names.
   On the desktop a plugin left on starts again with the app. On the web, plugins are turned on
   per account in that browser: signing out stops them and signing in starts those the account
   turned on.
-- **Panels.** The side rail's **Plugins** entry opens a menu with one row per panel of every
+- **Panels.** **Plugins** in the top bar opens a menu with one row per panel of every
   running plugin granted Render UI Panels, showing the plugin's name and the panel's title, and
   below them, set apart, **Manage plugins…**, which opens Settings → Plugins. Choosing a row
-  opens the panel; with no such plugin that has a panel, the menu says so above **Manage
-  plugins…**. A panel left open stops showing when its plugin loses that permission. A plugin's
+  opens the panel. While no such plugin has a panel, the top bar shows no **Plugins**. A panel left open stops showing when its plugin loses that permission. A plugin's
   settings are not in this menu: they open from the places listed under **Settings**. The entry
   stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
   Pods panel, in place of the conversation. Its header shows the panel's title and a close

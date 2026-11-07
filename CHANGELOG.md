@@ -71,6 +71,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- One top bar holds search, plugins and notifications; the tool column is gone, and Settings and
+  your account are at the bottom of the rail. Ctrl+B now hides the conversation list.
 - The plugins menu, the palette and suggested keybinds show the marks hidden in plugin names and titles.
 - Opening a conversation starts at your first unread message, from where the server says you
   stopped, and it only counts as read once you've reached the end of what's new. A setting keeps

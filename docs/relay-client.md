@@ -205,7 +205,7 @@ for without a workspace. Settings hides Pipelines, State and Emoji there.
 New DMs and groups start in this relay's direct space whenever every member has a principal id:
 from the contact picker there, or from a workspace's member picker when everyone picked has one.
 A group is created when it is picked; a DM opens as a draft and is created when its first
-message is sent, unless the side rail already lists one with that person.
+message is sent, unless the conversation list already has one with that person.
 `createConversation` names them in `remoteMembers` with the relays of their verified card.
 Adding people to a group of the direct space names them the same way, in
 `addConversationMembers`'s `remoteMembers`; for an encrypted group the members panel first checks

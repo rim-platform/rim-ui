@@ -7,8 +7,9 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
-import { useShellStore } from "../state/useShellStore";
+import { useShellStore, type MainSurface } from "../state/useShellStore";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
+import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { RuntimeProvider } from "../../core/runtime/RuntimeProvider";
 import type { PluginInfo } from "../../features/plugins/types";
@@ -103,9 +104,26 @@ vi.mock("../../features/notifications/runtime/useNotificationEvents", () => ({
 vi.mock("../../features/notifications/runtime/useNotificationEventHandler", () => ({
   useNotificationEventHandler: () => {},
 }));
+const zen = vi.hoisted(() => ({ contentHidden: false }));
 vi.mock("../hooks/useZenModeTransition", () => ({
-  useZenModeTransition: () => ({ zenContentHidden: false, handleZenTransitionEnd: () => {} }),
+  useZenModeTransition: () => ({
+    zenContentHidden: zen.contentHidden,
+    handleZenTransitionEnd: () => {},
+  }),
 }));
+const frame = vi.hoisted(() => ({ customTitleBar: false }));
+vi.mock("../../core/runtime/RuntimeProvider", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../core/runtime/RuntimeProvider")>();
+  return {
+    ...actual,
+    useRuntime: () => {
+      const services = actual.useRuntime();
+      return frame.customTitleBar
+        ? { ...services, capabilities: { ...services.capabilities, customTitleBar: true } }
+        : services;
+    },
+  };
+});
 vi.mock("../hooks/useAutoFocusComposer", () => ({ useAutoFocusComposer: () => {} }));
 vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {} }));
 
@@ -166,7 +184,16 @@ vi.mock("../../features/plugins/components/PluginSlotContainer", () => ({
 vi.mock("../components/WorkspaceRail", () => ({
   WorkspaceRail: () => <div data-testid="workspace-rail" />,
 }));
-vi.mock("../components/SideRail", () => ({ SideRail: () => <div data-testid="side-rail" /> }));
+vi.mock("../components/TopBar", async () => {
+  const { NavMenuButton } = await import("../components/NavMenuButton");
+  return {
+    TopBar: () => (
+      <header aria-label="Top bar" data-testid="top-bar">
+        <NavMenuButton />
+      </header>
+    ),
+  };
+});
 vi.mock("../components/ToolPanel", () => ({ ToolPanel: () => <div data-testid="tool-panel" /> }));
 vi.mock("../components/ConversationHeader", () => ({
   ConversationHeader: () => <div data-testid="conversation-header" />,
@@ -174,7 +201,16 @@ vi.mock("../components/ConversationHeader", () => ({
 vi.mock("../../features/settings/components/SettingsPage", () => ({
   SettingsPage: () => <div data-testid="settings-page" />,
 }));
-vi.mock("../components/TitleBar", () => ({ TitleBar: () => null }));
+vi.mock("../components/TitleBar", () => ({ TitleBar: () => <div data-testid="title-bar" /> }));
+vi.mock("../../features/home/components/HomePage", () => ({
+  HomePage: () => <div data-testid="home-page" />,
+}));
+vi.mock("../../features/unreads/components/UnreadsPage", () => ({
+  UnreadsPage: () => <div data-testid="unreads-page" />,
+}));
+vi.mock("../../features/relay/components/DmRequestsPage", () => ({
+  DmRequestsPage: () => <div data-testid="dm-requests-page" />,
+}));
 vi.mock("../../features/system/components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
@@ -487,7 +523,8 @@ describe("AppShell — narrow and medium windows", () => {
   it("keeps every panel beside the conversation in a wide window", () => {
     useShellStore.setState({ isThreadOpen: true, selectedRootMessageId: "m1" });
     renderAt(1400);
-    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("top-bar")).toBeInTheDocument();
     expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
     expect(screen.getByTestId("thread-panel")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -497,7 +534,7 @@ describe("AppShell — narrow and medium windows", () => {
   it("opens the thread over the conversation in a medium window and keeps the side panel", async () => {
     const user = userEvent.setup();
     renderAt(900);
-    expect(screen.getByTestId("side-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("top-bar")).toBeInTheDocument();
     expect(screen.getByTestId("tool-panel")).toBeInTheDocument();
 
     const opener = document.createElement("button");
@@ -552,13 +589,14 @@ describe("AppShell — narrow and medium windows", () => {
     const user = userEvent.setup();
     useShellStore.setState({ mainSurface: { kind: "marketplace" } });
     renderAt(600);
-    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
+    const topBar = screen.getByTestId("top-bar");
 
-    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    await user.click(within(topBar).getByRole("button", { name: "Open navigation" }));
     const drawer = screen.getByRole("dialog", { name: "Navigation" });
     expect(within(drawer).getByTestId("workspace-rail")).toBeInTheDocument();
-    expect(within(drawer).getByTestId("side-rail")).toBeInTheDocument();
+    expect(within(drawer).queryByTestId("top-bar")).not.toBeInTheDocument();
     expect(drawer).toHaveFocus();
 
     await user.keyboard("{Escape}");
@@ -602,7 +640,7 @@ describe("AppShell — narrow and medium windows", () => {
     resizeTo(1400);
     expect(useShellStore.getState().navDrawerOpen).toBe(false);
     expect(useShellStore.getState().sidebarCollapsed).toBe(true);
-    expect(screen.queryByTestId("side-rail")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
   });
 
   it("opens the drawer when the tool panel is asked for in a narrow window", () => {
@@ -723,11 +761,11 @@ describe("AppShell — narrow and medium windows", () => {
 
   it("opens the drawer for a panel asked for after the drawer was closed with another open", () => {
     renderAt(600);
-    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    act(() => useMemberDirectoryStore.getState().setOpen(true));
     expect(useShellStore.getState().navDrawerOpen).toBe(true);
 
     act(() => useShellStore.getState().setNavDrawerOpen(false));
-    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(useMemberDirectoryStore.getState().open).toBe(false);
 
     act(() => useMembersPanelStore.getState().setOpen(true));
     expect(useShellStore.getState().navDrawerOpen).toBe(true);
@@ -737,9 +775,16 @@ describe("AppShell — narrow and medium windows", () => {
 
   it("leaves an open panel alone when the window widens and the drawer goes", () => {
     renderAt(600);
-    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    act(() => useMembersPanelStore.getState().setOpen(true));
     resizeTo(1400);
-    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    expect(useMembersPanelStore.getState().open).toBe(true);
+    act(() => useMembersPanelStore.getState().setOpen(false));
+  });
+
+  it("leaves the drawer closed when the notification inbox opens under the top bar", () => {
+    renderAt(600);
+    act(() => useNotificationsPanelStore.getState().setOpen(true));
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
     act(() => useNotificationsPanelStore.getState().setOpen(false));
   });
 
@@ -769,5 +814,77 @@ describe("AppShell — narrow and medium windows", () => {
     act(() => useShellStore.getState().closeThread());
     expect(composer).toHaveFocus();
     composer.remove();
+  });
+});
+
+describe("AppShell — the top bar", () => {
+  beforeEach(() => {
+    pinnedShouldThrow = false;
+    useAuthStore.setState({ session: { userId: "u1" } });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    pluginList.data = [];
+  });
+
+  afterEach(() => {
+    frame.customTitleBar = false;
+    zen.contentHidden = false;
+    useAuthStore.setState({ session: null });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+    useShellStore.setState({ sidebarCollapsed: false });
+  });
+
+  it("shows the top bar beside the rail on every main surface", () => {
+    const surfaces: MainSurface[] = [
+      { kind: "conversation" },
+      { kind: "home" },
+      { kind: "unreads" },
+      { kind: "settings" },
+      { kind: "audit-log" },
+      { kind: "plugin", pluginId: "some-plugin" },
+      { kind: "marketplace" },
+      { kind: "dm-requests", workspaceId: "ws-1" },
+    ];
+    renderShell();
+    for (const surface of surfaces) {
+      act(() => useShellStore.getState().setMainSurface(surface));
+      expect(screen.getAllByTestId("top-bar"), surface.kind).toHaveLength(1);
+      expect(screen.getByTestId("workspace-rail"), surface.kind).toBeInTheDocument();
+    }
+  });
+
+  it("hides the top bar with the rails in zen mode", () => {
+    useShellStore.setState({ zenMode: true });
+    zen.contentHidden = true;
+    renderShell();
+    expect(screen.queryByTestId("top-bar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
+  });
+
+  it("hides the conversation list while the sidebar is collapsed, and keeps the top bar", () => {
+    useShellStore.setState({ sidebarCollapsed: true });
+    renderShell();
+    expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("top-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-rail")).toBeInTheDocument();
+  });
+
+  it("takes the title bar's place in the desktop app's own frame, except in zen mode", () => {
+    frame.customTitleBar = true;
+    renderShell();
+    expect(screen.getByTestId("top-bar")).toBeInTheDocument();
+    expect(screen.queryByTestId("title-bar")).not.toBeInTheDocument();
+
+    act(() => useShellStore.setState({ zenMode: true }));
+    expect(screen.getByTestId("title-bar")).toBeInTheDocument();
+  });
+
+  it("keeps the plain title bar over the workspace picker in the desktop app's frame", () => {
+    frame.customTitleBar = true;
+    useWorkspaceStore.setState({ workspaceId: null });
+    renderShell();
+    expect(screen.getByTestId("title-bar")).toBeInTheDocument();
+    expect(screen.queryByTestId("top-bar")).not.toBeInTheDocument();
   });
 });

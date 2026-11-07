@@ -3,7 +3,6 @@ import { useState, useEffect, useId, useRef, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { NavMenuButton } from "../../../shell/components/NavMenuButton";
 import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
@@ -426,7 +425,6 @@ export function SettingsPage() {
         )}
       >
         <div className="flex items-center gap-2">
-          <NavMenuButton />
           <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
         </div>
         <button

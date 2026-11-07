@@ -51,7 +51,7 @@ Frontend gates: `npm run build` (TypeScript check + Vite build), `npm test` (Vit
 
 **Feature-driven layout in `src/features/`:** Each feature (auth, conversations, messages, threads, agent, commands, notifications, presence, plugins, lenses, pipelines) follows `api/` → hooks, `components/` → React, `state/` → Zustand stores.
 
-**Shell (`src/shell/`):** AppShell is the main layout — workspace rail, side rail, tool panel, main surface, optional docked thread pane.
+**Shell (`src/shell/`):** AppShell is the main layout — workspace rail, top bar, tool panel, main surface, optional docked thread pane.
 
 **Runtime capabilities (`src/core/runtime/`):** Platform detection drives which UI surfaces render. Desktop gets full capabilities (thread pane, plugins, keybinds, AI agent, notifications); web gets a reduced set.
 

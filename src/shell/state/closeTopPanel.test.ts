@@ -32,15 +32,15 @@ describe("closeTopPanel", () => {
 
     expect(hasPanelToClose()).toBe(true);
     expect(closeTopPanel()).toBe(true);
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(shell().isThreadOpen).toBe(true);
+
+    expect(closeTopPanel()).toBe(true);
     expect(shell().isThreadOpen).toBe(false);
     expect(shell().activePluginPanel).not.toBeNull();
 
     expect(closeTopPanel()).toBe(true);
     expect(shell().activePluginPanel).toBeNull();
-    expect(useNotificationsPanelStore.getState().open).toBe(true);
-
-    expect(closeTopPanel()).toBe(true);
-    expect(useNotificationsPanelStore.getState().open).toBe(false);
     expect(useMembersPanelStore.getState().open).toBe(true);
 
     expect(closeTopPanel()).toBe(true);

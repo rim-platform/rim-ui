@@ -30,7 +30,7 @@ plugin's tests run them with `validateManifest` ([the SDK](../sdk/plugin-sdk/REA
   starting `dev.rim.` or `com.rim.` fail with `reserved plugin_id prefix: <id>`. The id names the
   install folder, `~/.rim/plugins/<plugin_id>/`, and every command, `plugin.<plugin_id>.<id>`.
 - **`display_name`** (string, required, not empty): the name in Settings, in the permission
-  prompt, as the palette category of the plugin's commands and in the side rail's Plugins menu.
+  prompt, as the palette category of the plugin's commands and in the top bar's Plugins menu.
 - **`version`** (string, required, not empty): free-form. The bundler names its file
   `<plugin_id>-<version>.rimbundle`.
 - **`description`** (string, required, may be empty) and **`author`** (string or `null`, default
@@ -152,7 +152,7 @@ sandboxed frame while its plugin runs ([loading](web-plugins.md#how-a-plugin-run
 - **`id`** (string, required): the folder's name; for `WebSandboxed`, one bundle path segment,
   or `INVALID_PANEL`.
 - **`title`** (string, required) and **`description`** (string, default `""`): the title names
-  the panel's row in the side rail's Plugins menu, beside the plugin's name, and the palette
+  the panel's row in the top bar's Plugins menu, beside the plugin's name, and the palette
   command "Open <title>".
 - **`slot`** (string or `null`, optional): `"tool_panel"`, the default, is a narrow column beside
   the tool panel, next to the conversation; `"main_area"` takes the main area in place of the

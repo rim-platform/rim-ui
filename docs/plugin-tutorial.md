@@ -180,7 +180,7 @@ author:", the warning that a local process runs with your account's access, and 
 ## 7. Try it
 
 Open a conversation. The palette lists **Greeter: Greet** under Greeter; running it shows the toast
-"Greeter: Greet: Hello, <your name>!". **Open Greetings** in the palette, or the side rail's
+"Greeter: Greet: Hello, <your name>!". **Open Greetings** in the palette, or the top bar's
 Plugins menu, one row per running panel ("Greeter", then "Greetings"), shows the panel beside the
 tool panel; its button runs the same command. `host.log` lines and stderr go to the app's log.
 

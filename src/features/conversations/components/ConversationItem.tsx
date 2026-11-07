@@ -20,7 +20,7 @@ import type { ConversationSummary } from "../types";
 import { directPeerId, isInvited, untitledGroupName } from "../utils";
 import { ChannelIcon } from "./ChannelIcon";
 
-/** One row of the side rail's conversation list: a channel, or a DM shown as its other member. */
+/** One row of the conversation list: a channel, or a DM shown as its other member. */
 export const ConversationItem = memo(function ConversationItem({
   conv,
   globalIndex,

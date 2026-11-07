@@ -78,8 +78,8 @@ interface NotificationsPanelProps {
 }
 
 /**
- * The notification inbox in the tool panel: newest first, unread entries dotted.
- * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
+ * The notification inbox under the top bar's bell: newest first, unread entries dotted.
+ * Clicking an entry opens its message, marks it read and closes the inbox; entries whose conversation the viewer
  * can no longer read say so and can still be marked read. An entry's context menu marks it
  * read, mutes or unmutes its conversation, and opens it.
  */
@@ -122,6 +122,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
       messageId: item.messageId,
       threadId: item.message?.threadId ?? null,
     });
+    onClose();
   }
 
   const resolveName = (userId: string) => memberLookup.resolve(userId).displayName;

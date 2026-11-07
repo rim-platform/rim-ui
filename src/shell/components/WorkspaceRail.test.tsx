@@ -235,22 +235,122 @@ describe("WorkspaceRail", () => {
     expect(screen.getByTitle("Add workspace")).toBeInTheDocument();
   });
 
-  it("reaches every workspace and the add button by keyboard, and moves with the arrows", async () => {
+  it("reaches every workspace, the add button and the foot by keyboard, and moves with the arrows", async () => {
     const user = userEvent.setup();
     renderWithQuery(<WorkspaceRail />);
     const alpha = screen.getByRole("button", { name: "Alpha" });
     const beta = screen.getByRole("button", { name: "Beta" });
     const add = screen.getByRole("button", { name: "Add workspace" });
-    await expectReachableByKeyboard(user, [alpha, beta, add]);
+    const audit = screen.getByRole("button", { name: "Audit log" });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    const account = screen.getByRole("button", { name: "User menu" });
+    await expectReachableByKeyboard(user, [alpha, beta, add, audit, settings, account]);
     expect(alpha).toHaveAttribute("aria-pressed", "true");
 
     alpha.focus();
     await user.keyboard("{ArrowDown}");
     expect(beta).toHaveFocus();
-    await user.keyboard("{End}");
+    await user.keyboard("{ArrowDown}");
     expect(add).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(audit).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(account).toHaveFocus();
     await user.keyboard("{ArrowUp}");
-    expect(beta).toHaveFocus();
+    expect(settings).toHaveFocus();
+  });
+});
+
+describe("WorkspaceRail — audit log, Settings and the account", () => {
+  const dmInfo = { directSpaceId: "ws-1" } as never;
+  beforeEach(() => {
+    myServers.data = alphaBeta;
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+  afterEach(() => {
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+
+  const footer = () =>
+    ["Audit log", "Settings", "User menu"].filter((name) => screen.queryByRole("button", { name }));
+
+  it("puts the audit log, Settings and the account last, after Add workspace", () => {
+    renderWithQuery(<WorkspaceRail />);
+    const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
+    expect(names.slice(-4)).toEqual(["Add workspace", "Audit log", "Settings", "User menu"]);
+  });
+
+  it("shows the audit log while a workspace is open, on its pages too", () => {
+    renderWithQuery(<WorkspaceRail />);
+    expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
+    act(() => useShellStore.getState().setMainSurface({ kind: "settings" }));
+    expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
+  });
+
+  it("leaves the audit log out on Home, on Unreads and in the direct space", () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    renderWithQuery(<WorkspaceRail />);
+    expect(footer()).toEqual(["Settings", "User menu"]);
+    act(() => useShellStore.getState().setMainSurface({ kind: "unreads" }));
+    expect(footer()).toEqual(["Settings", "User menu"]);
+    act(() => {
+      useShellStore.getState().setMainSurface({ kind: "conversation" });
+      useRelayStore.setState({ info: dmInfo });
+    });
+    expect(footer()).toEqual(["Settings", "User menu"]);
+  });
+
+  it("opens the audit log and Settings, and marks the one that is open", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const audit = screen.getByRole("button", { name: "Audit log" });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    await user.click(audit);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
+    expect(audit).toHaveAttribute("aria-current", "page");
+    expect(settings).not.toHaveAttribute("aria-current");
+
+    settings.focus();
+    await user.keyboard("{Enter}");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+    expect(settings).toHaveAttribute("aria-current", "page");
+    expect(audit).not.toHaveAttribute("aria-current");
+  });
+
+  it("opens the account menu, leaves the arrow keys to it and gives focus back when it closes", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const account = screen.getByRole("button", { name: "User menu" });
+    account.focus();
+    await user.keyboard("{Enter}");
+    const menu = screen.getByRole("menu");
+    expect(menu).toHaveFocus();
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      expect.stringContaining("Set status..."),
+      expect.stringContaining("Settings"),
+      expect.stringContaining("Sign out..."),
+    ]);
+    await user.keyboard("{ArrowDown}");
+    expect(menu).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(account).toHaveFocus();
+  });
+
+  it("asks whether to keep the account before signing out", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    await user.click(screen.getByRole("button", { name: "User menu" }));
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+    expect(screen.getByRole("dialog", { name: "Sign out" })).toBeInTheDocument();
   });
 });
 
