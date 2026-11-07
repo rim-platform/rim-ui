@@ -125,7 +125,8 @@ describe("CloseDialogHost", () => {
     expect(screen.queryByRole("button", { name: "Keep in tray" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Quit RIM" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Quit RIM" }));
-    expect(commandCalls("desktop_close_choose")).toEqual([{ choice: "quit", remember: true }]);
+    // One Quit doesn't replace a saved choice, unless the person ticks the box.
+    expect(commandCalls("desktop_close_choose")).toEqual([{ choice: "quit", remember: false }]);
   });
 
   it.each([

@@ -27,7 +27,8 @@ function CloseDialog({
   onChoose: (choice: CloseChoice, remember: boolean) => void;
   onCancel: () => void;
 }) {
-  const [remember, setRemember] = useState(true);
+  // With no tray, one Quit shouldn't replace a choice that works again once a tray is there.
+  const [remember, setRemember] = useState(trayAvailable);
   return (
     <Dialog
       open
