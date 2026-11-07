@@ -255,11 +255,7 @@ describe("skew check", () => {
   it("refuses only the format and test session documents on a server without them", () => {
     const schema = schemaWithoutFields({
       Query: ["webhookFormats", "previewWebhookFormat", "webhookTestDeliveries"],
-      Mutation: [
-        "updateIncomingWebhookFormat",
-        "startWebhookTestSession",
-        "endWebhookTestSession",
-      ],
+      Mutation: ["updateIncomingWebhookFormat", "startWebhookTestSession", "endWebhookTestSession"],
       IncomingWebhook: ["template"],
       CreatedIncomingWebhook: ["keptTestUrl"],
     });

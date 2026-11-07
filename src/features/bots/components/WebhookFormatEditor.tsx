@@ -251,186 +251,189 @@ function FormatEditorBody({
 
   return (
     <Dialog open title="Webhook format" onClose={onClose} maxWidth="max-w-3xl">
-      <div className="space-y-5">
-        <datalist id={pathsListId}>
-          {paths.map((p) => (
-            <option key={p} value={p} />
-          ))}
-        </datalist>
-        <p className="text-sm text-rim-text-muted">
-          Rules say when a delivery posts and what. The first rule that holds decides. Anyone with
-          the URL can post to that channel as the bot, so a rule chooses what to post, and keeps
-          nobody out.
-        </p>
-        {followsGithub && (
-          <p className="rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-3 py-2 text-sm text-rim-warm">
-            This webhook follows RIM's GitHub format. Saving makes it a copy of its own, which then
-            stops getting RIM's updates to that format.
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-0 flex-1">
-            <span className={LABEL_CLASS}>Start from</span>
-            <select
-              value={startFrom}
-              onChange={(e) => setStartFrom(e.currentTarget.value)}
-              className="w-full rounded-lg border border-rim-line bg-rim-void px-2.5 py-2 text-sm text-rim-text outline-none focus:border-rim-accent/40"
-            >
-              <option value="">Blank</option>
-              {formats.data?.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="button" size="sm" variant="secondary" onClick={useStart}>
-            {hasWrittenRules ? "Replace the rules with this" : "Start from this"}
-          </Button>
-        </div>
-
-        <section className="space-y-3" aria-label="Rules">
-          {rules.length === 0 && (
-            <p className="text-sm text-rim-text-muted">No rules: nothing would ever post.</p>
-          )}
-          <ol className="space-y-3">
-            {rules.map((rule, at) => (
-              <RuleCard
-                key={rule.key}
-                rule={rule}
-                number={at + 1}
-                count={rules.length}
-                pathsListId={pathsListId}
-                refusal={refusals.byRule[at + 1]}
-                onChange={(changed) =>
-                  changeRules(rules.map((r) => (r.key === rule.key ? changed : r)))
-                }
-                onMove={(by) => {
-                  const next = [...rules];
-                  const [moved] = next.splice(at, 1);
-                  next.splice(at + by, 0, moved);
-                  changeRules(next);
-                }}
-                onRemove={() => changeRules(rules.filter((r) => r.key !== rule.key))}
-              />
+      <div className="space-y-4">
+        {/* The editor scrolls inside the window, so the buttons below it stay in reach. */}
+        <div className="max-h-[calc(100dvh-11rem)] space-y-5 overflow-y-auto pr-1">
+          <datalist id={pathsListId}>
+            {paths.map((p) => (
+              <option key={p} value={p} />
             ))}
-          </ol>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={rules.length >= 20}
-              onClick={() => changeRules([...rules, blankRule()])}
-            >
-              Add rule
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void copyJson()}>
-              {copied ? "Copied" : "Copy as JSON"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-expanded={pasting}
-              onClick={() => setPasting((open) => !open)}
-            >
-              Paste JSON
+          </datalist>
+          <p className="text-sm text-rim-text-muted">
+            Rules say when a delivery posts and what. The first rule that holds decides. Anyone with
+            the URL can post to that channel as the bot, so a rule chooses what to post, and keeps
+            nobody out.
+          </p>
+          {followsGithub && (
+            <p className="rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-3 py-2 text-sm text-rim-warm">
+              This webhook follows RIM's GitHub format. Saving makes it a copy of its own, which
+              then stops getting RIM's updates to that format.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-0 flex-1">
+              <span className={LABEL_CLASS}>Start from</span>
+              <select
+                value={startFrom}
+                onChange={(e) => setStartFrom(e.currentTarget.value)}
+                className="w-full rounded-lg border border-rim-line bg-rim-void px-2.5 py-2 text-sm text-rim-text outline-none focus:border-rim-accent/40"
+              >
+                <option value="">Blank</option>
+                {formats.data?.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="button" size="sm" variant="secondary" onClick={useStart}>
+              {hasWrittenRules ? "Replace the rules with this" : "Start from this"}
             </Button>
           </div>
-          {pasting && (
-            <div className="space-y-2">
-              <label className="block">
-                <span className={LABEL_CLASS}>A format's JSON</span>
-                <textarea
-                  value={pasted}
-                  rows={6}
-                  onChange={(e) => setPasted(e.currentTarget.value)}
-                  className={AREA_CLASS}
+
+          <section className="space-y-3" aria-label="Rules">
+            {rules.length === 0 && (
+              <p className="text-sm text-rim-text-muted">No rules: nothing would ever post.</p>
+            )}
+            <ol className="space-y-3">
+              {rules.map((rule, at) => (
+                <RuleCard
+                  key={rule.key}
+                  rule={rule}
+                  number={at + 1}
+                  count={rules.length}
+                  pathsListId={pathsListId}
+                  refusal={refusals.byRule[at + 1]}
+                  onChange={(changed) =>
+                    changeRules(rules.map((r) => (r.key === rule.key ? changed : r)))
+                  }
+                  onMove={(by) => {
+                    const next = [...rules];
+                    const [moved] = next.splice(at, 1);
+                    next.splice(at + by, 0, moved);
+                    changeRules(next);
+                  }}
+                  onRemove={() => changeRules(rules.filter((r) => r.key !== rule.key))}
                 />
-              </label>
-              {pasteError && (
-                <p role="alert" className="text-sm text-rim-danger">
-                  {pasteError}
-                </p>
-              )}
+              ))}
+            </ol>
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
-                disabled={!pasted.trim()}
-                onClick={usePasted}
+                disabled={rules.length >= 20}
+                onClick={() => changeRules([...rules, blankRule()])}
               >
-                Replace the rules with this JSON
+                Add rule
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => void copyJson()}>
+                {copied ? "Copied" : "Copy as JSON"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-expanded={pasting}
+                onClick={() => setPasting((open) => !open)}
+              >
+                Paste JSON
               </Button>
             </div>
-          )}
-          {refusals.whole && (
-            <p role="alert" className="text-sm text-rim-danger">
-              {refusals.whole}
-            </p>
-          )}
-        </section>
+            {pasting && (
+              <div className="space-y-2">
+                <label className="block">
+                  <span className={LABEL_CLASS}>A format's JSON</span>
+                  <textarea
+                    value={pasted}
+                    rows={6}
+                    onChange={(e) => setPasted(e.currentTarget.value)}
+                    className={AREA_CLASS}
+                  />
+                </label>
+                {pasteError && (
+                  <p role="alert" className="text-sm text-rim-danger">
+                    {pasteError}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!pasted.trim()}
+                  onClick={usePasted}
+                >
+                  Replace the rules with this JSON
+                </Button>
+              </div>
+            )}
+            {refusals.whole && (
+              <p role="alert" className="text-sm text-rim-danger">
+                {refusals.whole}
+              </p>
+            )}
+          </section>
 
-        <section className="space-y-3" aria-labelledby={`${pathsListId}-try`}>
-          <h4 id={`${pathsListId}-try`} className="text-sm font-semibold text-rim-text">
-            Try it
-          </h4>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <label className="block min-w-0">
-              <span className={LABEL_CLASS}>Headers, one Name: value a line</span>
-              <textarea
-                value={headers}
-                rows={4}
-                placeholder="X-GitHub-Event: pull_request"
-                onChange={(e) => setHeaders(e.currentTarget.value)}
-                className={AREA_CLASS}
-              />
-            </label>
-            <label className="block min-w-0">
-              <span className={LABEL_CLASS}>Body</span>
-              <textarea
-                value={body}
-                rows={4}
-                placeholder='{"action": "opened"}'
-                onChange={(e) => setBody(e.currentTarget.value)}
-                className={AREA_CLASS}
-              />
-            </label>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            isLoading={trying}
-            onClick={() => void tryIt()}
-          >
-            Try
-          </Button>
-          <div aria-live="polite">{tried && <PreviewOutcome preview={tried} />}</div>
-        </section>
+          <section className="space-y-3" aria-labelledby={`${pathsListId}-try`}>
+            <h4 id={`${pathsListId}-try`} className="text-sm font-semibold text-rim-text">
+              Try it
+            </h4>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <label className="block min-w-0">
+                <span className={LABEL_CLASS}>Headers, one Name: value a line</span>
+                <textarea
+                  value={headers}
+                  rows={4}
+                  placeholder="X-GitHub-Event: pull_request"
+                  onChange={(e) => setHeaders(e.currentTarget.value)}
+                  className={AREA_CLASS}
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className={LABEL_CLASS}>Body</span>
+                <textarea
+                  value={body}
+                  rows={4}
+                  placeholder='{"action": "opened"}'
+                  onChange={(e) => setBody(e.currentTarget.value)}
+                  className={AREA_CLASS}
+                />
+              </label>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              isLoading={trying}
+              onClick={() => void tryIt()}
+            >
+              Try
+            </Button>
+            <div aria-live="polite">{tried && <PreviewOutcome preview={tried} />}</div>
+          </section>
 
-        {withLog && (
-          <DeliveryLog
+          {withLog && (
+            <DeliveryLog
+              serverId={serverId}
+              webhookId={editing?.id}
+              format={format}
+              onSession={target.kind === "new" ? setSession : undefined}
+              onUseSample={(h, b) => {
+                setHeaders(headersToLines(h));
+                setBody(b);
+                setTried(null);
+              }}
+            />
+          )}
+
+          <BuildWithAi
             serverId={serverId}
-            webhookId={editing?.id}
-            format={format}
-            onSession={target.kind === "new" ? setSession : undefined}
-            onUseSample={(h, b) => {
-              setHeaders(headersToLines(h));
-              setBody(b);
-              setTried(null);
-            }}
+            sample={{ headers, body }}
+            hasRules={hasWrittenRules}
+            onDraft={changeRules}
           />
-        )}
-
-        <BuildWithAi
-          serverId={serverId}
-          sample={{ headers, body }}
-          hasRules={hasWrittenRules}
-          onDraft={changeRules}
-        />
+        </div>
 
         {error && (
           <p
