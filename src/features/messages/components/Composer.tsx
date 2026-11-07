@@ -9,7 +9,13 @@ import {
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
+import {
+  findCommandByText,
+  lacksArguments,
+  runComposerCommand,
+  runComposerPipe,
+} from "../../commands/runtime/composerCommand";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
@@ -188,6 +194,7 @@ function MessageComposer(props: ComposerProps) {
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const executeCommand = useExecuteCommandMutation();
+  const { data: paletteCommands } = useCommands("PALETTE");
   // A thread reply does not announce typing in the conversation.
   const { handleKeystroke, markSent } = useTypingIndicator(
     workspaceId,
@@ -397,23 +404,13 @@ function MessageComposer(props: ComposerProps) {
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
     if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {
-      const pipeExpression = trimmed.slice(1).trim(); // strip leading `/`
-      const segmentCount = pipeExpression.split("|").filter((s) => s.trim()).length;
       setText("");
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().clearDraft(textKey);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-      try {
-        await executeCommand.mutateAsync({
-          commandId: pipeExpression,
-          commandContext: { workspaceId },
-        });
-        toast.success(`Piped ${segmentCount} commands successfully`);
-      } catch {
-        toast.error("Failed to execute piped commands");
-      }
+      await runComposerPipe(trimmed, paletteCommands, (input) => executeCommand.mutateAsync(input));
       return;
     }
 
@@ -433,6 +430,19 @@ function MessageComposer(props: ComposerProps) {
           return;
         }
       }
+    }
+
+    // A line that is a command's id or title runs the command instead of being posted.
+    const typedCommand = findCommandByText(trimmed, paletteCommands);
+    if (typedCommand && pendingFiles.length === 0) {
+      // A command that lacks arguments leaves the typed line to edit.
+      if (lacksArguments(typedCommand)) return;
+      setText("");
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      draftStore.getState().clearDraft(textKey);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      await runComposerCommand(typedCommand, (input) => executeCommand.mutateAsync(input));
+      return;
     }
 
     if (draft) {

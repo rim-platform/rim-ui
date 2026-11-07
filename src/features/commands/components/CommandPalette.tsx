@@ -8,26 +8,13 @@ import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
 import { useRunnableHere } from "../../plugins/runtime/pluginContext";
-import {
-  isCancelledResult,
-  toastPluginCommandResult,
-} from "../../plugins/runtime/pluginCommandInfo";
+import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import {
-  argumentPromptName,
-  commandResultOf,
-  dispatchCommand,
-  hasLocalHandler,
-  isLocalActionResult,
-  targetPickerKind,
-} from "../runtime/commandDispatcher";
-import {
-  serverRunsWithContext,
-  unfilledRequiredArguments,
-  type ArgumentContext,
-} from "../runtime/commandArguments";
-import { commandSuccessText } from "../runtime/commandResultText";
+import { commandResultOf, dispatchCommand, targetPickerKind } from "../runtime/commandDispatcher";
+import { serverRunsWithContext, type ArgumentContext } from "../runtime/commandArguments";
+import { showCommandOutcome } from "../runtime/commandOutcome";
+import { runsFromPalette } from "../runtime/commandRunnable";
 import { showCommandRefusal } from "../runtime/refusal";
 import { currentCommandContext } from "../runtime/commandContext";
 import { CONFIRMATION_REQUIRED, runWithHumanConfirmation } from "../runtime/humanConfirmation";
@@ -50,7 +37,6 @@ import { useHostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { PipelineResultView } from "./PipelineResultView";
 import { PaletteTargetPicker, type PickerTarget } from "./PaletteTargetPicker";
 import { CommandResultView } from "./CommandResultView";
-import { presentReadResult } from "../runtime/readCommandResult";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
@@ -81,19 +67,6 @@ function sourceIcon(source: CommandSourceKind) {
     case "INTEGRATION":
       return <Zap className="h-3.5 w-3.5 text-rim-text-muted" />;
   }
-}
-
-/**
- * Whether the palette can run `command` as picked, with no arguments typed: this app runs it
- * itself, or every argument it requires comes from the context or from the surface that asks
- * for it.
- */
-function runsFromPalette(command: CommandDefinition, context: ArgumentContext): boolean {
-  if (hasLocalHandler(command.id)) return true;
-  const prompted = argumentPromptName(command.id);
-  return unfilledRequiredArguments(command, context).every(
-    (argument) => argument.name === prompted,
-  );
 }
 
 function CommandPaletteDialog() {
@@ -367,25 +340,7 @@ function CommandPaletteDialog() {
           (input) => executeCommandMutation.mutateAsync(input),
           { args, commandContext },
         );
-        if (command.sourceKind === "PLUGIN") {
-          // A plugin answers in words (its payload is for scripts and the agent).
-          toastPluginCommandResult(command.title, result);
-        } else if (isCancelledResult(result)) {
-          // The user declined the confirmation, or was told it expired.
-        } else if (isLocalActionResult(result)) {
-          // The command shows what it did.
-        } else if (result === null || result.status === "ERROR") {
-          toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
-        } else {
-          // A read command shows what it read; anything else says it ran.
-          const shown = await presentReadResult(
-            command.id,
-            command.title,
-            result,
-            args,
-            commandContext,
-          );
-          if (!shown) toast.success(commandSuccessText(command.title, result));
+        if (await showCommandOutcome(command, result, args, commandContext)) {
           options?.onSuccess?.();
         }
       } catch (err) {

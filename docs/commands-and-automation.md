@@ -31,6 +31,13 @@ with none open it needs the conversation's id in its arguments. A plugin command
 conversation gets the open one; with none open, the palette leaves it out and its keybind says
 "Open a conversation first".
 
+**From the message box.** Type `/` to list the commands that run without arguments of their own,
+the same ones the palette offers, and pick one. A line that is a command's whole id or title
+(`/chat.list_members`, `/List Members`, in any case) runs that command instead of being sent, in
+a conversation and in a thread; any other text starting with `/` is an ordinary message. A command
+shows its result as it does from the palette, and one that needs arguments the box cannot take
+says which. `/a | b` runs a pipe.
+
 **Sensitivity.** Every command has one of four tiers, and the server decides from it whether a
 run waits for your confirmation:
 

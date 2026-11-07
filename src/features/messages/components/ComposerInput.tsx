@@ -21,13 +21,17 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { CustomEmojiImage } from "../../emoji/components/CustomEmojiImage";
-import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
-import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
-import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
-import { toast } from "../../../shared/toast";
+import { offeredForConversation } from "../../commands/runtime/conversationActionGate";
+import { offeredInSituation } from "../../commands/runtime/paletteAvailability";
+import { useConversation } from "../../conversations/api/useConversation";
+import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
+import { runComposerCommand } from "../../commands/runtime/composerCommand";
+import { runsFromPalette } from "../../commands/runtime/commandRunnable";
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import { BotBadge } from "../../../shared/ui/BotBadge";
-import { showCommandRefusal } from "../../commands/runtime/refusal";
 import type { CommandDefinition } from "../../commands/types";
 
 /** A member the mention list offers. */
@@ -126,6 +130,21 @@ export function ComposerInput({
     return map;
   }, [keybinds]);
 
+  const selectedConversationId = useShellStore((s) => s.selectedConversationId);
+  const { data: openConversation } = useConversation(workspaceId, selectedConversationId);
+  const inDirectSpace = useIsDirectSpace(workspaceId ?? undefined);
+  const hasDirectOrigin = useApplicableDirectOrigin() !== null;
+
+  /** What decides which situational commands the list offers, as the palette reads it. */
+  function situation() {
+    return {
+      inDirectSpace,
+      hasDirectOrigin,
+      panelOpen: hasPanelToClose(),
+      unreadsOpen: useShellStore.getState().mainSurface.kind === "unreads",
+    };
+  }
+
   // Autocomplete state
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [shortcodeQuery, setShortcodeQuery] = useState<string | null>(null);
@@ -215,6 +234,9 @@ export function ComposerInput({
         if (allCommands) {
           const filtered = allCommands
             .filter((cmd) => commandOfferedHere(cmd.id))
+            .filter((cmd) => runsFromPalette(cmd, currentCommandContext()))
+            .filter((cmd) => offeredInSituation(cmd.id, situation()))
+            .filter((cmd) => offeredForConversation(cmd.id, openConversation))
             .filter((cmd) => {
               const titleMatch = cmd.title.toLowerCase().includes(query);
               const idMatch = cmd.id.toLowerCase().includes(query);
@@ -301,30 +323,12 @@ export function ComposerInput({
   }
 
   function applyCommandSuggestion(suggestion: CommandSuggestion) {
-    const needsArgs = suggestion.command.requiredContext.length > 0;
-    if (needsArgs) {
-      // Insert as slash text so user can type arguments
-      onTextChange("/" + suggestion.id + " ");
-    } else {
-      // Execute the command immediately
-      onTextChange("");
-      void (async () => {
-        try {
-          const result = await dispatchCommand(
-            suggestion.command,
-            (input) => executeMutationRef.current.mutateAsync(input),
-            { commandContext: currentCommandContext() },
-          );
-          if (result && result.status === "ERROR" && !isCancelledResult(result)) {
-            toast.error(result.message || "Command failed");
-          }
-        } catch (err: unknown) {
-          showCommandRefusal(suggestion.command.title, err);
-        }
-      })();
-    }
+    onTextChange("");
     setSlashItems([]);
     textareaRef.current?.focus();
+    void runComposerCommand(suggestion.command, (input) =>
+      executeMutationRef.current.mutateAsync(input),
+    );
   }
 
   function applyMention(member: MentionSuggestion) {
