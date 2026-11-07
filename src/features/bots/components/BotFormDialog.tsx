@@ -4,6 +4,9 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { Bot } from "../../../core/graphql/generated/schema-types";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
+import { BOT_EVENTS } from "../../updater/api/serverCapabilities";
+import { useSpaceHasCapability } from "../../updater/hooks/useSpaceHasCapability";
 import { createBot, useInvalidateBots, useUpdateBot } from "../api/botsApi";
 
 /** The longest a bot's name or statement can be, as the server counts characters. */
@@ -35,12 +38,15 @@ function Counter({ id, length }: { id: string; length: number }) {
 /**
  * Makes a bot or changes one: its name, who runs it and where what it reads goes. Both
  * statements are required and are shown to everyone in the workspace as what the person who
- * added the bot says.
+ * added the bot says. On a host with bot events, also whether it can see people join, sent only
+ * when that is what changes, so only turning it on or off goes on record.
  */
 export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: BotFormDialogProps) {
   const [name, setName] = useState(bot?.name ?? "");
   const [runBy, setRunBy] = useState(bot?.runBy ?? "");
   const [readsGoTo, setReadsGoTo] = useState(bot?.readsGoTo ?? "");
+  const [seesJoins, setSeesJoins] = useState(Boolean(bot?.seesMemberJoins));
+  const offersJoins = useSpaceHasCapability(serverId, BOT_EVENTS);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const update = useUpdateBot(serverId);
@@ -49,6 +55,7 @@ export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: Bo
   const readsHelp = useId();
   const runCount = useId();
   const readsCount = useId();
+  const joinsHelp = useId();
 
   const trimmed = { name: name.trim(), runBy: runBy.trim(), readsGoTo: readsGoTo.trim() };
   const valid = Boolean(trimmed.name && trimmed.runBy && trimmed.readsGoTo);
@@ -65,11 +72,18 @@ export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: Bo
           name: trimmed.name,
           runBy: trimmed.runBy,
           readsGoTo: trimmed.readsGoTo,
+          ...(offersJoins && seesJoins !== Boolean(bot.seesMemberJoins)
+            ? { seesMemberJoins: seesJoins }
+            : {}),
         });
         onSaved?.();
         onClose();
       } else {
-        const created = await createBot({ serverId, ...trimmed });
+        const created = await createBot({
+          serverId,
+          ...trimmed,
+          ...(offersJoins && seesJoins ? { seesMemberJoins: true } : {}),
+        });
         invalidate(created.bot.userId);
         onCreated?.(created.bot, created.token);
       }
@@ -141,6 +155,23 @@ export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: Bo
         <p className="text-xs text-rim-text-muted">
           Everyone in the workspace sees both statements as what you say. RIM can&apos;t check them.
         </p>
+
+        {offersJoins && (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-rim-text">Can see when people join</span>
+              <ToggleSwitch
+                checked={seesJoins}
+                onChange={setSeesJoins}
+                label="Can see when people join"
+              />
+            </div>
+            <p id={joinsHelp} className="mt-1 text-xs text-rim-text-muted">
+              Your program gets each new member&apos;s name and when they joined. Off, it only hears
+              about its channels.
+            </p>
+          </div>
+        )}
 
         {error && (
           <p

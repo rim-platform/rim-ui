@@ -46,6 +46,7 @@ function BotRow({ bot, onOpen }: { bot: Bot; onOpen: (dialog: Dialog) => void })
         <Statement label="Who runs it" value={bot.runBy} />
         <Statement label="Where what it reads goes" value={bot.readsGoTo} />
         <Statement label="Added by" value={bot.addedByName ?? "someone no longer here"} />
+        {bot.seesMemberJoins && <Statement label="Can see when people join" value="Yes" />}
       </div>
       {active && (
         <div className="flex flex-wrap gap-2">

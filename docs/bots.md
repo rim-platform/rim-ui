@@ -44,7 +44,9 @@ a new channel.
 The fields `isBot` and `bot` exist only on a server that lists `bot_disclosure` in
 `serverInfo.capabilities`. Every read that asks for them (the member list, a conversation's
 messages, a thread, pinned messages, a lens) keeps a second document with them and uses it only
-there; see `version-skew.md`.
+there; see `version-skew.md`. `Bot.seesMemberJoins` goes by `bot_events` and a pipeline action's
+`postAsBot` by `pipeline_post_as_bot`, each on the workspace's own host, and on an older host neither
+the switch nor the action is offered.
 
 ## Managing bots
 
@@ -55,6 +57,10 @@ for the same people.
 - **New bot** asks for a name, **Who runs it** and **Where what it reads goes**, each statement 1 to
   200 characters and required. Everyone in the workspace sees both as what the person who added the
   bot says. The first token is shown in a dialog that holds it only while it is open.
+- **Can see when people join**, on the form on a server that lists `bot_events`, lets the bot's program
+  get each new member's name and when they joined from `/api/bot/v1/events`. It is off unless turned on,
+  it shows on the bot's row while on, and only from then on does the program hear of anyone joining.
+- A pipeline can post as a bot when someone joins: `commands-and-automation.md`, "Post as bot".
 - **Edit** changes the name and the statements. **Deactivate** is final: its tokens and webhooks stop
   working, it leaves the workspace, and its messages stay. A workspace holds at most 25 active bots.
 - **Tokens** lists each token's label, when it was made and last used ("Never" when unused), and

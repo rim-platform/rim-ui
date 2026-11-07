@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Settings > Pipelines can post a welcome as a bot, and a bot can be allowed to see people joining.
+  Each needs a workspace server that lists `pipeline_post_as_bot` or `bot_events` in
+  `serverInfo.capabilities`.
 - A channel's menu can make its incoming webhook.
 - Unreads: one page with every unread message across your workspaces, where a message stays until
   you mark it read. It's on Home, in the conversation list and on `workspace.open_unreads`.

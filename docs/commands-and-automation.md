@@ -290,7 +290,8 @@ runs them as the person who created it.
   user id; "In conversation", by conversation id. A text filter never matches a message in an
   end-to-end encrypted DM or group, which the server cannot read.
 - **Actions** get the workspace as context, and the conversation for message and reaction
-  triggers. Each action runs even when an earlier one failed.
+  triggers. Each action runs even when an earlier one failed. On the Member Joined trigger, an
+  action can also post as a bot: see "Post as bot" below.
 
 **Where.** Settings → Pipelines, which is not shown in Direct messages. **New Pipeline** opens
 "Create Pipeline" with **Name**, **Description**, **Trigger**, **Filters** (**Add filter**),
@@ -318,6 +319,24 @@ actions are not counted, and the toast is a warning when some did not run.
 fires more than 10 times in 60 seconds is switched off, with "Pipeline "\<name\>" suspended";
 the power button turns it back on. You can create 50 pipelines per workspace, and the page shows
 the server's own cap when it sets one.
+
+**Post as bot.** With the Member Joined trigger, an Owner or Moderator on a server that has it
+sees **Post as bot** beside **Add action**: a bot (active bots only), a channel (only that bot's;
+"This bot is in no channels yet. Add it to one in Settings > Bots." otherwise) and a text. It says
+plainly above them: "Posted by the bot, without asking anyone, each time someone joins." The text
+takes `{username}`, the person's username, at their home server if they're from another one, and
+`{name}`, their display name, or their username without one. What the server refuses, such as a
+mistyped placeholder, shows beside the field. A welcome mentions nobody, and a name can't add a
+mention or Markdown.
+
+The list shows it to every member as "Post as Greeter in #welcome" with its text. A channel you
+can't see shows as "a channel you can't see", never its name or id, and a bot your list doesn't
+hold as "a bot". Who can't change it, such as a creator who is no longer a Moderator, sees it
+read-only in the editor and can keep or remove it. A burst of joins is limited by the cooldown and
+the bot's budget, which skip a welcome rather than queue it. The 10-firings limit below applies too:
+a rush of people joining can switch the pipeline off. The list then shows it as Disabled like any
+other, since the server keeps no reason, and only the creator's "suspended" notice, if they had the
+workspace open, says why. The power button turns it back on.
 
 **Example.** "Deploy failed": trigger New Message, scoped to the id of #deploys, with the filter
 "Message contains pattern" `FAILED`, a cooldown of 300 and the action `chat.search_messages`

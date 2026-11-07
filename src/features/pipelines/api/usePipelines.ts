@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { PIPELINE_POST_AS_BOT, spaceHasCapability } from "../../updater/api/serverCapabilities";
 import type {
   PipelineGql,
   CreatePipelineInput,
@@ -55,6 +56,21 @@ const PipelinesDocument = gql`
   }
 `;
 
+const PipelinesWithPostAsBotDocument = gql`
+  query PipelinesWithPostAsBot($serverId: ID!, $enabled: Boolean) {
+    pipelines(serverId: $serverId, enabled: $enabled) {
+      ${PIPELINE_FIELDS}
+      actions {
+        postAsBot {
+          botUserId
+          conversationId
+          text
+        }
+      }
+    }
+  }
+`;
+
 const CreatePipelineDocument = gql`
   mutation CreatePipeline($input: CreatePipelineInput!) {
     createPipeline(input: $input) {
@@ -85,7 +101,10 @@ const TogglePipelineDocument = gql`
   }
 `;
 
-/** The workspace's pipelines; not fetched in a direct space, which has none. */
+/**
+ * The workspace's pipelines; not fetched in a direct space, which has none. `postAsBot` is asked
+ * for only on a host that lists `pipeline_post_as_bot`.
+ */
 export function usePipelines(serverId?: string) {
   const direct = useIsDirectSpace(serverId);
   return useQuery({
@@ -93,9 +112,10 @@ export function usePipelines(serverId?: string) {
     enabled: Boolean(serverId) && !direct,
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ pipelines: Pipeline[] }>(PipelinesDocument, {
-        serverId,
-      });
+      const document = (await spaceHasCapability(serverId!, PIPELINE_POST_AS_BOT))
+        ? PipelinesWithPostAsBotDocument
+        : PipelinesDocument;
+      const res = await graphqlClient.request<{ pipelines: Pipeline[] }>(document, { serverId });
       return res.pipelines;
     },
   });

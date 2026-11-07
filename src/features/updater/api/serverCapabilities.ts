@@ -49,6 +49,12 @@ export const INCOMING_WEBHOOKS = "incoming_webhooks";
 /** The capability of a server with `UnreadCount.unreadAfter`, `markAsUnread` and the `ReadMarkerRewound` event. */
 export const READ_MARKER = "read_marker";
 
+/** The capability of a server with `Bot.seesMemberJoins`, its inputs and the bot API's events. */
+export const BOT_EVENTS = "bot_events";
+
+/** The capability of a server with `postAsBot` on a pipeline's actions. */
+export const PIPELINE_POST_AS_BOT = "pipeline_post_as_bot";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;
