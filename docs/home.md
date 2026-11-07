@@ -4,6 +4,19 @@ Home is made of boxes, each half or full width, in an order you choose. Your lay
 your account on your own server, so every device shows the same Home. The rules the server
 follows are in rim-server's `docs/home-layout.md`; this page is how the app uses them.
 
+## Make Home your own
+
+1. Open **Home**, the house at the top of the workspace rail.
+2. Choose **Edit Home**.
+3. **Add a box**, such as a channel you watch, your direct messages, or buttons for the commands
+   you run most. A Channel or Quick actions box asks for its settings first.
+4. **Move up** and **Move down** put the boxes in order. **Half** and **Full** set how wide each
+   one is.
+5. Choose **Done**. Your other devices show the same Home.
+
+**Remove** takes a box off, and **Reset to default** goes back to the start. Looking at Home marks
+nothing read.
+
 ## The boxes
 
 | Box | Shows | Runs |

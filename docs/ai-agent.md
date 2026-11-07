@@ -216,8 +216,9 @@ text or keys.
 ## Agents on this computer
 
 Apart from the agent above, a program that runs on your computer with its own model provider, such
-as Claude Code, can ask to connect to the desktop app. **Settings → Agents** holds the switch, which
-is off by default. It is optional, and RIM works the same without it. The web app does not have it.
+as Claude Code, can ask to connect to the desktop app. [Connect an AI agent](agents.md) walks
+through it step by step; this section has every detail. **Settings → Agents** holds the switch,
+which is off by default. It is optional, and RIM works the same without it. The web app does not have it.
 
 - **The switch.** **Let agents on this computer connect** makes the app listen on a port that only
   this computer can reach. While it is off, nothing listens and connected programs cannot reach RIM.
@@ -339,6 +340,7 @@ Then say "connect to RIM" in Claude Code. The steps are in the
 
 ## Next
 
+- [Connect an AI agent](agents.md): connecting Claude Code or another program on this computer.
 - [Commands and automation](commands-and-automation.md): sensitivity, the palette, macros and
   pipelines.
 - [Plugins](plugins.md): installing and trusting plugins, and approving their commands for the
