@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Loader2 } from "lucide-react";
 
@@ -25,61 +25,45 @@ const MENTIONS_PAGE = 20;
 const ROW_CLASS =
   "flex w-full items-center gap-3 rounded-lg border border-rim-line bg-rim-panel px-3 py-2.5 text-left text-sm text-rim-text transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent";
 
-/** A titled section of the page; `aria-labelledby` names it by its heading. */
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  const headingId = useId();
-  return (
-    <section aria-labelledby={headingId} className="space-y-2">
-      <h2 id={headingId} className="text-sm font-semibold text-rim-text">
-        {title}
-      </h2>
-      {note && <p className="text-xs text-rim-text-muted">{note}</p>}
-      {children}
-    </section>
-  );
-}
-
 /** What waits for a decision: message requests and join requests, each a way to its page. */
-export function WaitingSection({ rows }: { rows: readonly WaitingRow[] }) {
-  if (rows.length === 0) return null;
+export function WaitingBody({ rows }: { rows: readonly WaitingRow[] }) {
+  if (rows.length === 0) return <p className="text-sm text-rim-text-muted">Nothing waiting.</p>;
   return (
-    <Section title="Waiting for you">
-      <ul className="space-y-2">
-        {rows.map((row) => {
-          const key = `${row.kind}:${row.workspaceId ?? ""}`;
-          const open = () => {
-            if (row.kind === "dm-requests") {
-              useShellStore
-                .getState()
-                .setMainSurface({ kind: "dm-requests", workspaceId: row.workspaceId });
-              return;
-            }
-            const workspaces = useWorkspaceStore.getState();
-            if (workspaces.workspaceId !== row.workspaceId) {
-              workspaces.setWorkspaceId(row.workspaceId);
-            }
+    <ul className="space-y-2">
+      {rows.map((row) => {
+        const key = `${row.kind}:${row.workspaceId ?? ""}`;
+        const open = () => {
+          if (row.kind === "dm-requests") {
             useShellStore
               .getState()
-              .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
-          };
-          return (
-            <li key={key}>
-              <button type="button" onClick={open} className={ROW_CLASS}>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">
-                    {row.kind === "dm-requests"
-                      ? `${row.count} message ${row.count === 1 ? "request" : "requests"}`
-                      : `${row.badge} join ${row.badge === "1" ? "request" : "requests"}`}
-                  </span>
-                  <span className="block truncate text-xs text-rim-text-muted">{row.label}</span>
+              .setMainSurface({ kind: "dm-requests", workspaceId: row.workspaceId });
+            return;
+          }
+          const workspaces = useWorkspaceStore.getState();
+          if (workspaces.workspaceId !== row.workspaceId) {
+            workspaces.setWorkspaceId(row.workspaceId);
+          }
+          useShellStore
+            .getState()
+            .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
+        };
+        return (
+          <li key={key}>
+            <button type="button" onClick={open} className={ROW_CLASS}>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">
+                  {row.kind === "dm-requests"
+                    ? `${row.count} message ${row.count === 1 ? "request" : "requests"}`
+                    : `${row.badge} join ${row.badge === "1" ? "request" : "requests"}`}
                 </span>
-                <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </Section>
+                <span className="block truncate text-xs text-rim-text-muted">{row.label}</span>
+              </span>
+              <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -122,7 +106,7 @@ function MentionRow({ item, workspaceName }: { item: NotificationItem; workspace
  *
  * @param nameWorkspaces - Whether rows name their workspace, when more than one is shown.
  */
-export function MentionsSection({
+export function MentionsBody({
   items,
   failed,
   isPending,
@@ -140,17 +124,17 @@ export function MentionsSection({
   const [shown, setShown] = useState(MENTIONS_PAGE);
   if (isPending) {
     return (
-      <Section title="Mentions and replies">
-        <p className="flex items-center gap-2 text-sm text-rim-text-muted" role="status">
-          <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-          Loading…
-        </p>
-      </Section>
+      <p className="flex items-center gap-2 text-sm text-rim-text-muted" role="status">
+        <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+        Loading…
+      </p>
     );
   }
-  if (items.length === 0 && failed.length === 0) return null;
+  if (items.length === 0 && failed.length === 0) {
+    return <p className="text-sm text-rim-text-muted">No unread mentions or replies.</p>;
+  }
   return (
-    <Section title="Mentions and replies">
+    <div className="space-y-2">
       {items.length > 0 && (
         <ul aria-label="Mentions and replies" className="space-y-0.5">
           {items.slice(0, shown).map((item) => (
@@ -186,45 +170,43 @@ export function MentionsSection({
       {hasOthers && (
         <p className="text-xs text-rim-text-faint">Other workspaces update every minute.</p>
       )}
-    </Section>
+    </div>
   );
 }
 
 /** Per workspace, how many messages are unread in how many conversations. */
-export function UnreadSection({ rows }: { rows: readonly WorkspaceUnread[] }) {
-  if (rows.length === 0) return null;
+export function UnreadBody({ rows }: { rows: readonly WorkspaceUnread[] }) {
+  if (rows.length === 0) return <p className="text-sm text-rim-text-muted">Nothing unread.</p>;
   return (
-    <Section title="Unread">
-      <ul className="space-y-2">
-        <li>
-          <button
-            type="button"
-            onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
-            className={ROW_CLASS}
-          >
-            <span className="min-w-0 flex-1 font-medium">See all unread</span>
-            <span className="shrink-0 text-xs text-rim-text-muted">
-              {rows.reduce((total, row) => total + row.messages, 0)}
+    <ul className="space-y-2">
+      <li>
+        <button
+          type="button"
+          onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
+          className={ROW_CLASS}
+        >
+          <span className="min-w-0 flex-1 font-medium">See all unread</span>
+          <span className="shrink-0 text-xs text-rim-text-muted">
+            {rows.reduce((total, row) => total + row.messages, 0)}
+          </span>
+          <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
+        </button>
+      </li>
+      {rows.map(({ workspace, messages, conversations }) => (
+        <li key={workspace.id}>
+          <button type="button" onClick={() => openWorkspace(workspace.id)} className={ROW_CLASS}>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{workspace.label}</span>
+              <span className="block text-xs text-rim-text-muted">
+                {messages} unread in {conversations}{" "}
+                {conversations === 1 ? "conversation" : "conversations"}
+              </span>
             </span>
             <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
           </button>
         </li>
-        {rows.map(({ workspace, messages, conversations }) => (
-          <li key={workspace.id}>
-            <button type="button" onClick={() => openWorkspace(workspace.id)} className={ROW_CLASS}>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{workspace.label}</span>
-                <span className="block text-xs text-rim-text-muted">
-                  {messages} unread in {conversations}{" "}
-                  {conversations === 1 ? "conversation" : "conversations"}
-                </span>
-              </span>
-              <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-rim-text-faint" />
-            </button>
-          </li>
-        ))}
-      </ul>
-    </Section>
+      ))}
+    </ul>
   );
 }
 
@@ -232,7 +214,7 @@ export function UnreadSection({ rows }: { rows: readonly WorkspaceUnread[] }) {
  * The newest runs of the agents connected on this device. A run is a stretch of an agent's calls;
  * RIM does not know whether an outside agent is still working.
  */
-export function AgentRunsSection({
+export function AgentRunsBody({
   runs,
   onOpenRun,
   onAllRuns,
@@ -242,7 +224,8 @@ export function AgentRunsSection({
   onAllRuns: () => void;
 }) {
   return (
-    <Section title="Your agents' runs" note="On this device, only you see these.">
+    <div className="space-y-2">
+      <p className="text-xs text-rim-text-muted">On this device, only you see these.</p>
       {runs.length === 0 ? (
         <p className="text-sm text-rim-text-muted">No runs yet.</p>
       ) : (
@@ -276,6 +259,6 @@ export function AgentRunsSection({
       >
         All runs
       </button>
-    </Section>
+    </div>
   );
 }

@@ -1261,6 +1261,39 @@ input HeartbeatInput {
 	status: PresenceStatus!
 }
 
+"""
+The signed-in person's Home layout, kept on their home server.
+"""
+type HomeLayout {
+	"""
+	The layout: `{ "version": 1, "boxes": [{ "id", "kind", "width", "settings"? }] }`.
+	"""
+	layout: JSON!
+	"""
+	When the person made the edit, never later than the server's clock when it was stored.
+	"""
+	editedAt: DateTime!
+	"""
+	When the server stored it.
+	"""
+	updatedAt: DateTime!
+}
+
+"""
+The answer to `saveHomeLayout`.
+"""
+type HomeLayoutSaved {
+	"""
+	True when the layout sent was stored; false when the stored layout had a later
+	`editedAt` and was kept instead.
+	"""
+	kept: Boolean!
+	"""
+	The layout just stored, or the stored one that was kept.
+	"""
+	layout: HomeLayout!
+}
+
 input InBandTokenInput {
 	token: String!
 	argsHash: String!
@@ -3016,6 +3049,18 @@ type Mutation {
 	for one that ended.
 	"""
 	endWebhookTestSession(sessionId: ID!): Boolean!
+	"""
+	Save the signed-in person's Home layout, made at `editedAt` on their device. The stored
+	layout is kept instead when its `editedAt` is later, an `editedAt` later than the
+	server's clock counting as the clock; `kept` says which. `VALIDATION` names the check a
+	layout fails; `FORBIDDEN` for a person from another server.
+	"""
+	saveHomeLayout(layout: JSON!, editedAt: DateTime!): HomeLayoutSaved!
+	"""
+	Delete the signed-in person's Home layout, so every device shows the default. Answers
+	whether one was stored. `FORBIDDEN` for a person from another server.
+	"""
+	resetHomeLayout: Boolean!
 }
 
 input MuteConversationInput {
@@ -3976,6 +4021,12 @@ type Query {
 	starter lacks the standing to start it.
 	"""
 	webhookTestDeliveries(sessionId: ID!, after: Int): WebhookTestDeliveries!
+	"""
+	The signed-in person's Home layout, or null when none is stored and the client shows its
+	default Home. `FORBIDDEN` for a person from another server, whose layout lives at their
+	own server.
+	"""
+	homeLayout: HomeLayout
 }
 
 type ReactionGroup {

@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Home is made of boxes you can move, resize, add and remove, saved to your account (Edit Home,
+  `docs/home.md`). Until you edit it, Home shows today's layout. The edit made last wins across
+  devices, an edit made offline is sent when your server answers, and a box a device can't run can
+  be hidden on that device alone. It needs a server that lists `home_layout`; with an older one,
+  Home stays as it is.
 - Webhook formats: New webhook offers Plain, GitHub, the host's other ready-made formats such as
   Grafana, and Custom, and a webhook's row has Edit format. The format editor writes rules as cards,
   tries them on a sample, copies and pastes them as JSON, and drafts them with the person's own AI,

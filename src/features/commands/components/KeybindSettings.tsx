@@ -201,7 +201,7 @@ export function KeybindSettings() {
   const deviceKeybindable = useMemo(() => {
     const serverIds = new Set(builtInKeybindable.map((cmd) => cmd.id));
     return [
-      ...LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id)),
+      ...LOCAL_COMMANDS.filter((cmd) => cmd.keybindCapable && !serverIds.has(cmd.id)),
       ...pluginCommands.filter((cmd) => cmd.keybindCapable),
     ].filter((cmd) => commandOfferedHere(cmd.id));
   }, [builtInKeybindable, pluginCommands]);

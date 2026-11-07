@@ -37,6 +37,7 @@ import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { cycleRecentActivity } from "./cycleRecentActivity";
+import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
 import { confirmConversationCommand } from "./conversationActionGate";
 import { openWorkspaceAction, workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
@@ -180,6 +181,7 @@ const localHandlers: Record<
   "workspace.open_home": () => {
     useShellStore.getState().setMainSurface({ kind: "home" });
   },
+  [EDIT_HOME_COMMAND_ID]: () => editHome(),
   "workspace.open_unreads": () => {
     useShellStore.getState().setMainSurface({ kind: "unreads" });
   },

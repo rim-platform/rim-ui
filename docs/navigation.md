@@ -58,6 +58,7 @@ gestures and no bottom bar.
 | Plugin panels | Plugins in the top bar | `workspace.open_plugin_panel.<plugin>/<panel>` for each panel |
 | Marketplace | none yet | `workspace.open_marketplace` |
 | Home | Home at the top of the workspace rail | `workspace.open_home` |
+| Editing Home | Edit Home on Home, where the server keeps Home layouts | `workspace.edit_home`, from the command palette only |
 | Unreads | See all unread on Home; Unreads above the channels in the conversation list, while something is unread | `workspace.open_unreads` |
 | Audit log | Audit log at the foot of the workspace rail, while a workspace other than the direct space is open | `workspace.open_audit_log` |
 | Message requests | Requests row in the conversation list | `workspace.open_message_requests` |
