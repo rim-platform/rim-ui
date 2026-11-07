@@ -99,6 +99,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 - Commands run from the message box now show their result, as they do from the palette; a command runs when picked from the open list, with the arguments typed after its name, and Esc sends the line as text.
 - On a desktop with no tray, closing RIM asks what to do instead of hiding it with no way back.
+- The built-in agent finds channels by name and no longer asks for ids.
+- The confirmation dialog shows workspaces, channels and people by name, with their ids beside them,
+  and names where a message will go when that isn't the conversation in view.
 - The sign-up form says what's still missing when Create account can't be clicked.
 - Sign-up has a way back to sign-in, every join page has a way out, emoji-led names no longer break
   a workspace's badge, and focus returns to the right place after closing dialogs in Settings > Bots.

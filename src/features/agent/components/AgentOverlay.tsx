@@ -23,7 +23,8 @@ import { AGENT_DESKTOP_ONLY_MESSAGE, agentAvailable } from "../agentAvailability
 
 // Register tools once per workspace (hardcoded builtins + backend AI surface, the backend
 // winning a name clash). The backend AI surface is per workspace (feature-gated commands
-// are only offered where the feature is on), so switching workspace reloads the registry.
+// are only offered where the feature is on), so switching workspace reloads the registry. A load
+// that could not reach the server is tried again on the next use.
 let toolsRegisteredFor: string | null | undefined;
 let toolsLoading: Promise<void> | null = null;
 let toolsLoadingFor: string | null | undefined;
@@ -35,8 +36,8 @@ function ensureToolsRegistered(): Promise<void> {
   if (toolsLoading && toolsLoadingFor === workspaceId) return toolsLoading;
   toolsLoadingFor = workspaceId;
   toolsLoading = loadAgentTools()
-    .then(() => {
-      toolsRegisteredFor = workspaceId;
+    .then((result) => {
+      toolsRegisteredFor = result.fetchFailed ? undefined : workspaceId;
     })
     .finally(() => {
       toolsLoading = null;

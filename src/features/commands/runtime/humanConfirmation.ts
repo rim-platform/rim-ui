@@ -1,5 +1,6 @@
 import {
   CommandSensitivity,
+  type CommandArgumentType,
   type ConfirmationChallenge,
 } from "../../../core/graphql/generated/schema-types";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
@@ -38,6 +39,8 @@ export interface ConfirmationSubject {
   description?: string;
   /** Arguments summary shown in the dialog. */
   args?: Record<string, unknown>;
+  /** The types the server declares for `args`, when known. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   /** A `RESTRICTED` command must have its verb typed before it can be confirmed. */
   sensitivity?: CommandSensitivity;
   /**
@@ -119,6 +122,7 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
     toolName: subject.title,
     description: subject.description,
     args: subject.args ?? {},
+    argumentTypes: subject.argumentTypes,
     sensitivity: subject.sensitivity,
     verb: subject.verb,
     dangerous: subject.dangerous,

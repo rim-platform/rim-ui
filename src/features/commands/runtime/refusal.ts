@@ -23,6 +23,9 @@ const DENIED_CODES = new Set([
 const FAILED_CODES = new Set(["TIMEOUT", "UNAVAILABLE", "INTERNAL", "UPSTREAM_UNAVAILABLE"]);
 const INVALID_CODES = new Set(["VALIDATION", "NOT_FOUND", "CONFLICT"]);
 
+/** The server's message when a workspace-only command is given the direct space's id. */
+const NOT_IN_DIRECT_SPACE = "not available in the direct space";
+
 /**
  * The refusal in a failed `executeCommand` or `executeMacro` call: from its `refusal` extension, or
  * from its `code` on a server that sends none. `null` when `err` is not a refusal the server gave.
@@ -102,6 +105,9 @@ export function refusalForAgent(err: unknown): string | null {
     case "EXPIRED":
       return "The confirmation expired and nothing ran. Ask the user before trying again.";
     case "INVALID":
+      if (message === NOT_IN_DIRECT_SPACE) {
+        return "That id is the person's direct messages, not a workspace, and it has no channels. Nothing ran. Use a workspace's id, or ask which workspace by name.";
+      }
       return `The call is wrong, nothing ran: ${message}`;
   }
 }

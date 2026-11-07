@@ -13,6 +13,24 @@ function failure(message: string, extensions: Record<string, unknown>): Error {
   });
 }
 
+describe("refusalForAgent in the direct space", () => {
+  it("says the id is the direct messages, so the model can tell the person what happened", () => {
+    const text = refusalForAgent(
+      failure("not available in the direct space", { code: "VALIDATION", refusal: "INVALID" }),
+    );
+
+    expect(text).toContain("the person's direct messages, not a workspace");
+    expect(text).toContain("ask which workspace by name");
+    expect(text!.length).toBeLessThan(180);
+  });
+
+  it("keeps the server's words for any other invalid call", () => {
+    expect(refusalForAgent(failure("not found", { code: "NOT_FOUND", refusal: "INVALID" }))).toBe(
+      "The call is wrong, nothing ran: not found",
+    );
+  });
+});
+
 describe("readRefusal", () => {
   it("reads each refusal extension", () => {
     expect(

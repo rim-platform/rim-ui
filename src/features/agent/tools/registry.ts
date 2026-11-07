@@ -1,4 +1,7 @@
-import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import type {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
 import type { AiToolDefinition } from "../providers/types";
 import type { AiToolHandler, RegisteredTool } from "./types";
 
@@ -13,6 +16,7 @@ export function registerTool(
     sensitivity?: CommandSensitivity;
     nlDescription?: string;
     description?: string;
+    argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   },
 ): void {
   tools.set(definition.name, {
@@ -23,6 +27,7 @@ export function registerTool(
     sensitivity: options?.sensitivity,
     nlDescription: options?.nlDescription,
     description: options?.description,
+    argumentTypes: options?.argumentTypes,
   });
 }
 

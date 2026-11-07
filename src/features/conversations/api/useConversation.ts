@@ -69,7 +69,8 @@ export function useIsDirectConversation(
   return data?.conversationType === ConversationTypeEnum.DIRECT;
 }
 
-async function requestConversation(
+/** Asks the server for one conversation by id, without the query cache. */
+export async function requestConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<ConversationSummary> {

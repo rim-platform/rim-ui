@@ -1,14 +1,17 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent } from "@testing-library/react";
 
 import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 import { withServerInfo } from "../../../test/serverInfo";
 import { useAgentStore } from "../state/useAgentStore";
 import { useLiveModelsStore } from "../state/useLiveModelsStore";
 
-vi.mock("../tools/loader", () => ({ loadAgentTools: vi.fn(() => Promise.resolve()) }));
+vi.mock("../tools/loader", () => ({
+  loadAgentTools: vi.fn(() => Promise.resolve({ winners: [], droppedBuiltinNames: [] })),
+}));
 
 import { loadAgentTools } from "../tools/loader";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { AgentOverlay } from "./AgentOverlay";
 
 /** Makes the app the desktop app, where the agent runs. */
@@ -83,6 +86,49 @@ describe("AgentOverlay model label", () => {
     useLiveModelsStore.setState({ byProvider: { openai: [{ ...opus, id: "gpt-5.4" }] } });
     render(<AgentOverlay />, { wrapper: withServerInfo() });
     expect(screen.getByText("anthropic / claude-opus-5-5")).toBeInTheDocument();
+  });
+});
+
+describe("AgentOverlay and a failed tool load", () => {
+  beforeEach(() => {
+    vi.mocked(loadAgentTools).mockClear();
+    localStorage.setItem("agent-disclaimer-accepted", "true");
+    useAgentStore.setState({ isOpen: true });
+    onDesktop();
+  });
+
+  afterEach(() => {
+    offDesktop();
+    cleanup();
+  });
+
+  async function openOnce() {
+    const { unmount } = render(<AgentOverlay />, { wrapper: withServerInfo() });
+    await act(async () => {});
+    unmount();
+  }
+
+  it("tries again the next time the agent opens, after the server could not be reached", async () => {
+    useWorkspaceStore.getState().setWorkspaceId("workspace-failed-load");
+    vi.mocked(loadAgentTools).mockResolvedValueOnce({
+      winners: [],
+      droppedBuiltinNames: [],
+      fetchFailed: true,
+    });
+
+    await openOnce();
+    await openOnce();
+
+    expect(loadAgentTools).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not load again for the same workspace once a load worked", async () => {
+    useWorkspaceStore.getState().setWorkspaceId("workspace-loaded");
+
+    await openOnce();
+    await openOnce();
+
+    expect(loadAgentTools).toHaveBeenCalledTimes(1);
   });
 });
 
