@@ -21,13 +21,24 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCustomEmojis } from "../../emoji/api/useCustomEmojis";
 import { CustomEmojiImage } from "../../emoji/components/CustomEmojiImage";
-import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
-import { commandOfferedHere } from "../../agent/agentAvailability";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
-import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { toast } from "../../../shared/toast";
+import { offeredForConversation } from "../../commands/runtime/conversationActionGate";
+import { offeredInSituation } from "../../commands/runtime/paletteAvailability";
+import { useConversation } from "../../conversations/api/useConversation";
+import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
+import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
+import { lacksArguments, runComposerCommand } from "../../commands/runtime/composerCommand";
+import {
+  commandArguments,
+  commandsMatching,
+  namesCommand,
+  splitCommandLine,
+} from "../../commands/runtime/commandLine";
+import { missingArgumentNames, NOT_FROM_MESSAGE_BOX } from "../../commands/runtime/commandRunnable";
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import { BotBadge } from "../../../shared/ui/BotBadge";
-import { showCommandRefusal } from "../../commands/runtime/refusal";
 import type { CommandDefinition } from "../../commands/types";
 
 /** A member the mention list offers. */
@@ -49,6 +60,8 @@ interface CommandSuggestion {
   description: string;
   category: string;
   keybind: string | null;
+  /** The arguments the command needs typed after its name. */
+  needs: string[];
   /** Original command definition for execution */
   command: CommandDefinition;
 }
@@ -81,6 +94,8 @@ interface ComposerInputProps {
   variant?: "conversation" | "thread";
   /** Called on Escape with no suggestion list open; returns true when it handled the key. */
   onEscape?: () => boolean;
+  /** Set while Esc has closed the command list for the line, which is then sent as text. */
+  commandListClosedRef: React.RefObject<boolean>;
 }
 
 export function ComposerInput({
@@ -98,6 +113,7 @@ export function ComposerInput({
   onFilePickerOpen,
   variant = "conversation",
   onEscape,
+  commandListClosedRef,
 }: ComposerInputProps) {
   const inThread = variant === "thread";
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
@@ -125,6 +141,29 @@ export function ComposerInput({
     }
     return map;
   }, [keybinds]);
+
+  const selectedConversationId = useShellStore((s) => s.selectedConversationId);
+  const { data: openConversation } = useConversation(workspaceId, selectedConversationId);
+
+  // Esc closes the command list for one line: until it is emptied or the conversation changes.
+  useEffect(() => {
+    commandListClosedRef.current = false;
+  }, [selectedConversationId, commandListClosedRef]);
+  useEffect(() => {
+    if (!text.startsWith("/")) commandListClosedRef.current = false;
+  }, [text, commandListClosedRef]);
+  const inDirectSpace = useIsDirectSpace(workspaceId ?? undefined);
+  const hasDirectOrigin = useApplicableDirectOrigin() !== null;
+
+  /** What decides which situational commands the list offers, as the palette reads it. */
+  function situation() {
+    return {
+      inDirectSpace,
+      hasDirectOrigin,
+      panelOpen: hasPanelToClose(),
+      unreadsOpen: useShellStore.getState().mainSurface.kind === "unreads",
+    };
+  }
 
   // Autocomplete state
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -186,6 +225,44 @@ export function ComposerInput({
     [serverMembers],
   );
 
+  /**
+   * Lists the commands the words typed after `/` name, and highlights the first. The list stays
+   * open across spaces and arguments; it is empty, so Enter sends the text, for a line no
+   * command matches, a pipe, or one Esc closed.
+   */
+  function showSlashList(value: string) {
+    const items: SlashItem[] = [];
+    if (!commandListClosedRef.current && !value.includes("|")) {
+      // Built-in slash commands (/agent, /macro) take their text after the name.
+      if (!inThread && !value.includes(" ")) {
+        for (const cmd of getSlashCommandSuggestions(value)) {
+          items.push({ kind: "builtin", value: cmd });
+        }
+      }
+      const { head } = splitCommandLine(value);
+      const offered = (allCommands ?? [])
+        .filter((cmd) => commandOfferedHere(cmd.id) && !NOT_FROM_MESSAGE_BOX.has(cmd.id))
+        .filter((cmd) => offeredInSituation(cmd.id, situation()))
+        .filter((cmd) => offeredForConversation(cmd.id, openConversation));
+      for (const cmd of commandsMatching(head, offered).slice(0, MAX_COMMAND_SUGGESTIONS)) {
+        items.push({
+          kind: "command",
+          value: {
+            id: cmd.id,
+            title: cmd.title,
+            description: cmd.description,
+            category: cmd.category,
+            keybind: keybindMap.get(cmd.id) ?? null,
+            needs: missingArgumentNames(cmd, currentCommandContext()),
+            command: cmd,
+          },
+        });
+      }
+    }
+    setSlashItems(items);
+    setSelectedSlashIndex(0);
+  }
+
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.currentTarget.value;
     const cursorPos = e.currentTarget.selectionStart ?? value.length;
@@ -198,50 +275,10 @@ export function ComposerInput({
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
 
-    // Slash command detection (takes priority over emoji); a thread's box runs no commands
-    if (!inThread && value.startsWith("/")) {
-      const slashPartial = value.split(" ")[0];
-      if (!value.includes(" ")) {
-        // Build unified list: built-in slash commands first, then registry commands
-        const items: SlashItem[] = [];
-
-        // Built-in slash commands (/agent, /macro)
-        for (const cmd of getSlashCommandSuggestions(slashPartial)) {
-          items.push({ kind: "builtin", value: cmd });
-        }
-
-        // All registered commands from the command registry
-        const query = slashPartial.slice(1).toLowerCase(); // strip leading /
-        if (allCommands) {
-          const filtered = allCommands
-            .filter((cmd) => commandOfferedHere(cmd.id))
-            .filter((cmd) => {
-              const titleMatch = cmd.title.toLowerCase().includes(query);
-              const idMatch = cmd.id.toLowerCase().includes(query);
-              const categoryMatch = cmd.category.toLowerCase().includes(query);
-              return titleMatch || idMatch || categoryMatch;
-            })
-            .slice(0, MAX_COMMAND_SUGGESTIONS);
-          for (const cmd of filtered) {
-            items.push({
-              kind: "command",
-              value: {
-                id: cmd.id,
-                title: cmd.title,
-                description: cmd.description,
-                category: cmd.category,
-                keybind: keybindMap.get(cmd.id) ?? null,
-                command: cmd,
-              },
-            });
-          }
-        }
-
-        setSlashItems(items);
-        setSelectedSlashIndex(0);
-      } else {
-        setSlashItems([]);
-      }
+    // Slash command list (takes priority over emoji)
+    if (value === "" || !value.startsWith("/")) commandListClosedRef.current = false;
+    if (value.startsWith("/")) {
+      showSlashList(value);
       setShortcodeQuery(null);
     } else {
       setSlashItems([]);
@@ -300,31 +337,39 @@ export function ComposerInput({
     }
   }
 
+  /**
+   * Runs a command picked from the list with the arguments typed after its name. A picked command
+   * that still needs arguments is left as `/id ` to finish, with the list open; typed out in
+   * full, it says which are missing and sends nothing.
+   */
   function applyCommandSuggestion(suggestion: CommandSuggestion) {
-    const needsArgs = suggestion.command.requiredContext.length > 0;
-    if (needsArgs) {
-      // Insert as slash text so user can type arguments
-      onTextChange("/" + suggestion.id + " ");
-    } else {
-      // Execute the command immediately
-      onTextChange("");
-      void (async () => {
-        try {
-          const result = await dispatchCommand(
-            suggestion.command,
-            (input) => executeMutationRef.current.mutateAsync(input),
-            { commandContext: currentCommandContext() },
-          );
-          if (result && result.status === "ERROR" && !isCancelledResult(result)) {
-            toast.error(result.message || "Command failed");
-          }
-        } catch (err: unknown) {
-          showCommandRefusal(suggestion.command.title, err);
-        }
-      })();
+    const { command } = suggestion;
+    const typed = splitCommandLine(text);
+    if (typed.error) {
+      toast.error(`${command.title}: ${typed.error}`);
+      return;
     }
+    const args = commandArguments(command, typed.pairs);
+    if (missingArgumentNames(command, currentCommandContext(), args).length > 0) {
+      if (namesCommand(command, typed.head)) {
+        lacksArguments(command, args);
+      } else {
+        const next = `/${command.id} `;
+        onTextChange(next);
+        showSlashList(next);
+      }
+      textareaRef.current?.focus();
+      return;
+    }
+    onTextChange("");
+    commandListClosedRef.current = false;
     setSlashItems([]);
     textareaRef.current?.focus();
+    void runComposerCommand(
+      command,
+      (input) => executeMutationRef.current.mutateAsync(input),
+      Object.keys(args).length > 0 ? args : undefined,
+    );
   }
 
   function applyMention(member: MentionSuggestion) {
@@ -398,6 +443,7 @@ export function ComposerInput({
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        commandListClosedRef.current = true;
         setSlashItems([]);
         return;
       }
@@ -428,6 +474,18 @@ export function ComposerInput({
 
     if (e.key === "Escape" && onEscape?.()) {
       e.preventDefault();
+      return;
+    }
+
+    // Esc on a pipe, which has no list, marks the line as text too.
+    if (
+      e.key === "Escape" &&
+      !commandListClosedRef.current &&
+      text.startsWith("/") &&
+      text.includes("|")
+    ) {
+      e.preventDefault();
+      commandListClosedRef.current = true;
       return;
     }
 
@@ -589,7 +647,9 @@ export function ComposerInput({
                     onClick={() => applyCommandSuggestion(item.value)}
                     className={cn(
                       "flex w-full flex-col gap-0.5 px-3 py-1.5 text-left",
-                      isSelected ? "bg-rim-accent/10" : "hover:bg-rim-void/50",
+                      isSelected
+                        ? "border-l-2 border-rim-accent bg-rim-accent/10"
+                        : "border-l-2 border-transparent hover:bg-rim-void/50",
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -607,11 +667,15 @@ export function ComposerInput({
                     </div>
                     <span className="truncate text-xs text-rim-text-muted">
                       {item.value.description}
+                      {item.value.needs.length > 0 && ` Needs ${item.value.needs.join(", ")}.`}
                     </span>
                   </button>
                 </div>
               );
             })}
+            <div className="sticky bottom-0 border-t border-rim-line bg-rim-panel px-3 py-1 text-[11px] text-rim-text-muted">
+              Enter runs the highlighted command. Esc closes the list and sends the text.
+            </div>
           </div>,
           document.body,
         )}

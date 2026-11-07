@@ -11,19 +11,13 @@ import {
   matchKeybind,
   surfaceToContext,
 } from "./keybindEngine";
-import { dispatchCommand, hasLocalHandler, isLocalActionResult } from "./commandDispatcher";
-import { commandSuccessText } from "./commandResultText";
+import { dispatchCommand } from "./commandDispatcher";
+import { showCommandOutcome } from "./commandOutcome";
 import { showCommandRefusal } from "./refusal";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
-import {
-  findPluginCommand,
-  toastPluginCommandResult,
-} from "../../plugins/runtime/pluginCommandInfo";
-import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
-import { toast } from "../../../shared/toast";
+import { findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
 import { useCommandResultStore } from "../state/useCommandResultStore";
-import { presentReadResult } from "./readCommandResult";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
@@ -192,25 +186,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
         args: match.presetArgs as Record<string, unknown> | undefined,
         commandContext,
       })
-        .then((result) => {
-          // A plugin command runs on this device, out of sight: say how it went.
-          if (isPluginCommand) {
-            toastPluginCommandResult(command.title, result);
-          } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
-            // An open panel shows for itself; one that cannot open says why.
-            toast.error(result.message);
-          } else if (
-            hasLocalHandler(command.id) &&
-            result?.status === "SUCCESS" &&
-            result.message.trim() &&
-            !isLocalActionResult(result)
-          ) {
-            // A local command that has something to say says it, as the palette does.
-            toast.success(commandSuccessText(command.title, result));
-          } else if (!isPluginCommand) {
-            void presentReadResult(command.id, command.title, result, presetArgs, commandContext);
-          }
-        })
+        .then((result) => showCommandOutcome(command, result, presetArgs, commandContext))
         .catch((err: unknown) => {
           logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
           showCommandRefusal(command.title, err, run);

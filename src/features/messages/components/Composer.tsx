@@ -9,7 +9,9 @@ import {
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { runComposerPipe } from "../../commands/runtime/composerCommand";
+import { pipeStageCommandId } from "../../commands/runtime/pipeStages";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
@@ -177,6 +179,8 @@ function MessageComposer(props: ComposerProps) {
   const [isStarting, setIsStarting] = useState(false);
   const startingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Set by the box while Esc has closed its command list: the line is then sent as text.
+  const commandListClosedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Maps the text after `@` of each picked mention (username or handle) to its user id
   const mentionMapRef = useRef<Map<string, string>>(new Map());
@@ -188,6 +192,7 @@ function MessageComposer(props: ComposerProps) {
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const executeCommand = useExecuteCommandMutation();
+  const { data: paletteCommands } = useCommands("PALETTE");
   // A thread reply does not announce typing in the conversation.
   const { handleKeystroke, markSent } = useTypingIndicator(
     workspaceId,
@@ -372,6 +377,13 @@ function MessageComposer(props: ComposerProps) {
     }
   }
 
+  /** Whether `line` is a pipe (`/a | b`) that starts with a command this app knows. */
+  function isKnownPipe(line: string): boolean {
+    if (!line.startsWith("/") || !line.includes("|")) return false;
+    const first = pipeStageCommandId(line.slice(1).split("|")[0]);
+    return Boolean(paletteCommands?.some((cmd) => cmd.id === first));
+  }
+
   async function submit() {
     const replyTo = replyTarget;
     if (timedOutUntil || offline) return;
@@ -396,24 +408,14 @@ function MessageComposer(props: ComposerProps) {
     }
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
-    if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {
-      const pipeExpression = trimmed.slice(1).trim(); // strip leading `/`
-      const segmentCount = pipeExpression.split("|").filter((s) => s.trim()).length;
+    if (!thread && !commandListClosedRef.current && isKnownPipe(trimmed)) {
       setText("");
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().clearDraft(textKey);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-      try {
-        await executeCommand.mutateAsync({
-          commandId: pipeExpression,
-          commandContext: { workspaceId },
-        });
-        toast.success(`Piped ${segmentCount} commands successfully`);
-      } catch {
-        toast.error("Failed to execute piped commands");
-      }
+      await runComposerPipe(trimmed, paletteCommands, (input) => executeCommand.mutateAsync(input));
       return;
     }
 
@@ -766,6 +768,7 @@ function MessageComposer(props: ComposerProps) {
           serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
           variant={thread ? "thread" : "conversation"}
+          commandListClosedRef={commandListClosedRef}
           onEscape={() => {
             if (!replyTarget || !conversationId) return false;
             useReplyTargetStore.getState().clear(conversationId);

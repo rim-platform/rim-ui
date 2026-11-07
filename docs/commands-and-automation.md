@@ -31,6 +31,29 @@ with none open it needs the conversation's id in its arguments. A plugin command
 conversation gets the open one; with none open, the palette leaves it out and its keybind says
 "Open a conversation first".
 
+**From the message box.** The suggestion list decides: a command runs only when it is picked from
+the open list, with Enter or Tab on the highlighted row or a click. Type `/` and the words of a
+command's id or title (`/list members`, `/List Members`, `/chat.list_members`): the list stays open
+across spaces, the first match is highlighted, and Enter runs it. Esc closes the list and keeps it
+closed for that line, until the line is emptied or the conversation changes; Enter then sends the
+text as an ordinary message, `/list members` included. Text that matches no command shows no list
+and is sent as a message as well.
+
+Arguments follow the name as `key=value` pairs, with a value that has spaces in double quotes:
+`/chat.post_message text="two words"`. The command stays listed while you type them, and Enter runs
+it with them. Picking a command that needs arguments leaves `/admin.kick ` to finish, keeps the list
+open and shows what the command needs in its row; Enter on a line that still lacks one says which
+and gives the form to type, and sends nothing. A thread's reply box has the same list and rule.
+A command that carries a message's text (`chat.post_message`, `chat.edit_message`, and any command
+with a `text` argument) refuses to run for an end-to-end encrypted conversation, so that text never
+reaches the server in plain; text sent after Esc goes through normal encrypted sending.
+`chat.mark_as_unread` needs a `message_id=`, and `chat.reply_to_selected_message`, which acts on a
+selected message the box cannot have, is not listed.
+
+A pipe (`/a | b`) has no list: a line with `|` that starts with a known command runs as a pipe on
+Enter, and after Esc, or in a thread, it is sent as text. The server reads a pipe's arguments
+without quotes.
+
 **Sensitivity.** Every command has one of four tiers, and the server decides from it whether a
 run waits for your confirmation:
 
