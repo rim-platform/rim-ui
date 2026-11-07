@@ -27,6 +27,28 @@ or Shift+F10 and choose **View profile**) shows three statements and a note:
 The statements are plain text, whatever they contain. The card offers a bot no direct message,
 copy-handle, block action, presence or status line.
 
+## Bots in a workspace
+
+Every member sees the workspace's bots, read from the member list every member already has: a
+bot that was deactivated has left it.
+
+- **The conversation list** has a **Bots** section under the channels, with each active bot by name
+  and its Bot badge. Choosing one opens its profile card, the one above, as a dialog: Tab and Enter
+  reach it, and Escape closes it and gives focus back. The section is not shown while the workspace
+  has no active bot, in the direct space, or on a host that does not list `bot_disclosure`.
+- **A channel's header** says "\<n\> bots" after the topic, counting the active bots that are
+  members of the channel. It opens **Bots in this channel** where the pinned messages open, beside
+  the conversation or over it in a smaller window (Escape closes it there); opening one closes the
+  other. Each bot shows its name, the Bot badge, **Who runs it**, **Where what it reads goes**,
+  **Added by** and "This is what the person who added it says. RIM can't check it." An Owner or
+  Moderator also gets **Manage bots in Settings > Bots**. `workspace.toggle_channel_bots` opens and
+  closes it from the palette or a keybind. An encrypted channel has no bots, so it has no count.
+- **Your agents.** When a program connected on this device (Settings > Agents) has a read grant that
+  covers the channel, the header also says "your agent can read this", and the panel's **Your
+  agents** part names each one: "You let it read this channel.", or "You let it read every channel
+  of this workspace, this one included.", with **Change this in Settings > Agents**. This comes
+  from the grants kept on this device; nothing is asked of the server.
+
 ## Menus
 
 A bot's person menu has no **Send message**, contact, **Copy @username**, **Block…** or **Change

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import { RemovalNotices } from "../../features/workspaces/components/RemovalNotices";
@@ -61,6 +61,7 @@ import { TopBar } from "../components/TopBar";
 import { ToolPanel } from "../components/ToolPanel";
 import { ConversationHeader } from "../components/ConversationHeader";
 import { PinnedMessagesPanel } from "../../features/messages/components/PinnedMessagesPanel";
+import { ChannelBotsPanel } from "../../features/bots/components/ChannelBotsPanel";
 import { SettingsPage } from "../../features/settings/components/SettingsPage";
 import { TitleBar } from "../components/TitleBar";
 import { ConnectionBanner } from "../../features/system/components/ConnectionBanner";
@@ -84,6 +85,7 @@ import { UnreadsPage } from "../../features/unreads/components/UnreadsPage";
 import { DmRequestsPage } from "../../features/relay/components/DmRequestsPage";
 import { StatusBar } from "../components/StatusBar";
 import { FocusPulse } from "../navigation/FocusPulse";
+import { useNavigationHistory } from "../navigation/history";
 import { cn } from "../../shared/ui/cn";
 import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
@@ -313,6 +315,8 @@ function WorkspaceShell() {
   const activePluginPanel = useShellStore((s) => s.activePluginPanel);
   const closePluginPanel = useShellStore((s) => s.closePluginPanel);
   const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
+  const botsPanelOpen = useShellStore((s) => s.botsPanelOpen);
+  const closeBotsPanel = useCallback(() => useShellStore.getState().setBotsPanelOpen(false), []);
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
   const draftDirect = useShellStore((s) => s.draftDirect);
@@ -332,6 +336,7 @@ function WorkspaceShell() {
   const { zenContentHidden, handleZenTransitionEnd } = useZenModeTransition(zenMode);
   useAutoFocusComposer(mainSurface.kind);
   useGlobalKeyHandlers();
+  useNavigationHistory();
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 
@@ -482,6 +487,24 @@ function WorkspaceShell() {
                                 </SurfaceErrorBoundary>
                               </OverlayPanel>
                             )}
+                          {!zenMode &&
+                            !mainAreaPlugin &&
+                            botsPanelOpen &&
+                            workspaceId &&
+                            selectedConversationId && (
+                              <OverlayPanel label="Bots in this channel" onClose={closeBotsPanel}>
+                                <SurfaceErrorBoundary
+                                  surface="Bots in this channel"
+                                  resetKeys={[selectedConversationId]}
+                                >
+                                  <ChannelBotsPanel
+                                    workspaceId={workspaceId}
+                                    conversationId={selectedConversationId}
+                                    onClose={closeBotsPanel}
+                                  />
+                                </SurfaceErrorBoundary>
+                              </OverlayPanel>
+                            )}
                           {!zenMode && !mainAreaPlugin && showThread && (
                             <OverlayPanel label="Thread" onClose={closeThread}>
                               <SurfaceErrorBoundary
@@ -589,6 +612,35 @@ function WorkspaceShell() {
                               workspaceId={workspaceId}
                               conversationId={selectedConversationId}
                               onClose={() => setPinnedPanelOpen(false)}
+                            />
+                          </SurfaceErrorBoundary>
+                        )}
+                      </div>
+                    )}
+
+                  {!overlayMode &&
+                    !mainAreaPlugin &&
+                    botsPanelOpen &&
+                    workspaceId &&
+                    selectedConversationId && (
+                      <div
+                        onTransitionEnd={handleZenTransitionEnd}
+                        className={cn(
+                          "grid w-80 shrink-0 transition-opacity duration-300 *:min-w-0",
+                          zenMode
+                            ? "pointer-events-none w-0 overflow-hidden opacity-0"
+                            : "opacity-100",
+                        )}
+                      >
+                        {!zenContentHidden && (
+                          <SurfaceErrorBoundary
+                            surface="Bots in this channel"
+                            resetKeys={[selectedConversationId]}
+                          >
+                            <ChannelBotsPanel
+                              workspaceId={workspaceId}
+                              conversationId={selectedConversationId}
+                              onClose={closeBotsPanel}
                             />
                           </SurfaceErrorBoundary>
                         )}

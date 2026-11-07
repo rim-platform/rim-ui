@@ -56,6 +56,34 @@ export type ActivePluginPanel = {
   slot: PluginPanelSlot;
 } | null;
 
+/** A place the person opened: a workspace, the page shown, and the conversation selected there. */
+export type Place = {
+  workspaceId: string;
+  surface: MainSurface;
+  conversationId: string | null;
+};
+
+/** The most places Back and Forward remember. */
+export const HISTORY_LIMIT = 50;
+
+/**
+ * What tells two places apart: the workspace, the page with its tab or plugin, and the
+ * conversation only while the page is the conversation.
+ */
+export function placeKey(place: Place): string {
+  const { surface } = place;
+  const page =
+    surface.kind === "settings"
+      ? `settings:${surface.tab ?? ""}`
+      : surface.kind === "plugin"
+        ? `plugin:${surface.pluginId}`
+        : surface.kind === "dm-requests"
+          ? `dm-requests:${surface.workspaceId ?? ""}`
+          : surface.kind;
+  const conversation = surface.kind === "conversation" ? (place.conversationId ?? "") : "";
+  return `${place.workspaceId}|${page}|${conversation}`;
+}
+
 /** Options for selecting a conversation. */
 export type SelectConversationOptions = {
   /** Leaves a main-area plugin panel open: for selections the user did not make. */
@@ -63,6 +91,23 @@ export type SelectConversationOptions = {
 };
 
 type ShellState = {
+  /** The places opened, oldest first, for Back and Forward; at most {@link HISTORY_LIMIT}. */
+  history: Place[];
+  /** The entry of `history` shown now; -1 while it is empty. */
+  historyIndex: number;
+  /**
+   * Records `place` as the one shown now. A place equal to the current one changes nothing; one
+   * in the same workspace and page as a current entry with no conversation yet replaces it;
+   * any other drops the entries after the current one and is added, the oldest going past the
+   * limit.
+   */
+  recordPlace: (place: Place) => void;
+  /**
+   * Moves `delta` entries back (negative) or forward through the history.
+   *
+   * @returns The place moved to, or `null` when there is none in that direction.
+   */
+  stepHistory: (delta: number) => Place | null;
   activePanel: ActivePanel;
   mainSurface: MainSurface;
   activePluginPanel: ActivePluginPanel;
@@ -82,6 +127,8 @@ type ShellState = {
   showNewMessagePicker: boolean;
   showInviteDialog: boolean;
   pinnedPanelOpen: boolean;
+  /** Whether Bots in this channel shows, in the slot the pinned messages use. */
+  botsPanelOpen: boolean;
   displayDensity: DisplayDensity;
   zenMode: boolean;
   navigationMode: boolean;
@@ -117,7 +164,10 @@ type ShellState = {
   setShowNewChannelDialog: (show: boolean) => void;
   setShowNewMessagePicker: (show: boolean) => void;
   setShowInviteDialog: (show: boolean) => void;
+  /** Shows or hides the pinned messages; showing them hides Bots in this channel. */
   setPinnedPanelOpen: (open: boolean) => void;
+  /** Shows or hides Bots in this channel; showing it hides the pinned messages. */
+  setBotsPanelOpen: (open: boolean) => void;
   cycleDisplayDensity: () => void;
   toggleZenMode: () => void;
   setNavigationMode: (enabled: boolean) => void;
@@ -133,7 +183,34 @@ function withoutMainAreaPanel(state: ShellState): Partial<ShellState> {
   return state.activePluginPanel?.slot === "main_area" ? { activePluginPanel: null } : {};
 }
 
-export const useShellStore = create<ShellState>((set) => ({
+export const useShellStore = create<ShellState>((set, get) => ({
+  history: [],
+  historyIndex: -1,
+  recordPlace: (place) =>
+    set((state) => {
+      const current = state.history[state.historyIndex];
+      const key = placeKey(place);
+      if (current && placeKey(current) === key) return {};
+      const kept = state.history.slice(0, state.historyIndex + 1);
+      const fillsCurrent =
+        current &&
+        current.conversationId === null &&
+        current.surface.kind === "conversation" &&
+        place.surface.kind === "conversation" &&
+        current.workspaceId === place.workspaceId;
+      if (fillsCurrent) kept[kept.length - 1] = place;
+      else kept.push(place);
+      const history = kept.slice(-HISTORY_LIMIT);
+      return { history, historyIndex: history.length - 1 };
+    }),
+  stepHistory: (delta) => {
+    const { history, historyIndex } = get();
+    const index = historyIndex + delta;
+    const place = history[index];
+    if (index < 0 || !place) return null;
+    set({ historyIndex: index });
+    return place;
+  },
   activePanel: "inbox",
   mainSurface: { kind: "conversation" },
   activePluginPanel: null,
@@ -151,6 +228,7 @@ export const useShellStore = create<ShellState>((set) => ({
   showNewMessagePicker: false,
   showInviteDialog: false,
   pinnedPanelOpen: false,
+  botsPanelOpen: false,
   displayDensity: "comfortable",
   zenMode: false,
   navigationMode: false,
@@ -217,7 +295,10 @@ export const useShellStore = create<ShellState>((set) => ({
   setShowNewChannelDialog: (show) => set({ showNewChannelDialog: show }),
   setShowNewMessagePicker: (show) => set({ showNewMessagePicker: show }),
   setShowInviteDialog: (show) => set({ showInviteDialog: show }),
-  setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
+  setPinnedPanelOpen: (open) =>
+    set(open ? { pinnedPanelOpen: true, botsPanelOpen: false } : { pinnedPanelOpen: false }),
+  setBotsPanelOpen: (open) =>
+    set(open ? { botsPanelOpen: true, pinnedPanelOpen: false } : { botsPanelOpen: false }),
 
   cycleDisplayDensity: () =>
     set((state) => {
@@ -242,6 +323,8 @@ export const useShellStore = create<ShellState>((set) => ({
 
   reset: () =>
     set({
+      history: [],
+      historyIndex: -1,
       activePanel: "inbox",
       mainSurface: { kind: "conversation" },
       activePluginPanel: null,
@@ -259,6 +342,7 @@ export const useShellStore = create<ShellState>((set) => ({
       showNewMessagePicker: false,
       showInviteDialog: false,
       pinnedPanelOpen: false,
+      botsPanelOpen: false,
       displayDensity: "comfortable",
       zenMode: false,
       navigationMode: false,

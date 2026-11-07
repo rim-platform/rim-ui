@@ -8,6 +8,7 @@ import { getRuntimeCapabilities, type OsType } from "../../core/runtime/runtime"
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
+import { useCommandStore } from "../../features/commands/state/useCommandStore";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import type { PluginInfo } from "../../features/plugins/types";
 import { useShellStore } from "../state/useShellStore";
@@ -36,10 +37,17 @@ vi.mock("../../features/plugins/api/usePluginList", () => ({
   usePluginList: () => pluginList,
 }));
 
-const keystrokes = vi.hoisted(() => ({ search: "Ctrl+Shift+F" as string | null }));
+const keystrokes = vi.hoisted(() => ({
+  search: "Ctrl+Shift+F" as string | null,
+  back: null as string | null,
+}));
 vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: (commandId: string) =>
-    commandId === "workspace.open_search" ? keystrokes.search : null,
+    commandId === "workspace.open_search"
+      ? keystrokes.search
+      : commandId === "workspace.go_back"
+        ? keystrokes.back
+        : null,
 }));
 
 const myServers = vi.hoisted(() => ({
@@ -112,6 +120,7 @@ beforeEach(() => {
   runtime.osType = "linux";
   pluginList.data = [];
   keystrokes.search = "Ctrl+Shift+F";
+  keystrokes.back = null;
   myServers.data = [{ id: "ws-1", name: "RIM Development", owner: null }];
 });
 
@@ -173,22 +182,29 @@ describe("TopBar — search box", () => {
     expect(within(searchBox()).getByText(/Search Team/).className).toContain("truncate");
   });
 
-  it("keeps the short accessible name for its icon-only form below 400 px", () => {
+  it("says only Search below 400 px, keeping the accessible name Search or run a command", () => {
     renderWithProviders(<TopBar />);
-    const short = within(searchBox()).getByText(SEARCH_BOX_NAME);
-    expect(short.className).toContain("sr-only");
-    expect(short.className).toContain("min-[400px]:hidden");
+    const name = within(searchBox()).getByText(SEARCH_BOX_NAME);
+    expect(name.className).toContain("sr-only");
+    expect(name.className).toContain("min-[400px]:hidden");
+    const word = within(searchBox()).getByText("Search", { exact: true });
+    expect(word).toHaveAttribute("aria-hidden");
+    expect(word.className).toContain("min-[400px]:hidden");
+    expect(word.className).toContain("flex-1");
     expect(within(searchBox()).getByText(/Search RIM/).className).toContain("max-[399px]:hidden");
   });
 
-  it("opens search when clicked", async () => {
+  it("opens the search box with search first when clicked", async () => {
     const user = userEvent.setup();
     renderWithProviders(<TopBar />);
     await user.click(searchBox());
-    expect(useSearchOverlayStore.getState()).toMatchObject({
-      isOpen: true,
-      scope: { kind: "all" },
+    expect(useCommandStore.getState()).toMatchObject({
+      isCommandPaletteOpen: true,
+      mode: "search",
+      scope: "workspace",
     });
+    expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+    act(() => useCommandStore.getState().closeCommandPalette());
   });
 });
 
@@ -299,6 +315,58 @@ describe("TopBar — keyboard", () => {
       plugins(),
       screen.getByRole("button", { name: "Notifications" }),
     ]);
+  });
+});
+
+describe("TopBar — Back and Forward", () => {
+  const back = () => within(topBar()).getByRole("button", { name: "Back" });
+  const forward = () => within(topBar()).getByRole("button", { name: "Forward" });
+  const place = (conversationId: string) => ({
+    workspaceId: "ws-1",
+    surface: { kind: "conversation" as const },
+    conversationId,
+  });
+
+  it("sits left of the search field, off while there is nowhere to go", () => {
+    renderWithProviders(<TopBar />);
+    const buttons = within(topBar()).getAllByRole("button");
+    expect(buttons.slice(0, 2)).toEqual([back(), forward()]);
+    expect(back()).toBeDisabled();
+    expect(forward()).toBeDisabled();
+  });
+
+  it("goes back and forward through the places opened, not the browser's history", async () => {
+    const user = userEvent.setup();
+    const browserBack = vi.spyOn(window.history, "back");
+    act(() => {
+      useShellStore.getState().recordPlace(place("c-1"));
+      useShellStore.getState().recordPlace(place("c-2"));
+      useShellStore.getState().setSelectedConversationId("c-2");
+    });
+    renderWithProviders(<TopBar />);
+    expect(back()).toBeEnabled();
+    await user.click(back());
+    expect(useShellStore.getState().selectedConversationId).toBe("c-1");
+    expect(back()).toBeDisabled();
+    expect(forward()).toBeEnabled();
+    await user.click(forward());
+    expect(useShellStore.getState().selectedConversationId).toBe("c-2");
+    expect(browserBack).not.toHaveBeenCalled();
+    browserBack.mockRestore();
+  });
+
+  it("names a keystroke in the tooltip only when the person bound one", () => {
+    keystrokes.back = "Alt+[";
+    renderWithProviders(<TopBar />);
+    expect(back()).toHaveAttribute("aria-keyshortcuts", "Alt+[");
+    expect(forward()).not.toHaveAttribute("aria-keyshortcuts");
+  });
+
+  it("is hidden in a narrow window", () => {
+    useShellStore.setState({ shellWidth: "narrow" });
+    renderWithProviders(<TopBar />);
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Forward" })).not.toBeInTheDocument();
   });
 });
 

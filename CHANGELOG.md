@@ -30,6 +30,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   or a prompt to copy into any AI. Where the host keeps test sessions, it also shows what a service
   really sends, on a test URL that saving keeps. Needs a workspace server that lists
   `webhook_formats`, and `webhook_test_sessions` for the log, in `serverInfo.capabilities`.
+- Every member sees a workspace's bots: a Bots section in the conversation list, each opening its
+  card, and "n bots" in a channel's header, which shows what each bot's adder says and that RIM
+  can't check it. The header also says when an agent you connected can read the channel. Needs a
+  workspace server that lists `bot_disclosure`.
 - Settings > Pipelines can post a welcome as a bot, and a bot can be allowed to see people joining.
   Each needs a workspace server that lists `pipeline_post_as_bot` or `bot_events` in
   `serverInfo.capabilities`.
@@ -77,6 +81,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The top bar's search field opens one search box: channels and people, messages and commands
+  as you type, the open workspace or all of them (Tab), and Search all messages for the full
+  search. Ctrl+K opens it with commands first, as the command palette. Back and Forward in the
+  top bar move between the places you opened; bind them in Settings > Keybinds.
 - One top bar holds search, plugins and notifications; the tool column is gone, and Settings and
   your account are at the bottom of the rail. Ctrl+B now hides the conversation list.
 - The plugins menu, the palette and suggested keybinds show the marks hidden in plugin names and titles.

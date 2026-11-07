@@ -76,6 +76,9 @@ export const queryKeys = {
   userCommand: (id?: string | null) => ["userCommands", "byId", id ?? null] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
+  // The search box's first page of one workspace's matches, in the all-workspaces scope.
+  searchBoxMessages: (workspaceId: string, query: string) =>
+    ["searchBoxMessages", workspaceId, query] as const,
   // Hits from the desktop app's local search index. Keyed by the signed-in user, as the cache
   // is per account.
   localSearchMessages: (

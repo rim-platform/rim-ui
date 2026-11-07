@@ -83,7 +83,10 @@ run; a plugin's command acts only within the permissions you granted the plugin.
 
 ## The command palette
 
-<kbd>Ctrl+K</kbd> opens the palette, and so does <kbd>:</kbd> in Vim normal mode. "Type a
+The palette is the search box under the top bar with commands first. <kbd>Ctrl+K</kbd> opens it
+so, and so does <kbd>:</kbd> in Vim normal mode; in a box opened with search first,
+<kbd>Ctrl+K</kbd> or typing <kbd>&gt;</kbd> switches to commands, and <kbd>Backspace</kbd> in an
+empty field switches back ([Search UI](search-ui.md#the-search-box)). "Type a
 command..." searches the title, description and category of every command, with the matched
 letters highlighted. The best match comes first: a match in the title ranks above one in the
 description or category, and a whole word or the start of one above letters inside a word or
@@ -110,8 +113,8 @@ at once; a toast gives its title and the result's message on success, such as "L
 channels found.", except for a command that opens or moves something in the app, which shows
 that instead, or "\<title\>: \<message\>" on failure, and a plugin command answers in its
 words.
-**Search Messages** run from the palette or a keybind without a `query` opens the search box,
-as **Open Search** does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
+**Search Messages** run from the palette or a keybind without a `query` opens the full message
+search, as **Search all messages** in the search box does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
 the server runs the search.
 
 **Pipes.** Typing <kbd>|</kbd> locks the text before it as a stage: a command id, optionally

@@ -119,6 +119,11 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Show or hide the open conversation's pinned messages",
   ),
   localCommand(
+    "workspace.toggle_channel_bots",
+    "Toggle Bots in This Channel",
+    "Show or hide the bots in the open channel and what their adders say",
+  ),
+  localCommand(
     "workspace.toggle_notifications",
     "Toggle Notifications",
     "Show or hide the notification inbox",
@@ -133,6 +138,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Toggle Workspace Members",
     "Show or hide the workspace's member directory",
   ),
+  localCommand("workspace.go_back", "Go Back", "Open the place you were before this one"),
+  localCommand("workspace.go_forward", "Go Forward", "Open the place you went back from"),
   localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];
 
