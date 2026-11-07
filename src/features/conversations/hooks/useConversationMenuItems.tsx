@@ -16,6 +16,8 @@ import {
   QUICK_ACCESS_SHORTCUT,
   useQuickAccessStore,
 } from "../../commands/state/useQuickAccessStore";
+import { canManageBots, webhooksAvailable } from "../../bots/availability";
+import { ChannelWebhookDialog } from "../../bots/components/ChannelWebhookDialog";
 import { useDeviceReadyForEncryption } from "../../e2ee/hooks/useE2eeConversation";
 import { useConversationNotificationItems } from "../../notifications/hooks/useConversationNotificationItems";
 import { blockTargetOf } from "../../relay/blocking/blockPerson";
@@ -76,8 +78,10 @@ export interface ConversationMenuOptions {
 }
 
 type PendingDialog = {
-  kind: "archive" | "leave" | "slow-mode" | "posting" | "agent";
+  kind: "archive" | "leave" | "slow-mode" | "posting" | "webhook" | "agent";
   conversation: ConversationSummary;
+  /** The menu was opened from the conversation header's button rather than a sidebar row. */
+  header?: boolean;
 };
 
 /**
@@ -90,7 +94,8 @@ type PendingDialog = {
  *   loaded shows nothing by someone else), Notifications, Members, Invite people…, Edit topic…
  *   (Owner, Moderator or a private channel's creator), Assign keybind…, the
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
- *   posting policies, Archive channel… or Unarchive channel),
+ *   posting policies, New webhook… on a plaintext channel when the server has incoming webhooks,
+ *   Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
  * - A group: Mark as read or Mark as unread, Notifications, Members, Add people… (also in Direct
  *   messages), Assign keybind…, Leave group….
@@ -102,7 +107,7 @@ type PendingDialog = {
  *   and whose notification settings and mutes stay loaded. A conversation's actions go to its
  *   own `serverId`.
  * @returns `getItems`, the items for a conversation when its menu opens, and `dialogs`, the
- *   confirmations and the slow-mode and posting dialogs to render beside the surface.
+ *   confirmations and the slow-mode, posting and webhook dialogs to render beside the surface.
  */
 export function useConversationMenuItems(workspaceId: string | null): {
   getItems: (
@@ -365,6 +370,17 @@ export function useConversationMenuItems(workspaceId: string | null): {
               onSelect: () => setPending({ kind: "posting", conversation }),
             });
           }
+          if (
+            !conversation.encryptedAt &&
+            canManageBots({ role, inDirectSpace: isDirectSpace(serverId), info }) &&
+            webhooksAvailable(info)
+          ) {
+            moderation.push({
+              id: "new-webhook",
+              label: "New webhook…",
+              onSelect: () => setPending({ kind: "webhook", conversation, header }),
+            });
+          }
         }
         moderation.push(
           archived
@@ -478,6 +494,16 @@ export function useConversationMenuItems(workspaceId: string | null): {
         />
       )}
 
+      {pending?.kind === "webhook" && (
+        <ChannelWebhookDialog
+          conversation={pending.conversation}
+          onClose={() => {
+            setPending(null);
+            focusMenuOrigin(pending.conversation.id, pending.header ?? false);
+          }}
+        />
+      )}
+
       {pending?.kind === "leave" && (
         <ConfirmActionDialog
           {...leaveConfirmation(pendingLabel)}
@@ -494,6 +520,26 @@ export function useConversationMenuItems(workspaceId: string | null): {
   );
 
   return { getItems, dialogs };
+}
+
+/**
+ * Puts focus back on what opened a conversation's menu, the header's "…" button or the
+ * conversation's sidebar row, once a dialog the menu opened is gone and no other dialog holds it.
+ */
+function focusMenuOrigin(conversationId: string, header: boolean): void {
+  setTimeout(() => {
+    // Another dialog that took focus keeps it; the narrow window's navigation drawer does not count.
+    const holder = document.activeElement?.closest(
+      '[role="dialog"]:not([aria-label="Navigation"])',
+    );
+    if (holder) return;
+    const origin = header
+      ? document.querySelector<HTMLElement>('button[aria-label="Conversation menu"]')
+      : document.querySelector<HTMLElement>(
+          `[data-conversation-id="${CSS.escape(conversationId)}"] button`,
+        );
+    origin?.focus();
+  });
 }
 
 /** Whether the conversation surface shows `conversationId` of `workspaceId` now. */

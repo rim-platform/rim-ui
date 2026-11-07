@@ -9,16 +9,12 @@ import { ConfirmActionDialog } from "../../conversations/components/ConfirmActio
 import { useAllChannels } from "../api/useAllChannels";
 import { useIncomingWebhooks, useRevokeIncomingWebhook } from "../api/botsApi";
 import { NewWebhookDialog } from "./NewWebhookDialog";
-import { ShowOnceDialog } from "./ShowOnceDialog";
+import { WebhookUrlDialog } from "./WebhookUrlDialog";
 
 const PRESET_LABEL: Record<WebhookPreset, string> = {
   [WebhookPreset.PLAIN]: "Plain",
   [WebhookPreset.GITHUB]: "GitHub",
 };
-
-/** The steps that connect a GitHub repository to a webhook of the GitHub preset. */
-export const GITHUB_SETUP_NOTE =
-  "In the repository's Settings > Webhooks, paste this as the Payload URL, choose application/json, and leave Secret empty. RIM posts releases, pull requests and issues.";
 
 /**
  * A workspace's incoming webhooks: one URL per channel that posts as a bot. Shown only for a
@@ -140,19 +136,14 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
         />
       )}
       {shown && (
-        <ShowOnceDialog
-          title="Webhook URL"
-          label="URL"
-          value={shown.url}
+        <WebhookUrlDialog
+          url={shown.url}
+          preset={shown.preset}
           onClose={() => {
             setRefocus({ revokeOf: shown.id });
             setShown(null);
           }}
-        >
-          {shown.preset === WebhookPreset.GITHUB && (
-            <p className="text-sm text-rim-text-muted">{GITHUB_SETUP_NOTE}</p>
-          )}
-        </ShowOnceDialog>
+        />
       )}
       {toRevoke && (
         <ConfirmActionDialog

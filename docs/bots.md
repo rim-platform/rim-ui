@@ -69,6 +69,13 @@ for the same people.
   URL once. It is built from the address of the server the app is signed in to, never the page's
   own address. For the GitHub preset the dialog says to paste it as the Payload URL under the
   repository's Settings > Webhooks, choose application/json and leave Secret empty.
+- **New webhook…** in a channel's menu (the Moderation section, from the sidebar row, the right
+  click or the conversation header's "…" button) makes the same webhook for that channel, with the
+  channel fixed. It is offered to Owners and Moderators for a channel that is not encrypted or
+  archived, on a server that lists `bots` and `incoming_webhooks`, and not in the direct space. A
+  channel with an active webhook, or a workspace with no active bot, gets a message and an Open
+  Bots button instead of the form; a bot is never made from there. The URL is shown once, as in
+  Settings.
 
 The token or URL is never kept in the query cache or logged. The dialog that shows it replaces
 the dialog it came from, has no close icon, and closes only through its Done button; the Tokens

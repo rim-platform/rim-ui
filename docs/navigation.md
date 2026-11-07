@@ -45,6 +45,7 @@ gestures and no bottom bar.
 | Command palette | none | `workspace.open_command_palette` |
 | Agents | Settings > Agents | `workspace.open_agents` |
 | Bots and webhooks | Settings > Bots | `workspace.open_bots` |
+| A channel's incoming webhook | New webhook… in the channel's menu | none |
 | The sidebar, or the drawer in a narrow window | Menu button in a narrow window | `workspace.toggle_sidebar` |
 
 Settings tabs: Profile, Account, Security, Desktop, Contacts, Messages, Direct messages,
