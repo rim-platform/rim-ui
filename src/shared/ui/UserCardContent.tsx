@@ -200,7 +200,7 @@ export function UserCardContent({
  * What the person who added a bot says about it, marked as theirs: RIM cannot check it. Plain
  * text only.
  */
-function BotDisclosure({ bot }: { bot: BotInfo }) {
+export function BotDisclosure({ bot }: { bot: BotInfo }) {
   return (
     <div data-testid="bot-disclosure" className="mt-3 space-y-2 text-xs">
       <div>

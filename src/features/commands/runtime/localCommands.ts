@@ -119,6 +119,11 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Show or hide the open conversation's pinned messages",
   ),
   localCommand(
+    "workspace.toggle_channel_bots",
+    "Toggle Bots in This Channel",
+    "Show or hide the bots in the open channel and what their adders say",
+  ),
+  localCommand(
     "workspace.toggle_notifications",
     "Toggle Notifications",
     "Show or hide the notification inbox",

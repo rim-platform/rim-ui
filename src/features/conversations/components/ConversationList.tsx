@@ -23,6 +23,7 @@ import type { ConversationSummary } from "../types";
 import { conversationRowIn, isInvited } from "../utils";
 import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
+import { WorkspaceBotsSection } from "../../bots/components/WorkspaceBotsSection";
 import { DirectConversationList } from "./DirectConversationList";
 import { DraftDirectItem } from "./DraftDirectItem";
 
@@ -329,6 +330,8 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
             </ul>
           )}
         </div>
+
+        <WorkspaceBotsSection workspaceId={workspaceId} />
 
         {archivedChannels.length > 0 && (
           <div>

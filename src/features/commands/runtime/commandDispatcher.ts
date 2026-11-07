@@ -208,6 +208,15 @@ const localHandlers: Record<
     shell.setMainSurface({ kind: "conversation" });
     shell.setPinnedPanelOpen(!shell.pinnedPanelOpen);
   },
+  "workspace.toggle_channel_bots": () => {
+    const shell = useShellStore.getState();
+    if (!shell.selectedConversationId) {
+      toast.info("Open a channel to see its bots");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setBotsPanelOpen(!shell.botsPanelOpen);
+  },
   "workspace.toggle_notifications": () => {
     useNotificationsPanelStore.getState().toggle();
   },

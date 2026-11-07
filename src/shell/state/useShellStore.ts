@@ -127,6 +127,8 @@ type ShellState = {
   showNewMessagePicker: boolean;
   showInviteDialog: boolean;
   pinnedPanelOpen: boolean;
+  /** Whether Bots in this channel shows, in the slot the pinned messages use. */
+  botsPanelOpen: boolean;
   displayDensity: DisplayDensity;
   zenMode: boolean;
   navigationMode: boolean;
@@ -162,7 +164,10 @@ type ShellState = {
   setShowNewChannelDialog: (show: boolean) => void;
   setShowNewMessagePicker: (show: boolean) => void;
   setShowInviteDialog: (show: boolean) => void;
+  /** Shows or hides the pinned messages; showing them hides Bots in this channel. */
   setPinnedPanelOpen: (open: boolean) => void;
+  /** Shows or hides Bots in this channel; showing it hides the pinned messages. */
+  setBotsPanelOpen: (open: boolean) => void;
   cycleDisplayDensity: () => void;
   toggleZenMode: () => void;
   setNavigationMode: (enabled: boolean) => void;
@@ -223,6 +228,7 @@ export const useShellStore = create<ShellState>((set, get) => ({
   showNewMessagePicker: false,
   showInviteDialog: false,
   pinnedPanelOpen: false,
+  botsPanelOpen: false,
   displayDensity: "comfortable",
   zenMode: false,
   navigationMode: false,
@@ -289,7 +295,10 @@ export const useShellStore = create<ShellState>((set, get) => ({
   setShowNewChannelDialog: (show) => set({ showNewChannelDialog: show }),
   setShowNewMessagePicker: (show) => set({ showNewMessagePicker: show }),
   setShowInviteDialog: (show) => set({ showInviteDialog: show }),
-  setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
+  setPinnedPanelOpen: (open) =>
+    set(open ? { pinnedPanelOpen: true, botsPanelOpen: false } : { pinnedPanelOpen: false }),
+  setBotsPanelOpen: (open) =>
+    set(open ? { botsPanelOpen: true, pinnedPanelOpen: false } : { botsPanelOpen: false }),
 
   cycleDisplayDensity: () =>
     set((state) => {
@@ -333,6 +342,7 @@ export const useShellStore = create<ShellState>((set, get) => ({
       showNewMessagePicker: false,
       showInviteDialog: false,
       pinnedPanelOpen: false,
+      botsPanelOpen: false,
       displayDensity: "comfortable",
       zenMode: false,
       navigationMode: false,

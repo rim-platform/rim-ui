@@ -24,6 +24,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Every member sees a workspace's bots: a Bots section in the conversation list, each opening its
+  card, and "n bots" in a channel's header, which shows what each bot's adder says and that RIM
+  can't check it. The header also says when an agent you connected can read the channel. Needs a
+  workspace server that lists `bot_disclosure`.
 - Settings > Pipelines can post a welcome as a bot, and a bot can be allowed to see people joining.
   Each needs a workspace server that lists `pipeline_post_as_bot` or `bot_events` in
   `serverInfo.capabilities`.

@@ -64,6 +64,8 @@ gestures and no bottom bar.
 | Search | The search field in the top bar; Search all messages in the search box; the search button in a conversation header | `workspace.open_search`, `workspace.search_in_channel` |
 | A thread | Reply in thread on a message | `workspace.reopen_last_thread` |
 | Pinned messages | Pin button in a channel header | `workspace.toggle_pinned_messages` |
+| Bots in this channel | "\<n\> bots" after a channel's topic | `workspace.toggle_channel_bots` |
+| A bot's card | A bot in the Bots section of the conversation list | none |
 | Notifications | Bell in the top bar | `workspace.toggle_notifications` |
 | A conversation's members | Member count in a channel header | `workspace.toggle_conversation_members` |
 | The workspace's members | Members button above the conversation list | `workspace.toggle_member_directory` |

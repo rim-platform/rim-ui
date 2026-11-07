@@ -23,6 +23,9 @@ function topPanelClose(): (() => void) | null {
   if (onConversation && shell.shellWidth !== "wide" && shell.pinnedPanelOpen) {
     return () => shell.setPinnedPanelOpen(false);
   }
+  if (onConversation && shell.shellWidth !== "wide" && shell.botsPanelOpen) {
+    return () => shell.setBotsPanelOpen(false);
+  }
   if (!onConversation) return () => shell.setMainSurface({ kind: "conversation" });
   if (shell.activePluginPanel) return shell.closePluginPanel;
   const members = useMembersPanelStore.getState();

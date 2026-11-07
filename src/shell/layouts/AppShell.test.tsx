@@ -234,6 +234,10 @@ vi.mock("../navigation/FocusPulse", () => ({ FocusPulse: () => null }));
 //    mirroring the Bomb pattern in SurfaceErrorBoundary.test.tsx ──
 let pinnedShouldThrow = false;
 
+vi.mock("../../features/bots/components/ChannelBotsPanel", () => ({
+  ChannelBotsPanel: () => <div data-testid="bots-panel" />,
+}));
+
 vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
   PinnedMessagesPanel: () => {
     if (pinnedShouldThrow) throw new Error("pinned boom");
@@ -551,6 +555,25 @@ describe("AppShell — narrow and medium windows", () => {
     expect(screen.queryByRole("region", { name: "Thread" })).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
     opener.remove();
+  });
+
+  it("puts Bots in this channel in the pinned messages' slot, beside or over the conversation", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ botsPanelOpen: true });
+    renderAt(1400);
+    expect(screen.getByTestId("bots-panel")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Bots in this channel" })).not.toBeInTheDocument();
+
+    resizeTo(900);
+    const overlay = screen.getByRole("region", { name: "Bots in this channel" });
+    expect(within(overlay).getByTestId("bots-panel")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().botsPanelOpen).toBe(false);
+
+    act(() => useShellStore.getState().setBotsPanelOpen(true));
+    act(() => useShellStore.getState().setPinnedPanelOpen(true));
+    expect(screen.queryByTestId("bots-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
   });
 
   it("opens pinned messages and a tool-panel plugin as overlays in a medium window", async () => {
