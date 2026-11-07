@@ -7,7 +7,11 @@ import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient as globalQueryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo, serverInfoQueryClient } from "../../../test/serverInfo";
-import { BOT_EVENTS, INCOMING_WEBHOOKS } from "../../updater/api/serverCapabilities";
+import {
+  BOT_EVENTS,
+  INCOMING_WEBHOOKS,
+  WEBHOOK_FORMATS,
+} from "../../updater/api/serverCapabilities";
 import {
   callsTo,
   graphqlError,
@@ -24,6 +28,9 @@ vi.mock("../../../shared/toast", () => ({
 }));
 vi.mock("../webhookUrl", () => ({
   webhookUrl: async (token: string) => `https://rim.example/api/hooks/${token}`,
+}));
+vi.mock("../../../core/runtime/RuntimeProvider", () => ({
+  useRuntime: () => ({ platform: "web" }),
 }));
 
 import { BotsSettings } from "./BotsSettings";
@@ -592,6 +599,44 @@ describe("BotsSettings", () => {
       await waitFor(() =>
         expect(callsTo(requestMock, "mutation RevokeIncomingWebhook")).toEqual([{ id: "h-1" }]),
       );
+    });
+
+    it("calls a webhook with a format of its own Custom, and offers Edit format where the host has formats", async () => {
+      const capabilities = [INCOMING_WEBHOOKS, WEBHOOK_FORMATS];
+      globalQueryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
+      const own = { version: 1, rules: [{ when: [], post: "Deployed {version}" }] };
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooksWithFormats": () => ({
+          incomingWebhooks: [
+            hook({ template: null }),
+            hook({ id: "h-2", conversationId: "c-free", preset: "PLAIN", template: own }),
+          ],
+        }),
+        "query WebhookFormats": () => ({ webhookFormats: [] }),
+      });
+      renderSettings({ capabilities });
+      expect(await screen.findByText(/general · Bot 1 · GitHub/)).toBeInTheDocument();
+      const custom = (await screen.findByText(/releases · Bot 1 · Custom/)).closest("li")!;
+      fireEvent.click(
+        within(custom).getByRole("button", { name: "Edit the format of the webhook of releases" }),
+      );
+      expect(await screen.findByRole("heading", { name: "Rule 1" })).toBeInTheDocument();
+      expect(screen.getAllByLabelText("Post")[0]).toHaveValue("Deployed {version}");
+      globalQueryClient.removeQueries({ queryKey: queryKeys.serverInfo });
+    });
+
+    it("offers no Edit format on a host without formats", async () => {
+      serve([bot(1)], {
+        "query BotChannels": channelsHandler,
+        "query IncomingWebhooks": () => ({ incomingWebhooks: [hook()] }),
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      const row = (await screen.findByText(/general · Bot 1 · GitHub/)).closest("li")!;
+      expect(
+        within(row).queryByRole("button", { name: /Edit the format/ }),
+      ).not.toBeInTheDocument();
+      expect(callsTo(requestMock, "query IncomingWebhooksWithFormats")).toEqual([]);
     });
 
     it("moves focus to the next webhook's Revoke after one is revoked", async () => {

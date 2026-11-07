@@ -55,6 +55,19 @@ export const BOT_EVENTS = "bot_events";
 /** The capability of a server with `postAsBot` on a pipeline's actions. */
 export const PIPELINE_POST_AS_BOT = "pipeline_post_as_bot";
 
+/**
+ * The capability of a server with webhook formats: `IncomingWebhook.template`, its input,
+ * `updateIncomingWebhookFormat`, `webhookFormats` and `previewWebhookFormat`.
+ */
+export const WEBHOOK_FORMATS = "webhook_formats";
+
+/**
+ * The capability of a server with webhook test sessions: `startWebhookTestSession`,
+ * `endWebhookTestSession`, `webhookTestDeliveries`, `CreateIncomingWebhookInput.testSessionId` and
+ * `CreatedIncomingWebhook.keptTestUrl`.
+ */
+export const WEBHOOK_TEST_SESSIONS = "webhook_test_sessions";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

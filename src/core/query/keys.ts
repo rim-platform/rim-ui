@@ -90,6 +90,7 @@ export const queryKeys = {
   bots: (serverId?: string) => ["bots", serverId] as const,
   botTokens: (botUserId?: string) => ["botTokens", botUserId] as const,
   incomingWebhooks: (serverId?: string) => ["incomingWebhooks", serverId] as const,
+  webhookFormats: (serverId?: string) => ["webhookFormats", serverId] as const,
   plugins: () => ["plugins"] as const,
   // One plugin's settings form, apart from the list so reloading the list leaves an open form alone.
   pluginSettings: (pluginId: string) => ["pluginSettings", pluginId] as const,

@@ -14,7 +14,11 @@ import type {
   UpdateBotInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
-import { BOT_EVENTS, spaceHasCapability } from "../../updater/api/serverCapabilities";
+import {
+  BOT_EVENTS,
+  WEBHOOK_FORMATS,
+  spaceHasCapability,
+} from "../../updater/api/serverCapabilities";
 
 const BOT_FIELD_NAMES = `
   userId
@@ -86,6 +90,16 @@ const INCOMING_WEBHOOKS_QUERY = gql`
   query IncomingWebhooks($serverId: ID!) {
     incomingWebhooks(serverId: $serverId) {
       ...IncomingWebhookFields
+    }
+  }
+  ${WEBHOOK_FIELDS}
+`;
+
+const INCOMING_WEBHOOKS_WITH_FORMATS_QUERY = gql`
+  query IncomingWebhooksWithFormats($serverId: ID!) {
+    incomingWebhooks(serverId: $serverId) {
+      ...IncomingWebhookFields
+      template
     }
   }
   ${WEBHOOK_FIELDS}
@@ -192,8 +206,9 @@ export function useBotTokens(botUserId: string | undefined) {
 }
 
 /**
- * A workspace's incoming webhooks, revoked ones included. Read only where `enabled`, which a
- * caller sets for a server that lists `incoming_webhooks`.
+ * A workspace's incoming webhooks, revoked ones included, with each one's own format where the
+ * host lists `webhook_formats`. Read only where `enabled`, which a caller sets for a server that
+ * lists `incoming_webhooks`.
  */
 export function useIncomingWebhooks(serverId: string | null | undefined, enabled: boolean) {
   return useQuery({
@@ -202,7 +217,9 @@ export function useIncomingWebhooks(serverId: string | null | undefined, enabled
     queryFn: async () =>
       (
         await graphqlClient.request<{ incomingWebhooks: IncomingWebhook[] }>(
-          INCOMING_WEBHOOKS_QUERY,
+          (await spaceHasCapability(serverId!, WEBHOOK_FORMATS))
+            ? INCOMING_WEBHOOKS_WITH_FORMATS_QUERY
+            : INCOMING_WEBHOOKS_QUERY,
           { serverId },
         )
       ).incomingWebhooks,
