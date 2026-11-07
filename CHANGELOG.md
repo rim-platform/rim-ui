@@ -24,6 +24,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A channel's menu can make its incoming webhook.
 - Unreads: one page with every unread message across your workspaces, where a message stays until
   you mark it read. It's on Home, in the conversation list and on `workspace.open_unreads`.
 - A message or a conversation can be marked unread, on all your devices, and marking everything

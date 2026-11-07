@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -30,6 +30,8 @@ import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
+import { INCOMING_WEBHOOKS } from "../../updater/api/serverCapabilities";
+import { ServerFeatureState } from "../../../core/graphql/generated/schema-types";
 
 const requestMock = vi.fn();
 
@@ -45,6 +47,10 @@ vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
 }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
+}));
+
+vi.mock("../../bots/webhookUrl", () => ({
+  webhookUrl: async (token: string) => `https://rim.example/api/hooks/${token}`,
 }));
 
 import { ConversationActionsMenu } from "./ConversationActionsMenu";
@@ -745,5 +751,242 @@ describe("ConversationActionsMenu — the agent in an encrypted conversation", (
     serve(ServerMemberRoleGql.MEMBER);
     await openMenu(encrypted(), ServerMemberRoleGql.MEMBER);
     expect(menuLabels().some((l) => l.startsWith("Agent"))).toBe(false);
+  });
+});
+
+describe("ConversationActionsMenu — new webhook", () => {
+  const withWebhooks = fakeServerInfo({}, { capabilities: [INCOMING_WEBHOOKS] });
+  const bot = (extra: Record<string, unknown> = {}) => ({
+    userId: "bot-1",
+    serverId: "ws-1",
+    name: "Deploy bot",
+    runBy: "Team",
+    readsGoTo: "Server",
+    addedByName: "Ivana",
+    createdAt: "2026-11-01T00:00:00Z",
+    deactivatedAt: null,
+    ...extra,
+  });
+  const hook = (extra: Record<string, unknown> = {}) => ({
+    id: "h-1",
+    conversationId: "conv-1",
+    botUserId: "bot-1",
+    preset: "PLAIN",
+    createdAt: "2026-11-01T00:00:00Z",
+    lastUsedAt: null,
+    revokedAt: null,
+    ...extra,
+  });
+  const serveBots = (
+    role: ServerMemberRoleGql,
+    bots: unknown[],
+    hooks: unknown[],
+    overrides: Record<string, () => unknown> = {},
+  ) =>
+    serve(role, {
+      "query Bots(": () => ({ bots }),
+      "query IncomingWebhooks": () => ({ incomingWebhooks: hooks }),
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useShellStore.getState().reset();
+    useAuthStore.setState({ session: null });
+    useRelayStore.setState({ info: null });
+  });
+
+  const offered = () => menuLabels().includes("New webhook…");
+
+  it.each([ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR])(
+    "is offered to a %s of a plaintext channel, in the Moderation section",
+    async (role) => {
+      serve(role);
+      await openMenu(makeConversation(), role, undefined, withWebhooks);
+      const labels = menuLabels();
+      expect(labels).toContain("New webhook…");
+      expect(labels.indexOf("New webhook…")).toBeGreaterThan(labels.indexOf("Slow mode…"));
+      expect(labels.indexOf("New webhook…")).toBeLessThan(labels.indexOf("Archive channel…"));
+    },
+  );
+
+  it.each([
+    ["a member", ServerMemberRoleGql.MEMBER, makeConversation(), withWebhooks],
+    ["a guest", ServerMemberRoleGql.GUEST, makeConversation(), withWebhooks],
+    [
+      "an encrypted channel",
+      ServerMemberRoleGql.OWNER,
+      makeConversation({ encryptedAt: "2026-11-01T00:00:00Z" }),
+      withWebhooks,
+    ],
+    [
+      "an archived channel",
+      ServerMemberRoleGql.OWNER,
+      makeConversation({ isArchived: true }),
+      withWebhooks,
+    ],
+    [
+      "a group",
+      ServerMemberRoleGql.OWNER,
+      makeConversation({ conversationType: ConversationTypeEnum.GROUP, title: "crew" }),
+      withWebhooks,
+    ],
+    [
+      "a direct message",
+      ServerMemberRoleGql.OWNER,
+      makeConversation({ conversationType: ConversationTypeEnum.DIRECT, title: null }),
+      withWebhooks,
+    ],
+    [
+      "a host without incoming_webhooks",
+      ServerMemberRoleGql.OWNER,
+      makeConversation(),
+      fakeServerInfo({}, { capabilities: [] }),
+    ],
+    [
+      "the bots feature off",
+      ServerMemberRoleGql.OWNER,
+      makeConversation(),
+      fakeServerInfo({ bots: ServerFeatureState.DISABLED }, { capabilities: [INCOMING_WEBHOOKS] }),
+    ],
+  ])("is not offered for %s", async (_label, role, conversation, info) => {
+    serve(role);
+    await openMenu(conversation, role, undefined, info);
+    expect(offered()).toBe(false);
+  });
+
+  it("is not offered in the direct space", async () => {
+    useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "ws-1" } });
+    serve(ServerMemberRoleGql.OWNER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.OWNER, undefined, withWebhooks);
+    expect(offered()).toBe(false);
+  });
+
+  /** Chooses New webhook… and waits for its dialog, which is replaced as the lists load. */
+  async function openDialog() {
+    await openMenu(makeConversation(), ServerMemberRoleGql.OWNER, undefined, withWebhooks);
+    fireEvent.click(screen.getByRole("menuitem", { name: "New webhook…" }));
+    await screen.findByRole("dialog", { name: "New incoming webhook" });
+  }
+
+  it("asks nothing from the server until the item is chosen", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], []);
+    await openMenu(makeConversation(), ServerMemberRoleGql.OWNER, undefined, withWebhooks);
+    expect(callsTo(requestMock, "query IncomingWebhooks")).toEqual([]);
+    expect(callsTo(requestMock, "query Bots(")).toEqual([]);
+  });
+
+  it("shows the channel as fixed text and says the bot is added to it", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], []);
+    await openDialog();
+    await screen.findByRole("button", { name: "Create webhook" });
+    expect(screen.queryByLabelText("Channel")).not.toBeInTheDocument();
+    expect(screen.getByText("general")).toBeInTheDocument();
+    expect(screen.getByLabelText("Bot")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preset")).toBeInTheDocument();
+    expect(screen.getByText(/added to the channel if it is not in it/)).toBeInTheDocument();
+  });
+
+  it("shows a channel name's invisible characters", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], []);
+    await openMenu(
+      makeConversation({ title: "ge\u202Eneral" }),
+      ServerMemberRoleGql.OWNER,
+      undefined,
+      withWebhooks,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "New webhook…" }));
+    expect(await screen.findByText("ge⟦U+202E⟧neral")).toBeInTheDocument();
+  });
+
+  it("says while it loads, then shows an error with a retry", async () => {
+    let fail = true;
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], [], {
+      "query IncomingWebhooks": () => {
+        if (fail) throw graphqlError("FORBIDDEN", "Not for you");
+        return { incomingWebhooks: [] };
+      },
+    });
+    await openDialog();
+    expect(await screen.findByText("Not for you")).toBeInTheDocument();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("button", { name: "Create webhook" })).toBeVisible();
+  });
+
+  it("says the channel already has a webhook and links to Settings > Bots", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], [hook()]);
+    await openDialog();
+    expect(await screen.findByText("This channel already has a webhook.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create webhook" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open Bots" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("ignores a revoked webhook and another channel's webhook", async () => {
+    serveBots(
+      ServerMemberRoleGql.OWNER,
+      [bot()],
+      [hook({ revokedAt: "x" }), hook({ id: "h-2", conversationId: "other" })],
+    );
+    await openDialog();
+    expect(await screen.findByRole("button", { name: "Create webhook" })).toBeVisible();
+  });
+
+  it("says a webhook posts as a bot when no bot is active, without making one", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot({ deactivatedAt: "x" })], []);
+    await openDialog();
+    expect(
+      await screen.findByText("A webhook posts as a bot, and this workspace has none yet."),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open Bots" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
+    expect(callsTo(requestMock, "mutation CreateBot")).toEqual([]);
+  });
+
+  it("creates the webhook for the channel and shows its URL once", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], [], {
+      "mutation CreateIncomingWebhook": () => ({
+        createIncomingWebhook: { webhook: hook(), token: "rimhook_TOKEN" },
+      }),
+    });
+    await openDialog();
+    fireEvent.change(await screen.findByLabelText("Preset"), {
+      target: { value: "GITHUB" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create webhook" }));
+    expect(
+      await screen.findByDisplayValue("https://rim.example/api/hooks/rimhook_TOKEN"),
+    ).toBeInTheDocument();
+    expect(callsTo(requestMock, "mutation CreateIncomingWebhook")).toEqual([
+      { input: { conversationId: "conv-1", botUserId: "bot-1", preset: "GITHUB" } },
+    ]);
+    expect(screen.getByText(/Payload URL/)).toBeInTheDocument();
+    // The refetched list now holds the webhook; the URL stays until Done.
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query IncomingWebhooks").length).toBeGreaterThan(0),
+    );
+    expect(screen.getByDisplayValue(/rimhook_TOKEN/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByDisplayValue(/rimhook_TOKEN/)).not.toBeInTheDocument();
+  });
+
+  it("shows a refusal and keeps the form", async () => {
+    serveBots(ServerMemberRoleGql.OWNER, [bot()], [], {
+      "mutation CreateIncomingWebhook": () => {
+        throw graphqlError("CONFLICT", "The channel already has a webhook");
+      },
+    });
+    await openDialog();
+    fireEvent.click(await screen.findByRole("button", { name: "Create webhook" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The channel already has a webhook");
+    expect(screen.getByRole("button", { name: "Create webhook" })).toBeVisible();
   });
 });

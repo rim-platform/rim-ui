@@ -4,6 +4,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { WebhookPreset, type Bot } from "../../../core/graphql/generated/schema-types";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import type { ConversationSummary } from "../../conversations/types";
 import { createIncomingWebhook, useInvalidateBots } from "../api/botsApi";
 import { webhookUrl } from "../webhookUrl";
@@ -11,8 +12,10 @@ import { ChannelsCutNotice } from "./ChannelsCutNotice";
 
 interface NewWebhookDialogProps {
   serverId: string;
-  /** Channels that may get a webhook: no active one, not encrypted. */
-  channels: ConversationSummary[];
+  /** Channels that may get a webhook: no active one, not encrypted. Unused with `channel`. */
+  channels?: ConversationSummary[];
+  /** The one channel the webhook is for, shown as text instead of a picker. */
+  channel?: ConversationSummary;
   /** The channel list was cut, so a channel may be missing. */
   channelsCut?: boolean;
   /** Active bots. */
@@ -29,13 +32,14 @@ const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider tex
 /** Asks for a channel, a bot and a preset, and makes the incoming webhook that joins them. */
 export function NewWebhookDialog({
   serverId,
-  channels,
+  channels = [],
+  channel,
   channelsCut = false,
   bots,
   onCreated,
   onClose,
 }: NewWebhookDialogProps) {
-  const [conversationId, setConversationId] = useState("");
+  const [conversationId, setConversationId] = useState(channel?.id ?? "");
   const [botUserId, setBotUserId] = useState(bots[0]?.userId ?? "");
   const [preset, setPreset] = useState<WebhookPreset>(WebhookPreset.PLAIN);
   const [error, setError] = useState<string | null>(null);
@@ -63,23 +67,35 @@ export function NewWebhookDialog({
   return (
     <Dialog open title="New incoming webhook" onClose={onClose} maxWidth="max-w-md">
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
-        <label className="block">
-          <span className={LABEL_CLASS}>Channel</span>
-          <select
-            value={conversationId}
-            onChange={(e) => setConversationId(e.currentTarget.value)}
-            className={FIELD_CLASS}
-          >
-            <option value="">Choose a channel</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title ?? "Untitled"}
-                {c.isPrivate ? " (private)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        {channelsCut && <ChannelsCutNotice />}
+        {channel ? (
+          <div>
+            <span className={LABEL_CLASS}>Channel</span>
+            <p className="break-words text-sm text-rim-text">
+              {showInvisibleCharacters(channel.title ?? "Untitled")}
+              {channel.isPrivate ? " (private)" : ""}
+            </p>
+          </div>
+        ) : (
+          <>
+            <label className="block">
+              <span className={LABEL_CLASS}>Channel</span>
+              <select
+                value={conversationId}
+                onChange={(e) => setConversationId(e.currentTarget.value)}
+                className={FIELD_CLASS}
+              >
+                <option value="">Choose a channel</option>
+                {channels.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title ?? "Untitled"}
+                    {c.isPrivate ? " (private)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {channelsCut && <ChannelsCutNotice />}
+          </>
+        )}
         <label className="block">
           <span className={LABEL_CLASS}>Bot</span>
           <select
