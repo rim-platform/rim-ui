@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
@@ -47,6 +47,7 @@ vi.mock("../../features/workspaces/components/AddWorkspaceDialog", () => ({
   AddWorkspaceDialog: () => null,
 }));
 
+import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useShellStore } from "../state/useShellStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 
@@ -153,6 +154,80 @@ describe("WorkspaceRail", () => {
     expect(
       await screen.findByRole("button", { name: "Home (2 mentions and replies)" }),
     ).toHaveTextContent("2");
+  });
+
+  describe("current button", () => {
+    const dmInfo = { directSpaceId: "ws-1" } as never;
+    beforeEach(() => {
+      setWorkspaceId.mockClear();
+      useShellStore.getState().reset();
+      useRelayStore.setState({ info: null });
+    });
+    afterEach(() => {
+      useShellStore.getState().reset();
+      useRelayStore.setState({ info: null });
+    });
+
+    it("highlights only Home on Home while a workspace is selected", () => {
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "Beta" })).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("highlights only Home on Home while Direct messages is selected", () => {
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "Direct messages" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("highlights nothing on Unreads", () => {
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "unreads" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
+      for (const name of ["Direct messages", "Alpha", "Beta"]) {
+        expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+      }
+    });
+
+    it("keeps the open workspace highlighted on Settings", () => {
+      useShellStore.getState().setMainSurface({ kind: "settings" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
+    });
+
+    it("leaves Home when the selected workspace is clicked again", async () => {
+      const user = userEvent.setup();
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      await user.click(screen.getByRole("button", { name: "Alpha" }));
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("leaves Home when Direct messages is clicked while selected", async () => {
+      const user = userEvent.setup();
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      await user.click(screen.getByRole("button", { name: "Direct messages" }));
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+      expect(screen.getByRole("button", { name: "Direct messages" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
   });
 
   it("renders add workspace button", () => {
