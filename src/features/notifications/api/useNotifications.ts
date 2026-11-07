@@ -225,7 +225,7 @@ export async function fetchUnreadNotificationCount(serverId: string): Promise<nu
   return withoutBlockedEntries(serverId, res.myUnreadNotificationCount);
 }
 
-/** The side-rail bell badge: {@link fetchUnreadNotificationCount} of the workspace. */
+/** The top bar's bell badge: {@link fetchUnreadNotificationCount} of the workspace. */
 export function useUnreadNotificationCount(serverId: string | null | undefined) {
   const ws = serverId ?? undefined;
   return useQuery({

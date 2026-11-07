@@ -10,8 +10,8 @@ export function panelIdForSurface(surface: string | null): PanelId | null {
   switch (surface) {
     case "workspaceRail":
       return "workspaceRail";
-    case "sideRail":
-      return "sideRail";
+    case "topBar":
+      return "topBar";
     case "toolPanel":
       return "toolPanel";
     case "mainSurface":

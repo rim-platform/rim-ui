@@ -265,10 +265,11 @@ list, where the arrow keys move between messages and <kbd>e</kbd> edits your own
 An edited message shows **(edited)** after its text; hover or focus it to see when. A server older
 than edit times shows it only in encrypted conversations.
 
-**Inbox and notifications.** **Inbox** on the side rail shows the conversation list in the tool
-panel, with the number of unread messages in the open workspace. The bell, **Notifications**,
-lists your mentions, DMs, thread replies, reactions and keyword matches in the open workspace,
-under any message requests; **Mark all read** clears them. Settings > Notifications sets what
+**Conversations and notifications.** The conversation list beside the rail shows the open
+workspace's conversations and what is unread in them; <kbd>Ctrl+B</kbd> hides and shows it. The
+bell, **Notifications**, at the right of the top bar, opens under it a list of your mentions, DMs,
+thread replies, reactions and keyword matches in the open workspace, under any message requests;
+**Mark all read** clears them, and choosing one opens it. Settings > Notifications sets what
 notifies you in the workspace and how this device shows it: sound, the **Message preview**
 (sender and text, sender only, or nothing, which hides who and where too), the **Title**
 (the conversation, the sender, or both), and **Hide text of encrypted messages**. An example
@@ -280,14 +281,14 @@ workspace's name, and its badge on the rail updates.
 
 From left to right:
 
-- **Workspace rail**: **Direct messages**, one button per workspace with its unread count, and
-  **Add workspace** at the bottom.
-- **Side rail**: **Inbox**, **Plugins**, **Notifications** and **Search workspace**, then
-  **Audit log**, **Settings** and your avatar, whose menu has **Set status...**, **Settings** and
-  **Sign out**.
+- **Workspace rail**: **Home**, **Direct messages**, one button per workspace with its unread
+  count, and **Add workspace**. At its foot: **Audit log** while a workspace is open, **Settings**,
+  and your avatar, whose menu has **Set status...**, **Settings** and **Sign out**.
+- **Top bar**, above everything else: the search box in the middle, which says what it searches,
+  and **Plugins** and **Notifications** on the right. In the desktop app it is also the window's
+  title bar.
 - **Tool panel**: Conversations, with Channels, archived channels and your DMs and groups, and
-  **Workspace members** and **New message** at the top. Notifications and member lists take its
-  place while open.
+  **Workspace members** and **New message** at the top. Member lists take its place while open.
 - **Main surface**: the conversation's header, timeline and composer. Settings, message requests
   and some plugin panels take its place, and a thread opens in a pane to its right.
 
@@ -335,8 +336,8 @@ and opens that conversation.
 Settings > Desktop can also start RIM when you sign in to the computer. It is off by default, and
 the window always opens, so an account that needs its password asks for it right away.
 
-**Plugins** on the side rail opens a menu of the panels of your running plugins, or **Manage
-plugins** when none has a panel. [Plugins](plugins.md) covers installing and trusting one, and
+**Plugins** in the top bar opens a menu of the panels of your running plugins and **Manage
+plugins**; it shows while a running plugin has a panel. [Plugins](plugins.md) covers installing and trusting one, and
 [UI shell](ui-shell.md) describes the shell's design.
 
 ## Keep your account safe

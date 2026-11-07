@@ -10,7 +10,7 @@ interface NavDrawerProps {
 }
 
 /**
- * The navigation of a narrow window: the workspace rail, side rail and tool panel as a modal
+ * The navigation of a narrow window: the workspace rail and the tool panel as a modal
  * drawer over the left of the main area. A press on the dimmed area outside it closes it, and so
  * does Escape. Tab stays inside it. While a dialog or menu is open on top of it, the keys belong
  * to that one. The parent must be positioned.

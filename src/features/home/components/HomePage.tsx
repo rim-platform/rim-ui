@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "../../../shared/ui/cn";
-import { NavMenuButton } from "../../../shell/components/NavMenuButton";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { agentAvailable } from "../../agent/agentAvailability";
 import { AgentRunDialog } from "../../agents/components/AgentRunDialog";
@@ -65,7 +64,6 @@ export function HomePage() {
   return (
     <div ref={rootRef} className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-rim-line px-4">
-        <NavMenuButton />
         <h1 className="text-sm font-medium text-rim-text">Home</h1>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">

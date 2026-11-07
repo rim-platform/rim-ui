@@ -42,7 +42,7 @@ async function workspaceDirect(
   });
 }
 
-/** The DM with `principalId` in the direct spaces this account uses, as the side rail lists them. */
+/** The DM with `principalId` in the direct spaces this account uses, as the conversation list shows them. */
 async function spaceDirect(principalId: string): Promise<ConversationSummary | undefined> {
   const { info, spaces, forked } = useRelayStore.getState();
   const spaceIds = directSpaceIdsOf(info?.directSpaceId ?? null, spaces, forked);

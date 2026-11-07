@@ -559,7 +559,8 @@ describe("AuditLogPage", () => {
     expect(screen.getByRole("heading", { name: "Audit Log" }).className).toContain(
       "whitespace-nowrap",
     );
-    expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    // The top bar holds the navigation button.
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
     useShellStore.setState({ shellWidth: "wide" });
   });
 });

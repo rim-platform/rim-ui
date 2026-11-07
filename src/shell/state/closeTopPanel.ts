@@ -11,6 +11,9 @@ function topPanelClose(): (() => void) | null {
   const onConversation = shell.mainSurface.kind === "conversation";
   // The navigation drawer of a narrow window sits in front of everything else.
   if (shell.navDrawerOpen && !shell.zenMode) return () => shell.setNavDrawerOpen(false);
+  // The notification inbox opens under the top bar, over every page.
+  const notifications = useNotificationsPanelStore.getState();
+  if (notifications.open && workspaceId) return () => notifications.setOpen(false);
   // A main-area plugin panel covers the conversation, and the thread beside it.
   if (onConversation && shell.activePluginPanel?.slot === "main_area") {
     return shell.closePluginPanel;
@@ -22,8 +25,6 @@ function topPanelClose(): (() => void) | null {
   }
   if (!onConversation) return () => shell.setMainSurface({ kind: "conversation" });
   if (shell.activePluginPanel) return shell.closePluginPanel;
-  const notifications = useNotificationsPanelStore.getState();
-  if (notifications.open && workspaceId) return () => notifications.setOpen(false);
   const members = useMembersPanelStore.getState();
   if (members.open && workspaceId && shell.selectedConversationId) {
     return () => members.setOpen(false);
@@ -34,8 +35,8 @@ function topPanelClose(): (() => void) | null {
 }
 
 /**
- * Whether Escape has a panel to close: a plugin panel, the thread, a page in place of the
- * conversation, or the notifications or a members list in the tool panel.
+ * Whether Escape has a panel to close: the notification inbox, a plugin panel, the thread, a
+ * page in place of the conversation, or a members list in the tool panel.
  */
 export function hasPanelToClose(): boolean {
   return topPanelClose() !== null;

@@ -150,8 +150,11 @@ describe("every way into the app is reachable", () => {
     runDesktopLocalCommand("workspace.toggle_pinned_messages");
     expect(useShellStore.getState().pinnedPanelOpen).toBe(false);
 
+    // The notification inbox opens under the top bar over any page, so the page stays.
+    runDesktopLocalCommand("workspace.open_settings");
     runDesktopLocalCommand("workspace.toggle_notifications");
     expect(useNotificationsPanelStore.getState().open).toBe(true);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
 
     runDesktopLocalCommand("workspace.toggle_conversation_members");
     expect(useMembersPanelStore.getState().open).toBe(true);

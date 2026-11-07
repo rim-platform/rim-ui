@@ -57,7 +57,7 @@ import { SurfaceErrorBoundary } from "../../shared/ui/SurfaceErrorBoundary";
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../state/useShellStore";
 import { WorkspaceRail } from "../components/WorkspaceRail";
-import { SideRail } from "../components/SideRail";
+import { TopBar } from "../components/TopBar";
 import { ToolPanel } from "../components/ToolPanel";
 import { ConversationHeader } from "../components/ConversationHeader";
 import { PinnedMessagesPanel } from "../../features/messages/components/PinnedMessagesPanel";
@@ -91,10 +91,8 @@ import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
 import { useObserveShellWidth, useShellWidth } from "../hooks/useShellWidth";
 import { ConversationSelectionRuntime } from "../../features/conversations/components/ConversationSelectionRuntime";
 import { NavDrawer } from "../components/NavDrawer";
-import { NarrowPage } from "../components/NavMenuButton";
 import { OverlayPanel } from "../components/OverlayPanel";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
-import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useMemberDirectoryStore } from "../../features/workspaces/state/useMemberDirectoryStore";
 
 /**
@@ -175,6 +173,7 @@ function UnlockedShell() {
   usePluginChatRelay();
   useWebPluginRuntime();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  const zenMode = useShellStore((s) => s.zenMode);
   const { capabilities } = useRuntime();
   // Where the app lands after sign-in or signup: back to a public link left for it.
   usePendingPublicLinkReturn(true);
@@ -198,7 +197,8 @@ function UnlockedShell() {
 
   return (
     <div className="flex h-screen flex-col bg-rim-void text-rim-text">
-      {capabilities.customTitleBar && <TitleBar />}
+      {/* The top bar is the title bar; zen mode hides it, so the plain one stands in. */}
+      {capabilities.customTitleBar && zenMode && <TitleBar />}
       <OfflineBanner />
       <ConnectionBanner />
       <RelayNotices />
@@ -254,12 +254,11 @@ function useNavDrawerTriggers() {
 
   const flags = [
     useMembersPanelStore((s) => s.open),
-    useNotificationsPanelStore((s) => s.open),
     useMemberDirectoryStore((s) => s.open),
     useShellStore((s) => s.showNewMessagePicker),
     useShellStore((s) => s.showNewChannelDialog),
   ];
-  const [membersOpen, notificationsOpen, directoryOpen, showNewMessage, showNewChannel] = flags;
+  const [membersOpen, directoryOpen, showNewMessage, showNewChannel] = flags;
   const previousFlags = useRef(flags);
   // Opens the drawer when any one of the tool panel's panels or dialogs turns on.
   useEffect(() => {
@@ -269,7 +268,7 @@ function useNavDrawerTriggers() {
     if (turnedOn && shell.shellWidth === "narrow") shell.setNavDrawerOpen(true);
     // The flags are the dependencies; `flags` is rebuilt each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [membersOpen, notificationsOpen, directoryOpen, showNewMessage, showNewChannel]);
+  }, [membersOpen, directoryOpen, showNewMessage, showNewChannel]);
 
   // Closing the drawer of a narrow window closes what lived in its tool panel, so the command
   // that opens one of them starts from a clean state.
@@ -281,7 +280,6 @@ function useNavDrawerTriggers() {
     const shell = useShellStore.getState();
     if (!closed || shell.shellWidth !== "narrow") return;
     useMembersPanelStore.getState().setOpen(false);
-    useNotificationsPanelStore.getState().setOpen(false);
     useMemberDirectoryStore.getState().setOpen(false);
     shell.setShowNewMessagePicker(false);
     shell.setShowNewChannelDialog(false);
@@ -371,7 +369,6 @@ function WorkspaceShell() {
             !zenMode && (
               <NavDrawer onClose={() => useShellStore.getState().setNavDrawerOpen(false)}>
                 <WorkspaceRail />
-                <SideRail />
                 {mainSurface.kind === "conversation" && (
                   <SurfaceErrorBoundary surface="Tool panel" resetKeys={[selectedConversationId]}>
                     <ToolPanel />
@@ -380,303 +377,315 @@ function WorkspaceShell() {
               </NavDrawer>
             )
           ) : (
-            <>
-              <div
-                onTransitionEnd={handleZenTransitionEnd}
-                className={cn(
-                  "grid transition-opacity duration-300",
-                  zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
-                )}
-              >
-                {!zenContentHidden && <WorkspaceRail />}
-              </div>
-              <div
-                onTransitionEnd={handleZenTransitionEnd}
-                className={cn(
-                  "grid transition-opacity duration-300",
-                  zenMode || sidebarCollapsed
-                    ? "pointer-events-none w-0 overflow-hidden opacity-0"
-                    : "opacity-100",
-                )}
-              >
-                {!(zenContentHidden || sidebarCollapsed) && <SideRail />}
-              </div>
-            </>
+            <div
+              onTransitionEnd={handleZenTransitionEnd}
+              className={cn(
+                "grid transition-opacity duration-300",
+                zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
+              )}
+            >
+              {!zenContentHidden && <WorkspaceRail />}
+            </div>
           )}
 
-          {mainSurface.kind === "conversation" && (
-            <>
-              {!narrow && (
-                <div
-                  onTransitionEnd={handleZenTransitionEnd}
-                  className={cn(
-                    "grid transition-opacity duration-300",
-                    zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
-                  )}
-                >
-                  {!zenContentHidden && (
-                    <SurfaceErrorBoundary surface="Tool panel" resetKeys={[selectedConversationId]}>
-                      <ToolPanel />
-                    </SurfaceErrorBoundary>
-                  )}
-                </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div
+              onTransitionEnd={handleZenTransitionEnd}
+              className={cn(
+                "transition-opacity duration-300",
+                zenMode ? "pointer-events-none h-0 overflow-hidden opacity-0" : "opacity-100",
               )}
-
-              {/* Plugin tool_panel slot — renders next to ToolPanel */}
-              {toolPanelPlugin && !overlayMode && (
-                <div
-                  onTransitionEnd={handleZenTransitionEnd}
-                  className={cn(
-                    // One column that never grows past the slot, whatever the panel's header holds.
-                    "grid w-72 shrink-0 grid-cols-1 overflow-hidden border-r border-rim-line bg-rim-panel transition-opacity duration-300",
-                    zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
-                  )}
-                >
-                  {!zenContentHidden && (
-                    <PluginSlotContainer
-                      plugin={toolPanelPlugin.plugin}
-                      panel={toolPanelPlugin.panel}
-                      onClose={closePluginPanel}
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Plugin main_area slot — replaces main content */}
-              <MainColumn
-                overlays={
-                  overlayMode ? (
-                    <>
-                      {!zenMode && toolPanelPlugin && (
-                        <OverlayPanel
-                          label={toolPanelPlugin.panel.title}
-                          onClose={closePluginPanel}
-                        >
-                          <PluginSlotContainer
-                            plugin={toolPanelPlugin.plugin}
-                            panel={toolPanelPlugin.panel}
-                            onClose={closePluginPanel}
-                          />
-                        </OverlayPanel>
+            >
+              {!zenContentHidden && <TopBar />}
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-1">
+              {mainSurface.kind === "conversation" && (
+                <>
+                  {!narrow && (
+                    <div
+                      onTransitionEnd={handleZenTransitionEnd}
+                      className={cn(
+                        "grid transition-opacity duration-300",
+                        zenMode || sidebarCollapsed
+                          ? "pointer-events-none w-0 overflow-hidden opacity-0"
+                          : "opacity-100",
                       )}
-                      {!zenMode &&
-                        !mainAreaPlugin &&
-                        pinnedPanelOpen &&
-                        workspaceId &&
-                        selectedConversationId && (
-                          <OverlayPanel
-                            label="Pinned messages"
-                            onClose={() => setPinnedPanelOpen(false)}
-                          >
-                            <SurfaceErrorBoundary
-                              surface="Pinned messages"
-                              resetKeys={[selectedConversationId]}
-                            >
-                              <PinnedMessagesPanel
-                                workspaceId={workspaceId}
-                                conversationId={selectedConversationId}
-                                onClose={() => setPinnedPanelOpen(false)}
-                              />
-                            </SurfaceErrorBoundary>
-                          </OverlayPanel>
-                        )}
-                      {!zenMode && !mainAreaPlugin && showThread && (
-                        <OverlayPanel label="Thread" onClose={closeThread}>
-                          <SurfaceErrorBoundary
-                            surface="Thread"
-                            resetKeys={[selectedRootMessageId]}
-                          >
-                            <ThreadPanel />
-                          </SurfaceErrorBoundary>
-                        </OverlayPanel>
-                      )}
-                    </>
-                  ) : null
-                }
-              >
-                {mainAreaPlugin ? (
-                  <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-                    <NarrowPage title={mainAreaPlugin.panel.title}>
-                      <PluginSlotContainer
-                        plugin={mainAreaPlugin.plugin}
-                        panel={mainAreaPlugin.panel}
-                        onClose={closePluginPanel}
-                      />
-                    </NarrowPage>
-                  </main>
-                ) : (
-                  <main className="relative flex min-w-0 flex-1 flex-col">
-                    <SurfaceErrorBoundary
-                      surface="Conversation"
-                      resetKeys={[selectedConversationId]}
                     >
+                      {!(zenContentHidden || sidebarCollapsed) && (
+                        <SurfaceErrorBoundary
+                          surface="Tool panel"
+                          resetKeys={[selectedConversationId]}
+                        >
+                          <ToolPanel />
+                        </SurfaceErrorBoundary>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Plugin tool_panel slot — renders next to ToolPanel */}
+                  {toolPanelPlugin && !overlayMode && (
+                    <div
+                      onTransitionEnd={handleZenTransitionEnd}
+                      className={cn(
+                        // One column that never grows past the slot, whatever the panel's header holds.
+                        "grid w-72 shrink-0 grid-cols-1 overflow-hidden border-r border-rim-line bg-rim-panel transition-opacity duration-300",
+                        zenMode
+                          ? "pointer-events-none w-0 overflow-hidden opacity-0"
+                          : "opacity-100",
+                      )}
+                    >
+                      {!zenContentHidden && (
+                        <PluginSlotContainer
+                          plugin={toolPanelPlugin.plugin}
+                          panel={toolPanelPlugin.panel}
+                          onClose={closePluginPanel}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Plugin main_area slot — replaces main content */}
+                  <MainColumn
+                    overlays={
+                      overlayMode ? (
+                        <>
+                          {!zenMode && toolPanelPlugin && (
+                            <OverlayPanel
+                              label={toolPanelPlugin.panel.title}
+                              onClose={closePluginPanel}
+                            >
+                              <PluginSlotContainer
+                                plugin={toolPanelPlugin.plugin}
+                                panel={toolPanelPlugin.panel}
+                                onClose={closePluginPanel}
+                              />
+                            </OverlayPanel>
+                          )}
+                          {!zenMode &&
+                            !mainAreaPlugin &&
+                            pinnedPanelOpen &&
+                            workspaceId &&
+                            selectedConversationId && (
+                              <OverlayPanel
+                                label="Pinned messages"
+                                onClose={() => setPinnedPanelOpen(false)}
+                              >
+                                <SurfaceErrorBoundary
+                                  surface="Pinned messages"
+                                  resetKeys={[selectedConversationId]}
+                                >
+                                  <PinnedMessagesPanel
+                                    workspaceId={workspaceId}
+                                    conversationId={selectedConversationId}
+                                    onClose={() => setPinnedPanelOpen(false)}
+                                  />
+                                </SurfaceErrorBoundary>
+                              </OverlayPanel>
+                            )}
+                          {!zenMode && !mainAreaPlugin && showThread && (
+                            <OverlayPanel label="Thread" onClose={closeThread}>
+                              <SurfaceErrorBoundary
+                                surface="Thread"
+                                resetKeys={[selectedRootMessageId]}
+                              >
+                                <ThreadPanel />
+                              </SurfaceErrorBoundary>
+                            </OverlayPanel>
+                          )}
+                        </>
+                      ) : null
+                    }
+                  >
+                    {mainAreaPlugin ? (
+                      <main
+                        {...MAIN_PANEL_PROPS}
+                        className="flex min-w-0 flex-1 flex-col outline-none"
+                      >
+                        <PluginSlotContainer
+                          plugin={mainAreaPlugin.plugin}
+                          panel={mainAreaPlugin.panel}
+                          onClose={closePluginPanel}
+                        />
+                      </main>
+                    ) : (
+                      <main className="relative flex min-w-0 flex-1 flex-col">
+                        <SurfaceErrorBoundary
+                          surface="Conversation"
+                          resetKeys={[selectedConversationId]}
+                        >
+                          <div
+                            onTransitionEnd={handleZenTransitionEnd}
+                            className={cn(
+                              "transition-opacity duration-300",
+                              zenMode
+                                ? "pointer-events-none h-0 overflow-hidden opacity-0"
+                                : "opacity-100",
+                            )}
+                          >
+                            {!zenContentHidden && <ConversationHeader />}
+                          </div>
+                          {draftDirect ? (
+                            <DraftDirectView draft={draftDirect} />
+                          ) : (
+                            <InvitationGate
+                              workspaceId={workspaceId}
+                              conversationId={selectedConversationId}
+                            >
+                              <MessageTimeline />
+                            </InvitationGate>
+                          )}
+                        </SurfaceErrorBoundary>
+                        {zenMode && (
+                          <button
+                            type="button"
+                            onClick={toggleZenMode}
+                            className="absolute right-3 top-3 z-50 rounded px-2 py-1 text-xs bg-rim-panel text-rim-text-muted hover:text-rim-text border border-rim-line shadow-sm opacity-0 hover:opacity-100 transition-opacity duration-300"
+                          >
+                            Exit Zen
+                          </button>
+                        )}
+                      </main>
+                    )}
+                  </MainColumn>
+
+                  {!overlayMode && !mainAreaPlugin && showThread && (
+                    <div
+                      onTransitionEnd={handleZenTransitionEnd}
+                      className={cn(
+                        "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300 *:min-w-0",
+                        zenMode
+                          ? "pointer-events-none w-0 overflow-hidden opacity-0"
+                          : "opacity-100",
+                      )}
+                    >
+                      {!zenContentHidden && (
+                        <SurfaceErrorBoundary surface="Thread" resetKeys={[selectedRootMessageId]}>
+                          <ThreadPanel />
+                        </SurfaceErrorBoundary>
+                      )}
+                    </div>
+                  )}
+
+                  {!overlayMode &&
+                    !mainAreaPlugin &&
+                    pinnedPanelOpen &&
+                    workspaceId &&
+                    selectedConversationId && (
                       <div
                         onTransitionEnd={handleZenTransitionEnd}
                         className={cn(
-                          "transition-opacity duration-300",
+                          "grid w-80 shrink-0 transition-opacity duration-300 *:min-w-0",
                           zenMode
-                            ? "pointer-events-none h-0 overflow-hidden opacity-0"
+                            ? "pointer-events-none w-0 overflow-hidden opacity-0"
                             : "opacity-100",
                         )}
                       >
-                        {!zenContentHidden && <ConversationHeader />}
+                        {!zenContentHidden && (
+                          <SurfaceErrorBoundary
+                            surface="Pinned messages"
+                            resetKeys={[selectedConversationId]}
+                          >
+                            <PinnedMessagesPanel
+                              workspaceId={workspaceId}
+                              conversationId={selectedConversationId}
+                              onClose={() => setPinnedPanelOpen(false)}
+                            />
+                          </SurfaceErrorBoundary>
+                        )}
                       </div>
-                      {draftDirect ? (
-                        <DraftDirectView draft={draftDirect} />
-                      ) : (
-                        <InvitationGate
-                          workspaceId={workspaceId}
-                          conversationId={selectedConversationId}
-                        >
-                          <MessageTimeline />
-                        </InvitationGate>
-                      )}
-                    </SurfaceErrorBoundary>
-                    {zenMode && (
-                      <button
-                        type="button"
-                        onClick={toggleZenMode}
-                        className="absolute right-3 top-3 z-50 rounded px-2 py-1 text-xs bg-rim-panel text-rim-text-muted hover:text-rim-text border border-rim-line shadow-sm opacity-0 hover:opacity-100 transition-opacity duration-300"
-                      >
-                        Exit Zen
-                      </button>
                     )}
-                  </main>
-                )}
-              </MainColumn>
-
-              {!overlayMode && !mainAreaPlugin && showThread && (
-                <div
-                  onTransitionEnd={handleZenTransitionEnd}
-                  className={cn(
-                    "grid w-80 shrink-0 border-l border-rim-line transition-opacity duration-300 *:min-w-0",
-                    zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
-                  )}
-                >
-                  {!zenContentHidden && (
-                    <SurfaceErrorBoundary surface="Thread" resetKeys={[selectedRootMessageId]}>
-                      <ThreadPanel />
-                    </SurfaceErrorBoundary>
-                  )}
-                </div>
+                </>
               )}
 
-              {!overlayMode &&
-                !mainAreaPlugin &&
-                pinnedPanelOpen &&
-                workspaceId &&
-                selectedConversationId && (
-                  <div
-                    onTransitionEnd={handleZenTransitionEnd}
-                    className={cn(
-                      "grid w-80 shrink-0 transition-opacity duration-300 *:min-w-0",
-                      zenMode ? "pointer-events-none w-0 overflow-hidden opacity-0" : "opacity-100",
-                    )}
-                  >
-                    {!zenContentHidden && (
-                      <SurfaceErrorBoundary
-                        surface="Pinned messages"
-                        resetKeys={[selectedConversationId]}
-                      >
-                        <PinnedMessagesPanel
-                          workspaceId={workspaceId}
-                          conversationId={selectedConversationId}
-                          onClose={() => setPinnedPanelOpen(false)}
-                        />
-                      </SurfaceErrorBoundary>
-                    )}
-                  </div>
-                )}
-            </>
-          )}
-
-          {mainSurface.kind === "settings" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
-                <SettingsPage />
-              </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "home" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <SurfaceErrorBoundary surface="Home" resetKeys={[]}>
-                <HomePage />
-              </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "unreads" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <SurfaceErrorBoundary surface="Unreads" resetKeys={[]}>
-                <UnreadsPage />
-              </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "audit-log" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
-                <AuditLogPage />
-              </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "dm-requests" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <SurfaceErrorBoundary
-                surface="Message requests"
-                resetKeys={[mainSurface.workspaceId]}
-              >
-                <DmRequestsPage workspaceId={mainSurface.workspaceId} />
-              </SurfaceErrorBoundary>
-            </main>
-          )}
-
-          {mainSurface.kind === "plugin" &&
-            (() => {
-              // Resolve the plugin and its first panel for the main-area slot.
-              const mainPlugin = plugins?.find(
-                (p) => p.plugin_id === mainSurface.pluginId && canShowPanels(p),
-              );
-              const mainPanel = mainPlugin?.panels?.[0];
-              if (mainPlugin && mainPanel) {
-                return (
-                  <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-                    <NarrowPage title={mainPanel.title}>
-                      <PluginSlotContainer
-                        plugin={mainPlugin}
-                        panel={mainPanel}
-                        onClose={() =>
-                          useShellStore.getState().setMainSurface({ kind: "conversation" })
-                        }
-                      />
-                    </NarrowPage>
-                  </main>
-                );
-              }
-              return (
+              {mainSurface.kind === "settings" && (
                 <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-                  <NarrowPage title="Plugin">
-                    <div className="flex flex-1 items-center justify-center">
-                      <p className="text-sm text-rim-text-muted">
-                        Plugin {mainSurface.pluginId} is not enabled or has no panels.
-                      </p>
-                    </div>
-                  </NarrowPage>
+                  <SurfaceErrorBoundary surface="Settings" resetKeys={[]}>
+                    <SettingsPage />
+                  </SurfaceErrorBoundary>
                 </main>
-              );
-            })()}
+              )}
 
-          {mainSurface.kind === "marketplace" && (
-            <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-              <NarrowPage title="Marketplace">
-                <div className="flex flex-1 items-center justify-center">
-                  <p className="text-sm text-rim-text-muted">Marketplace coming soon!</p>
-                </div>
-              </NarrowPage>
-            </main>
-          )}
+              {mainSurface.kind === "home" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary surface="Home" resetKeys={[]}>
+                    <HomePage />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
+              {mainSurface.kind === "unreads" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary surface="Unreads" resetKeys={[]}>
+                    <UnreadsPage />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
+              {mainSurface.kind === "audit-log" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
+                    <AuditLogPage />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
+              {mainSurface.kind === "dm-requests" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary
+                    surface="Message requests"
+                    resetKeys={[mainSurface.workspaceId]}
+                  >
+                    <DmRequestsPage workspaceId={mainSurface.workspaceId} />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
+              {mainSurface.kind === "plugin" &&
+                (() => {
+                  // Resolve the plugin and its first panel for the main-area slot.
+                  const mainPlugin = plugins?.find(
+                    (p) => p.plugin_id === mainSurface.pluginId && canShowPanels(p),
+                  );
+                  const mainPanel = mainPlugin?.panels?.[0];
+                  if (mainPlugin && mainPanel) {
+                    return (
+                      <main
+                        {...MAIN_PANEL_PROPS}
+                        className="flex min-w-0 flex-1 flex-col outline-none"
+                      >
+                        <PluginSlotContainer
+                          plugin={mainPlugin}
+                          panel={mainPanel}
+                          onClose={() =>
+                            useShellStore.getState().setMainSurface({ kind: "conversation" })
+                          }
+                        />
+                      </main>
+                    );
+                  }
+                  return (
+                    <main
+                      {...MAIN_PANEL_PROPS}
+                      className="flex min-w-0 flex-1 flex-col outline-none"
+                    >
+                      <div className="flex flex-1 items-center justify-center">
+                        <p className="text-sm text-rim-text-muted">
+                          Plugin {mainSurface.pluginId} is not enabled or has no panels.
+                        </p>
+                      </div>
+                    </main>
+                  );
+                })()}
+
+              {mainSurface.kind === "marketplace" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <div className="flex flex-1 items-center justify-center">
+                    <p className="text-sm text-rim-text-muted">Marketplace coming soon!</p>
+                  </div>
+                </main>
+              )}
+            </div>
+          </div>
 
           <CommandPalette />
           <ShortcutsPanel />

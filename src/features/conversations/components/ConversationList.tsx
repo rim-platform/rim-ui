@@ -33,7 +33,7 @@ interface ConversationListProps {
 const ROW_MENU = { label: "Conversation actions" };
 
 /**
- * The side rail's conversations: a workspace's channels and DMs, or, in a direct space, the
+ * The conversation list: a workspace's channels and DMs, or, in a direct space, the
  * DMs and groups of every direct space this account uses.
  */
 export function ConversationList(props: ConversationListProps) {

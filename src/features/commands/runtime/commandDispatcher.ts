@@ -204,7 +204,6 @@ const localHandlers: Record<
     shell.setPinnedPanelOpen(!shell.pinnedPanelOpen);
   },
   "workspace.toggle_notifications": () => {
-    useShellStore.getState().setMainSurface({ kind: "conversation" });
     useNotificationsPanelStore.getState().toggle();
   },
   "workspace.toggle_conversation_members": () => {

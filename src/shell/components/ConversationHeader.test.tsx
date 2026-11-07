@@ -586,7 +586,8 @@ describe("ConversationHeader — no conversation open", () => {
 
     const count = await screen.findByRole("button", { name: "1 member" });
     expect(count.className).toContain("whitespace-nowrap");
-    expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    // The top bar holds the navigation button.
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
     const bar = count.closest("div.border-b") as HTMLElement;
     expect(bar.className).toContain("flex-wrap");
     expect(bar.className).toContain("min-h-10");

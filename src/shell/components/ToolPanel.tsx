@@ -9,8 +9,6 @@ import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 import { WorkspaceMemberDirectory } from "../../features/workspaces/components/WorkspaceMemberDirectory";
 import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
 import { NewMessagePicker } from "../../features/conversations/components/NewMessagePicker";
-import { NotificationsPanel } from "../../features/notifications/components/NotificationsPanel";
-import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useShellStore } from "../state/useShellStore";
 
 export function ToolPanel() {
@@ -29,18 +27,10 @@ export function ToolPanel() {
   const setDirectoryOpen = useMemberDirectoryStore((s) => s.setOpen);
   // Guests have no member directory; the server narrows their member list too.
   const isGuest = useIsGuest(workspaceId ?? undefined);
-  const notificationsOpen = useNotificationsPanelStore((s) => s.open);
-  const setNotificationsOpen = useNotificationsPanelStore((s) => s.setOpen);
-  // The notification inbox (side-rail bell) takes over the tool panel while open.
-  const showNotifications = notificationsOpen && Boolean(workspaceId);
   // The members panel takes over the tool panel while a conversation is open in the inbox.
   const showMembers =
-    !showNotifications &&
-    membersOpen &&
-    activePanel === "inbox" &&
-    Boolean(workspaceId && selectedConversationId);
-  const showDirectory =
-    !showNotifications && !showMembers && directoryOpen && activePanel === "inbox" && !isGuest;
+    membersOpen && activePanel === "inbox" && Boolean(workspaceId && selectedConversationId);
+  const showDirectory = !showMembers && directoryOpen && activePanel === "inbox" && !isGuest;
 
   return (
     <div
@@ -49,9 +39,7 @@ export function ToolPanel() {
       onFocus={() => useShellStore.getState().setFocusedSurface("toolPanel")}
       className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel outline-none"
     >
-      {showNotifications && workspaceId ? (
-        <NotificationsPanel workspaceId={workspaceId} onClose={() => setNotificationsOpen(false)} />
-      ) : showMembers && workspaceId && selectedConversationId ? (
+      {showMembers && workspaceId && selectedConversationId ? (
         <ConversationMembersPanel
           workspaceId={workspaceId}
           conversationId={selectedConversationId}

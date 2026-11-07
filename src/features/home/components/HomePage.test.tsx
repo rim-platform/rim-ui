@@ -409,13 +409,12 @@ describe("HomePage", () => {
     );
   });
 
-  it("shows the navigation button in a narrow window and not in a wide one", async () => {
+  it("leaves the navigation button to the top bar in a narrow window", async () => {
     serve({});
     renderHome();
     await screen.findByText("Nothing needs you right now.");
-    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
     act(() => useShellStore.setState({ shellWidth: "narrow" }));
-    expect(screen.getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
   });
 

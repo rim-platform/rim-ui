@@ -2,7 +2,7 @@ import type { DirectDraft } from "../../../shell/state/useShellStore";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { useDraftPeer } from "../hooks/useDraftPeer";
 
-/** The side rail's row for the open draft direct message, shown as the selected item. */
+/** The conversation list's row for the open draft direct message, shown as the selected item. */
 export function DraftDirectItem({ draft }: { draft: DirectDraft }) {
   const peer = useDraftPeer(draft);
   const label = `New message to ${peer.name}`;
