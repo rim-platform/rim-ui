@@ -24,7 +24,7 @@ import { useQuitConfirmStore } from "../state/useQuitConfirmStore";
 import { CloseDialogHost } from "./CloseDialogHost";
 
 const NO_TRAY =
-  "Your desktop doesn't show tray icons. RIM keeps running; open RIM again to bring the window back.";
+  "Your desktop has no tray, so RIM can't stay in one. On GNOME, the AppIndicator extension adds it.";
 
 let trayAvailable: boolean;
 
@@ -115,10 +115,17 @@ describe("CloseDialogHost", () => {
     expect(dialog).not.toHaveTextContent(NO_TRAY);
   });
 
-  it("adds the no-tray sentence when the desktop shows no tray icons", async () => {
+  it("offers only Quit, with the reason, when the desktop shows no tray icons", async () => {
     trayAvailable = false;
+    const user = userEvent.setup();
     await renderHost();
-    expect(await openDialog()).toHaveTextContent(NO_TRAY);
+    await requestClose(1);
+    const asked = await screen.findByRole("dialog", { name: "Quit RIM?" });
+    expect(asked).toHaveTextContent(NO_TRAY);
+    expect(screen.queryByRole("button", { name: "Keep in tray" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quit RIM" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Quit RIM" }));
+    expect(commandCalls("desktop_close_choose")).toEqual([{ choice: "quit", remember: true }]);
   });
 
   it.each([

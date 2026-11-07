@@ -172,10 +172,13 @@ enum CloseDecision {
     AskPage,
 }
 
-fn close_decision(action: CloseAction) -> CloseDecision {
+/// What a close request does for `action`. With no tray host a window that hid could not be
+/// brought back, so the tray setting asks instead.
+fn close_decision(action: CloseAction, tray_host: bool) -> CloseDecision {
     match action {
         CloseAction::Ask => CloseDecision::AskPage,
-        CloseAction::Tray => CloseDecision::HideToTray,
+        CloseAction::Tray if tray_host => CloseDecision::HideToTray,
+        CloseAction::Tray => CloseDecision::AskPage,
         CloseAction::Quit => CloseDecision::Proceed,
     }
 }
@@ -220,7 +223,9 @@ pub(crate) fn on_close_requested<R: Runtime>(window: &Window<R>, api: &CloseRequ
     let Some(shell) = app.try_state::<DesktopShell>() else {
         return;
     };
-    match close_decision(shell.close_action()) {
+    let action = shell.close_action();
+    let tray_host = action != CloseAction::Tray || tray_available(&shell);
+    match close_decision(action, tray_host) {
         CloseDecision::Proceed => {}
         CloseDecision::HideToTray => {
             api.prevent_close();
@@ -341,6 +346,11 @@ fn tray_host_present() -> bool {
 #[cfg(not(target_os = "linux"))]
 fn tray_host_present() -> bool {
     true
+}
+
+/// Whether the tray icon can show: the icon did not fail to build and a host is on the bus.
+fn tray_available(shell: &DesktopShell) -> bool {
+    !shell.tray_failed() && tray_host_present()
 }
 
 /// The current close setting.
@@ -475,9 +485,28 @@ mod tests {
 
     #[test]
     fn each_setting_has_its_close_decision() {
-        assert_eq!(close_decision(CloseAction::Ask), CloseDecision::AskPage);
-        assert_eq!(close_decision(CloseAction::Tray), CloseDecision::HideToTray);
-        assert_eq!(close_decision(CloseAction::Quit), CloseDecision::Proceed);
+        for host in [true, false] {
+            assert_eq!(
+                close_decision(CloseAction::Ask, host),
+                CloseDecision::AskPage
+            );
+            assert_eq!(
+                close_decision(CloseAction::Quit, host),
+                CloseDecision::Proceed
+            );
+        }
+        assert_eq!(
+            close_decision(CloseAction::Tray, true),
+            CloseDecision::HideToTray
+        );
+    }
+
+    #[test]
+    fn the_tray_setting_asks_when_no_host_could_show_the_icon() {
+        assert_eq!(
+            close_decision(CloseAction::Tray, false),
+            CloseDecision::AskPage
+        );
     }
 
     #[test]

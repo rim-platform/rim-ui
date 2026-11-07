@@ -29,11 +29,19 @@ function CloseDialog({
 }) {
   const [remember, setRemember] = useState(true);
   return (
-    <Dialog open title="Keep RIM running in the tray?" maxWidth="max-w-md" onClose={onCancel}>
-      <p className="text-sm text-rim-text-muted">
-        You&apos;ll keep getting messages and notifications while the window is closed.
-      </p>
-      {!trayAvailable && <p className="mt-2 text-sm text-rim-text-muted">{NO_TRAY_SENTENCE}</p>}
+    <Dialog
+      open
+      title={trayAvailable ? "Keep RIM running in the tray?" : "Quit RIM?"}
+      maxWidth="max-w-md"
+      onClose={onCancel}
+    >
+      {trayAvailable ? (
+        <p className="text-sm text-rim-text-muted">
+          You&apos;ll keep getting messages and notifications while the window is closed.
+        </p>
+      ) : (
+        <p className="text-sm text-rim-text-muted">{NO_TRAY_SENTENCE}</p>
+      )}
       <label className="mt-4 flex items-start gap-2 text-sm text-rim-text-muted">
         <input
           type="checkbox"
@@ -47,12 +55,19 @@ function CloseDialog({
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="button" variant="secondary" onClick={() => onChoose("quit", remember)}>
+        <Button
+          type="button"
+          variant={trayAvailable ? "secondary" : "primary"}
+          autoFocus={!trayAvailable}
+          onClick={() => onChoose("quit", remember)}
+        >
           Quit RIM
         </Button>
-        <Button type="button" autoFocus onClick={() => onChoose("tray", remember)}>
-          Keep in tray
-        </Button>
+        {trayAvailable && (
+          <Button type="button" autoFocus onClick={() => onChoose("tray", remember)}>
+            Keep in tray
+          </Button>
+        )}
       </div>
     </Dialog>
   );
