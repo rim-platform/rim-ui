@@ -27,6 +27,9 @@ import { useUpdateTopicMutation } from "../../features/conversations/api/useUpda
 import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
+import { useAgentsReadingChannel } from "../../features/agents/hooks/useAgentsReadingChannel";
+import { botsInChannel, useWorkspaceBots } from "../../features/bots/hooks/useWorkspaceBots";
+import type { ConversationSummary } from "../../features/conversations/types";
 import {
   usePresenceStore,
   type PresenceStatus,
@@ -222,31 +225,40 @@ function SelectedConversationHeader() {
             )}
             <PlaintextNotice workspaceId={workspaceId} conversationId={conversationId} />
           </div>
-          {isChannel &&
-            (showTopicInput ? (
-              <input
-                ref={topicInputRef}
-                type="text"
-                value={topicDraft}
-                onChange={(e) => setTopicDraft(e.target.value)}
-                onKeyDown={handleTopicKeyDown}
-                onBlur={stopTopicEdit}
-                placeholder="Set a topic..."
-                className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
-              />
-            ) : canEditTopic ? (
-              <button
-                type="button"
-                onClick={handleTopicClick}
-                className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
-              >
-                {topic || "Set a topic..."}
-              </button>
-            ) : topic ? (
-              <p className="block max-w-[400px] truncate text-xs text-rim-text-muted" title={topic}>
-                {topic}
-              </p>
-            ) : null)}
+          {isChannel && (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {showTopicInput ? (
+                <input
+                  ref={topicInputRef}
+                  type="text"
+                  value={topicDraft}
+                  onChange={(e) => setTopicDraft(e.target.value)}
+                  onKeyDown={handleTopicKeyDown}
+                  onBlur={stopTopicEdit}
+                  placeholder="Set a topic..."
+                  className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
+                />
+              ) : canEditTopic ? (
+                <button
+                  type="button"
+                  onClick={handleTopicClick}
+                  className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
+                >
+                  {topic || "Set a topic..."}
+                </button>
+              ) : topic ? (
+                <p
+                  className="block max-w-[400px] truncate text-xs text-rim-text-muted"
+                  title={topic}
+                >
+                  {topic}
+                </p>
+              ) : null}
+              {workspaceId && conversation && (
+                <ChannelBotsLine workspaceId={workspaceId} conversation={conversation} />
+              )}
+            </div>
+          )}
           {!isChannel && (
             <p className="text-xs text-rim-text-faint">
               {workspace?.name ?? ""}
@@ -343,6 +355,51 @@ function InviteButton({ onClick }: { onClick: () => void }) {
         <UserPlus className="h-4 w-4" />
       </button>
     </HoverTooltip>
+  );
+}
+
+/**
+ * After a channel's topic: how many active bots are members, which opens Bots in this channel,
+ * and, when a program connected on this device may read the channel, that it can. Nothing for an
+ * encrypted channel, which a bot cannot join, or one with neither.
+ */
+function ChannelBotsLine({
+  workspaceId,
+  conversation,
+}: {
+  workspaceId: string;
+  conversation: ConversationSummary;
+}) {
+  const bots = botsInChannel(useWorkspaceBots(workspaceId), conversation);
+  const agents = useAgentsReadingChannel(workspaceId, conversation);
+  const botsPanelOpen = useShellStore((s) => s.botsPanelOpen);
+  const keystroke = useKeybindLabel("workspace.toggle_channel_bots");
+  if (bots.length === 0 && agents.length === 0) return null;
+  const count = bots.length === 1 ? "1 bot" : `${bots.length} bots`;
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-rim-text-faint">
+      {bots.length > 0 && (
+        <button
+          type="button"
+          onClick={() => useShellStore.getState().setBotsPanelOpen(!botsPanelOpen)}
+          aria-expanded={botsPanelOpen}
+          aria-keyshortcuts={keystroke ?? undefined}
+          className="transition hover:text-rim-text"
+        >
+          {count}
+        </button>
+      )}
+      {bots.length > 0 && agents.length > 0 && <span aria-hidden>·</span>}
+      {agents.length > 0 && (
+        <button
+          type="button"
+          onClick={() => useShellStore.getState().setBotsPanelOpen(true)}
+          className="transition hover:text-rim-text"
+        >
+          {agents.length === 1 ? "your agent can read this" : "your agents can read this"}
+        </button>
+      )}
+    </span>
   );
 }
 

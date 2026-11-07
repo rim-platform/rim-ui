@@ -64,6 +64,7 @@ const ENTRY_COMMANDS: Record<string, string> = {
   "search in a conversation": "workspace.search_in_channel",
   threads: "workspace.reopen_last_thread",
   pins: "workspace.toggle_pinned_messages",
+  "bots in a channel": "workspace.toggle_channel_bots",
   notifications: "workspace.toggle_notifications",
   "conversation members": "workspace.toggle_conversation_members",
   "workspace members": "workspace.toggle_member_directory",
@@ -152,6 +153,12 @@ describe("every way into the app is reachable", () => {
     expect(useShellStore.getState().pinnedPanelOpen).toBe(true);
     runDesktopLocalCommand("workspace.toggle_pinned_messages");
     expect(useShellStore.getState().pinnedPanelOpen).toBe(false);
+
+    runDesktopLocalCommand("workspace.toggle_channel_bots");
+    expect(useShellStore.getState().botsPanelOpen).toBe(true);
+    runDesktopLocalCommand("workspace.toggle_pinned_messages");
+    expect(useShellStore.getState()).toMatchObject({ pinnedPanelOpen: true, botsPanelOpen: false });
+    runDesktopLocalCommand("workspace.toggle_pinned_messages");
 
     // The notification inbox opens under the top bar over any page, so the page stays.
     runDesktopLocalCommand("workspace.open_settings");
