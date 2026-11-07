@@ -165,6 +165,11 @@ export function JoinForm({
       : workspaceId
     : undefined;
   const inviteReady = !byCode || invite.ready;
+  const inviteReason = invite.checking
+    ? "Checking the invite code..."
+    : invite.error
+      ? "This invite code can't be used. Check it, or ask for another."
+      : "Enter your invite code to continue. Someone on this server can give you one.";
   const invitedWorkspace =
     (byCode ? invite.preview?.workspace?.serverName : workspaceName) ?? "the workspace";
 
@@ -281,6 +286,7 @@ export function JoinForm({
                 onSuccess={signedUp}
                 onBusyChange={setKeySignupBusy}
                 ready={inviteReady}
+                notReadyReason={inviteReason}
                 onFailure={inviteRefused}
                 onAccountCreated={accountCreated}
               />

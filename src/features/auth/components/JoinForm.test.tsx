@@ -136,6 +136,24 @@ describe("JoinForm — the key signup", () => {
     expect(screen.getByLabelText(/invite code/i)).toBeDisabled();
   });
 
+  it("tells the signup to ask for the invite code while the field is empty", () => {
+    renderWithServerInfo(
+      <MemoryRouter>
+        <JoinForm
+          variant="CODE"
+          token={null}
+          registrationMode={RegistrationMode.INVITE_ONLY}
+          onSuccess={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("key-signup-ready")).toHaveTextContent("false");
+    expect(screen.getByTestId("key-signup-reason")).toHaveTextContent(
+      "Enter your invite code to continue. Someone on this server can give you one.",
+    );
+  });
+
   it("says Account created and hides the invite code field while the kit is shown", async () => {
     const user = userEvent.setup();
     renderWithServerInfo(

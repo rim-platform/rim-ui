@@ -142,6 +142,7 @@ describe("LoginPage", () => {
   it("offers Create account, which takes an invite code, when registrationMode is INVITE_ONLY", () => {
     renderPage();
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/join");
+    expect(screen.getByText("New here. You need an invite, and no email.")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Creating an account here takes an invite code or link from someone on this server.",
