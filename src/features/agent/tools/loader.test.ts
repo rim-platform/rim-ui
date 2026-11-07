@@ -649,6 +649,8 @@ describe("commandContext bridge", () => {
   });
 });
 
+const SERVER_ID = "01a1b378-4bc1-762e-9646-c806acbc9564";
+
 describe("end-to-end: agent → backend → result loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -727,13 +729,13 @@ describe("end-to-end: agent → backend → result loop", () => {
     });
 
     // Invoke the handler — should round-trip through executeCommand.
-    const raw = await tool!.handler({ server_id: "test-server-id" });
+    const raw = await tool!.handler({ server_id: SERVER_ID });
 
     // Mutation was called with the right vars: commandId, args, AGENT.
     const execCall = vi.mocked(graphqlClient.request).mock.calls[1]!;
     const variables = execCall[1] as { input: Record<string, unknown> };
     expect(variables.input.commandId).toBe("chat.list_channels");
-    expect(variables.input.args).toEqual({ server_id: "test-server-id" });
+    expect(variables.input.args).toEqual({ server_id: SERVER_ID });
     expect(variables.input.initiator).toBe("AGENT");
 
     // Payload survives the JSON round-trip.

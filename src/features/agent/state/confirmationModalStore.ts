@@ -1,11 +1,16 @@
 import { create } from "zustand";
 
-import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import type {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
 
 export interface ConfirmationRequest {
   commandId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** The types the server declares for `args`, which say which of them hold what kind of id. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   token: string;
   argsHash: string;
   expiresAt: string;

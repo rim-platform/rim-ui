@@ -1,4 +1,5 @@
 import type { CommandDefinition, CommandResult } from "../types";
+import { argumentTypesOf } from "./commandArguments";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { useCommandStore, type TargetPickerKind } from "../state/useCommandStore";
@@ -616,6 +617,7 @@ export async function dispatchCommand(
       title: command.title || command.id,
       description: command.description || undefined,
       args: context?.args,
+      argumentTypes: argumentTypesOf(command.arguments),
       sensitivity: command.sensitivity,
       dangerous: command.dangerous,
     },

@@ -17,7 +17,15 @@ import {
   maskForDisplay,
   REDACTED_PLACEHOLDER,
 } from "./ConfirmCommandModal/argsMasker";
+import {
+  destinationInWords,
+  idKindOfArg,
+  useArgIdentity,
+  workspaceArgOf,
+  type ArgumentTypes,
+} from "./ConfirmCommandModal/argIdentity";
 import { detectCrossChannel } from "./ConfirmCommandModal/crossChannelDetector";
+import { IdArgRow } from "./ConfirmCommandModal/IdArgRow";
 import { deriveConfirmationVerb, verbMatches } from "./ConfirmCommandModal/verbDeriver";
 
 const FOCUSABLE_SELECTOR =
@@ -142,6 +150,14 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   );
 
   const maskedArgs = useMemo(() => maskForDisplay(request.args), [request.args]);
+  const argsWorkspaceId = workspaceArgOf(request.args, request.argumentTypes);
+  const destination = useArgIdentity(
+    crossChannel && !fromOutside
+      ? (idKindOfArg(crossChannel.argName, request.argumentTypes) ?? "conversation")
+      : null,
+    crossChannel?.targetId ?? null,
+    argsWorkspaceId,
+  );
 
   const [typedVerb, setTypedVerb] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -286,8 +302,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           onKeyDown={onPanelKeyDown}
           data-dangerous={request.dangerous ? "true" : undefined}
           className={cn(
-            "w-full max-w-lg rounded-xl border border-rim-card-confirm-line border-l-4 bg-rim-card-confirm",
-            fromOutside && "max-h-full overflow-y-auto",
+            "max-h-full w-full max-w-lg overflow-y-auto rounded-xl border border-rim-card-confirm-line border-l-4 bg-rim-card-confirm",
             request.dangerous ? "border-l-rim-danger" : visuals.borderAccent,
           )}
         >
@@ -344,7 +359,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                   ? "Initiated by you."
                   : "Initiated by AI agent."}
               {crossChannel
-                ? ` Destination differs from active conversation; will post in conversation ${crossChannel.targetId.slice(0, 8)}.`
+                ? ` Destination differs from active conversation; will post in ${
+                    fromOutside
+                      ? `conversation ${crossChannel.targetId.slice(0, 8)}`
+                      : destinationInWords(destination)
+                  }.`
                 : ""}
               {sameTurn
                 ? " This action was suggested while the agent was reading external content."
@@ -368,10 +387,9 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               </div>
             )}
 
-            {/* Cross-channel warning chip. Shows the first 8 chars of the raw
-             * conversation id: it guards against a command reaching another
-             * conversation than the one in view, so whether the destination
-             * differs is what matters, not the channel's name. */}
+            {/* Cross-channel warning chip: it guards against a command reaching another
+             * conversation than the one in view. It names the destination and gives its id,
+             * so two channels with one name can be told apart. */}
             {crossChannel && (
               <div
                 className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
@@ -380,9 +398,20 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <div>
                   <div className="font-medium">Destination differs from active conversation</div>
-                  <div className="text-rim-text-muted">
-                    Will post in conversation {crossChannel.targetId.slice(0, 8)}…
-                  </div>
+                  {fromOutside ? (
+                    <div className="text-rim-text-muted">
+                      Will post in conversation {crossChannel.targetId.slice(0, 8)}…
+                    </div>
+                  ) : (
+                    <div className="text-rim-text-muted">
+                      <span className="break-words">
+                        Will post in {destinationInWords(destination)}
+                      </span>
+                      <span className="block break-all font-mono text-[10px] text-rim-text-faint">
+                        {showInvisibleCharacters(crossChannel.targetId)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -402,7 +431,15 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
             )}
 
             {/* What a program outside RIM asks for, or the arguments block */}
-            {outside ? <OutsideAgentDetails outside={outside} /> : <ArgsBlock args={maskedArgs} />}
+            {outside ? (
+              <OutsideAgentDetails outside={outside} />
+            ) : (
+              <ArgsBlock
+                args={maskedArgs}
+                argumentTypes={request.argumentTypes}
+                workspaceId={argsWorkspaceId}
+              />
+            )}
 
             {/* Type-to-confirm input */}
             {requireType && (
@@ -637,7 +674,15 @@ function OutsideAgentDetails({
   );
 }
 
-function ArgsBlock({ args }: { args: Record<string, unknown> }) {
+function ArgsBlock({
+  args,
+  argumentTypes,
+  workspaceId,
+}: {
+  args: Record<string, unknown>;
+  argumentTypes?: ArgumentTypes;
+  workspaceId: string | null;
+}) {
   const entries = Object.entries(args);
   const visible = entries.slice(0, ARG_DISPLAY_LIMIT);
   const overflow = entries.length - visible.length;
@@ -652,7 +697,7 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
       {entries.length === 0 ? (
         <div className="text-xs italic text-rim-text-faint">(no arguments)</div>
       ) : (
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1">
+        <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1">
           {visible.map(([k, v]) => {
             const formatted = formatArgValue(v);
             const truncated =
@@ -660,6 +705,18 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
                 ? formatted.slice(0, ARG_VALUE_TRUNCATE_AT) + "…"
                 : formatted;
             const isRedacted = formatted === REDACTED_PLACEHOLDER;
+            const kind = isRedacted || typeof v !== "string" ? null : idKindOfArg(k, argumentTypes);
+            if (kind && v) {
+              return (
+                <IdArgRow
+                  key={k}
+                  argName={k}
+                  kind={kind}
+                  id={truncated}
+                  workspaceId={workspaceId}
+                />
+              );
+            }
             return <ArgRow key={k} keyName={k} display={truncated} redacted={isRedacted} />;
           })}
           {overflow > 0 && (
@@ -692,7 +749,7 @@ function ArgRow({
         className="break-words font-mono text-xs text-rim-text"
         aria-label={redacted ? "redacted" : undefined}
       >
-        {display}
+        {showInvisibleCharacters(display)}
       </dd>
     </>
   );

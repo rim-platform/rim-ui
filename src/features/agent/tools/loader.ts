@@ -3,16 +3,20 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import {
+  CommandArgumentType,
   CommandExecutionTarget,
   CommandInitiator,
   CommandResultStatus,
   CommandSensitivity,
   CommandSurface,
   type Command,
+  type CommandArgument,
   type CommandResult,
   type ConfirmationProofInput,
 } from "../../../core/graphql/generated/schema-types";
+import { looksLikeId } from "../../commands/runtime/commandArguments";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
 import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { runtimeKind, type PluginCommandInfo, type PluginInfo } from "../../plugins/types";
@@ -99,6 +103,8 @@ interface BackendTool {
 export interface MergeResult {
   winners: AiToolDefinition[];
   droppedBuiltinNames: string[];
+  /** The server's tools could not be fetched, so only the built-in one is registered. */
+  fetchFailed?: boolean;
 }
 
 export function mergeBackendWins(
@@ -194,6 +200,7 @@ function interpretResult(
       commandId,
       toolName,
       args,
+      argumentTypes: registered?.argumentTypes,
       token: result.confirmationRequired.token,
       argsHash: result.confirmationRequired.argsHash,
       expiresAt: result.confirmationRequired.expiresAt,
@@ -249,12 +256,61 @@ function isUnconfirmedLocalCommand(cmd: Command): boolean {
   );
 }
 
+/**
+ * `handler` refusing what the server could only fail on: a name where a conversation or a workspace
+ * id belongs, or a workspace on another server, which `executeCommand` does not reach. The server
+ * issues its confirmation before it reads the arguments, so without this the person would approve
+ * a post that can only fail; the refusal tells the model what really happened.
+ *
+ * @param args - The command's declared arguments.
+ * @param handler - The handler to run once every id has the shape of an id.
+ * @returns The checking handler.
+ */
+function withIdArguments(args: ReadonlyArray<CommandArgument>, handler: AiToolHandler) {
+  const conversationArgs = args
+    .filter((arg) => arg.argumentType === CommandArgumentType.CONVERSATION_ID)
+    .map((arg) => arg.name);
+  const workspaceArgs = args
+    .filter((arg) => arg.argumentType === CommandArgumentType.WORKSPACE_ID)
+    .map((arg) => arg.name);
+  const isRemoteWorkspace = (value: unknown) =>
+    typeof value === "string" && useRelayStore.getState().spaces[value]?.kind === "workspace";
+  const isName = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" && !looksLikeId(value);
+
+  return async (input: Record<string, unknown>) => {
+    for (const name of conversationArgs) {
+      if (isName(input[name])) {
+        throw new Error(
+          `${name} takes an id, not a name. List the workspace's channels, take the id of the one with that title and call this again, without asking the person for it.`,
+        );
+      }
+    }
+    for (const name of workspaceArgs) {
+      if (isName(input[name])) {
+        throw new Error(
+          `${name} takes an id, not a name. Use the server_id of the workspace from the context.`,
+        );
+      }
+      if (isRemoteWorkspace(input[name])) {
+        throw new Error(
+          "That workspace is on another server, which these tools cannot reach. Nothing ran. Tell the person so plainly.",
+        );
+      }
+    }
+    return handler(input);
+  };
+}
+
 export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
   return commands.map((cmd) => ({
     definition: buildAiToolFromCommand(cmd),
-    handler: isUnconfirmedLocalCommand(cmd)
-      ? makeDesktopLocalToolHandler(cmd.id)
-      : makeBackendToolHandler(cmd.id),
+    handler: withIdArguments(
+      cmd.arguments,
+      isUnconfirmedLocalCommand(cmd)
+        ? makeDesktopLocalToolHandler(cmd.id)
+        : makeBackendToolHandler(cmd.id),
+    ),
     options: buildAiToolRegistrationOptions(cmd),
   }));
 }
@@ -460,6 +516,7 @@ export async function loadAgentTools(): Promise<MergeResult> {
     return {
       winners: hardcodedSnapshot.map((t) => t.definition),
       droppedBuiltinNames: [],
+      fetchFailed: true,
     };
   }
 
