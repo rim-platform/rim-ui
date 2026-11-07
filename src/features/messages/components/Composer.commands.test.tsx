@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { serverInfoQueryClient } from "../../../test/serverInfo";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { queryClient } from "../../../core/query/queryClient";
+import { useDraftStore } from "../state/useDraftStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCommandResultStore } from "../../commands/state/useCommandResultStore";
 import {
@@ -51,6 +52,13 @@ const commands = [
     { name: "conversation_id", type: "CONVERSATION_ID" },
     { name: "text", type: "STRING" },
   ]),
+  definition("chat.edit_message", "Edit Message", [
+    { name: "server_id", type: "WORKSPACE_ID" },
+    { name: "text", type: "STRING" },
+  ]),
+  definition("chat.reply_to_selected_message", "Reply To Selected Message", [
+    { name: "text", type: "STRING" },
+  ]),
   definition("admin.ban", "Ban Member", [
     { name: "server_id", type: "WORKSPACE_ID" },
     { name: "user_id", type: "USER_ID" },
@@ -95,7 +103,7 @@ async function renderBox(thread = false) {
   );
   const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   });
   return box;
 }
@@ -104,10 +112,22 @@ function type(box: HTMLTextAreaElement, value: string) {
   fireEvent.change(box, { target: { value, selectionStart: value.length } });
 }
 
+function highlighted(): string {
+  const row = screen
+    .getAllByRole("option")
+    .find((option) => option.getAttribute("aria-selected") === "true");
+  return row?.textContent ?? "";
+}
+
+function press(box: HTMLTextAreaElement, key: string) {
+  fireEvent.keyDown(box, { key });
+}
+
 describe("Composer — commands", () => {
   beforeEach(() => {
     requestMock.mockReset();
     queryClient.clear();
+    useDraftStore.getState().clearDraft("conv-1");
     useCommandResultStore.getState().dismiss();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useShellStore.setState({ selectedConversationId: "conv-1" });
@@ -119,7 +139,7 @@ describe("Composer — commands", () => {
     useShellStore.setState({ selectedConversationId: null });
   });
 
-  it("shows the result of a command picked from the list", async () => {
+  it("shows the result of a command picked with a click", async () => {
     const box = await renderBox();
     type(box, "/list_members");
     fireEvent.click(await screen.findByRole("option", { name: /List Members/ }));
@@ -129,70 +149,99 @@ describe("Composer — commands", () => {
     );
     expect(useCommandResultStore.getState().view?.rows[0]).toMatchObject({ primary: "ada" });
     expect(box.value).toBe("");
-    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1);
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
   });
 
-  it("runs a line that is a command title instead of sending it", async () => {
+  it("keeps the list open across spaces and runs the highlighted command on Enter", async () => {
     const box = await renderBox();
     type(box, "/List  Members");
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /List Members/ });
+    expect(highlighted()).toContain("List Members");
+    expect(screen.getByText(/Enter runs the highlighted command/)).toBeInTheDocument();
+    press(box, "Enter");
 
     await waitFor(() => expect(useCommandResultStore.getState().view).not.toBeNull());
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
     expect(box.value).toBe("");
   });
 
-  it("runs a line that is a command id instead of sending it", async () => {
+  it("runs the highlighted command on Tab", async () => {
     const box = await renderBox();
     type(box, "/chat.list_members");
-    // The suggestion list is open for the id; dismissing it sends the line as typed.
-    fireEvent.keyDown(box, { key: "Escape" });
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /List Members/ });
+    press(box, "Tab");
 
     await waitFor(() => expect(useCommandResultStore.getState().view).not.toBeNull());
-    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
   });
 
-  it("sends a slash line that names no command as a message", async () => {
+  it("sends the line as text after Esc closes the list, and keeps it closed while editing", async () => {
+    const box = await renderBox();
+    type(box, "/list members");
+    await screen.findByRole("option", { name: /List Members/ });
+    press(box, "Escape");
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    type(box, "/list members now");
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    press(box, "Enter");
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation SendMessage")[0]).toMatchObject({
+      input: { text: "/list members now" },
+    });
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+  });
+
+  it("opens the list again once the line is emptied", async () => {
+    const box = await renderBox();
+    type(box, "/list members");
+    press(box, "Escape");
+    type(box, "");
+    type(box, "/list");
+    expect(await screen.findByRole("option", { name: /List Members/ })).toBeInTheDocument();
+  });
+
+  it("sends a slash line that matches no command as a message", async () => {
     const box = await renderBox();
     type(box, "/frobnicate now");
-    fireEvent.keyDown(box, { key: "Enter" });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    press(box, "Enter");
 
     await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 
-  it("offers a command that needs arguments, and inserts its form when picked", async () => {
+  it("offers a command that needs arguments with its hint, and leaves its name to finish", async () => {
     const box = await renderBox();
-    type(box, "/admin.ban");
+    type(box, "/admin.b");
     const option = await screen.findByRole("option", { name: /Ban Member/ });
     expect(option).toHaveTextContent("Needs user_id.");
-    fireEvent.click(option);
+    press(box, "Enter");
 
-    expect(box.value).toBe("/admin.ban user_id=");
+    expect(box.value).toBe("/admin.ban ");
+    expect(await screen.findByRole("option", { name: /Ban Member/ })).toBeInTheDocument();
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 
-  it("says what a typed command lacks, with the form to type, and keeps the text", async () => {
+  it("says what a command lacks, with the form to type, and sends nothing", async () => {
     const spy = vi.spyOn(toast, "error");
     const box = await renderBox();
-    type(box, "/Ban Member");
-    fireEvent.keyDown(box, { key: "Escape" });
-    fireEvent.keyDown(box, { key: "Enter" });
+    type(box, "/admin.ban ");
+    await screen.findByRole("option", { name: /Ban Member/ });
+    press(box, "Enter");
 
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith("Ban Member needs user_id. Type /admin.ban user_id=..."),
     );
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
-    expect(box.value).toBe("/Ban Member");
+    expect(box.value).toBe("/admin.ban ");
   });
 
-  it("runs a typed command with its arguments instead of sending the line", async () => {
+  it("runs the highlighted command with the arguments typed after its name", async () => {
     const box = await renderBox();
     type(box, "/admin.ban user_id=u-1");
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /Ban Member/ });
+    press(box, "Enter");
 
     await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
     expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
@@ -206,7 +255,8 @@ describe("Composer — commands", () => {
     const spy = vi.spyOn(toast, "error");
     const box = await renderBox();
     type(box, '/chat.post_message text="open');
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /Post Message/ });
+    press(box, "Enter");
 
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith(expect.stringContaining("Post Message: A quoted value")),
@@ -215,10 +265,11 @@ describe("Composer — commands", () => {
     expect(box.value).toBe('/chat.post_message text="open');
   });
 
-  it("sends text-carrying commands in a plain conversation", async () => {
+  it("sends a command's quoted text arguments in a plain conversation", async () => {
     const box = await renderBox();
     type(box, '/chat.post_message text="hello there"');
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /Post Message/ });
+    press(box, "Enter");
 
     await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
     expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
@@ -235,7 +286,8 @@ describe("Composer — commands", () => {
       }),
     });
     type(box, '/chat.post_message text="a secret"');
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /Post Message/ });
+    press(box, "Enter");
 
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith(
@@ -244,6 +296,58 @@ describe("Composer — commands", () => {
     );
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
+  });
+
+  it("does not send an edit's text to the server for an encrypted conversation", async () => {
+    const spy = vi.spyOn(toast, "error");
+    const box = await renderBox();
+    serve({
+      "query Conversation(": () => ({
+        conversation: makeConversation({ encryptedAt: "2026-01-01T00:00:00Z" }),
+      }),
+    });
+    type(box, '/chat.edit_message text="changed"');
+    await screen.findByRole("option", { name: /Edit Message/ });
+    press(box, "Enter");
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("Edit Message would send your text"),
+      ),
+    );
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+  });
+
+  it("does not offer a command that acts on a selected message the box cannot have", async () => {
+    const box = await renderBox();
+    type(box, "/reply");
+    await act(async () => {});
+    expect(
+      screen.queryByRole("option", { name: /Reply To Selected Message/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("runs a pipe that starts with a known command on Enter", async () => {
+    const box = await renderBox();
+    serve({
+      "mutation ExecuteCommand": () => ({
+        executeCommand: {
+          status: "SUCCESS",
+          message: "",
+          payload: null,
+          followUpCommands: [],
+          pipelineStages: [],
+        },
+      }),
+    });
+    type(box, "/chat.list_members | chat.list_members");
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    press(box, "Enter");
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
+      input: { isPipe: true },
+    });
   });
 
   it("reports a pipe the server refuses", async () => {
@@ -261,29 +365,46 @@ describe("Composer — commands", () => {
       }),
     });
     type(box, "/chat.list_members | nope");
-    fireEvent.keyDown(box, { key: "Enter" });
+    press(box, "Enter");
 
     await waitFor(() => expect(spy).toHaveBeenCalledWith("Pipe failed: Unknown command: nope"));
-    const [call] = callsTo(requestMock, "mutation ExecuteCommand");
-    expect(call).toMatchObject({ input: { isPipe: true } });
   });
 
-  it("runs a command line typed in a thread instead of replying with it", async () => {
+  it("sends a pipe after Esc, and one that starts with no command, as text", async () => {
+    const box = await renderBox();
+    type(box, "/chat.list_members | chat.list_members");
+    press(box, "Escape");
+    press(box, "Enter");
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(1));
+
+    type(box, "/nope | x");
+    press(box, "Enter");
+    await waitFor(() => expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(2));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+  });
+
+  it("offers the same list in a thread and runs a picked command", async () => {
     const box = await renderBox(true);
     type(box, "/List Members");
-    fireEvent.keyDown(box, { key: "Enter" });
+    await screen.findByRole("option", { name: /List Members/ });
+    press(box, "Enter");
 
     await waitFor(() => expect(useCommandResultStore.getState().view).not.toBeNull());
     expect(callsTo(requestMock, "mutation ReplyToMessage")).toHaveLength(0);
     expect(box.value).toBe("");
   });
 
-  it("sends other text typed in a thread as a reply", async () => {
+  it("sends the line as a reply after Esc in a thread, and unmatched text too", async () => {
     const box = await renderBox(true);
-    type(box, "/frobnicate now");
-    fireEvent.keyDown(box, { key: "Enter" });
-
+    type(box, "/List Members");
+    await screen.findByRole("option", { name: /List Members/ });
+    press(box, "Escape");
+    press(box, "Enter");
     await waitFor(() => expect(callsTo(requestMock, "mutation ReplyToMessage")).toHaveLength(1));
+
+    type(box, "/frobnicate now");
+    press(box, "Enter");
+    await waitFor(() => expect(callsTo(requestMock, "mutation ReplyToMessage")).toHaveLength(2));
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 });

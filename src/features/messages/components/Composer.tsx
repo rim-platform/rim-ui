@@ -9,13 +9,9 @@ import {
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
-import { parseCommandLine } from "../../commands/runtime/commandLine";
 import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
-import {
-  lacksArguments,
-  runComposerCommand,
-  runComposerPipe,
-} from "../../commands/runtime/composerCommand";
+import { runComposerPipe } from "../../commands/runtime/composerCommand";
+import { pipeStageCommandId } from "../../commands/runtime/pipeStages";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
@@ -183,6 +179,8 @@ function MessageComposer(props: ComposerProps) {
   const [isStarting, setIsStarting] = useState(false);
   const startingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Set by the box while Esc has closed its command list: the line is then sent as text.
+  const commandListClosedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Maps the text after `@` of each picked mention (username or handle) to its user id
   const mentionMapRef = useRef<Map<string, string>>(new Map());
@@ -379,6 +377,13 @@ function MessageComposer(props: ComposerProps) {
     }
   }
 
+  /** Whether `line` is a pipe (`/a | b`) that starts with a command this app knows. */
+  function isKnownPipe(line: string): boolean {
+    if (!line.startsWith("/") || !line.includes("|")) return false;
+    const first = pipeStageCommandId(line.slice(1).split("|")[0]);
+    return Boolean(paletteCommands?.some((cmd) => cmd.id === first));
+  }
+
   async function submit() {
     const replyTo = replyTarget;
     if (timedOutUntil || offline) return;
@@ -403,7 +408,7 @@ function MessageComposer(props: ComposerProps) {
     }
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
-    if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {
+    if (!thread && !commandListClosedRef.current && isKnownPipe(trimmed)) {
       setText("");
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().clearDraft(textKey);
@@ -430,29 +435,6 @@ function MessageComposer(props: ComposerProps) {
           return;
         }
       }
-    }
-
-    // A line that is a command's id or title, with its arguments, runs the command instead of
-    // being sent.
-    const typedCommand =
-      pendingFiles.length === 0 ? parseCommandLine(trimmed, paletteCommands) : null;
-    if (typedCommand) {
-      // A command that lacks arguments, or whose arguments cannot be read, leaves the line to edit.
-      if ("error" in typedCommand) {
-        toast.error(`${typedCommand.command.title}: ${typedCommand.error}`);
-        return;
-      }
-      if (lacksArguments(typedCommand.command, typedCommand.args)) return;
-      setText("");
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      draftStore.getState().clearDraft(textKey);
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
-      await runComposerCommand(
-        typedCommand.command,
-        (input) => executeCommand.mutateAsync(input),
-        typedCommand.args,
-      );
-      return;
     }
 
     if (draft) {
@@ -786,6 +768,7 @@ function MessageComposer(props: ComposerProps) {
           serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
           variant={thread ? "thread" : "conversation"}
+          commandListClosedRef={commandListClosedRef}
           onEscape={() => {
             if (!replyTarget || !conversationId) return false;
             useReplyTargetStore.getState().clear(conversationId);

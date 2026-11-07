@@ -1,16 +1,19 @@
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import type { CommandDefinition } from "../types";
 
-/** A message box line that names a command, with the arguments typed after its name. */
-export interface CommandLine {
-  command: CommandDefinition;
-  args: Record<string, unknown>;
+/** A `key=value` pair typed after a command's name. */
+export interface TypedPair {
+  key: string;
+  value: string;
 }
 
-/** A message box line that names a command but whose arguments cannot be read. */
-export interface CommandLineError {
-  command: CommandDefinition;
-  error: string;
+/** What a message box line holds: the words naming a command, then its typed pairs. */
+export interface CommandLineParts {
+  /** The words before the first pair, lowercased with their spacing collapsed. */
+  head: string;
+  pairs: TypedPair[];
+  /** Why the pairs cannot be read, when they cannot. */
+  error?: string;
 }
 
 const KEY_VALUE = /^[A-Za-z_][A-Za-z0-9_-]*=/;
@@ -76,43 +79,72 @@ function coerce(command: CommandDefinition, name: string, value: string): unknow
 }
 
 /**
- * The command a message box line names. The line starts with `/`, then a command's whole id or
- * title (ignoring case and spacing; an id wins), then nothing or only `key=value` pairs. A value
- * with spaces is quoted: `text="two words"`. Integer, float and boolean values become what the
- * command declares.
- *
- * @returns The command and its arguments; an error when the arguments cannot be read; `null` when
- *   the line names no command, so it is ordinary text.
+ * Splits a line that starts with `/` into the words that name a command and the `key=value`
+ * pairs after them. A value with spaces is quoted: `text="two words"`, with `\"` and `\\` for
+ * themselves inside it.
  */
-export function parseCommandLine(
-  line: string,
-  commands: readonly CommandDefinition[] | undefined,
-): CommandLine | CommandLineError | null {
-  if (!commands || !line.startsWith("/")) return null;
-  const body = line.slice(1).trim();
-  if (!body) return null;
+export function splitCommandLine(line: string): CommandLineParts {
+  const body = line.replace(/^\//, "").trim();
   const all = tokens(body);
-  // An unclosed quote after a command name is an error; before one it is only text.
+  // An unclosed quote still names its command; the pairs are then unreadable.
   const words = all ?? tokens(body + '"') ?? [];
   const firstPair = words.findIndex((t) => KEY_VALUE.test(t.raw));
   const head = normalized(
     (firstPair === -1 ? words : words.slice(0, firstPair)).map((t) => t.raw).join(" "),
   );
-  if (!head) return null;
-  const command =
-    commands.find((cmd) => normalized(cmd.id) === head) ??
-    commands.find((cmd) => normalized(cmd.title) === head);
-  if (!command) return null;
-  if (firstPair === -1) return { command, args: {} };
-  if (all === null) return { command, error: "A quoted value is missing its closing quote." };
-  const args: Record<string, unknown> = {};
+  if (firstPair === -1) return { head, pairs: [] };
+  if (all === null)
+    return { head, pairs: [], error: "A quoted value is missing its closing quote." };
+  const pairs: TypedPair[] = [];
   for (const token of all.slice(firstPair)) {
-    const eq = token.raw.indexOf("=");
     if (!KEY_VALUE.test(token.raw)) {
-      return { command, error: `Expected key=value, found "${token.raw}".` };
+      return { head, pairs: [], error: `Expected key=value, found "${token.raw}".` };
     }
-    const name = token.raw.slice(0, eq);
-    args[name] = coerce(command, name, token.value.slice(name.length + 1));
+    const key = token.raw.slice(0, token.raw.indexOf("="));
+    pairs.push({ key, value: token.value.slice(key.length + 1) });
   }
-  return { command, args };
+  return { head, pairs };
+}
+
+/**
+ * The arguments `pairs` give `command`: integer, float and boolean values become what the
+ * command declares, any other value stays text.
+ */
+export function commandArguments(
+  command: CommandDefinition,
+  pairs: readonly TypedPair[],
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  for (const { key, value } of pairs) args[key] = coerce(command, key, value);
+  return args;
+}
+
+function spoken(text: string): string {
+  return normalized(text.replace(/[._-]+/g, " "));
+}
+
+/** Whether `head`, the words typed so far, is the whole id or the whole title of `command`. */
+export function namesCommand(command: CommandDefinition, head: string): boolean {
+  return normalized(command.id) === head || normalized(command.title) === head;
+}
+
+/**
+ * The commands whose id, title or category contain the words typed so far, ignoring case and
+ * the separators of an id, with the one whose whole id or title was typed first.
+ */
+export function commandsMatching(
+  head: string,
+  commands: readonly CommandDefinition[],
+): CommandDefinition[] {
+  const wanted = spoken(head);
+  const matching = commands.filter(
+    (cmd) =>
+      spoken(cmd.id).includes(wanted) ||
+      spoken(cmd.title).includes(wanted) ||
+      spoken(cmd.category).includes(wanted),
+  );
+  return [
+    ...matching.filter((c) => namesCommand(c, head)),
+    ...matching.filter((c) => !namesCommand(c, head)),
+  ];
 }

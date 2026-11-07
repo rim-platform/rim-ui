@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import type { CommandDefinition } from "../types";
-import { parseCommandLine } from "./commandLine";
+import { commandArguments, commandsMatching, namesCommand, splitCommandLine } from "./commandLine";
 
 function command(
   id: string,
@@ -40,54 +40,71 @@ const known = [
   ]),
 ];
 
-describe("parseCommandLine", () => {
-  it("matches an id or a title, ignoring case and spacing", () => {
-    expect(parseCommandLine("/chat.list_members", known)).toEqual({
-      command: known[0],
-      args: {},
-    });
-    expect(parseCommandLine("/ List   MEMBERS ", known)).toEqual({ command: known[0], args: {} });
-  });
-
-  it("reads key=value pairs, quoted values and declared types", () => {
-    expect(parseCommandLine("/Timeout Member user_id=u-1 minutes=15", known)).toEqual({
-      command: known[1],
-      args: { user_id: "u-1", minutes: 15 },
-    });
-    expect(parseCommandLine('/chat.post_message text="two words, \\"quoted\\""', known)).toEqual({
-      command: known[2],
-      args: { text: 'two words, "quoted"' },
-    });
-    expect(parseCommandLine("/chat.create_channel is_private=true", known)).toEqual({
-      command: known[3],
-      args: { is_private: true },
+describe("splitCommandLine", () => {
+  it("splits the words naming a command from its pairs", () => {
+    expect(splitCommandLine("/ List   MEMBERS ")).toEqual({ head: "list members", pairs: [] });
+    expect(splitCommandLine("/admin.timeout user_id=u-1 minutes=15")).toEqual({
+      head: "admin.timeout",
+      pairs: [
+        { key: "user_id", value: "u-1" },
+        { key: "minutes", value: "15" },
+      ],
     });
   });
 
-  it("keeps a value that is not a number as typed", () => {
-    expect(parseCommandLine("/admin.timeout minutes=soon", known)).toEqual({
-      command: known[1],
-      args: { minutes: "soon" },
+  it("reads a quoted value with spaces and escapes", () => {
+    expect(splitCommandLine('/chat.post_message text="two words, \\"quoted\\""').pairs).toEqual([
+      { key: "text", value: 'two words, "quoted"' },
+    ]);
+  });
+
+  it("keeps words after the name as part of the name when no pair follows", () => {
+    expect(splitCommandLine("/list members please")).toEqual({
+      head: "list members please",
+      pairs: [],
     });
   });
 
-  it("is not a command when the line names none or has words after the name", () => {
-    expect(parseCommandLine("/list members please", known)).toBeNull();
-    expect(parseCommandLine("/list", known)).toBeNull();
-    expect(parseCommandLine("list members", known)).toBeNull();
-    expect(parseCommandLine("/", known)).toBeNull();
-    expect(parseCommandLine("/nope text=hi", known)).toBeNull();
-    expect(parseCommandLine("/list members", undefined)).toBeNull();
-  });
-
-  it("says what cannot be read after a command's name", () => {
-    expect(parseCommandLine('/chat.post_message text="open', known)).toMatchObject({
-      command: known[2],
+  it("says what cannot be read after the name", () => {
+    expect(splitCommandLine('/chat.post_message text="open')).toMatchObject({
+      head: "chat.post_message",
       error: expect.stringContaining("closing quote"),
     });
-    expect(parseCommandLine("/chat.post_message text=hi stray", known)).toMatchObject({
-      command: known[2],
+    expect(splitCommandLine("/chat.post_message text=hi stray")).toMatchObject({
+      head: "chat.post_message",
       error: 'Expected key=value, found "stray".',
     });
+  });
+});
+
+describe("commandArguments", () => {
+  it("turns values into what the command declares", () => {
+    expect(
+      commandArguments(known[1], [
+        { key: "user_id", value: "u-1" },
+        { key: "minutes", value: "15" },
+      ]),
+    ).toEqual({ user_id: "u-1", minutes: 15 });
+    expect(commandArguments(known[3], [{ key: "is_private", value: "true" }])).toEqual({
+      is_private: true,
+    });
+    expect(commandArguments(known[1], [{ key: "minutes", value: "soon" }])).toEqual({
+      minutes: "soon",
+    });
+  });
+});
+
+describe("commandsMatching", () => {
+  it("matches the words typed against ids, titles and categories", () => {
+    expect(commandsMatching("list members", known)).toEqual([known[0]]);
+    expect(commandsMatching("chat.list_members", known)).toEqual([known[0]]);
+    expect(commandsMatching("member", known)).toEqual([known[0], known[1]]);
+    expect(commandsMatching("frobnicate", known)).toEqual([]);
+  });
+
+  it("puts the command whose whole name was typed first", () => {
+    expect(commandsMatching("timeout member", known)[0]).toBe(known[1]);
+    expect(namesCommand(known[1], "timeout member")).toBe(true);
+    expect(namesCommand(known[1], "timeout")).toBe(false);
   });
 });

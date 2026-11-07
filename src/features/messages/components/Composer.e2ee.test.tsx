@@ -93,6 +93,54 @@ describe("Composer in an encrypted conversation", () => {
     expect(requested("mutation SendMessage")).toBe(false);
   });
 
+  it("sends a command line as an encrypted message after Esc closes the command list", async () => {
+    routeRequests(requestMock, {
+      ...baseReadHandlers,
+      "query ServerMembers": () => ({ serverMembers: members }),
+      "query Server(": () => ({
+        server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
+      }),
+      "query Conversation(": () => ({
+        conversation: makeConversation({ encryptedAt: "2026-10-09T00:00:00Z" }),
+      }),
+      "query Commands": () => ({
+        commands: [
+          {
+            id: "chat.list_members",
+            title: "List Members",
+            description: "List all members.",
+            category: "Chat",
+            sourceKind: "BUILT_IN",
+            executionTarget: "BACKEND",
+            requiredContext: [],
+            requiredCapabilities: [],
+            visibleInPalette: true,
+            visibleInContextMenus: false,
+            keybindCapable: false,
+            dangerous: false,
+            arguments: [],
+          },
+        ],
+      }),
+    });
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <Composer workspaceId="ws-1" conversationId="conv-1" encryption={{ sendBlock: null }} />
+      </QueryClientProvider>,
+    );
+    const textbox = await screen.findByRole("textbox");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fireEvent.change(textbox, { target: { value: "/list members" } });
+    await screen.findByRole("option", { name: /List Members/ });
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+
+    await waitFor(() => expect(sendEncrypted).toHaveBeenCalled());
+    expect(sendEncrypted.mock.calls[0][2].body).toBe("/list members");
+    expect(requested("mutation ExecuteCommand")).toBe(false);
+    expect(requested("mutation SendMessage")).toBe(false);
+  });
+
   it("sends a thread reply through the encrypted path with its root and thread", async () => {
     serveReads();
     render(

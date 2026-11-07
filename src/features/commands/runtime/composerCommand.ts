@@ -35,11 +35,20 @@ export function lacksArguments(
   return true;
 }
 
-/** Commands whose `text` argument is a message, which an encrypted conversation must not receive in plain. */
+/** Commands that carry a message's text, which an encrypted conversation must not receive in plain. */
 const MESSAGE_TEXT_COMMANDS: ReadonlySet<string> = new Set([
   "chat.post_message",
   "chat.reply_to_selected_message",
+  "chat.edit_message",
 ]);
+
+/** Whether `command` carries a message's text: a known one, or any that declares a `text` argument. */
+function carriesMessageText(command: CommandDefinition): boolean {
+  return (
+    MESSAGE_TEXT_COMMANDS.has(command.id) ||
+    Boolean(command.arguments?.some((argument) => argument.name === "text"))
+  );
+}
 
 /**
  * Whether `command` would send message text to the server in plain for an end-to-end encrypted
@@ -51,7 +60,7 @@ async function refusedForEncryption(
   args: Record<string, unknown> | undefined,
   context: CommandContextInput,
 ): Promise<boolean> {
-  if (!MESSAGE_TEXT_COMMANDS.has(command.id)) return false;
+  if (!carriesMessageText(command)) return false;
   const conversationId =
     argString(args, "conversation_id", "conversationId") ?? context.conversationId;
   const workspaceId = argString(args, "server_id", "serverId") ?? context.workspaceId;
