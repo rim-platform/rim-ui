@@ -628,6 +628,16 @@ export type CreateIncomingWebhookInput = {
   botUserId: Scalars['ID']['input'];
   conversationId: Scalars['ID']['input'];
   preset: WebhookPreset;
+  /**
+   * The webhook's own format, with the preset `PLAIN`. Sent only to a server that lists the
+   * capability `webhook_formats`.
+   */
+  template?: InputMaybe<Scalars['JSON']['input']>;
+  /**
+   * The caller's unbound test session whose URL the webhook keeps. Sent only to a server that
+   * lists the capability `webhook_test_sessions`.
+   */
+  testSessionId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type CreateInviteInput = {
@@ -712,9 +722,12 @@ export type CreatedBotToken = {
 
 /** A new incoming webhook and its token. */
 export type CreatedIncomingWebhook = {
+  /** Whether the webhook kept the token of the test session named in `testSessionId`. */
+  keptTestUrl: Scalars['Boolean']['output'];
   /**
    * `rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
-   * it is a secret.
+   * it is a secret. The empty string when `keptTestUrl` is true: the client already has the URL,
+   * and the server held only its hash.
    */
   token: Scalars['String']['output'];
   webhook: IncomingWebhook;
@@ -1059,6 +1072,8 @@ export type IncomingWebhook = {
   preset: WebhookPreset;
   /** When it was revoked; null until then. */
   revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** Its own format; null for a webhook that follows its preset, such as an unedited GitHub one. */
+  template?: Maybe<Scalars['JSON']['output']>;
 };
 
 /** An abuse report filed with this server, by a local user or from the abuse address. */
@@ -1931,6 +1946,11 @@ export type Mutation = {
   /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
   editMessage: Message;
+  /**
+   * Drop a test session and what it holds. Its starter alone; `NOT_FOUND` for anyone else and
+   * for one that ended.
+   */
+  endWebhookTestSession: Scalars['Boolean']['output'];
   executeCommand: CommandResult;
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
@@ -2328,6 +2348,14 @@ export type Mutation = {
    */
   startTyping: Scalars['Boolean']['output'];
   /**
+   * Open a test session that holds what arrives, in memory, for the caller alone. Without
+   * `webhookId` it answers a token for a URL that posts nothing; with one it copies that
+   * webhook's deliveries. Owner or Moderator; `FORBIDDEN` without the standing of creating a
+   * webhook or changing that one's format, `NOT_FOUND` for an unknown webhook or one of another
+   * workspace, `RATE_LIMITED` past 3 open sessions in the workspace or 20 on the server.
+   */
+  startWebhookTestSession: WebhookTestSession;
+  /**
    * A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
    * `STALE_EPOCH` names the current incarnation and epoch when another Commit came first.
    */
@@ -2369,6 +2397,14 @@ export type Mutation = {
   updateBot: Bot;
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
+  /**
+   * Change how a webhook turns a delivery into a message. The URL stays the same. A `template`
+   * needs the preset `PLAIN`; `PLAIN` or `GITHUB` with no `template` goes back to that preset.
+   * `VALIDATION` for a format that is refused, naming the rule, and for a revoked webhook;
+   * `FORBIDDEN` for a private channel the caller is not in; `NOT_FOUND` for an unknown webhook
+   * and for one of a workspace the caller does not moderate.
+   */
+  updateIncomingWebhookFormat: IncomingWebhook;
   updateKeybind: Keybind;
   updateMacro: MacroDef;
   /**
@@ -2686,6 +2722,11 @@ export type MutationEditEncryptedMessageArgs = {
 
 export type MutationEditMessageArgs = {
   input: EditMessageInput;
+};
+
+
+export type MutationEndWebhookTestSessionArgs = {
+  sessionId: Scalars['ID']['input'];
 };
 
 
@@ -3096,6 +3137,12 @@ export type MutationStartTypingArgs = {
 };
 
 
+export type MutationStartWebhookTestSessionArgs = {
+  serverId: Scalars['ID']['input'];
+  webhookId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
 export type MutationSubmitMlsCommitArgs = {
   input: SubmitMlsCommitInput;
 };
@@ -3158,6 +3205,13 @@ export type MutationUpdateChannelLensArgs = {
 
 export type MutationUpdateConversationTopicArgs = {
   input: UpdateConversationTopicInput;
+};
+
+
+export type MutationUpdateIncomingWebhookFormatArgs = {
+  id: Scalars['ID']['input'];
+  preset: WebhookPreset;
+  template?: InputMaybe<Scalars['JSON']['input']>;
 };
 
 
@@ -3851,6 +3905,12 @@ export type Query = {
    */
   previewInviteToken: InviteTokenPreviewGql;
   /**
+   * What a sample delivery would come to under `template`, as a delivery runs it. Nothing is
+   * posted or stored. Owner or Moderator of the workspace; `FORBIDDEN` for anyone else,
+   * `VALIDATION` for a sample over 256 KiB.
+   */
+  previewWebhookFormat: WebhookFormatPreview;
+  /**
    * The certified devices of principals who share a workspace with the caller (the direct
    * space included); an empty list for any other principal. At most 100 ids.
    */
@@ -3939,6 +3999,17 @@ export type Query = {
   userCommand?: Maybe<UserCommand>;
   /** The caller's user commands, enabled or not, with their steps, sorted by id. */
   userCommands: Array<UserCommand>;
+  /**
+   * The ready-made webhook formats, the same for everyone signed in. `FEATURE_DISABLED` while
+   * the `bots` feature is off.
+   */
+  webhookFormats: Array<WebhookFormatInfo>;
+  /**
+   * What a test session holds after `after`, oldest first, and its expiry, which this read
+   * extends. Its starter alone; `NOT_FOUND` for anyone else, for one that ended and once the
+   * starter lacks the standing to start it.
+   */
+  webhookTestDeliveries: WebhookTestDeliveries;
   /**
    * The workspace's invites, newest first (`createdAt DESC, id DESC`), revoked, expired and
    * used-up ones included. `AFTER` pages go to older invites. Defaults: `dir` `AFTER`,
@@ -4192,6 +4263,14 @@ export type QueryPreviewInviteTokenArgs = {
 };
 
 
+export type QueryPreviewWebhookFormatArgs = {
+  body: Scalars['String']['input'];
+  headers: Array<WebhookHeaderInput>;
+  serverId: Scalars['ID']['input'];
+  template: Scalars['JSON']['input'];
+};
+
+
 export type QueryPrincipalDevicesArgs = {
   principalIds: Array<Scalars['String']['input']>;
 };
@@ -4287,6 +4366,12 @@ export type QueryUnreadCountsArgs = {
 
 export type QueryUserCommandArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type QueryWebhookTestDeliveriesArgs = {
+  after?: InputMaybe<Scalars['Int']['input']>;
+  sessionId: Scalars['ID']['input'];
 };
 
 
@@ -5286,6 +5371,46 @@ export type UserPresenceGql = {
   userId: Scalars['ID']['output'];
 };
 
+/** A ready-made webhook format RIM ships, the same for everyone. */
+export type WebhookFormatInfo = {
+  format: Scalars['JSON']['output'];
+  /** A short name that stays the same, such as `github`. */
+  key: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  /** A delivery's body as the service sends it. */
+  sampleBody: Scalars['String']['output'];
+  sampleHeaders: Array<WebhookHeader>;
+  /** What to set up on the service's side. */
+  setupNote: Scalars['String']['output'];
+};
+
+/** What a sample delivery would come to under a format. Nothing is posted or stored. */
+export type WebhookFormatPreview = {
+  /** The link after the text, when it passes its check. */
+  link?: Maybe<Scalars['String']['output']>;
+  outcome: WebhookPreviewOutcome;
+  /** The placeholder with no value, as written between its braces. */
+  placeholder?: Maybe<Scalars['String']['output']>;
+  /** Why the body or the format would be refused. */
+  reason?: Maybe<Scalars['String']['output']>;
+  /** The rule that decides or that a refusal is about, counted from 1. */
+  rule?: Maybe<Scalars['Int']['output']>;
+  /** What would post, without the link. */
+  text?: Maybe<Scalars['String']['output']>;
+};
+
+/** A header of a sample delivery. */
+export type WebhookHeader = {
+  name: Scalars['String']['output'];
+  value: Scalars['String']['output'];
+};
+
+/** A header of a sample delivery. */
+export type WebhookHeaderInput = {
+  name: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+};
+
 /** How an incoming webhook's body becomes text. */
 export enum WebhookPreset {
   /**
@@ -5296,6 +5421,57 @@ export enum WebhookPreset {
   /** `{"text": "..."}`, at most 4,000 characters. */
   PLAIN = 'PLAIN'
 }
+
+/** What a sample delivery would come to. */
+export enum WebhookPreviewOutcome {
+  /** The body would be refused. */
+  BODY_REFUSED = 'BODY_REFUSED',
+  /** The format would be refused. */
+  FORMAT_REFUSED = 'FORMAT_REFUSED',
+  /** No rule holds, so nothing would post. */
+  NO_RULE = 'NO_RULE',
+  /** The rule that holds has a placeholder with no value, so nothing would post. */
+  NO_VALUE = 'NO_VALUE',
+  /** A rule holds and posts. */
+  POSTS = 'POSTS'
+}
+
+/** What a test session holds of a delivery's body. */
+export enum WebhookTestBodyState {
+  /** Not UTF-8; its bytes are not held. */
+  NOT_TEXT = 'NOT_TEXT',
+  /** `body` is the body exactly as it came. */
+  TEXT = 'TEXT',
+  /** Over 256 KiB; its bytes are not held. */
+  TOO_LARGE = 'TOO_LARGE'
+}
+
+/** The deliveries a read of a test session answers, and when it now expires. */
+export type WebhookTestDeliveries = {
+  deliveries: Array<WebhookTestDelivery>;
+  expiresAt: Scalars['DateTime']['output'];
+};
+
+/** A delivery a test session holds. */
+export type WebhookTestDelivery = {
+  /** The body, for `TEXT` alone. A client shows it as plain text. */
+  body?: Maybe<Scalars['String']['output']>;
+  bodyState: WebhookTestBodyState;
+  contentType?: Maybe<Scalars['String']['output']>;
+  /** The `x-` headers a format may use. */
+  headers: Array<WebhookHeader>;
+  /** Its place in the session, counted from 1; pass the last one read as `after`. */
+  id: Scalars['Int']['output'];
+  receivedAt: Scalars['DateTime']['output'];
+};
+
+/** A webhook test session just started. */
+export type WebhookTestSession = {
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /** `rimhook_…` for an unbound session's URL, shown this once; null for a bound session. */
+  token?: Maybe<Scalars['String']['output']>;
+};
 
 /** A workspace's DM rules. */
 export type WorkspaceDmPolicy = {
