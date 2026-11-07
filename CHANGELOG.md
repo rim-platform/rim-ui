@@ -24,6 +24,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Three new boxes for Home: Direct messages, Channel, which shows the latest messages of a channel
+  you pick, and Quick actions, buttons that run commands you choose (`docs/home.md`). Channel and
+  Quick actions can be added more than once, each with its own settings, and showing them marks
+  nothing read.
 - Home is made of boxes you can move, resize, add and remove, saved to your account (Edit Home,
   `docs/home.md`). Until you edit it, Home shows today's layout. The edit made last wins across
   devices, an edit made offline is sent when your server answers, and a box a device can't run can

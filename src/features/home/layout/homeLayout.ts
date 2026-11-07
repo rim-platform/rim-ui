@@ -112,8 +112,31 @@ export function newBoxId(layout: HomeLayoutDoc, kind: string): string {
   return `${kind}-${n}`;
 }
 
-/** `layout` with a half-width box of `kind` added at the end, and the new box's id. */
-export function addBox(layout: HomeLayoutDoc, kind: string): { layout: HomeLayoutDoc; id: string } {
+/**
+ * `layout` with a half-width box of `kind` added at the end, and the new box's id.
+ *
+ * @param settings - The new box's settings, for a kind that has them.
+ */
+export function addBox(
+  layout: HomeLayoutDoc,
+  kind: string,
+  settings?: Record<string, unknown>,
+): { layout: HomeLayoutDoc; id: string } {
   const id = newBoxId(layout, kind);
-  return { layout: { ...layout, boxes: [...layout.boxes, { id, kind, width: "half" }] }, id };
+  const box: HomeBox = settings
+    ? { id, kind, width: "half", settings }
+    : { id, kind, width: "half" };
+  return { layout: { ...layout, boxes: [...layout.boxes, box] }, id };
+}
+
+/** `layout` with the box `id`'s settings replaced by `settings`. */
+export function setBoxSettings(
+  layout: HomeLayoutDoc,
+  id: string,
+  settings: Record<string, unknown>,
+): HomeLayoutDoc {
+  return {
+    ...layout,
+    boxes: layout.boxes.map((box) => (box.id === id ? { ...box, settings } : box)),
+  };
 }

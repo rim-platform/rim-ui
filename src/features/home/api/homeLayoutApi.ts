@@ -9,7 +9,7 @@ import { isServerUnreachable } from "../../messages/api/messageCache";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useConnectionStore } from "../../system/state/useConnectionStore";
 import { HOME_LAYOUT, serverHasCapability } from "../../updater/api/serverCapabilities";
-import { parseLayout, sameLayout, type HomeLayoutDoc } from "../layout/homeLayout";
+import { parseLayout, removeBox, sameLayout, type HomeLayoutDoc } from "../layout/homeLayout";
 import { useHomeLayoutStore, type DatedLayout } from "../state/useHomeLayoutStore";
 
 const HOME_LAYOUT_QUERY = gql`
@@ -125,6 +125,17 @@ export async function flushPendingHomeLayout(): Promise<void> {
 export function saveHomeLayout(layout: HomeLayoutDoc, editedAt: string): Promise<void> {
   useHomeLayoutStore.getState().setPending({ layout, editedAt });
   return flushPendingHomeLayout();
+}
+
+/**
+ * Removes the box `id` from the account's layout and saves it, as Remove in Edit Home would. A
+ * box is only ever in a layout this device holds, so there is nothing to do without one.
+ */
+export function removeBoxEverywhere(id: string): Promise<void> {
+  const { pending, copy } = useHomeLayoutStore.getState();
+  const layout = (pending ?? copy)?.layout;
+  if (!layout || !layout.boxes.some((box) => box.id === id)) return Promise.resolve();
+  return saveHomeLayout(removeBox(layout, id), new Date().toISOString());
 }
 
 /**

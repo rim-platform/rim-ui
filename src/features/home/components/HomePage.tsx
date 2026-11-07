@@ -189,6 +189,7 @@ export function HomePage() {
             data={data}
             stale={view.unreachable}
             onHide={hide}
+            onFixSettings={(id) => startEditing(view.layout, id)}
           />
         </div>
       </div>

@@ -18,6 +18,7 @@ import {
   useDeleteKeybindMutation,
 } from "../api/useKeybindSettings";
 import { useCommands } from "../api/useCommands";
+import { useKeybindableCommands } from "../api/useKeybindableCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -34,7 +35,7 @@ import { commandOfferedHere } from "../../agent/agentAvailability";
 import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
 import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
-import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
+import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
@@ -189,26 +190,11 @@ export function KeybindSettings() {
   // The keys the add form held when recording started, which Escape puts back.
   const recordStartRef = useRef("");
 
-  // Merge built-in + plugin keybindable commands
-  const builtInKeybindable = useMemo(
-    () =>
-      commands
-        ?.filter((cmd) => cmd.keybindCapable && commandOfferedHere(cmd.id))
-        .map(withClientLabel) ?? [],
-    [commands],
-  );
-  // Commands bound on this device: this app's own commands and the plugins' commands.
-  const deviceKeybindable = useMemo(() => {
-    const serverIds = new Set(builtInKeybindable.map((cmd) => cmd.id));
-    return [
-      ...LOCAL_COMMANDS.filter((cmd) => cmd.keybindCapable && !serverIds.has(cmd.id)),
-      ...pluginCommands.filter((cmd) => cmd.keybindCapable),
-    ].filter((cmd) => commandOfferedHere(cmd.id));
-  }, [builtInKeybindable, pluginCommands]);
-  const keybindableCommands = useMemo(
-    () => [...builtInKeybindable, ...deviceKeybindable],
-    [builtInKeybindable, deviceKeybindable],
-  );
+  const {
+    builtIn: builtInKeybindable,
+    device: deviceKeybindable,
+    all: keybindableCommands,
+  } = useKeybindableCommands();
 
   // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
