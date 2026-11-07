@@ -5,6 +5,7 @@ import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
@@ -136,9 +137,7 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
       stop();
     } catch (err) {
       setConfirm(null);
-      toast.error(
-        `Home wasn't reset: ${err instanceof Error ? err.message : "the server didn't answer"}`,
-      );
+      toast.error(`Home wasn't reset: ${graphqlErrorMessage(err, "Try again.")}`);
     } finally {
       setResetting(false);
     }
@@ -320,7 +319,9 @@ function EditBox({
         </Control>
         <Control
           action="width"
-          label={full ? `Make ${name} half width` : `Make ${name} full width`}
+          label={
+            full ? `Full width. Make ${name} half width` : `Half width. Make ${name} full width`
+          }
           onClick={onWidth}
         >
           {full ? "Full" : "Half"}

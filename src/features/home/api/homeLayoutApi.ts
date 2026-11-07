@@ -2,6 +2,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { isServerUnreachable } from "../../messages/api/messageCache";
@@ -95,10 +96,10 @@ async function sendPending(): Promise<void> {
     if (isServerUnreachable(err)) return;
     const store = useHomeLayoutStore.getState();
     if (store.pending === pending) store.setPending(null);
-    logger.warn("[RIM:home] the Home layout was not saved:", err);
-    toast.error(
-      `Your Home layout wasn't saved: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    // Only the server's message: the error itself carries the request, layout included.
+    const message = graphqlErrorMessage(err, "Try again.");
+    logger.warn("[RIM:home] the Home layout was not saved:", message);
+    toast.error(`Your Home layout wasn't saved: ${message}`);
   }
 }
 

@@ -118,10 +118,11 @@ function saves(): Record<string, unknown>[] {
   return callsTo(requestMock, "mutation SaveHomeLayout");
 }
 
-function refused(message: string): ClientError {
+/** A refusal shaped as `graphql-request` throws it, its request and variables included. */
+function refused(message: string, variables: Record<string, unknown>): ClientError {
   return new ClientError(
     { errors: [{ message, extensions: { code: "VALIDATION" } }], status: 200, headers: {} },
-    { query: "mutation SaveHomeLayout" },
+    { query: "mutation SaveHomeLayout", variables },
   );
 }
 
@@ -217,7 +218,9 @@ describe("Home made of boxes", () => {
     renderHome();
     await startEditing(user);
     await user.click(screen.getByRole("button", { name: "Move Unread up" }));
-    await user.click(screen.getByRole("button", { name: "Make Waiting for you full width" }));
+    await user.click(
+      screen.getByRole("button", { name: "Half width. Make Waiting for you full width" }),
+    );
     await user.click(screen.getByRole("button", { name: "Remove Mentions and replies" }));
     await user.click(screen.getByRole("button", { name: "Add Mentions and replies" }));
     const before = Date.now();
@@ -320,7 +323,9 @@ describe("Home made of boxes", () => {
     await startEditing(user);
     const panel = screen.getByRole("complementary", { name: "Add a box" });
     expect(within(panel).getByText("Your agents' runs")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Make Waiting for you full width" }));
+    await user.click(
+      screen.getByRole("button", { name: "Half width. Make Waiting for you full width" }),
+    );
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(saves()).toHaveLength(1));
     const [vars] = saves();
@@ -394,18 +399,29 @@ describe("Home made of boxes", () => {
     await waitFor(() => expect(useHomeLayoutStore.getState().pending).toBeNull());
   });
 
-  it("drops an edit the server refuses and says it wasn't saved", async () => {
+  it("drops an edit the server refuses and says why, without the layout", async () => {
     const { toast } = await import("../../../shared/toast");
+    const { logger } = await import("../../../core/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
     serve();
-    state.save = () => {
-      throw refused("A Home layout holds at most 30 boxes");
+    state.save = (vars) => {
+      throw refused("A Home layout holds at most 30 boxes", vars);
     };
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
     await user.click(screen.getByRole("button", { name: "Move Unread up" }));
     await user.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Your Home layout wasn't saved: A Home layout holds at most 30 boxes",
+      ),
+    );
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain("A Home layout holds at most 30 boxes");
+    expect(logged).not.toContain("editedAt");
+    expect(logged).not.toContain("mentions");
+    warn.mockRestore();
     expect(useHomeLayoutStore.getState().pending).toBeNull();
     expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
   });
