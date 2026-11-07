@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Settings2, X } from "lucide-react";
 
 import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { Button } from "../../../shared/ui/Button";
@@ -10,13 +10,16 @@ import { toast } from "../../../shared/toast";
 import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { resetHomeLayout, saveHomeLayout } from "../api/homeLayoutApi";
-import { BOX_KINDS, boxKind, boxName } from "../boxes/registry";
+import { BOX_KINDS, boxKind, boxName, settingsNeedFixing } from "../boxes/registry";
+import { useBoxTitle } from "../boxes/useBoxTitle";
+import { BoxSettingsDialog } from "./BoxSettingsDialog";
 import {
   addBox,
   MAX_BOXES,
   moveBox,
   removeBox,
   sameLayout,
+  setBoxSettings,
   setBoxWidth,
   type HomeBox,
   type HomeLayoutDoc,
@@ -25,7 +28,10 @@ import { useHomeEditStore } from "../state/useHomeEditStore";
 import { useHomeHiddenStore } from "../state/useHomeLayoutStore";
 import { boxLimit, GRID_CLASS, widthClass } from "../boxes/boxPlacement";
 
-type BoxAction = "up" | "down" | "width" | "remove";
+type BoxAction = "up" | "down" | "width" | "settings" | "remove";
+
+/** Whose settings are open: a box about to be added, or a box of the layout. */
+type SettingsTarget = { adding: string } | { boxId: string } | null;
 
 const CONTROL_CLASS =
   "inline-flex h-7 min-w-7 items-center justify-center rounded border border-rim-line px-1.5 text-xs text-rim-text-muted transition hover:text-rim-text aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-rim-text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent";
@@ -50,6 +56,12 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
   const [resetting, setResetting] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<{ id: string; action: BoxAction } | null>(null);
+  const [settingsFor, setSettingsFor] = useState<SettingsTarget>(null);
+  // Fix settings on Home opens the editor at that box's settings.
+  const openedAtBox = useHomeEditStore((s) => s.settingsBoxId);
+  const closeOpenedAt = useHomeEditStore((s) => s.closeSettings);
+  const settingsTarget: SettingsTarget =
+    settingsFor ?? (openedAtBox ? { boxId: openedAtBox } : null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const changed = !sameLayout(draft, saved);
 
@@ -87,41 +99,72 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
     return `position ${visible.findIndex((box) => box.id === id) + 1} of ${visible.length}`;
   }
 
-  function move(box: HomeBox, direction: -1 | 1) {
+  function move(box: HomeBox, direction: -1 | 1, name: string) {
     const next = moveBox(draft, box.id, direction, isShown);
     if (next === draft) return;
     update(next);
-    setAnnouncement(`Moved ${boxName(box.kind)} to ${positionOf(box.id, next)}`);
+    setAnnouncement(`Moved ${name} to ${positionOf(box.id, next)}`);
     setFocusTarget({ id: box.id, action: direction < 0 ? "up" : "down" });
   }
 
-  function toggleWidth(box: HomeBox) {
+  function toggleWidth(box: HomeBox, name: string) {
     const width = box.width === "full" ? "half" : "full";
     update(setBoxWidth(draft, box.id, width));
-    setAnnouncement(`${boxName(box.kind)} is now ${width} width`);
+    setAnnouncement(`${name} is now ${width} width`);
     setFocusTarget({ id: box.id, action: "width" });
   }
 
-  function remove(box: HomeBox) {
+  function remove(box: HomeBox, name: string) {
     const index = shown.findIndex((other) => other.id === box.id);
     const neighbour = shown[index + 1] ?? shown[index - 1];
     update(removeBox(draft, box.id));
-    setAnnouncement(`Removed ${boxName(box.kind)}`);
+    setAnnouncement(`Removed ${name}`);
     setFocusTarget(neighbour ? { id: neighbour.id, action: "remove" } : null);
     if (!neighbour) titleRef.current?.focus();
   }
 
-  function askRemove(box: HomeBox) {
+  function askRemove(box: HomeBox, name: string) {
     if (boxLimit(box)) setConfirm({ remove: box.id });
-    else remove(box);
+    else remove(box, name);
   }
 
-  function add(kind: string) {
-    const { layout, id } = addBox(draft, kind);
+  function added(layout: HomeLayoutDoc, id: string, kind: string) {
     update(layout);
-    setSheetOpen(false);
     setAnnouncement(`Added ${boxName(kind)} at ${positionOf(id, layout)}`);
     setFocusTarget({ id, action: "up" });
+  }
+
+  // A kind that needs settings asks for them first; Cancel there adds nothing.
+  function add(kind: string) {
+    setSheetOpen(false);
+    const entry = boxKind(kind);
+    if (entry?.settingsReadable && !entry.defaultSettings) {
+      setSettingsFor({ adding: kind });
+      return;
+    }
+    const { layout, id } = addBox(draft, kind, entry?.defaultSettings?.());
+    added(layout, id, kind);
+  }
+
+  function closeSettings() {
+    setSettingsFor(null);
+    closeOpenedAt();
+  }
+
+  function saveSettings(settings: Record<string, unknown>) {
+    const target = settingsTarget;
+    closeSettings();
+    if (!target) return;
+    if ("adding" in target) {
+      const { layout, id } = addBox(draft, target.adding, settings);
+      added(layout, id, target.adding);
+      return;
+    }
+    const box = draft.boxes.find((other) => other.id === target.boxId);
+    if (!box) return;
+    update(setBoxSettings(draft, box.id, settings));
+    setAnnouncement(`Saved the settings of ${boxName(box.kind)}`);
+    setFocusTarget({ id: box.id, action: "settings" });
   }
 
   function done() {
@@ -204,9 +247,10 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
                     box={box}
                     first={index === 0}
                     last={index === shown.length - 1}
-                    onMove={(direction) => move(box, direction)}
-                    onWidth={() => toggleWidth(box)}
-                    onRemove={() => askRemove(box)}
+                    onMove={(direction, name) => move(box, direction, name)}
+                    onWidth={(name) => toggleWidth(box, name)}
+                    onSettings={() => setSettingsFor({ boxId: box.id })}
+                    onRemove={(name) => askRemove(box, name)}
                   />
                 ))}
               </ul>
@@ -260,6 +304,14 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
           onClose={() => setConfirm(null)}
         />
       )}
+      {settingsTarget && (
+        <SettingsFor
+          target={settingsTarget}
+          draft={draft}
+          onSave={saveSettings}
+          onClose={closeSettings}
+        />
+      )}
       {removing && (
         <ConfirmActionDialog
           title="Remove from Home on every device?"
@@ -268,7 +320,7 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
           danger
           onConfirm={() => {
             setConfirm(null);
-            remove(removing);
+            remove(removing, boxName(removing.kind));
           }}
           onClose={() => setConfirm(null)}
         />
@@ -284,18 +336,23 @@ function EditBox({
   last,
   onMove,
   onWidth,
+  onSettings,
   onRemove,
 }: {
   box: HomeBox;
   first: boolean;
   last: boolean;
-  onMove: (direction: -1 | 1) => void;
-  onWidth: () => void;
-  onRemove: () => void;
+  onMove: (direction: -1 | 1, name: string) => void;
+  onWidth: (name: string) => void;
+  onSettings: () => void;
+  onRemove: (name: string) => void;
 }) {
-  const name = boxName(box.kind);
+  const name = useBoxTitle(box);
+  const kind = boxKind(box.kind);
   const limit = boxLimit(box);
   const full = box.width === "full";
+  const note =
+    limit ?? (settingsNeedFixing(box) ? "This box's settings need fixing" : kind?.description);
   return (
     <li
       data-box-id={box.id}
@@ -306,14 +363,19 @@ function EditBox({
     >
       <div className="flex flex-wrap items-center gap-1.5 border-b border-rim-line px-3 py-2">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-rim-text">{name}</span>
-        <Control action="up" label={`Move ${name} up`} disabled={first} onClick={() => onMove(-1)}>
+        <Control
+          action="up"
+          label={`Move ${name} up`}
+          disabled={first}
+          onClick={() => onMove(-1, name)}
+        >
           <ArrowUp aria-hidden className="h-3.5 w-3.5" />
         </Control>
         <Control
           action="down"
           label={`Move ${name} down`}
           disabled={last}
-          onClick={() => onMove(1)}
+          onClick={() => onMove(1, name)}
         >
           <ArrowDown aria-hidden className="h-3.5 w-3.5" />
         </Control>
@@ -322,17 +384,20 @@ function EditBox({
           label={
             full ? `Full width. Make ${name} half width` : `Half width. Make ${name} full width`
           }
-          onClick={onWidth}
+          onClick={() => onWidth(name)}
         >
           {full ? "Full" : "Half"}
         </Control>
-        <Control action="remove" label={`Remove ${name}`} onClick={onRemove}>
+        {kind?.settingsReadable && !limit && (
+          <Control action="settings" label={`Settings of ${name}`} onClick={onSettings}>
+            <Settings2 aria-hidden className="h-3.5 w-3.5" />
+          </Control>
+        )}
+        <Control action="remove" label={`Remove ${name}`} onClick={() => onRemove(name)}>
           <X aria-hidden className="h-3.5 w-3.5 text-rim-danger" />
         </Control>
       </div>
-      <p className="px-3 py-2 text-xs text-rim-text-muted">
-        {limit ?? boxKind(box.kind)?.description}
-      </p>
+      <p className="px-3 py-2 text-xs text-rim-text-muted">{note}</p>
     </li>
   );
 }
@@ -387,7 +452,9 @@ function AddBoxList({
   onShowHere: (box: HomeBox) => void;
 }) {
   const full = draft.boxes.length >= MAX_BOXES;
-  const kinds = BOX_KINDS.filter((kind) => !draft.boxes.some((box) => box.kind === kind.kind));
+  const kinds = BOX_KINDS.filter(
+    (kind) => kind.multiple || !draft.boxes.some((box) => box.kind === kind.kind),
+  );
   return (
     <div className="space-y-5">
       <section className="space-y-2">
@@ -451,5 +518,34 @@ function AddBoxList({
         )}
       </section>
     </div>
+  );
+}
+
+/** The settings dialog of the box `target` names, or of the kind about to be added. */
+function SettingsFor({
+  target,
+  draft,
+  onSave,
+  onClose,
+}: {
+  target: { adding: string } | { boxId: string };
+  draft: HomeLayoutDoc;
+  onSave: (settings: Record<string, unknown>) => void;
+  onClose: () => void;
+}) {
+  const box = "boxId" in target ? draft.boxes.find((other) => other.id === target.boxId) : null;
+  const kind = "adding" in target ? target.adding : (box?.kind ?? "");
+  const placeholder: HomeBox = box ?? { id: "", kind, width: "half" };
+  const name = useBoxTitle(placeholder);
+  if ("boxId" in target && !box) return null;
+  return (
+    <BoxSettingsDialog
+      kind={kind}
+      title={box ? `Settings of ${name}` : `Add a box: ${boxName(kind)}`}
+      initial={box?.settings}
+      adding={!box}
+      onSave={onSave}
+      onClose={onClose}
+    />
   );
 }

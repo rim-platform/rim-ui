@@ -7,6 +7,19 @@ import type { FailedWorkspace } from "../api/useHomeMentions";
 import type { WorkspaceUnread } from "../api/useHomeUnread";
 import type { WaitingRow } from "../api/useHomeWaiting";
 import { AgentRunsBody, MentionsBody, UnreadBody, WaitingBody } from "../components/HomeSections";
+import type { HomeBox } from "../layout/homeLayout";
+import { ChannelBoxBody } from "./ChannelBox";
+import { DirectBoxBody } from "./DirectBox";
+import { QuickBoxBody } from "./QuickBox";
+import {
+  DEFAULT_COUNT,
+  readChannelSettings,
+  readDirectSettings,
+  readQuickSettings,
+  type ChannelSettings,
+  type DirectSettings,
+  type QuickSettings,
+} from "./settings";
 
 /** What Home has loaded, which each box shows its part of. */
 export interface HomeBoxData {
@@ -38,7 +51,17 @@ export interface BoxKind {
   fromServer: boolean;
   /** The number beside the title, or `null` for none. */
   count: (data: HomeBoxData) => number | null;
-  render: (data: HomeBoxData) => ReactNode;
+  /** Whether Home may hold more than one box of it, each with its own settings. */
+  multiple: boolean;
+  /**
+   * For a kind with settings: whether a box's settings can be used, read as its kind reads them.
+   * A kind without it has no settings.
+   */
+  settingsReadable?: (settings: unknown) => boolean;
+  /** The settings a new box starts with; a kind with settings but none of these asks for them first. */
+  defaultSettings?: () => Record<string, unknown>;
+  /** The box's content; a box with settings is shown only once they can be read. */
+  render: (data: HomeBoxData, box: HomeBox) => ReactNode;
 }
 
 /** The kinds this app knows, in the order Add a box lists them. */
@@ -50,6 +73,7 @@ export const BOX_KINDS: readonly BoxKind[] = [
     unavailableReason: () => null,
     fromServer: true,
     count: (data) => (data.waiting.length > 0 ? data.waiting.length : null),
+    multiple: false,
     render: (data) => <WaitingBody rows={data.waiting} />,
   },
   {
@@ -59,6 +83,7 @@ export const BOX_KINDS: readonly BoxKind[] = [
     unavailableReason: () => null,
     fromServer: true,
     count: (data) => (data.mentions.items.length > 0 ? data.mentions.items.length : null),
+    multiple: false,
     render: (data) => (
       <MentionsBody
         items={data.mentions.items}
@@ -80,6 +105,7 @@ export const BOX_KINDS: readonly BoxKind[] = [
       const total = data.unread.reduce((sum, row) => sum + row.messages, 0);
       return total > 0 ? total : null;
     },
+    multiple: false,
     render: (data) => <UnreadBody rows={data.unread} />,
   },
   {
@@ -89,8 +115,52 @@ export const BOX_KINDS: readonly BoxKind[] = [
     unavailableReason: () => (agentAvailable() ? null : "Your agents' runs needs the desktop app"),
     fromServer: false,
     count: () => null,
+    multiple: false,
     render: (data) => (
       <AgentRunsBody runs={data.runs} onOpenRun={data.onOpenRun} onAllRuns={data.onAllRuns} />
+    ),
+  },
+  {
+    kind: "direct",
+    name: "Direct messages",
+    description: "Your latest direct messages and groups",
+    unavailableReason: () => null,
+    fromServer: true,
+    count: () => null,
+    multiple: false,
+    settingsReadable: (settings) => readDirectSettings(settings) !== null,
+    defaultSettings: () => ({ count: DEFAULT_COUNT }),
+    render: (_data, box) => (
+      <DirectBoxBody settings={readDirectSettings(box.settings) as DirectSettings} />
+    ),
+  },
+  {
+    kind: "channel",
+    name: "Channel",
+    description: "The latest messages of a channel you pick",
+    unavailableReason: () => null,
+    fromServer: true,
+    count: () => null,
+    multiple: true,
+    settingsReadable: (settings) => readChannelSettings(settings) !== null,
+    render: (_data, box) => (
+      <ChannelBoxBody
+        boxId={box.id}
+        settings={readChannelSettings(box.settings) as ChannelSettings}
+      />
+    ),
+  },
+  {
+    kind: "quick",
+    name: "Quick actions",
+    description: "Buttons for commands you choose",
+    unavailableReason: () => null,
+    fromServer: false,
+    count: () => null,
+    multiple: true,
+    settingsReadable: (settings) => readQuickSettings(settings) !== null,
+    render: (_data, box) => (
+      <QuickBoxBody settings={readQuickSettings(box.settings) as QuickSettings} />
     ),
   },
 ];
@@ -98,6 +168,12 @@ export const BOX_KINDS: readonly BoxKind[] = [
 /** The kind named `kind`, or `undefined` for one this app does not know. */
 export function boxKind(kind: string): BoxKind | undefined {
   return BOX_KINDS.find((entry) => entry.kind === kind);
+}
+
+/** Whether a box of a kind with settings has settings this app cannot use. */
+export function settingsNeedFixing(box: HomeBox): boolean {
+  const kind = boxKind(box.kind);
+  return Boolean(kind?.settingsReadable && !kind.settingsReadable(box.settings));
 }
 
 /** What a box is called: its kind's name, or a plain name for a kind this app does not know. */
