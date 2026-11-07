@@ -24,6 +24,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Webhook formats: New webhook offers Plain, GitHub, the host's other ready-made formats such as
+  Grafana, and Custom, and a webhook's row has Edit format. The format editor writes rules as cards,
+  tries them on a sample, copies and pastes them as JSON, and drafts them with the person's own AI,
+  or a prompt to copy into any AI. Where the host keeps test sessions, it also shows what a service
+  really sends, on a test URL that saving keeps. Needs a workspace server that lists
+  `webhook_formats`, and `webhook_test_sessions` for the log, in `serverInfo.capabilities`.
 - Every member sees a workspace's bots: a Bots section in the conversation list, each opening its
   card, and "n bots" in a channel's header, which shows what each bot's adder says and that RIM
   can't check it. The header also says when an agent you connected can read the channel. Needs a

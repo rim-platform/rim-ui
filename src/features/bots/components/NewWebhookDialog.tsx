@@ -6,9 +6,24 @@ import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import type { ConversationSummary } from "../../conversations/types";
+import { WEBHOOK_FORMATS } from "../../updater/api/serverCapabilities";
+import { useSpaceHasCapability } from "../../updater/hooks/useSpaceHasCapability";
 import { createIncomingWebhook, useInvalidateBots } from "../api/botsApi";
+import { createIncomingWebhookWithFormat, useWebhookFormats } from "../api/webhookFormatsApi";
 import { webhookUrl } from "../webhookUrl";
 import { ChannelsCutNotice } from "./ChannelsCutNotice";
+import { WebhookFormatEditor } from "./WebhookFormatEditor";
+
+/** A new webhook's URL, shown once, and what to say beside it. */
+export interface CreatedWebhook {
+  id: string;
+  url: string;
+  preset: WebhookPreset;
+  /** What to set up on the service's side, for a ready-made format. */
+  setupNote?: string;
+  /** Whether the URL is the test URL already handed out, which now posts. */
+  keptTestUrl?: boolean;
+}
 
 interface NewWebhookDialogProps {
   serverId: string;
@@ -21,7 +36,7 @@ interface NewWebhookDialogProps {
   /** Active bots. */
   bots: Bot[];
   /** Called with the new URL, shown once; the caller shows it and holds it in its state. */
-  onCreated: (created: { id: string; url: string; preset: WebhookPreset }) => void;
+  onCreated: (created: CreatedWebhook) => void;
   onClose: () => void;
 }
 
@@ -29,7 +44,18 @@ const FIELD_CLASS =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none focus:border-rim-accent/40";
 const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint";
 
-/** Asks for a channel, a bot and a preset, and makes the incoming webhook that joins them. */
+/** The format a new webhook is made with: Plain, the shipped GitHub one, a copy of another ready-made one, or one written here. */
+const PLAIN: string = WebhookPreset.PLAIN;
+const GITHUB: string = WebhookPreset.GITHUB;
+const CUSTOM = "custom";
+/** The key of the shipped GitHub format among the host's ready-made ones. */
+const GITHUB_KEY = "github";
+
+/**
+ * Asks for a channel, a bot and a format, and makes the incoming webhook that joins them. On a
+ * host without formats the choice is the preset, Plain or GitHub; with them it is a format: Plain,
+ * GitHub, a ready-made one, which is copied, or Custom, which opens the editor.
+ */
 export function NewWebhookDialog({
   serverId,
   channels = [],
@@ -41,27 +67,70 @@ export function NewWebhookDialog({
 }: NewWebhookDialogProps) {
   const [conversationId, setConversationId] = useState(channel?.id ?? "");
   const [botUserId, setBotUserId] = useState(bots[0]?.userId ?? "");
-  const [preset, setPreset] = useState<WebhookPreset>(WebhookPreset.PLAIN);
+  const [choice, setChoice] = useState(PLAIN);
+  const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const invalidate = useInvalidateBots(serverId);
+  const withFormats = useSpaceHasCapability(serverId, WEBHOOK_FORMATS);
+  const formats = useWebhookFormats(serverId, withFormats);
+  const others = (formats.data ?? []).filter((f) => f.key !== GITHUB_KEY);
+  const shipped = formats.data?.find((f) => f.key === (choice === GITHUB ? GITHUB_KEY : choice));
 
   const ready = Boolean(conversationId && botUserId);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!ready || pending) return;
+    if (choice === CUSTOM) {
+      setWriting(true);
+      return;
+    }
     setError(null);
     setPending(true);
     try {
-      const created = await createIncomingWebhook({ conversationId, botUserId, preset });
+      const preset = choice === GITHUB ? WebhookPreset.GITHUB : WebhookPreset.PLAIN;
+      const copied = shipped && choice !== GITHUB ? shipped.format : null;
+      const created = copied
+        ? await createIncomingWebhookWithFormat({
+            conversationId,
+            botUserId,
+            preset,
+            template: copied,
+          })
+        : await createIncomingWebhook({ conversationId, botUserId, preset });
       invalidate(botUserId);
-      onCreated({ id: created.webhook.id, url: await webhookUrl(created.token), preset });
+      onCreated({
+        id: created.webhook.id,
+        url: await webhookUrl(created.token),
+        preset,
+        setupNote: shipped?.setupNote,
+      });
     } catch (err) {
       setError(graphqlErrorMessage(err, "Could not make the webhook"));
     } finally {
       setPending(false);
     }
+  }
+
+  if (writing) {
+    return (
+      <WebhookFormatEditor
+        serverId={serverId}
+        target={{ kind: "new", conversationId, botUserId }}
+        onClose={onClose}
+        onSaved={(saved) => {
+          if (saved.kind !== "created") return;
+          invalidate(botUserId);
+          onCreated({
+            id: saved.id,
+            url: saved.url,
+            preset: WebhookPreset.PLAIN,
+            keptTestUrl: saved.keptTestUrl,
+          });
+        }}
+      />
+    );
   }
 
   return (
@@ -111,16 +180,33 @@ export function NewWebhookDialog({
           </select>
         </label>
         <label className="block">
-          <span className={LABEL_CLASS}>Preset</span>
+          <span className={LABEL_CLASS}>{withFormats ? "Format" : "Preset"}</span>
           <select
-            value={preset}
-            onChange={(e) => setPreset(e.currentTarget.value as WebhookPreset)}
+            value={choice}
+            onChange={(e) => setChoice(e.currentTarget.value)}
             className={FIELD_CLASS}
           >
-            <option value={WebhookPreset.PLAIN}>Plain</option>
-            <option value={WebhookPreset.GITHUB}>GitHub</option>
+            <option value={PLAIN}>Plain</option>
+            <option value={GITHUB}>GitHub</option>
+            {withFormats &&
+              others.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.name}
+                </option>
+              ))}
+            {withFormats && <option value={CUSTOM}>Custom</option>}
           </select>
         </label>
+        {choice === CUSTOM && (
+          <p className="text-xs text-rim-text-muted">
+            Next, write the rules that say what a delivery posts.
+          </p>
+        )}
+        {shipped && choice !== GITHUB && (
+          <p className="text-xs text-rim-text-muted">
+            The webhook gets a copy of the {shipped.name} format, which you can change later.
+          </p>
+        )}
         <p className="text-xs text-rim-text-muted">
           The bot is added to the channel if it is not in it. Anyone with the URL can post to that
           channel as the bot.
@@ -138,7 +224,7 @@ export function NewWebhookDialog({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={!ready} isLoading={pending}>
-            Create webhook
+            {choice === CUSTOM ? "Write the format" : "Create webhook"}
           </Button>
         </div>
       </form>

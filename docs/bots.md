@@ -97,6 +97,40 @@ for the same people.
   URL once. It is built from the address of the server the app is signed in to, never the page's
   own address. For the GitHub preset the dialog says to paste it as the Payload URL under the
   repository's Settings > Webhooks, choose application/json and leave Secret empty.
+- **Formats**, on a host that lists `webhook_formats` (the contract is rim-server's
+  `docs/specs/bots-v1.md`, "Webhook formats"). New webhook's **Format** offers Plain, GitHub, each of
+  the host's other ready-made formats, such as Grafana, and Custom. GitHub is sent as the GitHub
+  preset, as before. Another ready-made format is sent as a copy, and its setup note comes from the
+  host. Custom opens the format editor, and the webhook is made when that is saved. Each row shows
+  GitHub, Plain or Custom, and **Edit format** opens the editor on that webhook, whose URL stays the
+  same. Editing an unedited GitHub webhook makes it a copy, which then stops getting RIM's updates
+  to that format, and the editor says so. On an older host, Preset stays Plain or GitHub.
+- **The format editor** works at 360 px and from the keyboard alone, with native controls. **Start
+  from** copies a ready-made format and its sample. Each rule is a card: conditions as rows (Header
+  or Field, a name and what it equals), the text it posts, an optional link, and Move up, Move down
+  and Remove. **Insert a field** offers the field names of the sample, at most 500, read in the app
+  only to offer them. **Try it** takes headers as `Name: value` lines and a body, and says which
+  rule matches and what it would post, drawn as a message is, or why nothing would. **Copy as JSON**
+  and **Paste JSON** share a format. A refusal from the server is shown beside the rule it names.
+- **What arrives**, on a host that also lists `webhook_test_sessions`, shows what a service really
+  sends. For a new webhook, **Start test URL** gives a URL that posts nothing; saving keeps it, so
+  nothing changes in the service, and the URL dialog says so. For an existing webhook, **Listen**
+  copies what reaches it while it keeps posting. What arrives is held on the server in memory for up
+  to an hour, and only the person who started it can see it. Each delivery is a row, newest first,
+  with its time, the event a header names and its outcome under the format on screen, worked out
+  again when the format changes. Opening a row shows its `Content-Type`, its headers and its body as
+  plain text with invisible characters named, and **Use as sample** fills Try it. A form-encoded
+  body says to choose `application/json`. Closing the editor ends the session. With only
+  `webhook_formats`, the log isn't shown and Try it still works.
+- **Build with AI**, in the editor, asks the person's own model, with their own key: RIM runs none.
+  It takes what the post should say and Try it's sample. On the desktop app with a key set, it says
+  "This sends what you wrote and the sample to" the provider before anything is sent, and asks the
+  model with no tools, so it can only answer with text. The answer is only a draft: it is checked
+  with a preview of the sample, sent back to the model once with the reason when it is refused, and
+  put in the editor, after asking when rules are already written. Nothing is saved until the
+  person presses Save, and the server checks it again. On the web, or with no key, **Copy prompt**
+  puts the same prompt, sample included, on the clipboard for any AI, and Paste JSON brings the
+  answer back.
 - **New webhook…** in a channel's menu (the Moderation section, from the sidebar row, the right
   click or the conversation header's "…" button) makes the same webhook for that channel, with the
   channel fixed. It is offered to Owners and Moderators for a channel that is not encrypted or

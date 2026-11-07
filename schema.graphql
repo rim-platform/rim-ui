@@ -743,6 +743,16 @@ input CreateIncomingWebhookInput {
 	"""
 	botUserId: ID!
 	preset: WebhookPreset!
+	"""
+	The webhook's own format, with the preset `PLAIN`. Sent only to a server that lists the
+	capability `webhook_formats`.
+	"""
+	template: JSON
+	"""
+	The caller's unbound test session whose URL the webhook keeps. Sent only to a server that
+	lists the capability `webhook_test_sessions`.
+	"""
+	testSessionId: ID
 }
 
 input CreateInviteInput {
@@ -840,9 +850,14 @@ type CreatedIncomingWebhook {
 	webhook: IncomingWebhook!
 	"""
 	`rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
-	it is a secret.
+	it is a secret. The empty string when `keptTestUrl` is true: the client already has the URL,
+	and the server held only its hash.
 	"""
 	token: String!
+	"""
+	Whether the webhook kept the token of the test session named in `testSessionId`.
+	"""
+	keptTestUrl: Boolean!
 }
 
 type CustomEmoji {
@@ -1272,6 +1287,10 @@ type IncomingWebhook {
 	"""
 	botUserId: ID!
 	preset: WebhookPreset!
+	"""
+	Its own format; null for a webhook that follows its preset, such as an unedited GitHub one.
+	"""
+	template: JSON
 	createdAt: DateTime!
 	"""
 	When it was last used, to the minute; null when it never was.
@@ -2976,6 +2995,27 @@ type Mutation {
 	for one of a workspace the caller does not moderate.
 	"""
 	revokeIncomingWebhook(id: ID!): IncomingWebhook!
+	"""
+	Change how a webhook turns a delivery into a message. The URL stays the same. A `template`
+	needs the preset `PLAIN`; `PLAIN` or `GITHUB` with no `template` goes back to that preset.
+	`VALIDATION` for a format that is refused, naming the rule, and for a revoked webhook;
+	`FORBIDDEN` for a private channel the caller is not in; `NOT_FOUND` for an unknown webhook
+	and for one of a workspace the caller does not moderate.
+	"""
+	updateIncomingWebhookFormat(id: ID!, preset: WebhookPreset!, template: JSON): IncomingWebhook!
+	"""
+	Open a test session that holds what arrives, in memory, for the caller alone. Without
+	`webhookId` it answers a token for a URL that posts nothing; with one it copies that
+	webhook's deliveries. Owner or Moderator; `FORBIDDEN` without the standing of creating a
+	webhook or changing that one's format, `NOT_FOUND` for an unknown webhook or one of another
+	workspace, `RATE_LIMITED` past 3 open sessions in the workspace or 20 on the server.
+	"""
+	startWebhookTestSession(serverId: ID!, webhookId: ID): WebhookTestSession!
+	"""
+	Drop a test session and what it holds. Its starter alone; `NOT_FOUND` for anyone else and
+	for one that ended.
+	"""
+	endWebhookTestSession(sessionId: ID!): Boolean!
 }
 
 input MuteConversationInput {
@@ -3919,6 +3959,23 @@ type Query {
 	Moderator; `FORBIDDEN` for anyone else, `FEATURE_DISABLED` while the `bots` feature is off.
 	"""
 	incomingWebhooks(serverId: ID!): [IncomingWebhook!]!
+	"""
+	The ready-made webhook formats, the same for everyone signed in. `FEATURE_DISABLED` while
+	the `bots` feature is off.
+	"""
+	webhookFormats: [WebhookFormatInfo!]!
+	"""
+	What a sample delivery would come to under `template`, as a delivery runs it. Nothing is
+	posted or stored. Owner or Moderator of the workspace; `FORBIDDEN` for anyone else,
+	`VALIDATION` for a sample over 256 KiB.
+	"""
+	previewWebhookFormat(serverId: ID!, template: JSON!, headers: [WebhookHeaderInput!]!, body: String!): WebhookFormatPreview!
+	"""
+	What a test session holds after `after`, oldest first, and its expiry, which this read
+	extends. Its starter alone; `NOT_FOUND` for anyone else, for one that ended and once the
+	starter lacks the standing to start it.
+	"""
+	webhookTestDeliveries(sessionId: ID!, after: Int): WebhookTestDeliveries!
 }
 
 type ReactionGroup {
@@ -5090,6 +5147,70 @@ type UserPresenceGql {
 }
 
 """
+A ready-made webhook format RIM ships, the same for everyone.
+"""
+type WebhookFormatInfo {
+	"""
+	A short name that stays the same, such as `github`.
+	"""
+	key: String!
+	name: String!
+	"""
+	What to set up on the service's side.
+	"""
+	setupNote: String!
+	format: JSON!
+	sampleHeaders: [WebhookHeader!]!
+	"""
+	A delivery's body as the service sends it.
+	"""
+	sampleBody: String!
+}
+
+"""
+What a sample delivery would come to under a format. Nothing is posted or stored.
+"""
+type WebhookFormatPreview {
+	outcome: WebhookPreviewOutcome!
+	"""
+	The rule that decides or that a refusal is about, counted from 1.
+	"""
+	rule: Int
+	"""
+	What would post, without the link.
+	"""
+	text: String
+	"""
+	The link after the text, when it passes its check.
+	"""
+	link: String
+	"""
+	The placeholder with no value, as written between its braces.
+	"""
+	placeholder: String
+	"""
+	Why the body or the format would be refused.
+	"""
+	reason: String
+}
+
+"""
+A header of a sample delivery.
+"""
+type WebhookHeader {
+	name: String!
+	value: String!
+}
+
+"""
+A header of a sample delivery.
+"""
+input WebhookHeaderInput {
+	name: String!
+	value: String!
+}
+
+"""
 How an incoming webhook's body becomes text.
 """
 enum WebhookPreset {
@@ -5102,6 +5223,91 @@ enum WebhookPreset {
 	closed, by the `X-GitHub-Event` header.
 	"""
 	GITHUB
+}
+
+"""
+What a sample delivery would come to.
+"""
+enum WebhookPreviewOutcome {
+	"""
+	A rule holds and posts.
+	"""
+	POSTS
+	"""
+	No rule holds, so nothing would post.
+	"""
+	NO_RULE
+	"""
+	The rule that holds has a placeholder with no value, so nothing would post.
+	"""
+	NO_VALUE
+	"""
+	The body would be refused.
+	"""
+	BODY_REFUSED
+	"""
+	The format would be refused.
+	"""
+	FORMAT_REFUSED
+}
+
+"""
+What a test session holds of a delivery's body.
+"""
+enum WebhookTestBodyState {
+	"""
+	`body` is the body exactly as it came.
+	"""
+	TEXT
+	"""
+	Over 256 KiB; its bytes are not held.
+	"""
+	TOO_LARGE
+	"""
+	Not UTF-8; its bytes are not held.
+	"""
+	NOT_TEXT
+}
+
+"""
+The deliveries a read of a test session answers, and when it now expires.
+"""
+type WebhookTestDeliveries {
+	deliveries: [WebhookTestDelivery!]!
+	expiresAt: DateTime!
+}
+
+"""
+A delivery a test session holds.
+"""
+type WebhookTestDelivery {
+	"""
+	Its place in the session, counted from 1; pass the last one read as `after`.
+	"""
+	id: Int!
+	receivedAt: DateTime!
+	contentType: String
+	"""
+	The `x-` headers a format may use.
+	"""
+	headers: [WebhookHeader!]!
+	bodyState: WebhookTestBodyState!
+	"""
+	The body, for `TEXT` alone. A client shows it as plain text.
+	"""
+	body: String
+}
+
+"""
+A webhook test session just started.
+"""
+type WebhookTestSession {
+	id: ID!
+	"""
+	`rimhook_…` for an unbound session's URL, shown this once; null for a bound session.
+	"""
+	token: String
+	expiresAt: DateTime!
 }
 
 """

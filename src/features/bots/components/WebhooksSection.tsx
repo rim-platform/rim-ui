@@ -1,20 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { WebhookPreset, type Bot } from "../../../core/graphql/generated/schema-types";
+import {
+  WebhookPreset,
+  type Bot,
+  type IncomingWebhook,
+} from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeDate } from "../../../shared/utils/formatDate";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { useAllChannels } from "../api/useAllChannels";
-import { useIncomingWebhooks, useRevokeIncomingWebhook } from "../api/botsApi";
-import { NewWebhookDialog } from "./NewWebhookDialog";
+import { useIncomingWebhooks, useInvalidateBots, useRevokeIncomingWebhook } from "../api/botsApi";
+import { WEBHOOK_FORMATS } from "../../updater/api/serverCapabilities";
+import { useSpaceHasCapability } from "../../updater/hooks/useSpaceHasCapability";
+import { NewWebhookDialog, type CreatedWebhook } from "./NewWebhookDialog";
+import { WebhookFormatEditor } from "./WebhookFormatEditor";
 import { WebhookUrlDialog } from "./WebhookUrlDialog";
 
 const PRESET_LABEL: Record<WebhookPreset, string> = {
   [WebhookPreset.PLAIN]: "Plain",
   [WebhookPreset.GITHUB]: "GitHub",
 };
+
+/** What a webhook's row calls its format: its preset, or Custom for one of its own. */
+function formatLabel(webhook: IncomingWebhook): string {
+  return webhook.template ? "Custom" : PRESET_LABEL[webhook.preset];
+}
 
 /**
  * A workspace's incoming webhooks: one URL per channel that posts as a bot. Shown only for a
@@ -25,9 +37,10 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   const channels = useAllChannels(serverId);
   const revoke = useRevokeIncomingWebhook(serverId);
   const [creating, setCreating] = useState(false);
-  const [shown, setShown] = useState<{ id: string; url: string; preset: WebhookPreset } | null>(
-    null,
-  );
+  const [shown, setShown] = useState<CreatedWebhook | null>(null);
+  const [editing, setEditing] = useState<IncomingWebhook | null>(null);
+  const withFormats = useSpaceHasCapability(serverId, WEBHOOK_FORMATS);
+  const invalidate = useInvalidateBots(serverId);
   const [toRevoke, setToRevoke] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const newRef = useRef<HTMLButtonElement>(null);
@@ -101,23 +114,35 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
             >
               <div className="min-w-0 text-sm">
                 <p className="truncate font-medium text-rim-text">
-                  {channelName(w.conversationId)} · {botName(w.botUserId)} ·{" "}
-                  {PRESET_LABEL[w.preset]}
+                  {channelName(w.conversationId)} · {botName(w.botUserId)} · {formatLabel(w)}
                 </p>
                 <p className="text-xs text-rim-text-muted">
                   Created {formatRelativeDate(w.createdAt)} · Last used{" "}
                   {w.lastUsedAt ? formatRelativeDate(w.lastUsedAt) : "Never"}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                data-webhook-revoke={w.id}
-                onClick={() => setToRevoke(w.id)}
-                aria-label={`Revoke the webhook of ${channelName(w.conversationId)}`}
-              >
-                Revoke
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {withFormats && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    data-webhook-edit={w.id}
+                    onClick={() => setEditing(w)}
+                    aria-label={`Edit the format of the webhook of ${channelName(w.conversationId)}`}
+                  >
+                    Edit format
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-webhook-revoke={w.id}
+                  onClick={() => setToRevoke(w.id)}
+                  aria-label={`Revoke the webhook of ${channelName(w.conversationId)}`}
+                >
+                  Revoke
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
@@ -135,10 +160,24 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           }}
         />
       )}
+      {editing && (
+        <WebhookFormatEditor
+          serverId={serverId}
+          target={{ kind: "edit", webhook: editing }}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            invalidate();
+            toast.success("Format saved. The URL stays the same.");
+          }}
+        />
+      )}
       {shown && (
         <WebhookUrlDialog
           url={shown.url}
           preset={shown.preset}
+          setupNote={shown.setupNote}
+          keptTestUrl={shown.keptTestUrl}
           onClose={() => {
             setRefocus({ revokeOf: shown.id });
             setShown(null);

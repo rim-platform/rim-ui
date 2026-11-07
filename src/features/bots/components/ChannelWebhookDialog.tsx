@@ -1,13 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import type { WebhookPreset } from "../../../core/graphql/generated/schema-types";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import type { ConversationSummary } from "../../conversations/types";
 import { useBots, useIncomingWebhooks } from "../api/botsApi";
-import { NewWebhookDialog } from "./NewWebhookDialog";
+import { NewWebhookDialog, type CreatedWebhook } from "./NewWebhookDialog";
 import { WebhookUrlDialog } from "./WebhookUrlDialog";
 
 interface ChannelWebhookDialogProps {
@@ -33,7 +32,7 @@ export function ChannelWebhookDialog({ conversation, onClose }: ChannelWebhookDi
   const serverId = conversation.serverId;
   const webhooks = useIncomingWebhooks(serverId, true);
   const bots = useBots(serverId);
-  const [shown, setShown] = useState<{ url: string; preset: WebhookPreset } | null>(null);
+  const [shown, setShown] = useState<CreatedWebhook | null>(null);
 
   const hasWebhook = useMemo(
     () => webhooks.data?.some((w) => !w.revokedAt && w.conversationId === conversation.id) ?? false,
@@ -42,7 +41,17 @@ export function ChannelWebhookDialog({ conversation, onClose }: ChannelWebhookDi
   const activeBots = useMemo(() => bots.data?.filter((b) => !b.deactivatedAt) ?? [], [bots.data]);
 
   // The URL stays up even once the refetched list shows the new webhook.
-  if (shown) return <WebhookUrlDialog url={shown.url} preset={shown.preset} onClose={onClose} />;
+  if (shown) {
+    return (
+      <WebhookUrlDialog
+        url={shown.url}
+        preset={shown.preset}
+        setupNote={shown.setupNote}
+        keptTestUrl={shown.keptTestUrl}
+        onClose={onClose}
+      />
+    );
+  }
 
   const failed = webhooks.isError ? webhooks : bots.isError ? bots : null;
   if (!failed && webhooks.data && bots.data && !hasWebhook && activeBots.length > 0) {
@@ -52,7 +61,7 @@ export function ChannelWebhookDialog({ conversation, onClose }: ChannelWebhookDi
         channel={conversation}
         bots={activeBots}
         onClose={onClose}
-        onCreated={(created) => setShown({ url: created.url, preset: created.preset })}
+        onCreated={setShown}
       />
     );
   }

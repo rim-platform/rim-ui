@@ -219,6 +219,8 @@ describe("skew check", () => {
       "mutation CreateBot",
       "mutation CreateBotToken",
       "mutation CreateIncomingWebhook",
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
       "mutation DeactivateBot",
       "mutation RevokeBotToken",
       "mutation RevokeIncomingWebhook",
@@ -227,6 +229,7 @@ describe("skew check", () => {
       "query Bots",
       "query BotsWithJoins",
       "query IncomingWebhooks",
+      "query IncomingWebhooksWithFormats",
     ]);
   });
 
@@ -241,8 +244,35 @@ describe("skew check", () => {
         .sort(),
     ).toEqual([
       "mutation CreateIncomingWebhook",
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
       "mutation RevokeIncomingWebhook",
       "query IncomingWebhooks",
+      "query IncomingWebhooksWithFormats",
+    ]);
+  });
+
+  it("refuses only the format and test session documents on a server without them", () => {
+    const schema = schemaWithoutFields({
+      Query: ["webhookFormats", "previewWebhookFormat", "webhookTestDeliveries"],
+      Mutation: ["updateIncomingWebhookFormat", "startWebhookTestSession", "endWebhookTestSession"],
+      IncomingWebhook: ["template"],
+      CreatedIncomingWebhook: ["keptTestUrl"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
+      "mutation EndWebhookTestSession",
+      "mutation StartWebhookTestSession",
+      "mutation UpdateIncomingWebhookFormat",
+      "query IncomingWebhooksWithFormats",
+      "query PreviewWebhookFormat",
+      "query WebhookFormats",
+      "query WebhookTestDeliveries",
     ]);
   });
 });

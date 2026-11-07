@@ -74,6 +74,7 @@ gestures and no bottom bar.
 | Agents | Settings > Agents | `workspace.open_agents` |
 | Bots and webhooks | Settings > Bots | `workspace.open_bots` |
 | A channel's incoming webhook | New webhook… in the channel's menu | none |
+| A webhook's format, and what a service sends to it | Edit format on the webhook's row in Settings > Bots, or Custom in New webhook | none |
 | The conversation list, or the drawer in a narrow window | Menu button in the top bar of a narrow window | `workspace.toggle_sidebar` |
 
 Settings tabs: Profile, Account, Security, Desktop, Contacts, Messages, Direct messages,
