@@ -35,15 +35,20 @@ function UnreadBadge({ count }: { count: number }) {
   );
 }
 
+/** Whether a main surface spans all workspaces, so no workspace button is current on it. */
+function spansWorkspaces(kind: string): boolean {
+  return kind === "home" || kind === "unreads";
+}
+
 export function WorkspaceRail() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const openWorkspace = useWorkspaceStore((s) => s.setWorkspaceId);
-  // Choosing a workspace on the rail leaves Home for it.
+  // Choosing a workspace on the rail leaves Home and Unreads for it.
   const setWorkspaceId = useCallback(
     (id: string) => {
       openWorkspace(id);
       const shell = useShellStore.getState();
-      if (shell.mainSurface.kind === "home") shell.setMainSurface({ kind: "conversation" });
+      if (spansWorkspaces(shell.mainSurface.kind)) shell.setMainSurface({ kind: "conversation" });
     },
     [openWorkspace],
   );
@@ -70,7 +75,8 @@ export function WorkspaceRail() {
     ...elsewhere,
   ];
   const labels = workspaceLabels(workspaces);
-  const inDirectSpace = useIsDirectSpace(workspaceId);
+  const acrossWorkspaces = useShellStore((s) => spansWorkspaces(s.mainSurface.kind));
+  const inDirectSpace = useIsDirectSpace(workspaceId) && !acrossWorkspaces;
   const directSpaceIds = useDirectSpaceIds();
   const directUnread = useUnreadStore((s) =>
     unreadTotal(s.counts, s.spaceOf, (space) => directSpaceIds.includes(space)),
@@ -132,7 +138,7 @@ export function WorkspaceRail() {
         )}
 
         {workspaces.map((server, index) => {
-          const active = server.id === workspaceId;
+          const active = server.id === workspaceId && !acrossWorkspaces;
           const label = labels[index];
           // The open workspace's unread messages are on the Inbox button instead.
           const unread = active ? 0 : unreadTotal(counts, spaceOf, (space) => space === server.id);

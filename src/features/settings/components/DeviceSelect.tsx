@@ -6,13 +6,16 @@ export function DeviceSelect<T extends string>({
   label,
   description,
   disabled,
+  describedBy,
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean }[];
   label: string;
   description: string;
   disabled?: boolean;
+  /** The id of an element that explains the row, such as why an option is disabled. */
+  describedBy?: string;
 }) {
   return (
     <label className="flex items-center justify-between gap-4 py-3">
@@ -24,11 +27,12 @@ export function DeviceSelect<T extends string>({
         aria-label={label}
         value={value}
         disabled={disabled}
+        aria-describedby={describedBy}
         onChange={(e) => onChange(e.target.value as T)}
         className="rounded-md border border-rim-line bg-rim-void px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}
