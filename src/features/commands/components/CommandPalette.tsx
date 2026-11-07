@@ -47,6 +47,7 @@ import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
+import { EDIT_HOME_COMMAND_ID, homeEditable } from "../../home/editHome";
 import type {
   CommandContextInput,
   CommandDefinition,
@@ -141,6 +142,7 @@ function CommandPaletteDialog() {
         !serverIds.has(cmd.id) &&
         commandOfferedHere(cmd.id) &&
         workspaceCommandOffered(cmd.id) &&
+        (cmd.id !== EDIT_HOME_COMMAND_ID || homeEditable()) &&
         offeredInSituation(cmd.id, situation),
     );
     return [

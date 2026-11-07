@@ -171,11 +171,15 @@ describe("HomePage", () => {
     useWorkspaceStore.setState({ workspaceId: null });
   });
 
-  it("says nothing needs the person when every section is empty", async () => {
+  it("shows today's boxes in today's order, each saying when it is empty", async () => {
     serve({});
     renderHome();
-    expect(await screen.findByText("Nothing needs you right now.")).toBeInTheDocument();
-    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    expect(await screen.findByText("Nothing waiting.")).toBeInTheDocument();
+    expect(await screen.findByText("No unread mentions or replies.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing unread.")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("region").map((region) => region.getAttribute("data-box-id")),
+    ).toEqual(["waiting", "mentions", "unread"]);
   });
 
   it("lists mentions of every workspace newest first, naming the workspace", async () => {
@@ -317,7 +321,7 @@ describe("HomePage", () => {
       }),
     } as never);
     renderHome();
-    await screen.findByText("Nothing needs you right now.");
+    await screen.findByText("Nothing waiting.");
     expect(
       requestMock.mock.calls.filter(([doc]) => String(doc).includes("query JoinRequestCount")),
     ).toHaveLength(0);
@@ -329,7 +333,7 @@ describe("HomePage", () => {
     serve({});
     renderHome();
     const section = await screen.findByRole("region", { name: "Unread" });
-    expect(within(section).getByRole("button", { name: /Alpha/ })).toHaveTextContent(
+    expect(await within(section).findByRole("button", { name: /Alpha/ })).toHaveTextContent(
       "5 unread in 2 conversations",
     );
     const beta = within(section).getByRole("button", { name: /Beta/ });
@@ -365,7 +369,7 @@ describe("HomePage", () => {
   it("has no filter with a single workspace", async () => {
     serve({}, SERVERS.slice(0, 1));
     renderHome();
-    await screen.findByText("Nothing needs you right now.");
+    await screen.findByText("Nothing waiting.");
     expect(screen.queryByRole("button", { name: "All workspaces" })).not.toBeInTheDocument();
   });
 
@@ -398,7 +402,7 @@ describe("HomePage", () => {
   it("has no agents section without a connected agent or without agents in this app", async () => {
     serve({});
     renderHome();
-    await screen.findByText("Nothing needs you right now.");
+    await screen.findByText("Nothing waiting.");
     expect(screen.queryByRole("region", { name: "Your agents' runs" })).not.toBeInTheDocument();
     act(() => useConnectedAgentsStore.setState({ agents: [AGENT] }));
     expect(await screen.findByRole("region", { name: "Your agents' runs" })).toBeInTheDocument();
@@ -412,7 +416,7 @@ describe("HomePage", () => {
   it("leaves the navigation button to the top bar in a narrow window", async () => {
     serve({});
     renderHome();
-    await screen.findByText("Nothing needs you right now.");
+    await screen.findByText("Nothing waiting.");
     act(() => useShellStore.setState({ shellWidth: "narrow" }));
     expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();

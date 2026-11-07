@@ -1045,6 +1045,27 @@ export type HeartbeatInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+/** The signed-in person's Home layout, kept on their home server. */
+export type HomeLayout = {
+  /** When the person made the edit, never later than the server's clock when it was stored. */
+  editedAt: Scalars['DateTime']['output'];
+  /** The layout: `{ "version": 1, "boxes": [{ "id", "kind", "width", "settings"? }] }`. */
+  layout: Scalars['JSON']['output'];
+  /** When the server stored it. */
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+/** The answer to `saveHomeLayout`. */
+export type HomeLayoutSaved = {
+  /**
+   * True when the layout sent was stored; false when the stored layout had a later
+   * `editedAt` and was kept instead.
+   */
+  kept: Scalars['Boolean']['output'];
+  /** The layout just stored, or the stored one that was kept. */
+  layout: HomeLayout;
+};
+
 export type InBandTokenInput = {
   argsHash: Scalars['String']['input'];
   token: Scalars['String']['input'];
@@ -2230,6 +2251,11 @@ export type Mutation = {
   /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
   /**
+   * Delete the signed-in person's Home layout, so every device shows the default. Answers
+   * whether one was stored. `FORBIDDEN` for a person from another server.
+   */
+  resetHomeLayout: Scalars['Boolean']['output'];
+  /**
    * Close an open report as resolved or dismissed (Owner/Moderator; for the direct space,
    * an instance operator). Audited (`admin.resolve_report`).
    */
@@ -2258,6 +2284,13 @@ export type Mutation = {
    * session, revokes every device and session, and enrolls the device given with it.
    */
   rotateIdentityKey: KeyIdentity;
+  /**
+   * Save the signed-in person's Home layout, made at `editedAt` on their device. The stored
+   * layout is kept instead when its `editedAt` is later, an `editedAt` later than the
+   * server's clock counting as the clock; `kept` says which. `VALIDATION` names the check a
+   * layout fails; `FORBIDDEN` for a person from another server.
+   */
+  saveHomeLayout: HomeLayoutSaved;
   /**
    * The old device's sealed answer, carrying the new device's certificate. The link then
    * lives another 10 minutes.
@@ -3038,6 +3071,12 @@ export type MutationRotateIdentityKeyArgs = {
 };
 
 
+export type MutationSaveHomeLayoutArgs = {
+  editedAt: Scalars['DateTime']['input'];
+  layout: Scalars['JSON']['input'];
+};
+
+
 export type MutationSendDeviceLinkAnswerArgs = {
   answer: SealedMessageInput;
   linkId: Scalars['String']['input'];
@@ -3787,6 +3826,12 @@ export type Query = {
   deviceRevocationStatus: Array<RevocationFanout>;
   /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
+  /**
+   * The signed-in person's Home layout, or null when none is stored and the client shows its
+   * default Home. `FORBIDDEN` for a person from another server, whose layout lives at their
+   * own server.
+   */
+  homeLayout?: Maybe<HomeLayout>;
   inboxConversations: ConversationPage;
   /**
    * The workspace's incoming webhooks, revoked ones included, never their token. Owner or

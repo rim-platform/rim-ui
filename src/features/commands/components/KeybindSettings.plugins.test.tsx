@@ -128,10 +128,12 @@ describe("KeybindSettings and plugin commands", () => {
 
   it("offers this app's own commands too and keeps their bindings on this device", async () => {
     const { user, picker } = await openPicker();
-    for (const { id, title } of LOCAL_COMMANDS) {
-      if (id === QUIT_COMMAND_ID || id === "workspace.open_agents") continue;
+    for (const { id, title, keybindCapable } of LOCAL_COMMANDS) {
+      if (id === QUIT_COMMAND_ID || id === "workspace.open_agents" || !keybindCapable) continue;
       expect(within(picker).getByRole("option", { name: title })).toBeInTheDocument();
     }
+    // Editing Home is never a keybind's to start.
+    expect(within(picker).queryByRole("option", { name: "Edit Home" })).not.toBeInTheDocument();
     // The web app has no window to quit and no connected programs.
     expect(within(picker).queryByRole("option", { name: "Quit RIM" })).not.toBeInTheDocument();
     expect(within(picker).queryByRole("option", { name: "Open Agents" })).not.toBeInTheDocument();

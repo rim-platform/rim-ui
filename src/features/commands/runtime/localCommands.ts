@@ -1,7 +1,12 @@
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import type { CommandDefinition } from "../types";
 
-function localCommand(id: string, title: string, description: string): CommandDefinition {
+function localCommand(
+  id: string,
+  title: string,
+  description: string,
+  keybindCapable = true,
+): CommandDefinition {
   return {
     id,
     title,
@@ -13,7 +18,7 @@ function localCommand(id: string, title: string, description: string): CommandDe
     requiredCapabilities: [],
     visibleInPalette: true,
     visibleInContextMenus: false,
-    keybindCapable: true,
+    keybindCapable,
     dangerous: false,
   };
 }
@@ -103,6 +108,13 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Take back the last mark while it is still waiting",
   ),
   localCommand("workspace.open_home", "Open Home", "See what needs you across your workspaces"),
+  // Changing Home is the person's own act from the palette or Home, never a keybind's.
+  localCommand(
+    "workspace.edit_home",
+    "Edit Home",
+    "Move, resize, add and remove the boxes on Home",
+    false,
+  ),
   localCommand(
     "workspace.open_audit_log",
     "Open Audit Log",

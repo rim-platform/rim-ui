@@ -24,6 +24,9 @@ import { useMemberDirectoryStore } from "../features/workspaces/state/useMemberD
 import { BUILT_IN_PROFILES, DEFAULT_BINDINGS } from "../features/commands/profiles/builtInProfiles";
 import { useWorkspaceStore } from "../features/workspaces/state/useWorkspaceStore";
 import { useShellStore, type MainSurface } from "./state/useShellStore";
+import { queryKeys } from "../core/query/keys";
+import { queryClient } from "../core/query/queryClient";
+import { useHomeEditStore } from "../features/home/state/useHomeEditStore";
 
 const EVERYTHING: SettingsTabAccess = {
   canModerate: true,
@@ -72,6 +75,7 @@ const ENTRY_COMMANDS: Record<string, string> = {
   bots: "workspace.open_bots",
   webhooks: "workspace.open_bots",
   "sidebar and drawer": "workspace.toggle_sidebar",
+  "editing Home": "workspace.edit_home",
   back: "workspace.go_back",
   forward: "workspace.go_forward",
 };
@@ -128,6 +132,14 @@ describe("every way into the app is reachable", () => {
   it("opens the pages by their commands", () => {
     runDesktopLocalCommand("workspace.open_home");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+
+    useShellStore.getState().setMainSurface({ kind: "unreads" });
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["home_layout"] });
+    runDesktopLocalCommand("workspace.edit_home");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    expect(useHomeEditStore.getState().requested).toBe(true);
+    useHomeEditStore.getState().stop();
+    queryClient.removeQueries({ queryKey: queryKeys.serverInfo });
 
     runDesktopLocalCommand("workspace.open_unreads");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });

@@ -149,6 +149,8 @@ export const queryKeys = {
   serverConfig: () => ["serverConfig"] as const,
   // The server's release and API version; read once per session.
   serverInfo: ["serverInfo"] as const,
+  // The account's Home layout as its home server keeps it.
+  homeLayout: ["homeLayout"] as const,
   hostCapabilities: (hostServerId: string) => ["hostCapabilities", hostServerId] as const,
   spaceCapability: (spaceId: string | undefined, capability: string) =>
     ["spaceCapability", spaceId, capability] as const,

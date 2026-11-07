@@ -17,6 +17,8 @@ them.
   updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
   pane.
+- `home.md`: Home's boxes, editing them, what each device keeps, and two devices editing at
+  once.
 - `navigation.md`: the window width classes, the navigation drawer, and every way into each page
   and panel.
 - `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.

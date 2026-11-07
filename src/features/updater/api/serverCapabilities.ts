@@ -68,6 +68,9 @@ export const WEBHOOK_FORMATS = "webhook_formats";
  */
 export const WEBHOOK_TEST_SESSIONS = "webhook_test_sessions";
 
+/** The capability of a server that keeps the account's Home layout: `homeLayout`, `saveHomeLayout` and `resetHomeLayout`. */
+export const HOME_LAYOUT = "home_layout";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;
