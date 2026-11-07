@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 
@@ -59,6 +59,8 @@ interface KeySignupFormProps {
   onBusyChange?: (busy: boolean) => void;
   /** Whether the page's own fields let the signup go ahead; `true` when absent. */
   ready?: boolean;
+  /** What the page's own fields still need, shown under the button while `ready` is false. */
+  notReadyReason?: string;
   /**
    * Offered a failed signup first: returns `true` when the page shows the failure itself, as an
    * invite code field does with a refused token.
@@ -221,10 +223,12 @@ export function KeySignupForm({
   onSuccess,
   onBusyChange,
   ready = true,
+  notReadyReason,
   onFailure,
   onAccountCreated,
 }: KeySignupFormProps) {
   const qc = useQueryClient();
+  const missingId = useId();
   // Read once: the form follows one flow from start to end.
   const [kitAfter] = useState(deviceKeepsRecoveryKit);
   const storage = useKeyStorageConsent();
@@ -405,6 +409,7 @@ export function KeySignupForm({
     setSaved(false);
   }
 
+  const missing = missingReason();
   const canSubmit =
     ready &&
     terms.satisfied &&
@@ -414,6 +419,24 @@ export function KeySignupForm({
       : username.trim().length > 0 &&
         deviceName.trim().length > 0 &&
         (!kitAfter || password.password.length > 0));
+
+  /** The first thing that keeps Create account disabled, in the order of the form; null when none. */
+  function missingReason(): string | null {
+    if (!ready) return notReadyReason ?? "Finish the invite step above to continue.";
+    if (username.trim().length === 0) return "Choose a username.";
+    if (!draft && deviceName.trim().length === 0) return "Name this device.";
+    if (password.password.length === 0 && (draft || kitAfter)) return "Choose a password.";
+    if (draft && !kitAfter && !saved) return "Save your recovery kit to continue.";
+    if (!terms.satisfied) return "Accept the terms to continue.";
+    if (!age.satisfied) return "Confirm your age to continue.";
+    return null;
+  }
+
+  const missingLine = missing && (
+    <p id={missingId} className="text-xs text-rim-text-muted">
+      {missing}
+    </p>
+  );
 
   if (created && draft) {
     return (
@@ -506,7 +529,13 @@ export function KeySignupForm({
       {draft ? (
         <div className="space-y-2">
           <div className="flex gap-2">
-            <Button type="submit" className="flex-1" isLoading={busy} disabled={!canSubmit}>
+            <Button
+              type="submit"
+              className="flex-1"
+              isLoading={busy}
+              disabled={!canSubmit}
+              aria-describedby={missing ? missingId : undefined}
+            >
               Create account
             </Button>
             {!kitAfter && (
@@ -525,12 +554,20 @@ export function KeySignupForm({
               Start over makes new keys and a new recovery kit; the kit you saved stops working.
             </p>
           )}
+          {missingLine}
         </div>
       ) : (
-        <Button type="submit" className="w-full" isLoading={busy} disabled={!canSubmit}>
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={busy}
+          disabled={!canSubmit}
+          aria-describedby={missing ? missingId : undefined}
+        >
           {kitAfter ? "Create account" : "Create keys"}
         </Button>
       )}
+      {!draft && missingLine}
     </form>
   );
 }

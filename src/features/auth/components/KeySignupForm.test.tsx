@@ -908,4 +908,89 @@ describe("KeySignupForm", () => {
       expect(await screen.findByText(REGISTRATION_FULL_MESSAGE)).toBeInTheDocument();
     });
   });
+  describe("what is still missing", () => {
+    const TERMS = "https://acme.example/terms";
+    const button = () => screen.getByRole("button", { name: /create (keys|account)/i });
+    const line = (text: string) => screen.getByText(text);
+
+    function renderReasons(
+      props: { ready?: boolean; notReadyReason?: string } = {},
+      details: FakeServerDetails = {},
+    ) {
+      const qc = createTestQueryClient();
+      qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, details));
+      return render(
+        <QueryClientProvider client={qc}>
+          <KeySignupForm tokens={{}} onSuccess={vi.fn()} {...props} />
+        </QueryClientProvider>,
+      );
+    }
+
+    async function nameDevice() {
+      await waitFor(() =>
+        expect(screen.getByLabelText(/name of this device/i)).toHaveValue("Laptop"),
+      );
+    }
+
+    it("names the page's own reason first and ties it to the button", async () => {
+      renderReasons({ ready: false, notReadyReason: "Enter your invite code to continue." });
+      await nameDevice();
+
+      expect(button()).toBeDisabled();
+      expect(button()).toHaveAccessibleDescription("Enter your invite code to continue.");
+    });
+
+    it("asks for a username, a device name and a password in turn", async () => {
+      api.deviceKeepsRecoveryKit.mockReturnValue(true);
+      const user = userEvent.setup();
+      renderReasons();
+      await nameDevice();
+
+      expect(line("Choose a username.")).toBeInTheDocument();
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+
+      await user.clear(screen.getByLabelText(/name of this device/i));
+      expect(line("Name this device.")).toBeInTheDocument();
+      await user.type(screen.getByLabelText(/name of this device/i), "Laptop");
+
+      expect(line("Choose a password.")).toBeInTheDocument();
+      expect(button()).toBeDisabled();
+      expect(button()).toHaveAccessibleDescription("Choose a password.");
+      typePassword();
+
+      expect(button()).toBeEnabled();
+      expect(screen.queryByText(/choose a|name this|accept the|confirm your/i)).toBeNull();
+      expect(button()).not.toHaveAccessibleDescription();
+    });
+
+    it("asks for the terms and the age", async () => {
+      const user = userEvent.setup();
+      renderReasons({}, { termsUrl: TERMS, minimumAge: 16 });
+      await nameDevice();
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
+
+      expect(line("Accept the terms to continue.")).toBeInTheDocument();
+      await user.click(screen.getByRole("checkbox", { name: "I accept the terms of use" }));
+      expect(line("Confirm your age to continue.")).toBeInTheDocument();
+      await user.click(screen.getByRole("checkbox", { name: /i am at least 16/i }));
+
+      expect(button()).toBeEnabled();
+      expect(screen.queryByText(/to continue\./)).toBeNull();
+    });
+
+    it("asks for the recovery kit to be saved once the keys exist", async () => {
+      const user = userEvent.setup();
+      renderReasons();
+      await nameDevice();
+      await user.type(screen.getByLabelText(/^username/i), "ada");
+      typePassword();
+      await user.click(button());
+      await screen.findByLabelText("Recovery phrase");
+
+      expect(line("Save your recovery kit to continue.")).toBeInTheDocument();
+      await user.click(screen.getByRole("checkbox", { name: /saved my recovery kit/i }));
+      expect(screen.queryByText("Save your recovery kit to continue.")).toBeNull();
+    });
+  });
 });

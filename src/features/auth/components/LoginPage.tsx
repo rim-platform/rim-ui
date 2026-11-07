@@ -178,7 +178,11 @@ export function LoginPage() {
             <WayInRow
               to="/join"
               title="Create account"
-              hint="New here. You need no email."
+              hint={
+                inviteOnly
+                  ? "New here. You need an invite, and no email."
+                  : "New here. You need no email."
+              }
               icon={<Plus className="h-4 w-4 text-rim-success" />}
             />
           )}
