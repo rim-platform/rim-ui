@@ -253,7 +253,10 @@ describe("HomePage", () => {
     serve(inbox);
     renderHome();
     expect(await screen.findByText("still here")).toBeInTheDocument();
-    expect(await screen.findByText("Couldn't load Beta.")).toBeInTheDocument();
+    // The failed workspace shows once its one retry, a second later, has failed too.
+    expect(
+      await screen.findByText("Couldn't load Beta.", {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load Alpha.")).not.toBeInTheDocument();
 
     inbox["ws-2"] = [mention("b", "ws-2", 1, "arrived")];
