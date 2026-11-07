@@ -88,10 +88,12 @@ for a message to steer the agent. It can't make it impossible.
 An agent can ask to post a message in a channel you let it read, and nowhere else. RIM then comes
 to the front with an approval card:
 
-- the agent's name, "wants to:", and "Initiated by a program outside RIM";
+- the agent's name, "wants to: send a message", and an **Agent outside RIM** label;
+- a warning that the request came from a program outside RIM, which may have read text meant to
+  steer it;
 - the workspace and the channel;
-- the whole message, with its length. Invisible characters and characters that change text
-  direction are shown by name, so nothing is hidden.
+- the whole message, with how many lines and characters it has. Invisible characters and
+  characters that change text direction are shown by name, so nothing is hidden.
 
 Read the text before you send it. The agent may have read something meant to steer it.
 
