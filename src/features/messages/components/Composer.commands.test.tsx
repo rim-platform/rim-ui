@@ -4,6 +4,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 
 import { serverInfoQueryClient } from "../../../test/serverInfo";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { queryClient } from "../../../core/query/queryClient";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCommandResultStore } from "../../commands/state/useCommandResultStore";
 import {
   baseReadHandlers,
@@ -44,6 +46,11 @@ function definition(id: string, title: string, args: { name: string; type: strin
 
 const commands = [
   definition("chat.list_members", "List Members", [{ name: "server_id", type: "WORKSPACE_ID" }]),
+  definition("chat.post_message", "Post Message", [
+    { name: "server_id", type: "WORKSPACE_ID" },
+    { name: "conversation_id", type: "CONVERSATION_ID" },
+    { name: "text", type: "STRING" },
+  ]),
   definition("admin.ban", "Ban Member", [
     { name: "server_id", type: "WORKSPACE_ID" },
     { name: "user_id", type: "USER_ID" },
@@ -100,13 +107,16 @@ function type(box: HTMLTextAreaElement, value: string) {
 describe("Composer — commands", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    queryClient.clear();
     useCommandResultStore.getState().dismiss();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.setState({ selectedConversationId: null });
   });
 
   it("shows the result of a command picked from the list", async () => {
@@ -153,14 +163,18 @@ describe("Composer — commands", () => {
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 
-  it("does not offer a command that needs arguments the box cannot take", async () => {
+  it("offers a command that needs arguments, and inserts its form when picked", async () => {
     const box = await renderBox();
-    type(box, "/ban");
-    await act(async () => {});
-    expect(screen.queryByRole("option", { name: /Ban Member/ })).not.toBeInTheDocument();
+    type(box, "/admin.ban");
+    const option = await screen.findByRole("option", { name: /Ban Member/ });
+    expect(option).toHaveTextContent("Needs user_id.");
+    fireEvent.click(option);
+
+    expect(box.value).toBe("/admin.ban user_id=");
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 
-  it("says what a typed command lacks and keeps the text", async () => {
+  it("says what a typed command lacks, with the form to type, and keeps the text", async () => {
     const spy = vi.spyOn(toast, "error");
     const box = await renderBox();
     type(box, "/Ban Member");
@@ -168,13 +182,68 @@ describe("Composer — commands", () => {
     fireEvent.keyDown(box, { key: "Enter" });
 
     await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(
-        "Ban Member needs user_id. The message box cannot take arguments yet.",
-      ),
+      expect(spy).toHaveBeenCalledWith("Ban Member needs user_id. Type /admin.ban user_id=..."),
     );
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
     expect(box.value).toBe("/Ban Member");
+  });
+
+  it("runs a typed command with its arguments instead of sending the line", async () => {
+    const box = await renderBox();
+    type(box, "/admin.ban user_id=u-1");
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
+      input: { commandId: "admin.ban", args: { user_id: "u-1" } },
+    });
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
+    expect(box.value).toBe("");
+  });
+
+  it("keeps a line whose arguments cannot be read", async () => {
+    const spy = vi.spyOn(toast, "error");
+    const box = await renderBox();
+    type(box, '/chat.post_message text="open');
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining("Post Message: A quoted value")),
+    );
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+    expect(box.value).toBe('/chat.post_message text="open');
+  });
+
+  it("sends text-carrying commands in a plain conversation", async () => {
+    const box = await renderBox();
+    type(box, '/chat.post_message text="hello there"');
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
+      input: { commandId: "chat.post_message", args: { text: "hello there" } },
+    });
+  });
+
+  it("does not send a command's message text to the server for an encrypted conversation", async () => {
+    const spy = vi.spyOn(toast, "error");
+    const box = await renderBox();
+    serve({
+      "query Conversation(": () => ({
+        conversation: makeConversation({ encryptedAt: "2026-01-01T00:00:00Z" }),
+      }),
+    });
+    type(box, '/chat.post_message text="a secret"');
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("Post Message would send your text"),
+      ),
+    );
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+    expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
   });
 
   it("reports a pipe the server refuses", async () => {

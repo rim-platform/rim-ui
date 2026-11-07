@@ -96,7 +96,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
-- Commands run from the message box now show their result, as they do from the palette, and a typed command name runs it.
+- Commands run from the message box now show their result, as they do from the palette, and a typed command name, with its arguments, runs it.
 - The sign-up form says what's still missing when Create account can't be clicked.
 - Sign-up has a way back to sign-in, every join page has a way out, emoji-led names no longer break
   a workspace's badge, and focus returns to the right place after closing dialogs in Settings > Bots.

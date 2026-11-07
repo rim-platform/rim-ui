@@ -12,7 +12,6 @@ import { toast } from "../../../shared/toast";
 import { CANCELLED_PAYLOAD } from "../../plugins/runtime/pluginCommandInfo";
 import { useCommandResultStore } from "../state/useCommandResultStore";
 import type { CommandDefinition, CommandResult } from "../types";
-import { findCommandByText } from "./composerCommand";
 import { LOCAL_ACTION_PAYLOAD } from "./commandDispatcher";
 import { showCommandOutcome } from "./commandOutcome";
 
@@ -95,22 +94,5 @@ describe("showCommandOutcome", () => {
       result({ message: "Ran it" }),
     );
     expect(toast.success).toHaveBeenCalledWith("Run: Ran it");
-  });
-});
-
-describe("findCommandByText", () => {
-  const known = [listMembers, command("chat.list_channels", "List Channels")];
-
-  it("matches an id or a title, ignoring case and spacing", () => {
-    expect(findCommandByText("/chat.list_members", known)).toBe(listMembers);
-    expect(findCommandByText("/ List   MEMBERS ", known)).toBe(listMembers);
-  });
-
-  it("matches nothing for other text", () => {
-    expect(findCommandByText("/list", known)).toBeNull();
-    expect(findCommandByText("list members", known)).toBeNull();
-    expect(findCommandByText("/list members now", known)).toBeNull();
-    expect(findCommandByText("/", known)).toBeNull();
-    expect(findCommandByText("/list members", undefined)).toBeNull();
   });
 });

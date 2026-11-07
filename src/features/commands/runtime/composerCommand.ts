@@ -1,11 +1,12 @@
 import { toast } from "../../../shared/toast";
-import type { CommandDefinition, CommandResult } from "../types";
-import { commandResultOf, dispatchCommand } from "./commandDispatcher";
+import type { CommandContextInput, CommandDefinition, CommandResult } from "../types";
+import { argString, commandResultOf, dispatchCommand } from "./commandDispatcher";
 import { currentCommandContext } from "./commandContext";
 import { showCommandOutcome } from "./commandOutcome";
 import { missingArgumentNames } from "./commandRunnable";
 import { runWithHumanConfirmation, type ConfirmationProof } from "./humanConfirmation";
 import { appOnlyStageError, pipeConfirmationSubject } from "./pipeStages";
+import { conversationEncrypted } from "../../plugins/chat/appMessageService";
 import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { showCommandRefusal } from "./refusal";
 
@@ -18,59 +19,66 @@ export type ExecuteBackend = (input: {
   confirmation?: ConfirmationProof;
 }) => Promise<{ executeCommand: CommandResult }>;
 
-function normalized(text: string): string {
-  return text.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 /**
- * The command a message box line names: its whole text after the leading `/` is a command's id
- * or title, ignoring case and spacing. An id wins over a title.
- *
- * @returns The command, or `null` when the line names none (it is then ordinary text).
+ * Whether `command` still lacks arguments after `given`; when it does, says which and the form to
+ * type, in an error toast.
  */
-export function findCommandByText(
-  text: string,
-  commands: readonly CommandDefinition[] | undefined,
-): CommandDefinition | null {
-  if (!commands || !text.startsWith("/")) return null;
-  const wanted = normalized(text.slice(1));
-  if (!wanted) return null;
-  return (
-    commands.find((cmd) => normalized(cmd.id) === wanted) ??
-    commands.find((cmd) => normalized(cmd.title) === wanted) ??
-    null
-  );
-}
-
-/**
- * Whether `command` needs arguments the message box cannot take; when it does, says which in an
- * error toast.
- */
-export function lacksArguments(command: CommandDefinition): boolean {
-  const missing = missingArgumentNames(command, currentCommandContext());
+export function lacksArguments(
+  command: CommandDefinition,
+  given: Record<string, unknown> = {},
+): boolean {
+  const missing = missingArgumentNames(command, currentCommandContext(), given);
   if (missing.length === 0) return false;
-  const names =
-    missing.length > 1
-      ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`
-      : missing[0];
-  toast.error(`${command.title} needs ${names}. The message box cannot take arguments yet.`);
+  toast.error(
+    `${command.title} needs ${missing.join(", ")}. Type /${command.id} ${missing.map((n) => `${n}=...`).join(" ")}`,
+  );
+  return true;
+}
+
+/** Commands whose `text` argument is a message, which an encrypted conversation must not receive in plain. */
+const MESSAGE_TEXT_COMMANDS: ReadonlySet<string> = new Set([
+  "chat.post_message",
+  "chat.reply_to_selected_message",
+]);
+
+/**
+ * Whether `command` would send message text to the server in plain for an end-to-end encrypted
+ * conversation, or one that cannot be told apart from it; when it would, says so in an error
+ * toast.
+ */
+async function refusedForEncryption(
+  command: CommandDefinition,
+  args: Record<string, unknown> | undefined,
+  context: CommandContextInput,
+): Promise<boolean> {
+  if (!MESSAGE_TEXT_COMMANDS.has(command.id)) return false;
+  const conversationId =
+    argString(args, "conversation_id", "conversationId") ?? context.conversationId;
+  const workspaceId = argString(args, "server_id", "serverId") ?? context.workspaceId;
+  if (!conversationId || !workspaceId) return false;
+  if ((await conversationEncrypted(workspaceId, conversationId)) === false) return false;
+  toast.error(
+    `${command.title} would send your text to the server unencrypted, and this conversation is end-to-end encrypted or cannot be checked. Write the message in the box instead.`,
+  );
   return true;
 }
 
 /**
- * Runs a command picked or typed in the message box and tells the person how it went: its
- * result or a refusal card. Its confirmation, argument prompt and target picker open as they do
- * from the palette.
+ * Runs a command picked or typed in the message box, with the arguments typed after it, and tells
+ * the person how it went: its result or a refusal card. Its confirmation, argument prompt and
+ * target picker open as they do from the palette.
  */
 export async function runComposerCommand(
   command: CommandDefinition,
   executeBackend: ExecuteBackend,
+  args?: Record<string, unknown>,
 ): Promise<void> {
   const commandContext = currentCommandContext();
+  if (await refusedForEncryption(command, args, commandContext)) return;
   const run = async (): Promise<void> => {
     try {
-      const result = await dispatchCommand(command, executeBackend, { commandContext });
-      await showCommandOutcome(command, result, undefined, commandContext);
+      const result = await dispatchCommand(command, executeBackend, { args, commandContext });
+      await showCommandOutcome(command, result, args, commandContext);
     } catch (err: unknown) {
       showCommandRefusal(command.title, err, () => void run());
     }

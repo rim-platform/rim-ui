@@ -29,7 +29,7 @@ import { useApplicableDirectOrigin } from "../../conversations/state/directOrigi
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { runComposerCommand } from "../../commands/runtime/composerCommand";
-import { runsFromPalette } from "../../commands/runtime/commandRunnable";
+import { missingArgumentNames } from "../../commands/runtime/commandRunnable";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { BotBadge } from "../../../shared/ui/BotBadge";
 import type { CommandDefinition } from "../../commands/types";
@@ -53,6 +53,8 @@ interface CommandSuggestion {
   description: string;
   category: string;
   keybind: string | null;
+  /** The arguments the command needs typed after its name. */
+  needs: string[];
   /** Original command definition for execution */
   command: CommandDefinition;
 }
@@ -234,7 +236,6 @@ export function ComposerInput({
         if (allCommands) {
           const filtered = allCommands
             .filter((cmd) => commandOfferedHere(cmd.id))
-            .filter((cmd) => runsFromPalette(cmd, currentCommandContext()))
             .filter((cmd) => offeredInSituation(cmd.id, situation()))
             .filter((cmd) => offeredForConversation(cmd.id, openConversation))
             .filter((cmd) => {
@@ -253,6 +254,7 @@ export function ComposerInput({
                 description: cmd.description,
                 category: cmd.category,
                 keybind: keybindMap.get(cmd.id) ?? null,
+                needs: missingArgumentNames(cmd, currentCommandContext()),
                 command: cmd,
               },
             });
@@ -323,9 +325,15 @@ export function ComposerInput({
   }
 
   function applyCommandSuggestion(suggestion: CommandSuggestion) {
-    onTextChange("");
     setSlashItems([]);
     textareaRef.current?.focus();
+    const missing = missingArgumentNames(suggestion.command, currentCommandContext());
+    if (missing.length > 0) {
+      // A command with arguments to give is left as text to finish: `/id name=`.
+      onTextChange(`/${suggestion.id} ${missing.map((name) => `${name}=`).join(" ")}`);
+      return;
+    }
+    onTextChange("");
     void runComposerCommand(suggestion.command, (input) =>
       executeMutationRef.current.mutateAsync(input),
     );
@@ -611,6 +619,7 @@ export function ComposerInput({
                     </div>
                     <span className="truncate text-xs text-rim-text-muted">
                       {item.value.description}
+                      {item.value.needs.length > 0 && ` Needs ${item.value.needs.join(", ")}.`}
                     </span>
                   </button>
                 </div>

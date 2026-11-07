@@ -9,9 +9,9 @@ import {
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
+import { parseCommandLine } from "../../commands/runtime/commandLine";
 import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
 import {
-  findCommandByText,
   lacksArguments,
   runComposerCommand,
   runComposerPipe,
@@ -432,16 +432,26 @@ function MessageComposer(props: ComposerProps) {
       }
     }
 
-    // A line that is a command's id or title runs the command instead of being posted.
-    const typedCommand = findCommandByText(trimmed, paletteCommands);
-    if (typedCommand && pendingFiles.length === 0) {
-      // A command that lacks arguments leaves the typed line to edit.
-      if (lacksArguments(typedCommand)) return;
+    // A line that is a command's id or title, with its arguments, runs the command instead of
+    // being sent.
+    const typedCommand =
+      pendingFiles.length === 0 ? parseCommandLine(trimmed, paletteCommands) : null;
+    if (typedCommand) {
+      // A command that lacks arguments, or whose arguments cannot be read, leaves the line to edit.
+      if ("error" in typedCommand) {
+        toast.error(`${typedCommand.command.title}: ${typedCommand.error}`);
+        return;
+      }
+      if (lacksArguments(typedCommand.command, typedCommand.args)) return;
       setText("");
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().clearDraft(textKey);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
-      await runComposerCommand(typedCommand, (input) => executeCommand.mutateAsync(input));
+      await runComposerCommand(
+        typedCommand.command,
+        (input) => executeCommand.mutateAsync(input),
+        typedCommand.args,
+      );
       return;
     }
 

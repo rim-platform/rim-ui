@@ -16,16 +16,21 @@ export function runsFromPalette(command: CommandDefinition, context: ArgumentCon
 }
 
 /**
- * The names of the arguments `command` requires that neither the context nor a prompt supplies,
- * which a command run from the message box cannot take.
+ * The names of the arguments `command` requires that neither the context, a prompt nor `given`
+ * supplies, which a command run from the message box still has to be given.
  */
 export function missingArgumentNames(
   command: CommandDefinition,
   context: ArgumentContext,
+  given: Record<string, unknown> = {},
 ): string[] {
   if (hasLocalHandler(command.id)) return [];
   const prompted = argumentPromptName(command.id);
   return unfilledRequiredArguments(command, context)
-    .filter((argument) => argument.name !== prompted)
+    .filter((argument) => argument.name !== prompted && !isGiven(given[argument.name]))
     .map((argument) => argument.name);
+}
+
+function isGiven(value: unknown): boolean {
+  return value !== undefined && value !== "";
 }
