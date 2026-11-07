@@ -26,8 +26,23 @@ While you type, the results come in three groups, at most 5 each:
 direct space, or All workspaces. <kbd>Tab</kbd> or a click on the chip switches between the open
 workspace and all of them; from Home and Unreads the box starts with all of them. Across
 workspaces, Channels and people also lists the channels joined in every workspace on the rail,
-the direct messages and the workspaces. Messages asks each workspace on the rail and each direct
-space for its first 5 matches and shows the 5 newest, from the server only.
+the direct messages and the workspaces.
+
+Messages across workspaces asks each workspace for its 5 newest matches and shows the 5 newest of
+all, from the server only, with these limits:
+
+- It waits for at least 2 characters and the 300 ms pause; below that it says "Type at least 2
+  characters to search messages in every workspace." A new text aborts the requests still
+  running (the query client's abort signal).
+- It asks at most 10 workspaces per pause: the open one first, then the rest in rail order
+  (Direct messages, this server's workspaces, then other servers'). Past 10 it says "Searched 10
+  of your \<n\> workspaces. Pick one to search the rest."
+- A workspace that fails, or does not answer within 8 seconds, leaves the others' results and
+  adds a line naming it, such as "Couldn't search Pixel Guild."; it never shows an error toast.
+- Each request goes to its workspace's own host, as the overlay's does
+  (`fetchMessageSearchPage`, routed by the client's space router), never through another
+  server. The timeout also ends the wait for a workspace on another server, whose transport does
+  not take the abort signal.
 
 **Encrypted conversations.** The server cannot search them, so the box says what it covers under
 Messages. In the web app, which keeps no copy of them: "Encrypted messages can't be searched in

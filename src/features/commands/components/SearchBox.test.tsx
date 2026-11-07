@@ -120,6 +120,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { queryClient } from "../../../core/query/queryClient";
+import { toast } from "../../../shared/toast";
 
 function Providers({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -247,13 +248,65 @@ describe("the search box", () => {
         expect.stringContaining("blocks the release"),
       ]),
     );
-    expect(fetchPage).toHaveBeenCalledWith("ws-2", "rel", 5);
+    expect(fetchPage).toHaveBeenCalledWith("ws-2", "rel", 5, expect.any(AbortSignal));
     expect(
       screen.getByText("Encrypted messages can't be searched in the web app."),
     ).toBeInTheDocument();
 
     fireEvent.keyDown(field(), { key: "Tab" });
     expect(chip()).toHaveTextContent("RIM Development");
+  });
+
+  it("says how many workspaces it searched when there are more than ten", async () => {
+    const all = servers.data;
+    servers.data = Array.from({ length: 14 }, (_, i) => ({
+      id: i === 0 ? "ws-1" : `ws-${i + 1}`,
+      name: `Workspace ${i + 1}`,
+      owner: null,
+    }));
+    fetchPage.mockResolvedValue({
+      items: [],
+      next: null,
+      prev: null,
+      pageInfo: { hasNext: false, hasPrev: false },
+    });
+    openBox();
+    act(() => useCommandStore.getState().setScope("everything"));
+    type("release");
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(10));
+    expect(fetchPage.mock.calls[0][0]).toBe("ws-1");
+    expect(
+      screen.getByText("Searched 10 of your 14 workspaces. Pick one to search the rest."),
+    ).toBeInTheDocument();
+    servers.data = all;
+  });
+
+  it("names a workspace it could not search and keeps the others, with no error toast", async () => {
+    fetchPage.mockImplementation(async (serverId: string) => {
+      if (serverId === "ws-2") throw new Error("Search is turned off here");
+      return {
+        items: [message("m-1", "ws-1", "2026-11-07T10:12:00Z", "blocks the release")],
+        next: null,
+        prev: null,
+        pageInfo: { hasNext: false, hasPrev: false },
+      };
+    });
+    openBox();
+    act(() => useCommandStore.getState().setScope("everything"));
+    type("release");
+    expect(await screen.findByText("Couldn't search Pixel Guild.")).toBeInTheDocument();
+    expect(within(group("Messages")).getByRole("option")).toHaveTextContent("blocks the release");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("asks for two characters before searching every workspace's messages", () => {
+    openBox();
+    act(() => useCommandStore.getState().setScope("everything"));
+    type("r");
+    expect(
+      screen.getByText("Type at least 2 characters to search messages in every workspace."),
+    ).toBeInTheDocument();
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 
   it("starts with every workspace from Home and from Unreads", () => {

@@ -3,7 +3,6 @@ import { useQueries } from "@tanstack/react-query";
 import { Hash, MessageSquare, Search, Terminal } from "lucide-react";
 import { Highlight } from "@nozbe/microfuzz/react";
 
-import { queryKeys } from "../../../core/query/keys";
 import { cn } from "../../../shared/ui/cn";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
@@ -11,15 +10,15 @@ import { joinedChannelsQueryOptions } from "../../conversations/api/useChannels"
 import { useOpenConversation } from "../../conversations/hooks/useOpenConversation";
 import { currentCacheAccount } from "../../messages/api/messageCache";
 import { useMessageSearchResults } from "../../messages/api/useMessageSearchResults";
+import type { SearchMessageItem } from "../../messages/api/useSearchMessages";
 import {
-  fetchMessageSearchPage,
-  useDebouncedQuery,
-  type SearchMessageItem,
-} from "../../messages/api/useSearchMessages";
+  ACROSS_MIN_LENGTH,
+  searchOrder,
+  useMessagesAcrossWorkspaces,
+} from "../../messages/api/searchAcrossWorkspaces";
 import { SearchSnippet } from "../../messages/components/SearchSnippet";
 import { openSearchResult } from "../../messages/runtime/openSearchResult";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
-import { blockedConversationIdsIn } from "../../relay/state/useBlockedConversations";
 import { useDirectSpaceIds } from "../../relay/api/useDirectInbox";
 import { isDirectSpace, useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { useMyServers } from "../../workspaces/api/useMyServers";
@@ -68,8 +67,11 @@ function unarchivedChannels(
   return results.flatMap(({ data }) => (data?.items ?? []).filter((c) => !c.isArchived));
 }
 
-/** The workspaces on the rail and the direct spaces, each searched in the all-workspaces scope. */
-function useSearchedSpaces(): string[] {
+/**
+ * The spaces searched in the all-workspaces scope, in rail order: the direct spaces of Direct
+ * messages, then the workspaces of this server and those of other servers.
+ */
+function useRailSpaces(): string[] {
   const { data: servers } = useMyServers();
   const spaces = useRelayStore((s) => s.spaces);
   const forked = useRelayStore((s) => s.forked);
@@ -78,7 +80,7 @@ function useSearchedSpaces(): string[] {
     const remote = Object.values(spaces)
       .filter((space) => space.kind === "workspace" && !forked.includes(space.hostServerId))
       .map((space) => space.spaceId);
-    return [...new Set([...(servers ?? []).map((s) => s.id), ...remote, ...directSpaceIds])];
+    return [...new Set([...directSpaceIds, ...(servers ?? []).map((s) => s.id), ...remote])];
   }, [servers, spaces, forked, directSpaceIds]);
 }
 
@@ -179,33 +181,40 @@ function useMessageRows(query: string, scope: SearchBoxScope) {
     undefined,
     query,
   );
-  const spaces = useSearchedSpaces();
-  const debounced = useDebouncedQuery(query).trim();
-  const pages = useQueries({
-    queries: (everything && debounced ? spaces : []).map((space) => ({
-      queryKey: queryKeys.searchBoxMessages(space, debounced),
-      queryFn: () => fetchMessageSearchPage(space, debounced, GROUP_LIMIT),
-      staleTime: 15_000,
-      retry: false,
-    })),
-  });
+  const railSpaces = useRailSpaces();
+  const ordered = useMemo(() => searchOrder(railSpaces, workspaceId), [railSpaces, workspaceId]);
+  const across = useMessagesAcrossWorkspaces(query, ordered, everything);
+  const names = useWorkspaceNames();
+  const directSpaceIds = useDirectSpaceIds();
 
   if (!everything) {
     return {
       items: here.results.slice(0, GROUP_LIMIT),
       isPending: Boolean(query.trim()) && here.isPending,
-      isOffline: here.isOffline,
+      notes: here.isOffline
+        ? ["Offline: showing matches from messages saved on this device."]
+        : [encryptedNote(scope)],
     };
   }
-  const items = pages
-    .flatMap(({ data }) => data?.items ?? [])
-    .filter((item) => !blockedConversationIdsIn(item.serverId).has(item.conversationId))
-    .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
-    .slice(0, GROUP_LIMIT);
+  const nameOf = (id: string) =>
+    directSpaceIds.includes(id)
+      ? "your direct messages"
+      : showInvisibleCharacters(names.get(id) ?? "a workspace");
   return {
-    items,
-    isPending: Boolean(debounced) && pages.some((q) => q.isPending),
-    isOffline: false,
+    items: across.items,
+    isPending: across.isPending,
+    notes: [
+      ...(across.tooShort
+        ? [`Type at least ${ACROSS_MIN_LENGTH} characters to search messages in every workspace.`]
+        : []),
+      ...(across.searchedCount > 0 && across.searchedCount < across.total
+        ? [
+            `Searched ${across.searchedCount} of your ${across.total} workspaces. Pick one to search the rest.`,
+          ]
+        : []),
+      ...across.failed.map((id) => `Couldn't search ${nameOf(id)}.`),
+      encryptedNote(scope),
+    ],
   };
 }
 
@@ -390,13 +399,7 @@ export function SearchBox({
               key={group}
               id={`${id}-${group}`}
               title={GROUP_TITLES[group]}
-              note={
-                group === "messages"
-                  ? messages.isOffline
-                    ? "Offline: showing matches from messages saved on this device."
-                    : encryptedNote(scope)
-                  : null
-              }
+              notes={group === "messages" ? messages.notes : []}
               empty={
                 group === "messages" && messages.isPending
                   ? "Searching…"
@@ -456,17 +459,17 @@ export function SearchBox({
   );
 }
 
-/** A titled group of rows, announced by its title, with a note under the title. */
+/** A titled group of rows, announced by its title, with notes under the title. */
 function Group({
   id,
   title,
-  note,
+  notes,
   empty,
   children,
 }: {
   id: string;
   title: string;
-  note: string | null;
+  notes: string[];
   empty: string | null;
   children: ReactNode;
 }) {
@@ -478,7 +481,11 @@ function Group({
       >
         {title}
       </div>
-      {note && <p className="px-3 pb-1 text-[11px] text-rim-text-faint">{note}</p>}
+      {notes.map((note) => (
+        <p key={note} className="px-3 pb-1 text-[11px] text-rim-text-faint">
+          {note}
+        </p>
+      ))}
       {empty ? <p className="px-3 py-1.5 text-xs text-rim-text-faint">{empty}</p> : children}
     </div>
   );
