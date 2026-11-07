@@ -30,6 +30,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
+import { goBack, goForward } from "../../../shell/navigation/history";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
@@ -148,7 +149,11 @@ const localHandlers: Record<
     useShellStore.getState().setMainSurface({ kind: "settings" });
   },
   "workspace.open_search": () => {
-    useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+    // From Home and Unreads the search box starts with every workspace.
+    const kind = useShellStore.getState().mainSurface.kind;
+    useCommandStore
+      .getState()
+      .openSearchBox(kind === "home" || kind === "unreads" ? "everything" : "workspace");
   },
   "workspace.search_in_channel": () => {
     const convId = useShellStore.getState().selectedConversationId;
@@ -302,6 +307,12 @@ const localHandlers: Record<
     // The last unread conversation before the current position, wrapping to the last one.
     const before = [...unread].reverse().find((id) => allIds.indexOf(id) < currentIdx);
     useShellStore.getState().setSelectedConversationId(before ?? unread[unread.length - 1]);
+  },
+  "workspace.go_back": () => {
+    if (!goBack()) toast.info("Nothing to go back to");
+  },
+  "workspace.go_forward": () => {
+    if (!goForward()) toast.info("Nothing to go forward to");
   },
   "workspace.navigate_panel_left": () => {
     navigatePanel("left");

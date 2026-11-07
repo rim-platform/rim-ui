@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { ChevronDown, Search, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Search, Sparkles } from "lucide-react";
 
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { showInvisibleCharacters } from "../../features/agents/runtime/invisibleCharacters";
@@ -8,23 +8,25 @@ import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
 import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
 import { runningPluginPanels } from "../../features/plugins/pluginPanels";
-import { useIsDirectSpace, useRelayStore } from "../../features/relay/state/useRelayStore";
-import { useMyServers } from "../../features/workspaces/api/useMyServers";
+import { useIsDirectSpace } from "../../features/relay/state/useRelayStore";
+import { useWorkspaceName } from "../../features/workspaces/hooks/useWorkspaceName";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { cn } from "../../shared/ui/cn";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { WindowControls } from "../../shared/ui/WindowControls";
 import { useShellWidth } from "../hooks/useShellWidth";
+import { goBack, goForward, useCanGoBack, useCanGoForward } from "../navigation/history";
 import { useShellStore } from "../state/useShellStore";
 import { NavMenuButton } from "./NavMenuButton";
 import { PluginPanelMenu } from "./PluginPanelMenu";
 
-/** The search box's accessible name while it shows only its icon. */
+/** The search field's accessible name below 400 px, where it says only "Search". */
 export const SEARCH_BOX_NAME = "Search or run a command";
 
 /**
- * The bar above the conversation list and the main area: the navigation button in a narrow
- * window, the search box in the middle, and Plugins and Notifications on the right. In the
+ * The bar above the conversation list and the main area: Back and Forward on the left, or the
+ * navigation button in a narrow window, the search field in the middle, and Plugins and
+ * Notifications on the right. In the
  * desktop app's own window frame it is also the title bar: its empty areas drag the window, and
  * the window controls sit at its far right outside macOS.
  */
@@ -49,9 +51,9 @@ export function TopBar() {
       )}
     >
       <div {...drag} className={cn("flex h-full items-center", !narrow && "min-w-0 flex-1")}>
-        <NavMenuButton />
+        {narrow ? <NavMenuButton /> : <HistoryButtons />}
       </div>
-      <SearchBox narrow={narrow} />
+      <SearchField narrow={narrow} />
       <div
         {...drag}
         className={cn(
@@ -68,17 +70,6 @@ export function TopBar() {
 }
 
 /**
- * The open workspace's name for the search box: from the workspace list, or the stored space of
- * a workspace on another server; `null` while it is not known.
- */
-function useOpenWorkspaceName(workspaceId: string | null): string | null {
-  const { data: servers } = useMyServers();
-  const remote = useRelayStore((s) => (workspaceId ? s.spaces[workspaceId]?.name : undefined));
-  if (!workspaceId) return null;
-  return servers?.find((server) => server.id === workspaceId)?.name ?? remote ?? null;
-}
-
-/**
  * What the search box says it searches: everything on Home and Unreads, the direct messages in
  * the direct space, and otherwise the open workspace by name.
  */
@@ -88,7 +79,7 @@ function useSearchBoxText(): string {
     (s) => s.mainSurface.kind === "home" || s.mainSurface.kind === "unreads",
   );
   const inDirectSpace = useIsDirectSpace(workspaceId);
-  const name = useOpenWorkspaceName(workspaceId);
+  const name = useWorkspaceName(workspaceId);
   if (acrossWorkspaces) return "Search everything, or run a command";
   if (inDirectSpace) return "Search your direct messages, or run a command";
   if (!name) return "Search this workspace, or run a command";
@@ -96,10 +87,75 @@ function useSearchBoxText(): string {
 }
 
 /**
- * A button that looks like a search box and opens search. It shows the keystroke bound to
- * search on its right, and below 400 px only its icon.
+ * Back and Forward through the places opened in this window, never the browser's own history.
+ * Each runs its command, and its tooltip names the keystroke bound to it, if any.
  */
-function SearchBox({ narrow }: { narrow: boolean }) {
+function HistoryButtons() {
+  const canGoBack = useCanGoBack();
+  const canGoForward = useCanGoForward();
+  return (
+    <div className="flex items-center gap-0.5">
+      <HistoryButton
+        label="Back"
+        commandId="workspace.go_back"
+        enabled={canGoBack}
+        onClick={goBack}
+      >
+        <ArrowLeft aria-hidden className="h-4 w-4" />
+      </HistoryButton>
+      <HistoryButton
+        label="Forward"
+        commandId="workspace.go_forward"
+        enabled={canGoForward}
+        onClick={goForward}
+      >
+        <ArrowRight aria-hidden className="h-4 w-4" />
+      </HistoryButton>
+    </div>
+  );
+}
+
+function HistoryButton({
+  label,
+  commandId,
+  enabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  commandId: string;
+  enabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const keystroke = useKeybindLabel(commandId);
+  return (
+    <HoverTooltip
+      content={
+        <span className="text-xs text-rim-text whitespace-nowrap">
+          {keystroke ? `${label} (${keystroke})` : label}
+        </span>
+      }
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        aria-keyshortcuts={keystroke ?? undefined}
+        disabled={!enabled}
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text disabled:pointer-events-none disabled:opacity-40"
+      >
+        {children}
+      </button>
+    </HoverTooltip>
+  );
+}
+
+/**
+ * A button that looks like a search field and opens the search box. It shows the keystroke
+ * bound to search on its right, and below 400 px only the word "Search".
+ */
+function SearchField({ narrow }: { narrow: boolean }) {
   const text = useSearchBoxText();
   const keystroke = useKeybindLabel("workspace.open_search");
 
@@ -109,12 +165,15 @@ function SearchBox({ narrow }: { narrow: boolean }) {
       onClick={() => runDesktopLocalCommand("workspace.open_search")}
       aria-keyshortcuts={keystroke ?? undefined}
       className={cn(
-        "flex h-8 min-w-0 items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 text-left text-sm text-rim-text-muted transition hover:border-rim-text-faint hover:text-rim-text max-[399px]:w-8 max-[399px]:flex-none max-[399px]:justify-center max-[399px]:px-0",
+        "flex h-8 min-w-0 items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 text-left text-sm text-rim-text-muted transition hover:border-rim-text-faint hover:text-rim-text",
         narrow ? "flex-1" : "w-full max-w-xl flex-[2]",
       )}
     >
       <Search aria-hidden className="h-4 w-4 shrink-0" />
       <span className="min-w-0 flex-1 truncate max-[399px]:hidden">{text}</span>
+      <span aria-hidden className="min-w-0 flex-1 truncate min-[400px]:hidden">
+        Search
+      </span>
       <span className="sr-only min-[400px]:hidden">{SEARCH_BOX_NAME}</span>
       {keystroke && !narrow && (
         <kbd
