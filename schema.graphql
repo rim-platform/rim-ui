@@ -162,6 +162,10 @@ type Bot {
 	When it was deactivated; null while it is active.
 	"""
 	deactivatedAt: DateTime
+	"""
+	Whether an Owner or Moderator let it see members joining the workspace.
+	"""
+	seesMemberJoins: Boolean!
 }
 
 """
@@ -674,6 +678,10 @@ input CreateBotInput {
 	Where what it reads goes: 1 to 200 characters of plain text.
 	"""
 	readsGoTo: String!
+	"""
+	Whether it sees members joining the workspace; off when left out.
+	"""
+	seesMemberJoins: Boolean
 }
 
 input CreateChannelLensInput {
@@ -2280,10 +2288,18 @@ type Mutation {
 	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
+	"""
+	Create a pipeline. Any member, but only an Owner or Moderator may give it a Post as bot
+	action (`FORBIDDEN`), on the Member Joined trigger, with an active bot of the workspace and
+	a plaintext channel that is not archived and that the bot is in (`VALIDATION`).
+	"""
 	createPipeline(input: CreatePipelineInput!): PipelineGql!
 	"""
 	Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
-	of its workspace; anyone else gets `FORBIDDEN`.
+	of its workspace; anyone else gets `FORBIDDEN`. Adding or changing a Post as bot action
+	takes an Owner or Moderator; keeping one unchanged takes only the right to change the
+	pipeline. A client that does not know the action sends it back as `chat.post_message` with
+	the `args` it was given, which keeps it; other `args` are `VALIDATION`.
 	"""
 	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
 	"""
@@ -2927,7 +2943,8 @@ type Mutation {
 	"""
 	createBot(input: CreateBotInput!): CreatedBot!
 	"""
-	Change a bot's name or what is said about it. Owner or Moderator of its workspace.
+	Change a bot's name, what is said about it or whether it sees members joining. Owner or
+	Moderator of its workspace.
 	"""
 	updateBot(input: UpdateBotInput!): Bot!
 	"""
@@ -3248,13 +3265,34 @@ type PipeStageResult {
 
 type PipelineActionGql {
 	actionType: String!
+	"""
+	For a Post as bot action, `chat.post_message`, the command it runs.
+	"""
 	commandId: String
+	"""
+	For a Post as bot action, the bot, channel and text, as a client that does not know
+	`postAsBot` shows them.
+	"""
 	args: JSON
+	"""
+	The bot, channel and text of a Post as bot action; null for any other.
+	"""
+	postAsBot: PipelinePostAsBotGql
 }
 
 input PipelineActionInput {
+	"""
+	The command to run; `chat.post_message` with `postAsBot`.
+	"""
 	commandId: String!
+	"""
+	The command's arguments; left out with `postAsBot`.
+	"""
 	args: JSON
+	"""
+	Makes this a Post as bot action, on the Member Joined trigger only. Owner or Moderator.
+	"""
+	postAsBot: PipelinePostAsBotInput
 }
 
 type PipelineFilterConditionGql {
@@ -3294,6 +3332,36 @@ type PipelineGql {
 	lastFiredAt: DateTime
 	createdAt: DateTime!
 	updatedAt: DateTime!
+}
+
+"""
+A message a bot posts when someone joins.
+"""
+type PipelinePostAsBotGql {
+	botUserId: ID!
+	conversationId: ID!
+	"""
+	The text as saved, with its placeholders.
+	"""
+	text: String!
+}
+
+"""
+A message a bot posts when someone joins.
+"""
+input PipelinePostAsBotInput {
+	"""
+	An active bot of the workspace.
+	"""
+	botUserId: ID!
+	"""
+	A plaintext channel that is not archived, which the bot is already in.
+	"""
+	conversationId: ID!
+	"""
+	What it posts, which may hold `{username}` and `{name}`.
+	"""
+	text: String!
 }
 
 type PipelineTriggerGql {
@@ -4400,7 +4468,10 @@ type ServerInfo {
 	`conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
 	(`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
 	`ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
-	`read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event).
+	`read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event),
+	`bot_events` (`Bot.seesMemberJoins`, the same field of `CreateBotInput` and `UpdateBotInput`,
+	and `/api/bot/v1/events`), `pipeline_post_as_bot` (`PipelineActionGql.postAsBot`,
+	`PipelineActionInput.postAsBot`).
 	A client ignores names it does not know.
 	"""
 	capabilities: [String!]!
@@ -4781,6 +4852,10 @@ input UpdateBotInput {
 	name: String
 	runBy: String
 	readsGoTo: String
+	"""
+	Whether it sees members joining the workspace.
+	"""
+	seesMemberJoins: Boolean
 }
 
 input UpdateChannelLensInput {

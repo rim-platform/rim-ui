@@ -128,6 +128,20 @@ describe("skew check", () => {
     ).toEqual(["mutation MarkAsUnread", "query UnreadCountsWithMarkers"]);
   });
 
+  it("refuses only the gated documents on a server without bot_events", () => {
+    const schema = schemaWithoutFields({ Bot: ["seesMemberJoins"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query BotsWithJoins",
+    ]);
+  });
+
+  it("refuses only the gated document on a server without pipeline_post_as_bot", () => {
+    const schema = schemaWithoutFields({ PipelineActionGql: ["postAsBot"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query PipelinesWithPostAsBot",
+    ]);
+  });
+
   it("refuses only the bot disclosure documents on a server without bot_disclosure", () => {
     const schema = schemaWithoutFields({
       User: ["isBot", "bot"],
@@ -211,6 +225,7 @@ describe("skew check", () => {
       "mutation UpdateBot",
       "query BotTokens",
       "query Bots",
+      "query BotsWithJoins",
       "query IncomingWebhooks",
     ]);
   });

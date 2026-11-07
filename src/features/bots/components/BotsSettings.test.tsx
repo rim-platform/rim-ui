@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { expectReachableByKeyboard } from "../../../test/keyboard";
-import { serverInfoQueryClient } from "../../../test/serverInfo";
-import { INCOMING_WEBHOOKS } from "../../updater/api/serverCapabilities";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient as globalQueryClient } from "../../../core/query/queryClient";
+import { fakeServerInfo, serverInfoQueryClient } from "../../../test/serverInfo";
+import { BOT_EVENTS, INCOMING_WEBHOOKS } from "../../updater/api/serverCapabilities";
 import {
   callsTo,
   graphqlError,
@@ -790,5 +792,94 @@ describe("BotsSettings", () => {
       );
       expect(targets.filter((t) => !reached.includes(t))).toEqual([]);
     });
+  });
+});
+
+describe("whether a bot can see people join", () => {
+  const SWITCH = { name: "Can see when people join" };
+
+  /** The app-wide cached server info, which picks the documents and offers the switch. */
+  function hostLists(capabilities: string[]) {
+    globalQueryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { capabilities }));
+  }
+
+  afterEach(() => {
+    globalQueryClient.removeQueries({ queryKey: queryKeys.serverInfo });
+  });
+
+  it("is offered on a host with bot_events, off by default, and sent when turned on", async () => {
+    hostLists([BOT_EVENTS]);
+    routeRequests(requestMock, {
+      "query BotsWithJoins(": () => ({ bots: [] }),
+      "mutation CreateBot(": () => ({ createBot: { bot: bot(1), token: "rimbot_x" } }),
+    });
+    renderSettings({ capabilities: [BOT_EVENTS] });
+    fireEvent.click(await enabledButton("New bot"));
+    const toggle = await screen.findByRole("switch", SWITCH);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText(/Your program gets each new member's name and when they joined/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Greeter" } });
+    fireEvent.change(screen.getByLabelText("Who runs it"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByLabelText("Where what it reads goes"), {
+      target: { value: "Nowhere" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add bot" }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation CreateBot(")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation CreateBot(")[0]).toMatchObject({
+      input: { seesMemberJoins: true },
+    });
+  });
+
+  it("is sent on an edit only when it changes, and shows on the bot's row", async () => {
+    hostLists([BOT_EVENTS]);
+    routeRequests(requestMock, {
+      "query BotsWithJoins(": () => ({ bots: [bot(1, { seesMemberJoins: true })] }),
+      "mutation UpdateBot(": () => ({ updateBot: bot(1) }),
+    });
+    renderSettings({ capabilities: [BOT_EVENTS] });
+    expect(await screen.findByText("Can see when people join:")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const toggle = await screen.findByRole("switch", SWITCH);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation UpdateBot(")).toHaveLength(1));
+    const unchanged = callsTo(requestMock, "mutation UpdateBot(")[0].input as object;
+    expect(unchanged).not.toHaveProperty("seesMemberJoins");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("switch", SWITCH));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation UpdateBot(")).toHaveLength(2));
+    expect(callsTo(requestMock, "mutation UpdateBot(")[1]).toMatchObject({
+      input: { seesMemberJoins: false },
+    });
+  });
+
+  it("is neither offered nor asked for on an older host", async () => {
+    hostLists([]);
+    routeRequests(requestMock, {
+      "query Bots(": () => ({ bots: [] }),
+      "mutation CreateBot(": () => ({ createBot: { bot: bot(1), token: "rimbot_x" } }),
+    });
+    renderSettings();
+    fireEvent.click(await enabledButton("New bot"));
+    await screen.findByRole("button", { name: "Add bot" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole("switch", SWITCH)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Greeter" } });
+    fireEvent.change(screen.getByLabelText("Who runs it"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByLabelText("Where what it reads goes"), {
+      target: { value: "Nowhere" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add bot" }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation CreateBot(")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation CreateBot(")[0].input).not.toHaveProperty(
+      "seesMemberJoins",
+    );
   });
 });

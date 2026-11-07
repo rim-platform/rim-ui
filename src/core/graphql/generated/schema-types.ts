@@ -147,6 +147,8 @@ export type Bot = {
   readsGoTo: Scalars['String']['output'];
   /** Who runs it, as the person who added it says. */
   runBy: Scalars['String']['output'];
+  /** Whether an Owner or Moderator let it see members joining the workspace. */
+  seesMemberJoins: Scalars['Boolean']['output'];
   serverId: Scalars['ID']['output'];
   userId: Scalars['ID']['output'];
 };
@@ -576,6 +578,8 @@ export type CreateBotInput = {
   readsGoTo: Scalars['String']['input'];
   /** Who runs it: 1 to 200 characters of plain text. */
   runBy: Scalars['String']['input'];
+  /** Whether it sees members joining the workspace; off when left out. */
+  seesMemberJoins?: InputMaybe<Scalars['Boolean']['input']>;
   serverId: Scalars['ID']['input'];
 };
 
@@ -1865,6 +1869,11 @@ export type Mutation = {
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
   createMacro: MacroDef;
+  /**
+   * Create a pipeline. Any member, but only an Owner or Moderator may give it a Post as bot
+   * action (`FORBIDDEN`), on the Member Joined trigger, with an active bot of the workspace and
+   * a plaintext channel that is not archived and that the bot is in (`VALIDATION`).
+   */
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
@@ -2353,7 +2362,10 @@ export type Mutation = {
   unblockPrincipal: Scalars['Boolean']['output'];
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
-  /** Change a bot's name or what is said about it. Owner or Moderator of its workspace. */
+  /**
+   * Change a bot's name, what is said about it or whether it sees members joining. Owner or
+   * Moderator of its workspace.
+   */
   updateBot: Bot;
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
@@ -2398,7 +2410,10 @@ export type Mutation = {
   updateNotificationSettings: NotificationSettings;
   /**
    * Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
-   * of its workspace; anyone else gets `FORBIDDEN`.
+   * of its workspace; anyone else gets `FORBIDDEN`. Adding or changing a Post as bot action
+   * takes an Owner or Moderator; keeping one unchanged takes only the right to change the
+   * pipeline. A client that does not know the action sends it back as `chat.post_message` with
+   * the `args` it was given, which keeps it; other `args` are `VALIDATION`.
    */
   updatePipeline: PipelineGql;
   /**
@@ -3405,13 +3420,24 @@ export type PipeStageResult = {
 
 export type PipelineActionGql = {
   actionType: Scalars['String']['output'];
+  /**
+   * For a Post as bot action, the bot, channel and text, as a client that does not know
+   * `postAsBot` shows them.
+   */
   args?: Maybe<Scalars['JSON']['output']>;
+  /** For a Post as bot action, `chat.post_message`, the command it runs. */
   commandId?: Maybe<Scalars['String']['output']>;
+  /** The bot, channel and text of a Post as bot action; null for any other. */
+  postAsBot?: Maybe<PipelinePostAsBotGql>;
 };
 
 export type PipelineActionInput = {
+  /** The command's arguments; left out with `postAsBot`. */
   args?: InputMaybe<Scalars['JSON']['input']>;
+  /** The command to run; `chat.post_message` with `postAsBot`. */
   commandId: Scalars['String']['input'];
+  /** Makes this a Post as bot action, on the Member Joined trigger only. Owner or Moderator. */
+  postAsBot?: InputMaybe<PipelinePostAsBotInput>;
 };
 
 export type PipelineFilterConditionGql = {
@@ -3451,6 +3477,24 @@ export type PipelineGql = {
   serverId: Scalars['ID']['output'];
   trigger: PipelineTriggerGql;
   updatedAt: Scalars['DateTime']['output'];
+};
+
+/** A message a bot posts when someone joins. */
+export type PipelinePostAsBotGql = {
+  botUserId: Scalars['ID']['output'];
+  conversationId: Scalars['ID']['output'];
+  /** The text as saved, with its placeholders. */
+  text: Scalars['String']['output'];
+};
+
+/** A message a bot posts when someone joins. */
+export type PipelinePostAsBotInput = {
+  /** An active bot of the workspace. */
+  botUserId: Scalars['ID']['input'];
+  /** A plaintext channel that is not archived, which the bot is already in. */
+  conversationId: Scalars['ID']['input'];
+  /** What it posts, which may hold `{username}` and `{name}`. */
+  text: Scalars['String']['input'];
 };
 
 export type PipelineTriggerGql = {
@@ -4663,7 +4707,10 @@ export type ServerInfo = {
    * `conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
    * (`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
    * `ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
-   * `read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event).
+   * `read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event),
+   * `bot_events` (`Bot.seesMemberJoins`, the same field of `CreateBotInput` and `UpdateBotInput`,
+   * and `/api/bot/v1/events`), `pipeline_post_as_bot` (`PipelineActionGql.postAsBot`,
+   * `PipelineActionInput.postAsBot`).
    * A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
@@ -5038,6 +5085,8 @@ export type UpdateBotInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   readsGoTo?: InputMaybe<Scalars['String']['input']>;
   runBy?: InputMaybe<Scalars['String']['input']>;
+  /** Whether it sees members joining the workspace. */
+  seesMemberJoins?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type UpdateChannelLensInput = {

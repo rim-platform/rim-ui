@@ -14,17 +14,22 @@ import type {
   UpdateBotInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { BOT_EVENTS, spaceHasCapability } from "../../updater/api/serverCapabilities";
+
+const BOT_FIELD_NAMES = `
+  userId
+  serverId
+  name
+  runBy
+  readsGoTo
+  addedByName
+  createdAt
+  deactivatedAt
+`;
 
 const BOT_FIELDS = gql`
   fragment BotFields on Bot {
-    userId
-    serverId
-    name
-    runBy
-    readsGoTo
-    addedByName
-    createdAt
-    deactivatedAt
+    ${BOT_FIELD_NAMES}
   }
 `;
 
@@ -57,6 +62,15 @@ const BOTS_QUERY = gql`
     }
   }
   ${BOT_FIELDS}
+`;
+
+const BOTS_WITH_JOINS_QUERY = gql`
+  query BotsWithJoins($serverId: ID!) {
+    bots(serverId: $serverId) {
+      ${BOT_FIELD_NAMES}
+      seesMemberJoins
+    }
+  }
 `;
 
 const BOT_TOKENS_QUERY = gql`
@@ -149,13 +163,20 @@ const REVOKE_INCOMING_WEBHOOK_MUTATION = gql`
   ${WEBHOOK_FIELDS}
 `;
 
-/** A workspace's bots, deactivated ones included. */
+/**
+ * A workspace's bots, deactivated ones included. `seesMemberJoins` is asked for only on a host
+ * that lists `bot_events`, and is missing from a bot read from any other.
+ */
 export function useBots(serverId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.bots(serverId ?? undefined),
     enabled: Boolean(serverId),
-    queryFn: async () =>
-      (await graphqlClient.request<{ bots: Bot[] }>(BOTS_QUERY, { serverId })).bots,
+    queryFn: async () => {
+      const document = (await spaceHasCapability(serverId!, BOT_EVENTS))
+        ? BOTS_WITH_JOINS_QUERY
+        : BOTS_QUERY;
+      return (await graphqlClient.request<{ bots: Bot[] }>(document, { serverId })).bots;
+    },
   });
 }
 
