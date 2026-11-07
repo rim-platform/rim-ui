@@ -20,9 +20,9 @@ or its code to **Create account** in the app.
 Choose **Create account** on the sign-in page, or open your invite link. A workspace invite says
 "You're joining \<workspace\>" and who invited you. On an invite-only server the sign-in page says
 that creating an account takes an invite code or link. Where the app can hold keys (the desktop
-app, and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key:
-no password and no email. The device keeps a key that signs you in, and a recovery kit gets the
-account back if you lose it.
+app, and any browser with WebCrypto Ed25519 and IndexedDB) the form creates an account with a key
+and a password, and no email. The device keeps a key that signs you in together with the
+password, and a recovery kit gets the account back if you lose it.
 
 - **Invite code**, only when you did not open an invite link: the code you were given, or the
   whole invite link, which the app reads the code from. An invite-only server needs it; elsewhere
@@ -38,6 +38,9 @@ account back if you lose it.
 - **Display name (optional)**: at most 64 characters. Left blank, your username is shown.
 - **Name of this device**: up to 64 characters, filled in with the computer's name or, in a
   browser, a name such as "Firefox on Linux". It names this device in your device list.
+- **Password**: a **PIN** of at least 6 digits or a **Passphrase** of at least 12 characters,
+  typed twice. You enter it every time you sign in, and if you forget it, your recovery phrase
+  resets it. **Keep me signed in on this device** decides whether this device stays signed in.
 - **I accept the terms of use**, with a link to the server's terms, only when the server has
   terms. The account is not created without it.
 - **I am at least N**, only when the server asks for a minimum age: you confirm you are at least
