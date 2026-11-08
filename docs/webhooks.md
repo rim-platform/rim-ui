@@ -51,7 +51,7 @@ of it, so it can't show it again. If you lose it, revoke the webhook and make an
 The format decides what a delivery posts.
 
 - **Plain.** The service sends JSON with a `text` field, and that text is posted. Good for your own
-  scripts. To try it, run this in a terminal, or send the same request from your script:
+  scripts:
 
   ```sh
   curl -H 'Content-Type: application/json' -d '{"text":"The deploy is **done**."}' \

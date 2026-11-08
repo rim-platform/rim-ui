@@ -4,6 +4,7 @@ import {
   addBox,
   defaultLayout,
   moveBox,
+  moveBoxTo,
   newBoxId,
   parseLayout,
   removeBox,
@@ -70,6 +71,20 @@ describe("the Home layout", () => {
     expect(moveBox(layout, "c", -1, shown).boxes.map((box) => box.id)).toEqual(["c", "b", "a"]);
     expect(moveBox(layout, "a", -1)).toBe(layout);
     expect(moveBox(layout, "c", 1)).toBe(layout);
+  });
+
+  it("takes a dragged box to the place it was dropped on, leaving hidden boxes in place", () => {
+    const four: HomeLayoutDoc = {
+      version: 1,
+      boxes: [...layout.boxes, { id: "d", kind: "agentRuns", width: "half" }],
+    };
+    const ids = (doc: HomeLayoutDoc) => doc.boxes.map((box) => box.id);
+    expect(ids(moveBoxTo(four, "a", "c"))).toEqual(["b", "c", "a", "d"]);
+    expect(ids(moveBoxTo(four, "d", "a"))).toEqual(["d", "a", "b", "c"]);
+    const shown = (box: { id: string }) => box.id !== "b";
+    expect(ids(moveBoxTo(four, "a", "c", shown))).toEqual(["c", "b", "a", "d"]);
+    expect(moveBoxTo(four, "a", "a")).toBe(four);
+    expect(moveBoxTo(four, "a", "b", shown)).toBe(four);
   });
 
   it("resizes, removes and adds boxes with ids unique in the layout", () => {

@@ -256,7 +256,12 @@ describe("Home's new boxes", () => {
       stored(box("ch", "channel", CHANNEL));
       serve();
       renderHome();
-      const region = await screen.findByRole("region", { name: "#deploys in Platform" });
+      // The name needs the layout, the channel and the workspace's label, each read in turn.
+      const region = await screen.findByRole(
+        "region",
+        { name: "#deploys in Platform" },
+        { timeout: 4000 },
+      );
       expect(await within(region).findByText("fourth deploy")).toBeInTheDocument();
       expect(within(region).getByText("second deploy")).toBeInTheDocument();
       expect(within(region).queryByText("first deploy")).not.toBeInTheDocument();
@@ -398,13 +403,14 @@ describe("Home's new boxes", () => {
       await startEditing(user);
       await user.click(screen.getByRole("button", { name: "Add Direct messages" }));
       expect(screen.queryByRole("button", { name: "Add Direct messages" })).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Settings of Direct messages" }));
+      await user.click(screen.getByRole("button", { name: "More for Direct messages" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
       const dialog = await screen.findByRole("dialog", { name: "Settings of Direct messages" });
       expect(within(dialog).getByRole("radio", { name: "5" })).toBeChecked();
       await user.click(within(dialog).getByRole("radio", { name: "10" }));
       await user.click(within(dialog).getByRole("button", { name: "Save" }));
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: "Settings of Direct messages" })).toHaveFocus(),
+        expect(screen.getByRole("button", { name: "More for Direct messages" })).toHaveFocus(),
       );
       await user.click(screen.getByRole("button", { name: "Done" }));
       await waitFor(() => expect(saves()).toHaveLength(1));
