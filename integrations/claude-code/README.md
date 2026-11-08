@@ -5,19 +5,30 @@ an MCP server, after you compare a code and approve in the app.
 
 ## Install
 
+Claude Code fetches the plugin from GitHub itself, so there is nothing to clone or download by
+hand. In a terminal, not in Claude Code's chat, run:
+
 ```sh
-claude plugin marketplace add rim-platform/rim-ui
+claude plugin marketplace add rim-platform/rim-ui --sparse .claude-plugin integrations/claude-code
 claude plugin install rim@rim-platform
 ```
+
+- `rim-platform/rim-ui` is this repository on GitHub. The full address,
+  `https://github.com/rim-platform/rim-ui.git`, works the same.
+- `--sparse` checks out only `.claude-plugin` and this folder, not the whole app.
+- Claude Code reads the default branch. To stay on one release, add `#` and its tag after the
+  repository, as in `rim-platform/rim-ui#<tag>`.
+- From a local checkout, for a build from source or before a release:
+  `claude plugin marketplace add /path/to/rim-ui`. `--sparse` doesn't apply to a folder.
 
 ## Connect
 
 1. In the RIM desktop app, open **Settings > Agents** and turn on **Let agents on this computer
    connect**.
-2. In Claude Code, say "connect to RIM".
+2. In Claude Code's chat, type "connect to RIM".
 3. Claude Code shows a code. RIM shows a dialog with the same code. Check that they match, then
    choose **The code matches, connect**.
-4. Restart Claude Code or run `/mcp`.
+4. Restart Claude Code, or type `/mcp` in its chat.
 
 ## Disconnect
 
