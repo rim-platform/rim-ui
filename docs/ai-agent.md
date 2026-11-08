@@ -328,14 +328,16 @@ There are limits to what this does:
 
 ### Claude Code
 
-Claude Code connects through a plugin in this repository:
+Claude Code connects through a plugin in this repository, which Claude Code fetches from GitHub
+itself. In a terminal, run:
 
 ```sh
-claude plugin marketplace add rim-platform/rim-ui
+claude plugin marketplace add rim-platform/rim-ui --sparse .claude-plugin integrations/claude-code
 claude plugin install rim@rim-platform
 ```
 
-Then say "connect to RIM" in Claude Code. The steps are in the
+Then type "connect to RIM" in Claude Code's chat. The steps, and how to add the plugin from a local
+checkout, are in [Connect an AI agent](agents.md#connect-claude-code) and the
 [plugin's README](../integrations/claude-code/README.md).
 
 ## Next

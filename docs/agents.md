@@ -26,14 +26,25 @@ can't reach RIM until you turn it on again.
 
 ## Connect Claude Code
 
-RIM ships a plugin for Claude Code. Install it once: open a terminal and run
+RIM ships a plugin for Claude Code. Claude Code fetches it from GitHub itself, so there is nothing
+to clone or download by hand. Install it once: open a terminal and run
 
 ```sh
-claude plugin marketplace add rim-platform/rim-ui
+claude plugin marketplace add rim-platform/rim-ui --sparse .claude-plugin integrations/claude-code
 claude plugin install rim@rim-platform
 ```
 
-These two lines go in a terminal, not in Claude Code's chat. Then:
+These two lines go in a terminal, not in Claude Code's chat.
+
+- `rim-platform/rim-ui` is the plugin's repository on GitHub. The full address,
+  `https://github.com/rim-platform/rim-ui.git`, works the same.
+- `--sparse` makes Claude Code check out only the two folders the plugin needs, not the whole app.
+- Claude Code reads the repository's default branch. To stay on one release, add `#` and its tag
+  after the repository, as in `rim-platform/rim-ui#<tag>`.
+- Building RIM from source, or trying the plugin before a release? Add it from your checkout
+  instead: `claude plugin marketplace add /path/to/rim-ui`. `--sparse` doesn't apply to a folder.
+
+Then:
 
 1. Start Claude Code (`claude` in a terminal) and type "connect to RIM" in its chat.
 2. Claude Code shows a code. RIM comes to the front and shows a dialog with a code too.
