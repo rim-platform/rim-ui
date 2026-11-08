@@ -83,8 +83,8 @@ Edit Home, on Home or in the command palette, turns each box into one you can ch
   full one Make half.
 - **Settings** open in a dialog: Save keeps them, Cancel or Escape leaves them. The number of
   messages or conversations is 3, 5 or 10.
-- **Remove**, also its own ✕ on each box, takes it off Home. A box this device can't run asks first, since it is removed from
-  every device.
+- **Remove**, also its own ✕ on each box, takes it off Home. A box this device can't run asks
+  first, since it is removed from every device.
 - **Add a box** lists the boxes that can be added: a panel beside the boxes, or a sheet in a
   narrow window. Adding a Channel or Quick actions box opens its settings first, and Cancel
   there adds nothing.

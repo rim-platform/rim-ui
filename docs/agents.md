@@ -26,19 +26,19 @@ can't reach RIM until you turn it on again.
 
 ## Connect Claude Code
 
-RIM ships a plugin for Claude Code. Install it once:
+RIM ships a plugin for Claude Code. Install it once: open a terminal and run
 
 ```sh
 claude plugin marketplace add rim-platform/rim-ui
 claude plugin install rim@rim-platform
 ```
 
-Then:
+These two lines go in a terminal, not in Claude Code's chat. Then:
 
-1. In Claude Code, say "connect to RIM".
+1. Start Claude Code (`claude` in a terminal) and type "connect to RIM" in its chat.
 2. Claude Code shows a code. RIM comes to the front and shows a dialog with a code too.
 3. Check that the two codes are the same. Then choose **The code matches, connect**.
-4. Restart Claude Code, or run `/mcp` in it.
+4. Restart Claude Code, or type `/mcp` in its chat.
 
 If the codes differ, or you didn't ask for this, choose **Don't connect**. Closing the dialog or
 pressing Escape also refuses. A request nobody answers ends after two minutes.
