@@ -50,16 +50,13 @@ export function TopBar() {
         !windowControls && "pr-3",
       )}
     >
-      <div {...drag} className={cn("flex h-full items-center", !narrow && "min-w-0 flex-1")}>
+      <div {...drag} className={cn("flex h-full items-center", !narrow && "flex-1")}>
         {narrow ? <NavMenuButton /> : <HistoryButtons />}
       </div>
       <SearchField narrow={narrow} />
       <div
         {...drag}
-        className={cn(
-          "ml-auto flex h-full items-center justify-end gap-1",
-          !narrow && "min-w-0 flex-1",
-        )}
+        className={cn("ml-auto flex h-full items-center justify-end gap-1", !narrow && "flex-1")}
       >
         <PluginsButton narrow={narrow} />
         <NotificationBellButton />
