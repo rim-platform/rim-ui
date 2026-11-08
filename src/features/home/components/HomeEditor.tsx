@@ -1,10 +1,29 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Settings2, X } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEventHandler, type ReactNode } from "react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type Announcements,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS as DndCss } from "@dnd-kit/utilities";
+import { Ellipsis, GripVertical, Maximize2, Minimize2, X } from "lucide-react";
 
 import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { useShellWidth } from "../../../shell/hooks/useShellWidth";
@@ -17,6 +36,7 @@ import {
   addBox,
   MAX_BOXES,
   moveBox,
+  moveBoxTo,
   removeBox,
   sameLayout,
   setBoxSettings,
@@ -28,7 +48,7 @@ import { useHomeEditStore } from "../state/useHomeEditStore";
 import { useHomeHiddenStore } from "../state/useHomeLayoutStore";
 import { boxLimit, GRID_CLASS, widthClass } from "../boxes/boxPlacement";
 
-type BoxAction = "up" | "down" | "width" | "settings" | "remove";
+type BoxAction = "reorder" | "width" | "more" | "remove";
 
 /** Whose settings are open: a box about to be added, or a box of the layout. */
 type SettingsTarget = { adding: string } | { boxId: string } | null;
@@ -39,8 +59,9 @@ const CONTROL_CLASS =
 type Confirm = "discard" | "reset" | { remove: string } | null;
 
 /**
- * Home being edited: each box can move up or down, be half or full width, or be removed, and Add
- * a box lists the kinds this app knows. Done saves the layout to the account, Cancel or Escape
+ * Home being edited: each box can be dragged to another place, by its header or, from the
+ * keyboard, by its Reorder handle, and its More menu moves it up or down, opens its settings or
+ * removes it. Each can be half or full width. Add a box lists the kinds this app knows. Done saves the layout to the account, Cancel or Escape
  * drops the changes, and Reset to default deletes the saved layout on every device.
  *
  * @param saved - The layout Home showed when editing began, to tell whether anything changed.
@@ -64,6 +85,15 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
     settingsFor ?? (openedAtBox ? { boxId: openedAtBox } : null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const changed = !sameLayout(draft, saved);
+  // The names the boxes show, which the drag announcements use.
+  const names = useRef(new Map<string, string>());
+  // A drag is under way: Escape then cancels the drag, not the edit.
+  const dragging = useRef(false);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const shown = draft.boxes.filter((box) => !hidden.includes(box.id));
   const isShown = (box: HomeBox) => !hidden.includes(box.id);
@@ -82,10 +112,10 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
     (target ?? titleRef.current)?.focus();
   }, [focusTarget, draft]);
 
-  // Escape is Cancel, asking first when something changed.
+  // Escape is Cancel, asking first when something changed; during a drag it cancels the drag.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape" || e.defaultPrevented || hostDialogOpen()) return;
+      if (e.key !== "Escape" || e.defaultPrevented || hostDialogOpen() || dragging.current) return;
       e.preventDefault();
       if (changed) setConfirm("discard");
       else stop();
@@ -99,12 +129,44 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
     return `position ${visible.findIndex((box) => box.id === id) + 1} of ${visible.length}`;
   }
 
+  const shownIds = shown.map((box) => box.id);
+  const placeOf = (id: string | number) => shownIds.indexOf(String(id)) + 1;
+  const nameOf = (id: string | number) => names.current.get(String(id)) ?? "the box";
+  // The place last announced, so a drag over the same place says nothing again.
+  const announcedOver = useRef<string | null>(null);
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => {
+      announcedOver.current = String(active.id);
+      return `Picked up ${nameOf(active.id)}, position ${placeOf(active.id)} of ${shownIds.length}`;
+    },
+    onDragOver: ({ over }) => {
+      if (!over || String(over.id) === announcedOver.current) return undefined;
+      announcedOver.current = String(over.id);
+      return `Moved to position ${placeOf(over.id)} of ${shownIds.length}`;
+    },
+    onDragEnd: ({ active, over }) =>
+      `Dropped at position ${placeOf(over?.id ?? active.id)} of ${shownIds.length}`,
+    onDragCancel: ({ active }) => `Cancelled, back at position ${placeOf(active.id)}`,
+  };
+
+  // A drag ends after the key that ended it has been handled, so that key is not also the editor's.
+  function endDrag() {
+    setTimeout(() => {
+      dragging.current = false;
+    }, 0);
+  }
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    endDrag();
+    if (over) update(moveBoxTo(draft, String(active.id), String(over.id), isShown));
+  }
+
   function move(box: HomeBox, direction: -1 | 1, name: string) {
     const next = moveBox(draft, box.id, direction, isShown);
     if (next === draft) return;
     update(next);
     setAnnouncement(`Moved ${name} to ${positionOf(box.id, next)}`);
-    setFocusTarget({ id: box.id, action: direction < 0 ? "up" : "down" });
+    setFocusTarget({ id: box.id, action: "more" });
   }
 
   function toggleWidth(box: HomeBox, name: string) {
@@ -131,7 +193,7 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
   function added(layout: HomeLayoutDoc, id: string, kind: string) {
     update(layout);
     setAnnouncement(`Added ${boxName(kind)} at ${positionOf(id, layout)}`);
-    setFocusTarget({ id, action: "up" });
+    setFocusTarget({ id, action: "reorder" });
   }
 
   // A kind that needs settings asks for them first; Cancel there adds nothing.
@@ -164,7 +226,7 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
     if (!box) return;
     update(setBoxSettings(draft, box.id, settings));
     setAnnouncement(`Saved the settings of ${boxName(box.kind)}`);
-    setFocusTarget({ id: box.id, action: "settings" });
+    setFocusTarget({ id: box.id, action: "more" });
   }
 
   function done() {
@@ -240,20 +302,46 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
               </Button>
             </header>
             <div className="@container">
-              <ul className={GRID_CLASS} aria-label="Boxes on Home">
-                {shown.map((box, index) => (
-                  <EditBox
-                    key={box.id}
-                    box={box}
-                    first={index === 0}
-                    last={index === shown.length - 1}
-                    onMove={(direction, name) => move(box, direction, name)}
-                    onWidth={(name) => toggleWidth(box, name)}
-                    onSettings={() => setSettingsFor({ boxId: box.id })}
-                    onRemove={(name) => askRemove(box, name)}
-                  />
-                ))}
-              </ul>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                accessibility={{
+                  announcements,
+                  screenReaderInstructions: {
+                    draggable:
+                      "Press Space or Enter to pick up the box, the arrow keys to move it, Space to drop it and Escape to cancel.",
+                  },
+                }}
+                onDragStart={({ active }) => {
+                  dragging.current = true;
+                  // Focus goes to the handle, so it is there after the drop and Escape reaches the drag.
+                  document
+                    .querySelector<HTMLElement>(
+                      `[data-box-id="${CSS.escape(String(active.id))}"] [data-action="reorder"]`,
+                    )
+                    ?.focus();
+                }}
+                onDragEnd={onDragEnd}
+                onDragCancel={endDrag}
+              >
+                <SortableContext items={shownIds} strategy={rectSortingStrategy}>
+                  <ul className={GRID_CLASS} aria-label="Boxes on Home">
+                    {shown.map((box, index) => (
+                      <EditBox
+                        key={box.id}
+                        box={box}
+                        first={index === 0}
+                        last={index === shown.length - 1}
+                        onName={(name) => names.current.set(box.id, name)}
+                        onMove={(direction, name) => move(box, direction, name)}
+                        onWidth={(name) => toggleWidth(box, name)}
+                        onSettings={() => setSettingsFor({ boxId: box.id })}
+                        onRemove={(name) => askRemove(box, name)}
+                      />
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
               {shown.length === 0 && (
                 <p className="text-sm text-rim-text-muted">
                   No boxes. Add one, or Reset to default.
@@ -329,11 +417,16 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
   );
 }
 
-/** One box in edit mode: its name, what it shows, and its controls. */
+/**
+ * One box in edit mode: its name, what it shows, and its controls. Its header drags it by pointer
+ * or touch; its Reorder handle drags it from the keyboard. Its More menu moves it up or down,
+ * opens its settings or removes it, so dragging is never the only way.
+ */
 function EditBox({
   box,
   first,
   last,
+  onName,
   onMove,
   onWidth,
   onSettings,
@@ -342,6 +435,8 @@ function EditBox({
   box: HomeBox;
   first: boolean;
   last: boolean;
+  /** Reports the name the box shows, for what is announced while it is dragged. */
+  onName: (name: string) => void;
   onMove: (direction: -1 | 1, name: string) => void;
   onWidth: (name: string) => void;
   onSettings: () => void;
@@ -353,51 +448,111 @@ function EditBox({
   const full = box.width === "full";
   const note =
     limit ?? (settingsNeedFixing(box) ? "This box's settings need fixing" : kind?.description);
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+    attributes,
+    listeners,
+  } = useSortable({ id: box.id });
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  // The keyboard picks a box up through its handle alone; the pointer through the whole header.
+  const { onKeyDown, ...pointerListeners } = listeners ?? {};
+
+  useEffect(() => {
+    onName(name);
+  }, [onName, name]);
+
+  const menuItems: DropdownMenuItem[] = [
+    ...(first ? [] : [{ id: "up", label: "Move up", onSelect: () => onMove(-1, name) }]),
+    ...(last ? [] : [{ id: "down", label: "Move down", onSelect: () => onMove(1, name) }]),
+    ...(kind?.settingsReadable && !limit
+      ? [{ id: "settings", label: "Settings", onSelect: onSettings }]
+      : []),
+    { id: "remove", label: "Remove", danger: true, onSelect: () => onRemove(name) },
+  ];
+
   return (
     <li
+      ref={setNodeRef}
       data-box-id={box.id}
+      style={{
+        transform: DndCss.Translate.toString(transform),
+        transition: transition,
+      }}
       className={cn(
         "min-w-0 rounded-lg border border-dashed border-rim-line-strong bg-rim-panel-soft",
         widthClass(box),
+        isDragging && "relative z-10 border-solid shadow-2xl shadow-black/60",
       )}
     >
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-rim-line px-3 py-2">
+      <div
+        {...pointerListeners}
+        className="flex cursor-grab touch-none flex-wrap items-center gap-1.5 border-b border-rim-line px-2 py-2 active:cursor-grabbing"
+      >
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          data-action="reorder"
+          {...attributes}
+          onKeyDown={onKeyDown as KeyboardEventHandler<HTMLButtonElement> | undefined}
+          aria-label={`Reorder ${name}`}
+          title={`Reorder ${name}`}
+          className="inline-flex h-7 w-6 cursor-grab items-center justify-center rounded text-rim-text-faint hover:text-rim-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent active:cursor-grabbing"
+        >
+          <GripVertical aria-hidden className="h-4 w-4" />
+        </button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-rim-text">{name}</span>
         <Control
-          action="up"
-          label={`Move ${name} up`}
-          disabled={first}
-          onClick={() => onMove(-1, name)}
-        >
-          <ArrowUp aria-hidden className="h-3.5 w-3.5" />
-        </Control>
-        <Control
-          action="down"
-          label={`Move ${name} down`}
-          disabled={last}
-          onClick={() => onMove(1, name)}
-        >
-          <ArrowDown aria-hidden className="h-3.5 w-3.5" />
-        </Control>
-        <Control
           action="width"
-          label={
-            full ? `Full width. Make ${name} half width` : `Half width. Make ${name} full width`
-          }
+          label={full ? `Make ${name} half width` : `Make ${name} full width`}
           onClick={() => onWidth(name)}
         >
-          {full ? "Full" : "Half"}
+          {full ? (
+            <Minimize2 aria-hidden className="h-3.5 w-3.5" />
+          ) : (
+            <Maximize2 aria-hidden className="h-3.5 w-3.5" />
+          )}
+          <span className="ml-1">{full ? "Make half" : "Make full"}</span>
         </Control>
-        {kind?.settingsReadable && !limit && (
-          <Control action="settings" label={`Settings of ${name}`} onClick={onSettings}>
-            <Settings2 aria-hidden className="h-3.5 w-3.5" />
-          </Control>
-        )}
+        <button
+          type="button"
+          ref={moreRef}
+          data-action="more"
+          aria-label={`More for ${name}`}
+          title={`More for ${name}`}
+          aria-haspopup="menu"
+          aria-expanded={menuAt !== null}
+          onClick={() => {
+            if (menuAt) {
+              setMenuAt(null);
+              return;
+            }
+            const rect = moreRef.current?.getBoundingClientRect();
+            setMenuAt({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });
+          }}
+          className={CONTROL_CLASS}
+        >
+          <Ellipsis aria-hidden className="h-3.5 w-3.5" />
+        </button>
         <Control action="remove" label={`Remove ${name}`} onClick={() => onRemove(name)}>
           <X aria-hidden className="h-3.5 w-3.5 text-rim-danger" />
         </Control>
       </div>
       <p className="px-3 py-2 text-xs text-rim-text-muted">{note}</p>
+      {menuAt && (
+        <DropdownMenu
+          label={`More for ${name}`}
+          position={menuAt}
+          anchorRef={moreRef}
+          closeOnSelect
+          onClose={() => setMenuAt(null)}
+          items={menuItems}
+        />
+      )}
     </li>
   );
 }

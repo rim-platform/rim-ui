@@ -10,8 +10,8 @@ follows are in rim-server's `docs/home-layout.md`; this page is how the app uses
 2. Choose **Edit Home**.
 3. **Add a box**, such as a channel you watch, your direct messages, or buttons for the commands
    you run most. A Channel or Quick actions box asks for its settings first.
-4. **Move up** and **Move down** put the boxes in order. **Half** and **Full** set how wide each
-   one is.
+4. Drag a box by its header to put it in order, or use its **⋯** menu: **Move up** and **Move
+   down**. **Make full** and **Make half** set how wide each one is.
 5. Choose **Done**. Your other devices show the same Home.
 
 **Remove** takes a box off, and **Reset to default** goes back to the start. Looking at Home marks
@@ -71,13 +71,20 @@ The workspace filter above the boxes still limits every box to one workspace whi
 
 Edit Home, on Home or in the command palette, turns each box into one you can change:
 
-- **Move up** and **Move down** reorder it. Focus stays on the button you pressed, and the new
-  place is announced, such as "Moved Mentions and replies to position 1 of 3".
-- **Half** and **Full** set its width.
-- **Settings**, on a box that has them, opens them in a dialog: Save keeps them, Cancel or
-  Escape leaves them. The number of messages or conversations is 3, 5 or 10.
-- **Remove** takes it off Home. A box this device can't run asks first, since it is removed from
-  every device.
+- **Drag it** by its header, with a mouse or a finger, to another place; the other boxes shift to
+  show where it will land. From the keyboard, its handle, **Reorder** and the box's name, picks
+  it up with Space or Enter; the arrow keys move it, Space drops it and Escape cancels the drag,
+  not the edit. Each step is announced, such as "Picked up Mentions and replies, position 2 of 5",
+  "Moved to position 3 of 5" and "Dropped at position 3 of 5", and focus stays on the handle.
+- **⋯** opens the box's menu, the way to reorder without dragging: **Move up**, **Move down**,
+  **Settings** on a box that has them, and **Remove**. Focus comes back to ⋯, and the new place
+  is announced.
+- **Make full** and **Make half** say what pressing them does: a half box offers Make full, a
+  full one Make half.
+- **Settings** open in a dialog: Save keeps them, Cancel or Escape leaves them. The number of
+  messages or conversations is 3, 5 or 10.
+- **Remove**, also its own ✕ on each box, takes it off Home. A box this device can't run asks
+  first, since it is removed from every device.
 - **Add a box** lists the boxes that can be added: a panel beside the boxes, or a sheet in a
   narrow window. Adding a Channel or Quick actions box opens its settings first, and Cancel
   there adds nothing.
@@ -89,7 +96,7 @@ Edit Home is a command of this app only. It is not offered to keybinds, and noth
 commands, such as a macro, a pipeline or an agent, can change your Home.
 
 Under 760 pixels of room the boxes stand in one column; from there in two, with a full box across
-both. Dragging is not built: Move up and Move down are the way to reorder.
+both.
 
 ## What each device keeps
 

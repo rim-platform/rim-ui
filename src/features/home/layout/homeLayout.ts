@@ -90,6 +90,27 @@ export function moveBox(
   return { ...layout, boxes };
 }
 
+/**
+ * `layout` with the box `id` taken to the place of the box `overId`, counting only the boxes
+ * `shown` accepts: the others keep their places. Unchanged when either is not shown.
+ */
+export function moveBoxTo(
+  layout: HomeLayoutDoc,
+  id: string,
+  overId: string,
+  shown: (box: HomeBox) => boolean = () => true,
+): HomeLayoutDoc {
+  const visible = layout.boxes.filter(shown);
+  const from = visible.findIndex((box) => box.id === id);
+  const to = visible.findIndex((box) => box.id === overId);
+  if (from < 0 || to < 0 || from === to) return layout;
+  const order = [...visible];
+  const [moving] = order.splice(from, 1);
+  order.splice(to, 0, moving);
+  let next = 0;
+  return { ...layout, boxes: layout.boxes.map((box) => (shown(box) ? order[next++] : box)) };
+}
+
 /** `layout` with the box `id` set to `width`. */
 export function setBoxWidth(layout: HomeLayoutDoc, id: string, width: BoxWidth): HomeLayoutDoc {
   return {

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ClientError } from "graphql-request";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +131,43 @@ async function startEditing(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { level: 1, name: "Editing Home" });
 }
 
+/** Moves the box `name` one place up or down through its More menu. */
+async function moveVia(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  direction: "up" | "down",
+) {
+  await user.click(screen.getByRole("button", { name: `More for ${name}` }));
+  const menu = await screen.findByRole("menu", { name: `More for ${name}` });
+  await user.click(within(menu).getByRole("menuitem", { name: `Move ${direction}` }));
+}
+
+/**
+ * Lays the boxes of the editor out in one column, 100 pixels apart, as jsdom draws nothing; the
+ * drag sensors read where the boxes are from this.
+ */
+function layOutBoxesInAColumn() {
+  return vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const item = this.closest("li[data-box-id]");
+    const items = Array.from(document.querySelectorAll("li[data-box-id]"));
+    const index = item ? items.indexOf(item) : 0;
+    const top = index * 100;
+    return {
+      x: 0,
+      y: top,
+      top,
+      left: 0,
+      right: 300,
+      bottom: top + 80,
+      width: 300,
+      height: 80,
+      toJSON: () => ({}),
+    } as DOMRect;
+  });
+}
+
 describe("Home made of boxes", () => {
   beforeEach(() => {
     requestMock.mockReset();
@@ -217,10 +254,8 @@ describe("Home made of boxes", () => {
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
-    await user.click(
-      screen.getByRole("button", { name: "Half width. Make Waiting for you full width" }),
-    );
+    await moveVia(user, "Unread", "up");
+    await user.click(screen.getByRole("button", { name: "Make Waiting for you full width" }));
     await user.click(screen.getByRole("button", { name: "Remove Mentions and replies" }));
     await user.click(screen.getByRole("button", { name: "Add Mentions and replies" }));
     const before = Date.now();
@@ -249,7 +284,7 @@ describe("Home made of boxes", () => {
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
+    await moveVia(user, "Unread", "up");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await screen.findByRole("heading", { level: 1, name: "Home" });
     expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
@@ -259,7 +294,7 @@ describe("Home made of boxes", () => {
     await screen.findByRole("heading", { level: 1, name: "Home" });
 
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
+    await moveVia(user, "Unread", "up");
     await user.keyboard("{Escape}");
     const dialog = await screen.findByRole("dialog", { name: "Discard your changes?" });
     await user.click(within(dialog).getByRole("button", { name: "Discard" }));
@@ -268,21 +303,98 @@ describe("Home made of boxes", () => {
     expect(saves()).toHaveLength(0);
   });
 
-  it("keeps focus on the moved box's button and announces where it went", async () => {
+  it("moves a box through its More menu, keeping focus on that menu's button", async () => {
     serve();
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    screen.getByRole("button", { name: "Move Mentions and replies up" }).focus();
-    await user.keyboard("{Enter}");
-    const moved = screen.getByRole("button", { name: "Move Mentions and replies up" });
-    await waitFor(() => expect(moved).toHaveFocus());
-    expect(moved).toHaveAttribute("aria-disabled", "true");
-    expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent(
+    await moveVia(user, "Mentions and replies", "up");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "More for Mentions and replies" })).toHaveFocus(),
+    );
+    expect(document.querySelector('p[aria-live="polite"]')).toHaveTextContent(
       "Moved Mentions and replies to position 1 of 3",
     );
-    await user.keyboard("{Enter}");
     expect(shownBoxes().slice(0, 3)).toEqual(["mentions", "waiting", "unread"]);
+    // The first box offers no Move up.
+    await user.click(screen.getByRole("button", { name: "More for Mentions and replies" }));
+    const menu = await screen.findByRole("menu", { name: "More for Mentions and replies" });
+    expect(within(menu).queryByRole("menuitem", { name: "Move up" })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: "Move down" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("reorders from the keyboard through the handle, saying where the box goes", async () => {
+    const rects = layOutBoxesInAColumn();
+    serve();
+    const user = userEvent.setup();
+    renderHome();
+    await startEditing(user);
+    const handle = screen.getByRole("button", { name: "Reorder Waiting for you" });
+    handle.focus();
+    await user.keyboard(" ");
+    expect(
+      await screen.findByText("Picked up Waiting for you, position 1 of 3"),
+    ).toBeInTheDocument();
+    await user.keyboard("{ArrowDown}");
+    expect(await screen.findByText("Moved to position 2 of 3")).toBeInTheDocument();
+    await user.keyboard(" ");
+    expect(await screen.findByText("Dropped at position 2 of 3")).toBeInTheDocument();
+    await waitFor(() => expect(shownBoxes()).toEqual(["mentions", "waiting", "unread"]));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reorder Waiting for you" })).toHaveFocus(),
+    );
+    rects.mockRestore();
+  });
+
+  it("reorders by dragging a box's header with the pointer", async () => {
+    const rects = layOutBoxesInAColumn();
+    serve();
+    const user = userEvent.setup();
+    renderHome();
+    await startEditing(user);
+    const header = screen.getByRole("button", { name: "Reorder Waiting for you" })
+      .parentElement as HTMLElement;
+    const point = (y: number) => ({ isPrimary: true, button: 0, clientX: 20, clientY: y });
+    fireEvent.pointerDown(header, point(20));
+    fireEvent.pointerMove(document, point(40));
+    fireEvent.pointerMove(document, point(240));
+    fireEvent.pointerUp(document, point(240));
+    await waitFor(() => expect(shownBoxes()).toEqual(["mentions", "unread", "waiting"]));
+    // A drag takes the clicks of the next 50 ms for itself; the next test starts after them.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    rects.mockRestore();
+  });
+
+  it("cancels only the drag on Escape, leaving the box and the edit as they were", async () => {
+    const rects = layOutBoxesInAColumn();
+    serve();
+    const user = userEvent.setup();
+    renderHome();
+    await startEditing(user);
+    screen.getByRole("button", { name: "Reorder Waiting for you" }).focus();
+    await user.keyboard(" ");
+    await screen.findByText("Picked up Waiting for you, position 1 of 3");
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Escape}");
+    expect(await screen.findByText("Cancelled, back at position 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Editing Home" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(shownBoxes().slice(0, 3)).toEqual(["waiting", "mentions", "unread"]);
+    rects.mockRestore();
+  });
+
+  it("shows on the width button what pressing it does, its name starting with those words", async () => {
+    serve();
+    const user = userEvent.setup();
+    renderHome();
+    await startEditing(user);
+    const make = screen.getByRole("button", { name: "Make Waiting for you full width" });
+    expect(make).toHaveTextContent("Make full");
+    await user.click(make);
+    const back = screen.getByRole("button", { name: "Make Waiting for you half width" });
+    expect(back).toHaveTextContent("Make half");
+    expect(back).toHaveFocus();
   });
 
   it("keeps a box of a kind it does not know in its place and saves it back unchanged", async () => {
@@ -297,7 +409,7 @@ describe("Home made of boxes", () => {
     expect(await screen.findByText("This box needs a newer version of RIM")).toBeInTheDocument();
     await waitFor(() => expect(shownBoxes()).toEqual(["waiting", "f", "mentions"]));
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Waiting for you down" }));
+    await moveVia(user, "Waiting for you", "down");
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(saves()).toHaveLength(1));
     expect(saves()[0].layout).toEqual(
@@ -323,9 +435,7 @@ describe("Home made of boxes", () => {
     await startEditing(user);
     const panel = screen.getByRole("complementary", { name: "Add a box" });
     expect(within(panel).getByText("Your agents' runs")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Half width. Make Waiting for you full width" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Make Waiting for you full width" }));
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(saves()).toHaveLength(1));
     const [vars] = saves();
@@ -384,7 +494,7 @@ describe("Home made of boxes", () => {
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
+    await moveVia(user, "Unread", "up");
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(saves()).toHaveLength(1));
     const pending = useHomeLayoutStore.getState().pending;
@@ -410,7 +520,7 @@ describe("Home made of boxes", () => {
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
+    await moveVia(user, "Unread", "up");
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
@@ -438,7 +548,7 @@ describe("Home made of boxes", () => {
     const user = userEvent.setup();
     renderHome();
     await startEditing(user);
-    await user.click(screen.getByRole("button", { name: "Move Unread up" }));
+    await moveVia(user, "Unread", "up");
     await user.click(screen.getByRole("button", { name: "Done" }));
     const notice = await screen.findByText(
       "Your layout changed on another device, so Home now shows that one.",
@@ -504,6 +614,15 @@ describe("Home made of boxes", () => {
     const sheet = await screen.findByRole("dialog", { name: "Add a box" });
     await user.click(within(sheet).getByRole("button", { name: "Add Unread" }));
     expect(screen.queryByRole("dialog", { name: "Add a box" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Move Unread up" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Reorder Unread" })).toHaveFocus();
+    // Each box keeps every control in a narrow window too.
+    for (const name of [
+      "Reorder Unread",
+      "Make Unread full width",
+      "More for Unread",
+      "Remove Unread",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
   });
 });
