@@ -12,7 +12,7 @@ import {
   type FieldValues,
 } from "../runtime/argumentValues";
 import type { CommandArgumentInfo } from "../types";
-import { useChannelTargets } from "./paletteTargets";
+import { useChannelTargets, useJoinableTargets } from "./paletteTargets";
 
 /**
  * The form a field is in: `ask` fills in a command about to run, `preset` saves arguments with a
@@ -42,7 +42,10 @@ interface ControlProps {
   onSubmit?: () => void;
 }
 
-/** A select over `options`, with an empty first option when `emptyLabel` is given. */
+/**
+ * A select over `options`, with an empty first option when `emptyLabel` is given. Options with a
+ * `group` are listed under a heading, the groups in the order they first appear.
+ */
 function ChoiceSelect({
   options,
   emptyLabel,
@@ -53,12 +56,18 @@ function ChoiceSelect({
   invalid,
   autoFocus,
 }: {
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; group?: string }[];
   emptyLabel: string | null;
   value: string;
   onChange: (value: string) => void;
 } & Pick<ControlProps, "controlId" | "describedBy" | "invalid" | "autoFocus">) {
   const known = value === "" || options.some((option) => option.value === value);
+  const groups = [...new Set(options.flatMap((option) => (option.group ? [option.group] : [])))];
+  const renderOption = (option: { value: string; label: string }) => (
+    <option key={option.value} value={option.value}>
+      {option.label}
+    </option>
+  );
   return (
     <select
       id={controlId}
@@ -71,11 +80,16 @@ function ChoiceSelect({
     >
       {emptyLabel !== null && <option value="">{emptyLabel}</option>}
       {!known && <option value={value}>{value}</option>}
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
+      {groups.length === 0
+        ? options.map(renderOption)
+        : [
+            ...options.filter((option) => !option.group).map(renderOption),
+            ...groups.map((group) => (
+              <optgroup key={group} label={group}>
+                {options.filter((option) => option.group === group).map(renderOption)}
+              </optgroup>
+            )),
+          ]}
     </select>
   );
 }
@@ -95,13 +109,27 @@ function selectEmptyLabel(argument: CommandArgumentInfo, mode: ArgumentFormMode,
   return mode === "preset" ? emptyPresetLabel(argument) : prompt;
 }
 
-/** The open workspace's channels, DMs and groups, as a select. */
+/**
+ * The workspace's channels, DMs and groups, as a select. A preset form also offers the public
+ * channels the viewer has not joined, so a saved step can join them.
+ */
 function ConversationSelect(props: ControlProps) {
   const { items, isPending } = useChannelTargets(props.workspaceId);
-  const options = items.map((item) => ({
+  const preset = props.mode === "preset";
+  const joinable = useJoinableTargets(props.workspaceId);
+  const own = items.map((item) => ({
     value: item.id,
     label: showInvisibleCharacters(item.label),
+    group: preset ? "Your conversations" : undefined,
   }));
+  const others = preset
+    ? joinable.items.map((item) => ({
+        value: item.id,
+        label: showInvisibleCharacters(item.label),
+        group: "Other public channels",
+      }))
+    : [];
+  const options = [...own, ...others];
   return (
     <ChoiceSelect
       {...selectPropsOf(props)}
@@ -245,6 +273,26 @@ function ArgumentControl(props: ControlProps) {
     case CommandArgumentType.WORKSPACE_ID:
       return <WorkspaceSelect {...props} />;
     default:
+      if (argument.argumentType === CommandArgumentType.STRING && argument.name === "text") {
+        return (
+          <textarea
+            id={controlId}
+            rows={4}
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && props.onSubmit) {
+                e.preventDefault();
+                props.onSubmit();
+              }
+            }}
+            placeholder={mode === "preset" ? emptyPresetLabel(argument) : undefined}
+            autoFocus={autoFocus}
+            className={CONTROL_CLASS}
+            {...describe}
+          />
+        );
+      }
       return (
         <input
           id={controlId}

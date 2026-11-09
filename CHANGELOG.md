@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- A macro step that takes a channel now also offers the public channels of the workspace you have
+  not joined, so a macro can join them and set their notifications, and a step's message text can
+  have several lines (Ctrl+Enter or Cmd+Enter sends it from a form).
 - **Upgrade:** with a server that keeps your macros as your own commands (rim-server listing
   `account_macros`), a macro is your own command made of commands, and every macro is a command:
   it shows under Macro in the palette, the keybind picker, Home quick boxes and the composer's `/`

@@ -28,6 +28,7 @@ vi.mock("./paletteTargets", () => ({
     ],
     isPending: false,
   }),
+  useJoinableTargets: () => ({ items: [], isPending: false }),
 }));
 vi.mock("../../home/api/useHomeWorkspaces", () => ({
   useHomeWorkspaces: () => ({
@@ -98,6 +99,16 @@ describe("CommandArgumentsDialog", () => {
 
     await expect(answer).resolves.toEqual({ reason: "spam" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("sends a multi-line text unchanged, and Ctrl+Enter runs the form", async () => {
+    const user = userEvent.setup();
+    render(<CommandArgumentsDialog />);
+    const answer = ask([argument("text", "Text", CommandArgumentType.STRING)]);
+
+    await user.keyboard("- one{Enter}- two{Control>}{Enter}{/Control}");
+
+    await expect(answer).resolves.toEqual({ text: "- one\n- two" });
   });
 
   it("reaches every field and button with Tab", async () => {
