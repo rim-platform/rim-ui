@@ -223,6 +223,7 @@ export function createPairing(deps: PairingDeps): Pairing {
           pairedAt: new Date(now()).toISOString(),
           grants: {},
           pluginApprovals: {},
+          commandApprovals: [],
         },
       };
       request.deadline = now() + LIFETIME_MS;

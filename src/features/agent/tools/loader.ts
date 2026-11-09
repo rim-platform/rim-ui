@@ -63,7 +63,7 @@ export const EXECUTE_COMMAND_MUTATION = gql`
 
 // Sent with the active workspace as context, so the AI surface is per workspace just like
 // the palette.
-const AI_COMMANDS_QUERY = gql`
+export const AI_COMMANDS_QUERY = gql`
   query AgentListAiCommands($commandContext: CommandContextInput) {
     commands(surface: AI, commandContext: $commandContext) {
       id

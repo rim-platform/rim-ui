@@ -22,6 +22,7 @@ const OUTSIDE_RIM = "What the agent did between these is outside RIM.";
 const LIST_TOOLS: Record<string, string> = {
   rim_list_workspaces: "workspace names",
   rim_list_plugin_commands: "the plugin commands approved for it",
+  rim_list_commands: "the RIM commands it can ask for",
 };
 
 type Change = NonNullable<RecordEntry["change"]>;
@@ -83,7 +84,9 @@ function stepsOf(
   const pluginText = (entry: RecordEntry) =>
     entry.plugin
       ? `${pluginName(entry.plugin.pluginId)} ${showInvisibleCharacters(entry.plugin.commandId)}`.trimEnd()
-      : "";
+      : (entry.command ?? "");
+  /** Whether the entry is about a command, a plugin's or RIM's, rather than a message. */
+  const isCommand = (entry: RecordEntry) => Boolean(entry.plugin) || entry.command !== undefined;
 
   /** How a request ended: the next unused entry about the same target that is not another ask. */
   const outcomeOf = (from: number): number => {
@@ -94,7 +97,8 @@ function stepsOf(
       const same =
         next.channelId === asked.channelId &&
         next.plugin?.pluginId === asked.plugin?.pluginId &&
-        next.plugin?.commandId === asked.plugin?.commandId;
+        next.plugin?.commandId === asked.plugin?.commandId &&
+        next.command === asked.command;
       if (!same) continue;
       return next.change === "asked" ? -1 : i;
     }
@@ -112,8 +116,8 @@ function stepsOf(
       const end = outcomeOf(index);
       if (end >= 0) used.add(end);
       const result = end >= 0 ? (entries[end].change as Change) : null;
-      const verb = entry.plugin ? "Asked to run" : "Asked to send to";
-      const what = entry.plugin ? pluginText(entry) : placeOf(entry, qc, workspaceName);
+      const verb = isCommand(entry) ? "Asked to run" : "Asked to send to";
+      const what = isCommand(entry) ? pluginText(entry) : placeOf(entry, qc, workspaceName);
       const answer = result === null ? "No answer recorded" : CHANGE_LABELS[result];
       steps.push({
         at: entry.at,
@@ -126,8 +130,9 @@ function stepsOf(
 
     if (entry.change) {
       flush();
-      const what = entry.plugin ? pluginText(entry) : placeOf(entry, qc, workspaceName);
-      const word = entry.change === "done" && entry.plugin ? "Ran" : CHANGE_LABELS[entry.change];
+      const what = isCommand(entry) ? pluginText(entry) : placeOf(entry, qc, workspaceName);
+      const word =
+        entry.change === "done" && isCommand(entry) ? "Ran" : CHANGE_LABELS[entry.change];
       steps.push({
         at: entry.at,
         text: `${word} ${what}`.trimEnd(),

@@ -338,14 +338,14 @@ describe("AgentsSettings", () => {
     );
   });
 
-  it("opens the choice of plugin commands for that agent", async () => {
+  it("opens the choice of commands for that agent", async () => {
     useConnectedAgentsStore.setState({ agents: [AGENT] });
     const user = userEvent.setup();
     await renderedSwitch();
     const button = screen.getByRole("button", {
-      name: "Choose the plugin commands of Claude Code",
+      name: "Choose the commands of Claude Code",
     });
-    expect(button).toHaveTextContent("Choose its plugin commands");
+    expect(button).toHaveTextContent("Choose its commands");
     await user.click(button);
     expect(screen.getByText("Plugin commands of Claude Code")).toBeInTheDocument();
   });
@@ -414,7 +414,8 @@ describe("AgentsSettings", () => {
     expect(
       screen.getByText("Encrypted conversations, direct messages and groups"),
     ).toBeInTheDocument();
-    expect(screen.getByText("1 approved.")).toBeInTheDocument();
+    expect(screen.getByText("Plugin commands: 1 approved.")).toBeInTheDocument();
+    expect(screen.getByText("RIM commands: none approved for Claude Code.")).toBeInTheDocument();
     const table = screen.getByRole("table");
     expect(
       within(table)

@@ -2,10 +2,15 @@ import { useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { compareCommandCategories } from "../../commands/runtime/commandCategories";
 import { useInstalledPlugins } from "../../plugins/api/usePluginList";
 import { CHAT_READ, CHAT_READ_ENCRYPTED } from "../../plugins/chat/chatTypes";
 import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
+import { isDirectSpace } from "../../relay/state/useRelayStore";
+import { useOfferedCommandList } from "../api/agentCommandList";
+import { commandModeOf, type AgentCommand } from "../runtime/agentCommands";
 import { approvalFor } from "../runtime/agentPlugins";
+import { hasGrantIn } from "../runtime/grants";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import {
   useConnectedAgentsStore,
@@ -112,7 +117,61 @@ function PluginGroup({
   );
 }
 
-/** Chooses which plugin commands one agent may run. Nothing is applied until it is saved. */
+/** The first sentence of a description, for a line under a title. */
+function shortLine(description: string): string {
+  const end = description.search(/[.!?](\s|$)/);
+  return end < 0 ? description : description.slice(0, end + 1);
+}
+
+/** RIM's own commands offered to the agent, by category, each with its checkbox. */
+function RimCommands({
+  commands,
+  ticked,
+  onToggle,
+}: {
+  commands: AgentCommand[];
+  ticked: readonly string[];
+  onToggle: (commandId: string, on: boolean) => void;
+}) {
+  const categories = [...new Set(commands.map((command) => command.category))].sort(
+    compareCommandCategories,
+  );
+  return (
+    <>
+      {categories.map((category) => (
+        <div key={category} role="group" aria-label={category}>
+          <h4 className="px-2 pt-2 text-xs font-medium text-rim-text-muted">
+            {showInvisibleCharacters(category)}
+          </h4>
+          {commands
+            .filter((command) => command.category === category)
+            .map((command) => (
+              <Check
+                key={command.id}
+                checked={ticked.includes(command.id)}
+                onChange={(on) => onToggle(command.id, on)}
+              >
+                {showInvisibleCharacters(command.title)}{" "}
+                {commandModeOf(command) === "proposal" && (
+                  <span className="rounded border border-rim-warm/40 px-1 text-xs text-rim-warm">
+                    Only proposed
+                  </span>
+                )}
+                <span className="block text-xs text-rim-text-muted">
+                  {showInvisibleCharacters(shortLine(command.description))}
+                </span>
+              </Check>
+            ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Chooses which of RIM's commands and which plugin commands one agent may ask to run. Nothing is
+ * applied until it is saved.
+ */
 export function AgentPluginsDialog({
   agent,
   onClose,
@@ -121,7 +180,15 @@ export function AgentPluginsDialog({
   onClose: () => void;
 }) {
   const setPluginApprovals = useConnectedAgentsStore((s) => s.setPluginApprovals);
+  const setCommandApprovals = useConnectedAgentsStore((s) => s.setCommandApprovals);
   const [draft, setDraft] = useState<Map<string, PluginApproval>>(() => new Map());
+  const [commandDraft, setCommandDraft] = useState<string[] | null>(null);
+  const grantedWorkspaces = Object.keys(agent.grants ?? {}).filter(
+    (workspaceId) => !isDirectSpace(workspaceId) && hasGrantIn(agent.grants ?? {}, workspaceId),
+  );
+  const rim = useOfferedCommandList(grantedWorkspaces);
+  const storedCommands = agent.commandApprovals ?? [];
+  const tickedCommands = commandDraft ?? storedCommands;
   const list = useInstalledPlugins();
   const plugins = (list.data ?? []).filter(
     (plugin) => plugin.enabled && offered(plugin).length > 0,
@@ -141,8 +208,29 @@ export function AgentPluginsDialog({
     );
   };
 
+  const toggleCommand = (commandId: string, on: boolean) => {
+    const others = tickedCommands.filter((id) => id !== commandId);
+    setCommandDraft(on ? [...others, commandId] : others);
+  };
+
+  /**
+   * The RIM commands to keep: those ticked among the ones shown, and while a workspace's list
+   * could not be loaded, the stored ones not shown.
+   */
+  const commandsToSave = (): string[] => {
+    const shown = new Set(rim.commands.map((command) => command.id));
+    const ticked = tickedCommands.filter((id) => shown.has(id));
+    if (!rim.isError) return ticked;
+    return [...storedCommands.filter((id) => !shown.has(id)), ...ticked];
+  };
+
   const save = () => {
-    for (const plugin of plugins) {
+    const commandIds = commandsToSave();
+    const same =
+      commandIds.length === storedCommands.length &&
+      commandIds.every((id) => storedCommands.includes(id));
+    if (!same) setCommandApprovals(agent.id, commandIds);
+    for (const plugin of list.isSuccess ? plugins : []) {
       const there = new Set(offered(plugin).map((command) => command.id));
       const commandIds = tickedIn(plugin).filter((id) => there.has(id));
       setPluginApprovals(
@@ -157,10 +245,42 @@ export function AgentPluginsDialog({
   return (
     <Dialog open title={`What ${agent.name} can run`} maxWidth="max-w-lg" onClose={onClose}>
       <p className="text-sm text-rim-text-muted">
-        A plugin command can do anything the plugin can. Approve only what you want this program to
-        use. Approvals for RIM&apos;s own agent don&apos;t carry over.
+        Approve only what you want this program to ask for. Approvals for RIM&apos;s own agent
+        don&apos;t carry over.
       </p>
       <div className="mt-3 max-h-[50vh] space-y-4 overflow-y-auto">
+        <section aria-labelledby="agent-commands-rim">
+          <h3 id="agent-commands-rim" className="text-sm font-medium text-rim-text">
+            RIM commands
+          </h3>
+          <p className="px-2 pt-1 text-xs text-rim-text-muted">
+            Each one asks you every time, with what it would run. A command marked Only proposed is
+            only suggested, and you run it yourself. It works only in workspaces and channels this
+            program has a grant for.
+          </p>
+          {grantedWorkspaces.length === 0 && (
+            <p className="px-2 pt-1 text-sm text-rim-text-muted">
+              Choose what it can read first: RIM commands work only in a workspace it has a grant
+              in.
+            </p>
+          )}
+          {rim.isPending && grantedWorkspaces.length > 0 && <Spinner />}
+          {rim.isError && (
+            <p role="alert" className="px-2 pt-1 text-sm text-rim-danger">
+              Could not load RIM&apos;s commands for every workspace
+            </p>
+          )}
+          {!rim.isPending && grantedWorkspaces.length > 0 && rim.commands.length === 0 && (
+            <p className="px-2 pt-1 text-sm text-rim-text-muted">
+              No RIM command is offered to agents here.
+            </p>
+          )}
+          <RimCommands commands={rim.commands} ticked={tickedCommands} onToggle={toggleCommand} />
+        </section>
+        <h3 className="text-sm font-medium text-rim-text">Plugin commands</h3>
+        <p className="px-2 text-xs text-rim-text-muted">
+          A plugin command can do anything the plugin can.
+        </p>
         {list.isPending && <Spinner />}
         {list.isError && (
           <p role="alert" className="text-sm text-rim-danger">
@@ -187,7 +307,7 @@ export function AgentPluginsDialog({
         <Button type="button" variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="button" disabled={!list.isSuccess} onClick={save}>
+        <Button type="button" disabled={list.isPending || rim.isPending} onClick={save}>
           Save
         </Button>
       </div>

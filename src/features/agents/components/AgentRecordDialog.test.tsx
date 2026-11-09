@@ -225,6 +225,49 @@ describe("AgentRecordDialog", () => {
     expect(lines()).toHaveLength(1);
   });
 
+  describe("RIM commands", () => {
+    it.each([
+      ["done", "Ran"],
+      ["asked", "Asked to run"],
+      ["proposed", "Suggested"],
+      ["refused", "Refused"],
+    ] as const)("words %s as %s with the command's id", (change, label) => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_command",
+            change,
+            channelId: null,
+            command: "chat.set_topic",
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · ${label} · chat.set_topic`]);
+    });
+
+    it("names the channel, and words a call with no usable id", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({ tool: "rim_run_command", change: "done", command: "chat.pin", messageIds: [] }),
+          entry({ tool: "rim_run_command", refused: true, channelId: null, messageIds: [] }),
+        ],
+      });
+      show();
+      expect(lines()[1]).toMatch(/Ran · chat\.pin · #/);
+      expect(lines()[0]).toBe(`${TIME} · Refused · an unknown command`);
+    });
+
+    it("words the list for what it is", () => {
+      useAgentRecordStore.setState({
+        entries: [entry({ tool: "rim_list_commands", channelId: null, messageIds: [] })],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Read · the RIM commands it can ask for`]);
+    });
+  });
+
   describe("plugin commands", () => {
     const POD = { pluginId: "dev.example.pods", commandId: "list" };
 

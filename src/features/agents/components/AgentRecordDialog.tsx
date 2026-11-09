@@ -15,6 +15,8 @@ import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
 
 const SHOWN = 200;
 const LIST_PLUGIN_COMMANDS = "rim_list_plugin_commands";
+const LIST_COMMANDS = "rim_list_commands";
+const RUN_COMMAND = "rim_run_command";
 
 /** The channel's name as this app last saw it, or its id. */
 export function channelLabel(qc: QueryClient, workspaceId: string, channelId: string): string {
@@ -28,6 +30,7 @@ export function channelLabel(qc: QueryClient, workspaceId: string, channelId: st
 function target(entry: RecordEntry, qc: QueryClient, workspaceName: (id: string) => string) {
   if (entry.tool === "rim_list_workspaces") return "workspace names";
   if (entry.tool === LIST_PLUGIN_COMMANDS) return "the plugin commands approved for it";
+  if (entry.tool === LIST_COMMANDS) return "the RIM commands it can ask for";
   if (entry.tool === "rim_list_channels") {
     return `channel names in ${workspaceName(entry.workspaceId)}`;
   }
@@ -47,7 +50,7 @@ export const CHANGE_LABELS: Record<NonNullable<RecordEntry["change"]>, string> =
   refused: "Refused",
 };
 
-/** What a line of the record says about a plugin command. */
+/** What a line of the record says about a plugin command or a RIM command. */
 function pluginChangeLabel({ change }: RecordEntry): string {
   if (change === "asked") return "Asked to run";
   return change ? CHANGE_LABELS[change] : CHANGE_LABELS.refused;
@@ -70,6 +73,12 @@ function entryLine(
       ? `${line} · #${channelLabel(qc, entry.workspaceId, entry.channelId)}`
       : line;
   }
+  if (entry.command !== undefined || entry.tool === RUN_COMMAND) {
+    const line = `${time} · ${pluginChangeLabel(entry)} · ${entry.command ?? "an unknown command"}`;
+    return entry.channelId
+      ? `${line} · #${channelLabel(qc, entry.workspaceId, entry.channelId)}`
+      : line;
+  }
   if (entry.change) {
     const channel = entry.channelId
       ? `#${channelLabel(qc, entry.workspaceId, entry.channelId)}`
@@ -81,7 +90,8 @@ function entryLine(
   if (
     entry.tool === "rim_list_workspaces" ||
     entry.tool === "rim_list_channels" ||
-    entry.tool === LIST_PLUGIN_COMMANDS
+    entry.tool === LIST_PLUGIN_COMMANDS ||
+    entry.tool === LIST_COMMANDS
   ) {
     return line;
   }

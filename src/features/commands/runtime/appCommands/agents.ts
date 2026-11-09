@@ -114,8 +114,8 @@ export const AGENT_COMMANDS: CommandDefinition[] = [
   localCommand(
     "agents.choose_plugin_commands",
     "Agents",
-    "Choose an Agent's Plugin Commands…",
-    "Choose the plugin commands a connected agent can run",
+    "Choose an Agent's Commands…",
+    "Choose the RIM and plugin commands a connected agent can ask to run",
   ),
   localCommand("agents.open_runs", "Agents", "Open Agent Runs", "See every run of your agents"),
   localCommand(
