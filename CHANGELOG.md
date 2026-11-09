@@ -129,6 +129,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
   list the macro's steps with the arguments fixed for each.
 - `/macro <title>` and **Run Macro…** run your macros, found by title whatever the letter case;

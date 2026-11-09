@@ -6,19 +6,19 @@ file is for. They are the source of truth; this repository holds copies or rende
 | Where | What | From |
 |---|---|---|
 | `public/rim-favicon.svg`, `public/favicon.ico` | The browser tab icon, linked from `index.html` | `rim-favicon.svg`, `favicon.ico`, copied as they are |
-| `src/shared/brand/RimLogo.tsx` | `RimMark`, `RimLockup` and `RimSplash`, inline SVG components | The path data of `rim-mark.svg`, `rim-lockup.svg` and `rim-splash.svg` |
+| `src/shared/brand/RimLogo.tsx` | Inline SVG components: `RimMark`, the R in three pieces with its signal-orange node; `RimLockup`, the R, a bolt for the I, and the M; `RimSplash`, the wordmark with a pulsing glow behind the bolt | The path data of `rim-mark.svg`, `rim-lockup.svg` and `rim-splash.svg` |
 | `src-tauri/icons/` | The desktop app icons listed in `tauri.conf.json`'s `bundle.icon` | `rim-app-icon-1024.png` through `tauri icon` |
 
-The components draw with `currentColor`, so the mark and the wordmark take the text colour of
-the element around them, and the splash's knocked-out letters take `rim-void`. Its accent circle
-is the `rim-signal` colour token, which nothing else uses. The splash is for loading screens
-only, never as the logo, and holds still under `prefers-reduced-motion`.
+The letters take `currentColor`, so they follow the text colour of the element around them. The
+node and the bolt take the `rim-signal` colour through `fill-rim-signal`. The splash's keyframes
+live in `globals.css` as `rim-glow-*` and mirror `rim-splash-inverse.svg`. The splash is for
+loading screens only, never as the logo; under `prefers-reduced-motion` it holds a still glow.
 
 ## Updating from the masters
 
 - Favicon: copy `rim-favicon.svg` and `favicon.ico` into `public/` over the old files.
-- Mark, wordmark or splash: copy the changed `d` attributes into the path constants of
-  `RimLogo.tsx`, and the splash's per-letter `translate` values into `RimSplash`.
+- Mark, wordmark or splash: copy the changed path data into the constants of
+  `RimLogo.tsx`, and the splash's keyframe values into `globals.css`.
 - Desktop icons: from the root of this repository, with `rim-server` checked out next to it,
 
   ```sh

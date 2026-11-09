@@ -1,16 +1,19 @@
-/** Path data of the RIM wordmark on its 100-unit grid, two pieces per letter. */
-const R_PATHS = [
-  "M12 10 H31 V43.22 L40.94 51 L31 58.78 V90 H12 Z",
-  "M36 10 H58 A25 25 0 0 1 69.7 57.1 L90 90 H69 L50 60 H37.57 L49.06 51 L37.57 42 H57 A7 7 0 0 0 57 28 H36 Z",
-];
-const I_PATHS = [
-  "M102 10 H121 V34.82 L111.5 46.95 L102 34.82 Z",
-  "M102 42.92 L111.5 55.05 L121 42.92 V90 H102 Z",
-];
-const M_PATHS = [
-  "M133 10 H154 L173.5 47.2 V88.2 L152 47.1 V90 H133 Z",
-  "M219 10 H198 L178.5 47.2 V88.2 L200 47.1 V90 H219 Z",
-];
+import { useId } from "react";
+
+/** The R's stem, on the mark's 100-unit grid. */
+const R_STEM = { x: 12, y: 8, width: 20, height: 84, rx: 4 };
+/** The R's bowl: the outer shape with its counter cut out (even-odd fill). */
+const R_BOWL = "M40 8 H60 A24 24 0 0 1 60 56 H40 Z M40 25 V39 H58.5 A7 7 0 0 0 58.5 25 Z";
+/** The R's leg. */
+const R_LEG = "M54 64 H75 L92 92 H71 Z";
+/** The orange node sitting in the gap between the R's pieces. */
+const R_NODE = { cx: 43, cy: 68, r: 6 };
+/** The M of the wordmark, on its 214 x 80 grid. */
+const M_PATH = "M140 72 V8 H158 L175 40 L192 8 H210 V72 H194 V36 L180 62 H170 L156 36 V72 Z";
+/** The lightning bolt that is the I of the wordmark, on its 214 x 80 grid. */
+const BOLT_PATH = "M115 8 L84 44 H100 L91 72 L122 36 H106 Z";
+/** Places the 100-unit R on the wordmark's grid. */
+const R_IN_WORDMARK = "translate(-3.144 1.904) scale(.762)";
 
 interface BrandGraphicProps {
   className?: string;
@@ -25,12 +28,31 @@ function a11yProps(label: string | undefined) {
     : { "aria-hidden": true as const, focusable: "false" as const };
 }
 
-/** Each path string as a `<path>` element. */
-function Paths({ paths }: { paths: string[] }) {
-  return paths.map((d) => <path key={d} d={d} />);
+/** The R in three separate pieces plus its signal-coloured node. */
+function RLetter() {
+  return (
+    <>
+      <rect {...R_STEM} />
+      <path fillRule="evenodd" d={R_BOWL} />
+      <path d={R_LEG} />
+      <circle {...R_NODE} className="fill-rim-signal" />
+    </>
+  );
 }
 
-/** The R alone, filled with the current text colour. */
+/** The wordmark's R and M, without the bolt. */
+function WordmarkLetters() {
+  return (
+    <>
+      <g transform={R_IN_WORDMARK}>
+        <RLetter />
+      </g>
+      <path d={M_PATH} />
+    </>
+  );
+}
+
+/** The R alone, filled with the current text colour; its node is the signal colour. */
 export function RimMark({ className, label }: BrandGraphicProps) {
   return (
     <svg
@@ -40,78 +62,60 @@ export function RimMark({ className, label }: BrandGraphicProps) {
       className={className}
       {...a11yProps(label)}
     >
-      <Paths paths={R_PATHS} />
+      <RLetter />
     </svg>
   );
 }
 
-/** The RIM wordmark, filled with the current text colour. */
+/** The RIM wordmark: letters in the current text colour, the bolt in the signal colour. */
 export function RimLockup({ className, label }: BrandGraphicProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 231 100"
+      viewBox="0 0 214 80"
       fill="currentColor"
       className={className}
       {...a11yProps(label)}
     >
-      <Paths paths={[...R_PATHS, ...I_PATHS, ...M_PATHS]} />
+      <WordmarkLetters />
+      <path d={BOLT_PATH} className="fill-rim-signal" />
     </svg>
   );
 }
 
-/** One splash circle with its letter knocked out in the page background colour. */
-function SplashBall({
-  cx,
-  fillClass,
-  translateX,
-  paths,
-  delay,
-}: {
-  cx: number;
-  fillClass: string;
-  translateX: number;
-  paths: string[];
-  delay: string;
-}) {
-  return (
-    <g className="rim-splash-ball" style={{ animationDelay: delay }}>
-      <circle cx={cx} cy="50" r="46" className={fillClass} />
-      <g className="fill-rim-void" transform={`translate(${translateX} 22.5) scale(0.55)`}>
-        <Paths paths={paths} />
-      </g>
-    </g>
-  );
-}
-
 /**
- * R, I and M in circles bouncing like a typing indicator, for loading screens only. The R and I
- * circles take the current text colour, the M circle the signal accent; reduced motion holds
- * the circles still.
+ * The wordmark with a glow behind the bolt that pulses, for loading screens only; reduced
+ * motion holds a still, softly lit glow.
  */
 export function RimSplash({ className, label }: BrandGraphicProps) {
+  const base = "rim-glow-" + useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const wide = `${base}-wide`;
+  const halo = `${base}-halo`;
+  const core = `${base}-core`;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 -12 304 112"
+      viewBox="-8 -28 230 136"
+      fill="currentColor"
       className={className}
       {...a11yProps(label)}
     >
-      <SplashBall cx={50} fillClass="fill-current" translateX={24.15} paths={R_PATHS} delay="0s" />
-      <SplashBall
-        cx={152}
-        fillClass="fill-current"
-        translateX={90.675}
-        paths={I_PATHS}
-        delay="0.15s"
-      />
-      <SplashBall
-        cx={254}
-        fillClass="fill-rim-signal"
-        translateX={157.2}
-        paths={M_PATHS}
-        delay="0.3s"
-      />
+      <defs>
+        <filter id={wide} filterUnits="userSpaceOnUse" x="20" y="-60" width="170" height="200">
+          <feGaussianBlur stdDeviation="14" />
+        </filter>
+        <filter id={halo} filterUnits="userSpaceOnUse" x="40" y="-40" width="130" height="160">
+          <feGaussianBlur stdDeviation="11" />
+        </filter>
+        <filter id={core} filterUnits="userSpaceOnUse" x="60" y="-20" width="90" height="120">
+          <feGaussianBlur stdDeviation="3.5" />
+        </filter>
+      </defs>
+      <WordmarkLetters />
+      <path d={BOLT_PATH} className="rim-glow-wide fill-rim-signal" filter={`url(#${wide})`} />
+      <path d={BOLT_PATH} className="rim-glow-halo fill-rim-signal" filter={`url(#${halo})`} />
+      <path d={BOLT_PATH} className="rim-glow-core" filter={`url(#${core})`} />
+      <path d={BOLT_PATH} className="rim-glow-bolt fill-rim-signal" />
     </svg>
   );
 }

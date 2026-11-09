@@ -1,10 +1,10 @@
 import { RimSplash } from "../../../shared/brand/RimLogo";
 
-/** The bouncing RIM splash with a "Restoring session..." caption, announced as a status. */
+/** The glowing RIM splash with a "Restoring session..." caption, announced as a status. */
 export function RestoringSessionSplash() {
   return (
     <div role="status" className="flex flex-col items-center gap-4">
-      <RimSplash className="w-32 text-rim-text" />
+      <RimSplash className="w-40 text-rim-text" />
       <p className="text-[13px] text-rim-text-muted">Restoring session...</p>
     </div>
   );
