@@ -31,6 +31,17 @@ with none open it needs the conversation's id in its arguments. A plugin command
 conversation gets the open one; with none open, the palette leaves it out and its keybind says
 "Open a conversation first".
 
+**The argument form.** A server command run from the palette, a keybind or a Home quick action
+that lacks a required argument opens a form titled with the command, with a field for each missing
+argument: a text field, a number field, a checkbox, a list of the allowed values, a search of the
+workspace's members, a list of its conversations or a list of your workspaces, each labelled with
+the argument's title, its description beneath and its default filled in. The first field has the
+focus, <kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> runs the command, and
+<kbd>Escape</kbd> or **Cancel** runs nothing. A dangerous command still asks for confirmation after
+the form. A message, a thread or selected text is never asked for: without one the command says
+"Select a message first" (or "Open a thread first", "Select some text first"). Pipes, plugin panels
+and agents get no form; they name the missing argument, as the message box does.
+
 **From the message box.** The suggestion list decides: a command runs only when it is picked from
 the open list, with Enter or Tab on the highlighted row or a click. Type `/` and the words of a
 command's id or title (`/list members`, `/List Members`, `/chat.list_members`): the list stays open
@@ -101,9 +112,10 @@ Workspace plugins, the registry's plugins this device has not installed, as "Ins
 match.
 
 Each row shows where the command comes from (built in, plugin or yours), its category and its
-keybind. Left out are a command that needs an argument the palette cannot fill, such as **Kick
-Member** (the member) or **Set State** (the key), and a conversation's command such as **Mark as
-Read** while no conversation is open; a plugin command that needs arguments, which its plugin's
+keybind. A command that needs an argument nothing around it fills, such as **Kick Member** (the
+member), **Do Not Disturb** (the mode) or **Mark as Read** with no conversation open, is listed and
+asks for it when run (see "The argument form" below). Left out are a command that needs a selected
+message, which the palette never has, such as **Pin Message**; a plugin command that needs arguments, which its plugin's
 panel runs, or a conversation while none is open; **Archive Channel** outside a channel that is not
 archived and **Unarchive Channel** outside an archived one; and macros, which run from Settings →
 Macros or `/macro`. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
@@ -179,13 +191,16 @@ Plugins and Other, with "Search keybinds..." above them. Each row names its cont
 Composer, Message list and so on.
 
 - **Add keybind** opens a form: press the keys in "Press a key combination...", pick the
-  command and the context, then **Save**. The field records any keys, even ones already bound,
+  command and the context, then **Save**. For a server command with arguments, **Arguments** has a
+  field for each: the ones filled in are saved with the keybind, and a required one left empty is
+  asked for when the key is pressed. A member or a conversation saved there keeps its workspace. The field records any keys, even ones already bound,
   and runs nothing while it has focus; <kbd>Escape</kbd> alone stops recording and keeps the
   earlier keys. Keys already bound in the chosen context show "\<keys\> is used by \<command\>.
   Saving moves it here and leaves \<command\> without a key." (or "…; \<command\> keeps its other
   keys."), and **Save** moves them to the new command; keys a workspace keybind holds cannot be
   taken: "\<keys\> is used by \<command\>, a workspace keybind. Choose other keys."
-- On a binding of your own, the pencil changes its command or context, clicking the keys records
+- On a binding of your own, the pencil changes its command, context or arguments (saved
+  arguments the fields cannot show are kept as they are), clicking the keys records
   new ones, the switch turns it off, and the bin deletes it after "Delete keybind?". Keys
   recorded there that another binding holds wait under the row with the same note, **Save** and
   **Cancel**.

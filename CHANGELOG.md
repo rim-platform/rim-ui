@@ -90,6 +90,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Commands that need more than the open conversation, such as Do Not Disturb, notification level and moderation actions, now ask for what they need in a form when run from the palette, a keybind or a quick box, instead of being left out. Settings > Keybinds can save a keybind's arguments, and Home's Quick actions settings take a command's arguments in the same fields instead of JSON; a field left empty is asked for when the command runs.
 - The top bar's search field opens one search box: channels and people, messages and commands
   as you type, the open workspace or all of them (Tab), and Search all messages for the full
   search. Ctrl+K opens it with commands first, as the command palette. Back and Forward in the
@@ -125,6 +126,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- Turning a keybind off or giving it other keys no longer drops the arguments saved with it.
 - Keybinds, quick boxes and the message box now run every command they offer, including ones that act on the selected message: Delete, Edit, Report, Reply, Copy Message Text and Open Thread work from a key on the message selected in the list, and say so when none is selected. The keybind and quick box pickers leave out commands that need arguments they cannot supply, and mark a saved one; the message box lists the app's own and the plugins' commands, and sends arguments typed after a command such as `/chat.create_channel name=ops` to it. Unreads, focus and the new Toggle Channel Lenses commands say where they work instead of doing nothing.
 - Commands run from the message box now show their result, as they do from the palette; a command runs when picked from the open list, with the arguments typed after its name, and Esc sends the line as text.
 - On a desktop with no tray, closing RIM asks what to do instead of hiding it with no way back.

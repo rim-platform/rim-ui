@@ -25,6 +25,14 @@ export interface MemberPickerProps {
   autoFocus?: boolean;
   placeholder?: string;
   listClassName?: string;
+  /** The search input's id, for a `<label>` outside that names it instead of its own label. */
+  inputId?: string;
+  /** Ids of the elements that describe the search input. */
+  inputDescribedBy?: string;
+  /** Whether the member rows take Tab stops; without them the arrow keys pick from the input. */
+  rowsInTabOrder?: boolean;
+  /** Whether one member is picked at most: a pick replaces the last one and clears the search. */
+  single?: boolean;
 }
 
 /**
@@ -42,6 +50,10 @@ export function MemberPicker({
   autoFocus = false,
   placeholder = "Search members...",
   listClassName = "max-h-80",
+  inputId,
+  inputDescribedBy,
+  rowsInTabOrder = true,
+  single = false,
 }: MemberPickerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -109,6 +121,12 @@ export function MemberPicker({
   }, [focusedIndex]);
 
   function toggleMember(userId: string) {
+    if (single) {
+      onChange(selectedUserIds.includes(userId) ? [] : [userId]);
+      setSearchQuery("");
+      setFocusedIndex(0);
+      return;
+    }
     onChange(
       selectedUserIds.includes(userId)
         ? selectedUserIds.filter((id) => id !== userId)
@@ -184,8 +202,10 @@ export function MemberPicker({
             setSearchQuery(e.target.value);
             setFocusedIndex(0);
           }}
-          placeholder={selectedUserIds.length === 0 ? placeholder : "Add more..."}
-          aria-label="Search members"
+          id={inputId}
+          placeholder={selectedUserIds.length === 0 || single ? placeholder : "Add more..."}
+          aria-label={inputId ? undefined : "Search members"}
+          aria-describedby={inputDescribedBy}
           className="min-w-[120px] flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted"
         />
       </div>
@@ -194,7 +214,7 @@ export function MemberPicker({
       <div
         ref={listRef}
         role="listbox"
-        aria-multiselectable
+        aria-multiselectable={!single}
         className={cn("overflow-y-auto p-1", listClassName)}
       >
         {membersPending && (
@@ -215,6 +235,7 @@ export function MemberPicker({
               type="button"
               role="option"
               aria-selected={selected}
+              tabIndex={rowsInTabOrder ? undefined : -1}
               onClick={() => toggleMember(member.userId)}
               onMouseEnter={() => setFocusedIndex(index)}
               className={cn(

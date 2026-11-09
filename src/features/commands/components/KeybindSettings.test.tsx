@@ -230,9 +230,17 @@ describe("KeybindSettings", () => {
       ],
     });
 
+    const quoteSelection = makeCommand({
+      id: "chat.quote_selection",
+      title: "Quote Selection",
+      arguments: [
+        { name: "text", argumentType: CommandArgumentType.SELECTION_TEXT, required: true },
+      ],
+    });
+
     beforeEach(() => {
       vi.mocked(useCommands).mockReturnValue({
-        data: [makeCommand(), kick, pin],
+        data: [makeCommand(), kick, pin, quoteSelection],
         isLoading: false,
       } as ReturnType<typeof useCommands>);
     });
@@ -247,30 +255,31 @@ describe("KeybindSettings", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
       const commandSelect = screen.getByRole("combobox", { name: "Command" });
       expect(within(commandSelect).getByText("Open Command Palette")).toBeInTheDocument();
-      // The selected message supplies a message argument.
+      // The selected message supplies a message argument, the argument form a member.
       expect(within(commandSelect).getByText("Pin Message")).toBeInTheDocument();
-      expect(within(commandSelect).queryByText("Kick Member")).not.toBeInTheDocument();
+      expect(within(commandSelect).getByText("Kick Member")).toBeInTheDocument();
+      expect(within(commandSelect).queryByText("Quote Selection")).not.toBeInTheDocument();
     });
 
     it("still lists a saved binding to such a command, marked", () => {
       vi.mocked(useResolvedKeybinds).mockReturnValue({
         data: [
           makeKeybind({
-            id: "kb-kick",
+            id: "kb-quote",
             source: "USER",
-            keystroke: "Ctrl+Alt+K",
-            commandId: "admin.kick",
+            keystroke: "Ctrl+Alt+Q",
+            commandId: "chat.quote_selection",
           }),
         ],
         isLoading: false,
       } as ReturnType<typeof useResolvedKeybinds>);
       render(<KeybindSettings />);
 
-      const row = screen.getByText("Kick Member").closest("div") as HTMLElement;
+      const row = screen.getByText("Quote Selection").closest("div") as HTMLElement;
       expect(within(row).getByText("Needs arguments this can't supply yet")).toBeInTheDocument();
 
       fireEvent.click(within(row).getByRole("button", { name: "Edit keybind" }));
-      expect(screen.getByRole("combobox", { name: "Command" })).toHaveValue("admin.kick");
+      expect(screen.getByRole("combobox", { name: "Command" })).toHaveValue("chat.quote_selection");
     });
 
     it("does not mark a binding whose preset arguments supply them", () => {

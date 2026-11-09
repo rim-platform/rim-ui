@@ -349,20 +349,29 @@ function CommandPaletteDialog() {
     ) => {
       // A retry runs where the command was started, wherever the person is by then.
       const commandContext = options?.commandContext ?? currentCommandContext();
+      // The arguments it ran with, with any the argument form asked for.
+      let ranWith = args;
       try {
         const result = await dispatchCommand(
           command,
           (input) => executeCommandMutation.mutateAsync(input),
-          { args, commandContext },
+          {
+            args,
+            commandContext,
+            askForArguments: true,
+            onArguments: (filled) => {
+              ranWith = filled;
+            },
+          },
         );
-        if (await showCommandOutcome(command, result, args, commandContext)) {
+        if (await showCommandOutcome(command, result, ranWith, commandContext)) {
           options?.onSuccess?.();
         }
       } catch (err) {
         showCommandRefusal(
           command.title,
           err,
-          () => void runCommand(command, args, { ...options, commandContext }),
+          () => void runCommand(command, ranWith, { ...options, commandContext }),
         );
       }
     },

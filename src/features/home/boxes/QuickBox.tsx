@@ -59,17 +59,22 @@ export function QuickBoxBody({ settings }: { settings: QuickSettings }) {
   const resolved = useResolvedActions(settings.actions);
   const execute = useExecuteCommandMutation();
 
-  async function run(command: CommandDefinition, action: QuickAction) {
-    const args = action.presetArgs;
+  async function run(command: CommandDefinition, args: Record<string, unknown> | undefined) {
     const commandContext = currentCommandContext();
+    // The arguments it ran with, with any the argument form asked for.
+    let ranWith = args;
     try {
       const result = await dispatchCommand(command, (input) => execute.mutateAsync(input), {
         args,
         commandContext,
+        askForArguments: true,
+        onArguments: (filled) => {
+          ranWith = filled;
+        },
       });
-      await showCommandOutcome(command, result, args, commandContext);
+      await showCommandOutcome(command, result, ranWith, commandContext);
     } catch (err) {
-      showCommandRefusal(command.title, err, () => void run(command, action));
+      showCommandRefusal(command.title, err, () => void run(command, ranWith));
     }
   }
 
@@ -79,7 +84,7 @@ export function QuickBoxBody({ settings }: { settings: QuickSettings }) {
         <ActionButton
           key={`${entry.action.commandId}:${index}`}
           resolved={entry}
-          onRun={(command, action) => void run(command, action)}
+          onRun={(command, action) => void run(command, action.presetArgs)}
         />
       ))}
     </ul>

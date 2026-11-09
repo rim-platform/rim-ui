@@ -5,7 +5,18 @@ import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useKeybindableCommands } from "../../commands/api/useKeybindableCommands";
-import { NEEDS_ARGUMENTS_NOTE } from "../../commands/runtime/commandRunnable";
+import { PresetArgumentsSection } from "../../commands/components/ArgumentFields";
+import {
+  presetArgsOf,
+  presetFields,
+  presetFieldValues,
+  presetWorkspace,
+  readFields,
+  type FieldValues,
+} from "../../commands/runtime/argumentValues";
+import { NEEDS_ARGUMENTS_NOTE, takesPresetFields } from "../../commands/runtime/commandRunnable";
+import type { CommandDefinition } from "../../commands/types";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useChannels } from "../../conversations/api/useChannels";
 import { useHomeWorkspaces } from "../api/useHomeWorkspaces";
 import {
@@ -209,6 +220,8 @@ interface ActionDraft {
   commandId: string;
   /** The preset arguments as typed, JSON; empty for none. */
   args: string;
+  /** The values of the argument fields once they are edited; until then they show `args`. */
+  fields?: FieldValues;
 }
 
 function draftsOf(initial: Settings): ActionDraft[] {
@@ -223,11 +236,57 @@ function draftsOf(initial: Settings): ActionDraft[] {
   return drafts.length > 0 ? drafts : [{ commandId: "", args: "" }];
 }
 
-/** Why a typed action cannot be saved, or `null` with what it saves as. */
-function readDraft(draft: ActionDraft): { problem: string } | { action: QuickAction } {
+/** The saved arguments a draft started from, or `null` when they are not JSON. */
+function savedArgsOf(draft: ActionDraft): { value: unknown } | null {
+  if (!draft.args.trim()) return { value: undefined };
+  try {
+    return { value: JSON.parse(draft.args) as unknown };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The values of a draft's argument fields, or `null` when its arguments are typed as JSON: the
+ * command has no fields, or the arguments saved with it do not fit them.
+ */
+function fieldValuesOf(command: CommandDefinition | undefined, draft: ActionDraft) {
+  if (!command) return null;
+  if (draft.fields) return draft.fields;
+  const saved = savedArgsOf(draft);
+  return saved ? presetFieldValues(command, saved.value) : null;
+}
+
+/** What a draft saves as, or why it cannot be saved, with the problem of each field. */
+type ReadDraft =
+  { problem: string; fieldProblems?: Record<string, string> } | { action: QuickAction };
+
+/**
+ * Why a typed action cannot be saved, or what it saves as.
+ *
+ * @param draft - The action as the form holds it.
+ * @param command - The server command whose arguments it shows as fields, when it does.
+ * @param fieldsWorkspace - The workspace whose members and conversations the fields offer.
+ */
+function readDraft(
+  draft: ActionDraft,
+  command: CommandDefinition | undefined,
+  fieldsWorkspace: string | undefined,
+): ReadDraft {
   if (!draft.commandId) return { problem: "Choose a command" };
   if (draft.commandId === EDIT_HOME_COMMAND) {
     return { problem: "Editing Home can't be a quick action" };
+  }
+  const values = fieldValuesOf(command, draft);
+  if (command && values) {
+    const read = readFields(presetFields(command), values, false);
+    if (!read.ok) return { problem: "Check the arguments", fieldProblems: read.problems };
+    const presetArgs = presetArgsOf(command, read.args, fieldsWorkspace);
+    return {
+      action: presetArgs
+        ? { commandId: draft.commandId, presetArgs }
+        : { commandId: draft.commandId },
+    };
   }
   if (!draft.args.trim()) return { action: { commandId: draft.commandId } };
   let parsed: unknown;
@@ -255,12 +314,29 @@ function QuickForm({
   onSave: (settings: Settings) => void;
   onCancel: () => void;
 }) {
-  const { all, unrunnable, needsArguments } = useKeybindableCommands();
+  const { all, builtIn, unrunnable, needsArguments } = useKeybindableCommands();
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
   const commands = all.filter((command) => command.id !== EDIT_HOME_COMMAND);
   const [drafts, setDrafts] = useState<ActionDraft[]>(() => draftsOf(initial));
   const [tried, setTried] = useState(false);
-  const read = drafts.map(readDraft);
   const baseId = useId();
+
+  /** The server command whose arguments `draft` shows as fields, when it has fields. */
+  function fieldsCommandOf(draft: ActionDraft): CommandDefinition | undefined {
+    const command = builtIn.find((cmd) => cmd.id === draft.commandId);
+    return command && takesPresetFields(command) ? command : undefined;
+  }
+
+  /** The workspace whose members and conversations `draft`'s fields offer. */
+  function fieldsWorkspaceOf(draft: ActionDraft): string | undefined {
+    const command = fieldsCommandOf(draft);
+    const saved = savedArgsOf(draft);
+    return (command && saved && presetWorkspace(command, saved.value)) || openWorkspaceId;
+  }
+
+  const read = drafts.map((draft) =>
+    readDraft(draft, fieldsCommandOf(draft), fieldsWorkspaceOf(draft)),
+  );
 
   function change(index: number, next: Partial<ActionDraft>) {
     setDrafts(drafts.map((draft, i) => (i === index ? { ...draft, ...next } : draft)));
@@ -287,6 +363,10 @@ function QuickForm({
           const problemId = `${baseId}-problem-${index}`;
           const entry = read[index];
           const problem = tried && "problem" in entry ? entry.problem : null;
+          const fieldsCommand = fieldsCommandOf(draft);
+          const fieldValues = fieldValuesOf(fieldsCommand, draft);
+          const fieldProblems =
+            tried && "problem" in entry ? (entry.fieldProblems ?? {}) : undefined;
           const known = commands.some((command) => command.id === draft.commandId);
           const savedTitle = unrunnable.find((command) => command.id === draft.commandId)?.title;
           const presetArgs = "action" in entry ? entry.action.presetArgs : undefined;
@@ -312,7 +392,7 @@ function QuickForm({
               <select
                 id={commandField}
                 value={draft.commandId}
-                onChange={(e) => change(index, { commandId: e.target.value })}
+                onChange={(e) => change(index, { commandId: e.target.value, fields: undefined })}
                 aria-describedby={
                   [problem ? problemId : null, unsupplied ? noteId : null]
                     .filter(Boolean)
@@ -338,17 +418,32 @@ function QuickForm({
                   {NEEDS_ARGUMENTS_NOTE}
                 </p>
               )}
-              <label htmlFor={argsField} className="block text-xs text-rim-text-muted">
-                Arguments (optional JSON)
-              </label>
-              <input
-                id={argsField}
-                value={draft.args}
-                placeholder="{}"
-                onChange={(e) => change(index, { args: e.target.value })}
-                aria-describedby={problem ? problemId : undefined}
-                className={INPUT_CLASS}
-              />
+              {fieldsCommand && fieldValues ? (
+                <PresetArgumentsSection
+                  fields={presetFields(fieldsCommand)}
+                  values={fieldValues}
+                  onChange={(name, value) =>
+                    change(index, { fields: { ...fieldValues, [name]: value } })
+                  }
+                  problems={fieldProblems}
+                  workspaceId={fieldsWorkspaceOf(draft)}
+                  emptyNote="asked for when the action runs"
+                />
+              ) : (
+                <>
+                  <label htmlFor={argsField} className="block text-xs text-rim-text-muted">
+                    Arguments (optional JSON)
+                  </label>
+                  <input
+                    id={argsField}
+                    value={draft.args}
+                    placeholder="{}"
+                    onChange={(e) => change(index, { args: e.target.value })}
+                    aria-describedby={problem ? problemId : undefined}
+                    className={INPUT_CLASS}
+                  />
+                </>
+              )}
               {problem && (
                 <p id={problemId} className="text-xs text-rim-danger">
                   {problem}

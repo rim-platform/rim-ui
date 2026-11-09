@@ -74,3 +74,55 @@ export function argumentTypesOf(
   if (!args) return undefined;
   return Object.fromEntries(args.map((arg) => [arg.name, arg.argumentType]));
 }
+
+/** The argument types the argument form has a field for; the others come from the context. */
+const FORM_ARGUMENT_TYPES: ReadonlySet<CommandArgumentType> = new Set([
+  CommandArgumentType.STRING,
+  CommandArgumentType.INTEGER,
+  CommandArgumentType.FLOAT,
+  CommandArgumentType.BOOLEAN,
+  CommandArgumentType.ENUM,
+  CommandArgumentType.USER_ID,
+  CommandArgumentType.CONVERSATION_ID,
+  CommandArgumentType.WORKSPACE_ID,
+]);
+
+/**
+ * Whether the argument form can ask a person for `argument`: every type but a message, a thread
+ * and selected text, which only the context supplies.
+ */
+export function formAsksFor(argument: Pick<CommandArgumentInfo, "argumentType">): boolean {
+  return FORM_ARGUMENT_TYPES.has(argument.argumentType);
+}
+
+/**
+ * What a person is told when a command lacks an argument of `type` that only the context
+ * supplies, and that the argument form cannot ask for.
+ */
+export function contextOnlyArgumentMessage(type: CommandArgumentType): string {
+  switch (type) {
+    case CommandArgumentType.THREAD_ID:
+      return "Open a thread first";
+    case CommandArgumentType.SELECTION_TEXT:
+      return "Select some text first";
+    default:
+      return "Select a message first";
+  }
+}
+
+/**
+ * Whether `args` hold a value for the argument called `name`, under its own snake_case name or
+ * its camelCase spelling; an empty string counts as no value.
+ */
+export function argumentGiven(args: Record<string, unknown> | undefined, name: string): boolean {
+  return isGivenValue(args?.[name]) || isGivenValue(args?.[camelCaseName(name)]);
+}
+
+/** The camelCase spelling of a snake_case argument name. */
+export function camelCaseName(name: string): string {
+  return name.replace(/_(\w)/g, (_, c: string) => c.toUpperCase());
+}
+
+function isGivenValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}

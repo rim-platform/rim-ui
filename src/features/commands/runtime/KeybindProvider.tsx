@@ -162,18 +162,24 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
 
     // A retry runs where the key was pressed, wherever the person is by then.
     const commandContext = currentCommandContext();
-    const run = () => {
+    const run = (args: Record<string, unknown> | undefined) => {
+      // The arguments it ran with, with any the argument form asked for.
+      let ranWith = args;
       dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
-        args: match.presetArgs as Record<string, unknown> | undefined,
+        args,
         commandContext,
+        askForArguments: true,
+        onArguments: (filled) => {
+          ranWith = filled;
+        },
       })
-        .then((result) => showCommandOutcome(command, result, presetArgs, commandContext))
+        .then((result) => showCommandOutcome(command, result, ranWith, commandContext))
         .catch((err: unknown) => {
           logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
-          showCommandRefusal(command.title, err, run);
+          showCommandRefusal(command.title, err, () => run(ranWith));
         });
     };
-    run();
+    run(presetArgs);
   };
 
   // The Vim layer listens first, so a key it takes never reaches the keybinds.

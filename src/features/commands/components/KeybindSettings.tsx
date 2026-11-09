@@ -36,8 +36,18 @@ import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profile
 import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
 import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
-import { NEEDS_ARGUMENTS_NOTE } from "../runtime/commandRunnable";
-import type { KeybindContext, ResolvedKeybind } from "../types";
+import { NEEDS_ARGUMENTS_NOTE, takesPresetFields } from "../runtime/commandRunnable";
+import {
+  presetArgsOf,
+  presetFields,
+  presetFieldValues,
+  presetWorkspace,
+  readFields,
+  type FieldValue,
+  type FieldValues,
+} from "../runtime/argumentValues";
+import type { CommandDefinition, KeybindContext, ResolvedKeybind } from "../types";
+import { PresetArgumentsSection } from "./ArgumentFields";
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
 
@@ -89,6 +99,30 @@ const CATEGORIES: Category[] = [
     match: () => true, // fallback
   },
 ];
+
+/** What an empty required argument of a keybind does. */
+const ASKED_ON_PRESS = "asked for when the key is pressed";
+
+/** The fields a keybind's saved arguments show in, with what each holds and why it cannot save. */
+interface PresetDraft {
+  /** The values, or `null` when the saved arguments do not fit the fields. */
+  values: FieldValues | null;
+  problems: Record<string, string>;
+}
+
+const NO_PRESET: PresetDraft = { values: {}, problems: {} };
+
+/** The draft that shows `presetArgs` of a keybind to `command`. */
+function presetDraftOf(command: CommandDefinition | undefined, presetArgs: unknown): PresetDraft {
+  return command ? { values: presetFieldValues(command, presetArgs), problems: {} } : NO_PRESET;
+}
+
+/** `draft` with the field `name` holding `value`, and its problem cleared. */
+function withFieldValue(draft: PresetDraft, name: string, value: FieldValue): PresetDraft {
+  const problems = { ...draft.problems };
+  delete problems[name];
+  return { values: { ...(draft.values ?? {}), [name]: value }, problems };
+}
 
 /** Keys re-recorded on a listed binding that wait for the user to confirm taking them over. */
 interface PendingRecord {
@@ -190,6 +224,8 @@ export function KeybindSettings() {
   const [reassignError, setReassignError] = useState<string | null>(null);
   // The keys the add form held when recording started, which Escape puts back.
   const recordStartRef = useRef("");
+  const [newPreset, setNewPreset] = useState<PresetDraft>(NO_PRESET);
+  const [editPreset, setEditPreset] = useState<PresetDraft>(NO_PRESET);
 
   const {
     builtIn: builtInKeybindable,
@@ -197,6 +233,33 @@ export function KeybindSettings() {
     all: keybindableCommands,
     needsArguments,
   } = useKeybindableCommands();
+
+  /** The server command `commandId` names when a keybind to it saves arguments in fields. */
+  function presetCommand(commandId: string): CommandDefinition | undefined {
+    const command = builtInKeybindable.find((cmd) => cmd.id === commandId);
+    return command && takesPresetFields(command) ? command : undefined;
+  }
+
+  /**
+   * The arguments a keybind to `commandId` saves from `draft`, or `null` after showing why a
+   * field cannot be saved. `kept` is saved when the fields do not apply or cannot show it.
+   */
+  function presetArgsFrom(
+    commandId: string,
+    draft: PresetDraft,
+    setDraft: (draft: PresetDraft) => void,
+    kept: unknown,
+    fieldsWorkspace: string | undefined,
+  ): { presetArgs: unknown } | null {
+    const command = presetCommand(commandId);
+    if (!command || draft.values === null) return { presetArgs: kept ?? undefined };
+    const read = readFields(presetFields(command), draft.values, false);
+    if (!read.ok) {
+      setDraft({ ...draft, problems: read.problems });
+      return null;
+    }
+    return { presetArgs: presetArgsOf(command, read.args, fieldsWorkspace) };
+  }
 
   // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
@@ -279,6 +342,7 @@ export function KeybindSettings() {
     setNewKeystroke("");
     setNewCommandId("");
     setNewContext("GLOBAL");
+    setNewPreset(NO_PRESET);
     setReassignError(null);
   }
 
@@ -353,12 +417,21 @@ export function KeybindSettings() {
   function openCreateForm(keystroke: string, commandId: string, context: KeybindContext) {
     setNewKeystroke(keystroke);
     setNewCommandId(commandId);
+    setNewPreset(presetDraftOf(presetCommand(commandId), undefined));
     setNewContext(context);
     setShowCreate(true);
   }
 
   function handleCreate() {
     if (!newKeystroke || !newCommandId || workspaceConflict) return;
+    const preset = presetArgsFrom(
+      newCommandId,
+      newPreset,
+      setNewPreset,
+      undefined,
+      workspaceId ?? undefined,
+    );
+    if (!preset) return;
     reassign(createConflicts, () => {
       if (bindsOnDevice(newCommandId)) {
         addDeviceKeybind({ keystroke: newKeystroke, commandId: newCommandId, context: newContext });
@@ -371,6 +444,7 @@ export function KeybindSettings() {
           keystroke: newKeystroke,
           commandId: newCommandId,
           context: newContext,
+          ...(preset.presetArgs !== undefined && { presetArgs: preset.presetArgs }),
         },
         { onSuccess: resetCreateForm },
       );
@@ -387,6 +461,7 @@ export function KeybindSettings() {
       keystroke: keybind.keystroke,
       commandId: keybind.commandId,
       context: keybind.context,
+      presetArgs: keybind.presetArgs ?? undefined,
       isEnabled: !keybind.isEnabled,
     });
   }
@@ -431,6 +506,7 @@ export function KeybindSettings() {
       keystroke,
       commandId: kb.commandId,
       context: kb.context,
+      presetArgs: kb.presetArgs ?? undefined,
       isEnabled: kb.isEnabled,
     });
   }
@@ -503,12 +579,31 @@ export function KeybindSettings() {
     setEditingKeybindId(kb.id);
     setEditCommandId(kb.commandId);
     setEditContext(kb.context);
+    setEditPreset(presetDraftOf(presetCommand(kb.commandId), kb.presetArgs));
   }
 
   function cancelEditing() {
     setEditingKeybindId(null);
     setEditCommandId("");
     setEditContext("GLOBAL");
+    setEditPreset(NO_PRESET);
+  }
+
+  /** Picks the command of the binding being edited; its saved arguments stay with its own. */
+  function changeEditCommand(kb: ResolvedKeybind, commandId: string) {
+    setEditCommandId(commandId);
+    setEditPreset(
+      presetDraftOf(
+        presetCommand(commandId),
+        commandId === kb.commandId ? kb.presetArgs : undefined,
+      ),
+    );
+  }
+
+  /** The workspace whose members and conversations the fields of `kb`'s arguments offer. */
+  function editWorkspace(kb: ResolvedKeybind): string | undefined {
+    const command = presetCommand(kb.commandId);
+    return (command && presetWorkspace(command, kb.presetArgs)) ?? workspaceId ?? undefined;
   }
 
   function handleSaveEdit(kb: ResolvedKeybind) {
@@ -518,12 +613,21 @@ export function KeybindSettings() {
       cancelEditing();
       return;
     }
+    const preset = presetArgsFrom(
+      editCommandId,
+      editPreset,
+      setEditPreset,
+      editCommandId === kb.commandId ? kb.presetArgs : undefined,
+      editCommandId === kb.commandId ? editWorkspace(kb) : (workspaceId ?? undefined),
+    );
+    if (!preset) return;
     updateMutation.mutate(
       {
         keybindId: kb.id,
         keystroke: kb.keystroke,
         commandId: editCommandId,
         context: editContext,
+        presetArgs: preset.presetArgs,
         isEnabled: kb.isEnabled,
       },
       {
@@ -587,7 +691,10 @@ export function KeybindSettings() {
             <select
               aria-label="Command"
               value={newCommandId}
-              onChange={(e) => setNewCommandId(e.target.value)}
+              onChange={(e) => {
+                setNewCommandId(e.target.value);
+                setNewPreset(presetDraftOf(presetCommand(e.target.value), undefined));
+              }}
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
             >
               <option value="">Select command...</option>
@@ -603,6 +710,17 @@ export function KeybindSettings() {
               ))}
             </select>
           </div>
+          {presetCommand(newCommandId) && (
+            <PresetArgumentsSection
+              fields={presetFields(presetCommand(newCommandId)!)}
+              values={newPreset.values}
+              onChange={(name, value) => setNewPreset(withFieldValue(newPreset, name, value))}
+              problems={newPreset.problems}
+              workspaceId={workspaceId ?? undefined}
+              emptyNote={ASKED_ON_PRESS}
+              size="xs"
+            />
+          )}
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Context</label>
             <select
@@ -721,7 +839,7 @@ export function KeybindSettings() {
                           <select
                             aria-label="Command"
                             value={editCommandId}
-                            onChange={(e) => setEditCommandId(e.target.value)}
+                            onChange={(e) => changeEditCommand(kb, e.target.value)}
                             className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
                           >
                             <option value="">Select command...</option>
@@ -743,6 +861,24 @@ export function KeybindSettings() {
                             )}
                           </select>
                         </div>
+                        {!isDeviceKeybind(kb.id) && presetCommand(editCommandId) && (
+                          <PresetArgumentsSection
+                            fields={presetFields(presetCommand(editCommandId)!)}
+                            values={editPreset.values}
+                            saved={kb.presetArgs}
+                            onChange={(name, value) =>
+                              setEditPreset(withFieldValue(editPreset, name, value))
+                            }
+                            problems={editPreset.problems}
+                            workspaceId={
+                              editCommandId === kb.commandId
+                                ? editWorkspace(kb)
+                                : (workspaceId ?? undefined)
+                            }
+                            emptyNote={ASKED_ON_PRESS}
+                            size="xs"
+                          />
+                        )}
                         <div>
                           <label className="block text-[11px] text-rim-text-muted mb-1">
                             Context

@@ -50,6 +50,12 @@ const SET_SLOW_MODE = definition("chat.set_slow_mode", {
   arguments: [{ name: "seconds", argumentType: "INTEGER" as never, required: true }],
 });
 
+const QUOTE_SELECTION = definition("chat.quote_selection", {
+  title: "Quote Selection",
+  executionTarget: "BACKEND",
+  arguments: [{ name: "text", argumentType: "SELECTION_TEXT" as never, required: true }],
+});
+
 function resolve(commandIds: string[], presetArgs?: Record<string, unknown>) {
   const { result } = renderHook(() =>
     useResolvedActions(commandIds.map((commandId) => ({ commandId, presetArgs }))),
@@ -59,7 +65,10 @@ function resolve(commandIds: string[], presetArgs?: Record<string, unknown>) {
 
 describe("useResolvedActions", () => {
   beforeEach(() => {
-    lists.bySurface = { KEYBIND_PICKER: [SCROLL_TO_TOP, SET_SLOW_MODE], PALETTE: [] };
+    lists.bySurface = {
+      KEYBIND_PICKER: [SCROLL_TO_TOP, SET_SLOW_MODE, QUOTE_SELECTION],
+      PALETTE: [],
+    };
   });
 
   it("runs a command the picker offers though the palette does not list it", () => {
@@ -74,13 +83,17 @@ describe("useResolvedActions", () => {
   });
 
   it("says a command needs arguments nothing supplies, under its title", () => {
-    const [resolved] = resolve(["chat.set_slow_mode"]);
+    const [resolved] = resolve(["chat.quote_selection"]);
 
     expect(resolved).toMatchObject({
       command: null,
       reason: "Needs arguments this can't supply yet",
     });
-    expect(actionTitle(resolved)).toBe("Set Slow Mode");
+    expect(actionTitle(resolved)).toBe("Quote Selection");
+  });
+
+  it("runs a command whose missing arguments the argument form asks for", () => {
+    expect(resolve(["chat.set_slow_mode"])[0].command).toBe(SET_SLOW_MODE);
   });
 
   it("runs a command whose saved arguments supply what it needs", () => {

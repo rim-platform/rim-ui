@@ -32,8 +32,12 @@ const CommandsDocument = gql`
       sensitivity
       arguments {
         name
+        title
+        description
         argumentType
         required
+        defaultValue
+        allowedValues
       }
     }
   }
