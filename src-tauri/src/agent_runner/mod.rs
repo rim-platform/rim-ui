@@ -8,7 +8,8 @@ mod allow_list;
 mod lookup;
 mod process;
 mod stderr_log;
-#[cfg(test)]
+// The runner's tests start shell scripts, so they run on Unix only.
+#[cfg(all(test, unix))]
 mod tests;
 
 use std::collections::HashMap;
