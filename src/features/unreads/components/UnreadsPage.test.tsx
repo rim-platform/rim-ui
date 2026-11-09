@@ -76,6 +76,12 @@ vi.mock("../../notifications/runtime/jumpToNotification", () => ({
   jumpToNotification: (...args: unknown[]) => jump(...args),
 }));
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { UnreadsPage } from "./UnreadsPage";
 
 const MARKER = "2026-11-06T09:00:00Z";
@@ -197,6 +203,7 @@ const list = () => screen.getByRole("listbox", { name: "Unread messages" });
 
 beforeEach(() => {
   requestMock.mockReset();
+  vi.mocked(runCommandFromClick).mockClear();
   host.markers = true;
   directSpaces.ids = [];
   rowProps.seen = [];
@@ -347,6 +354,12 @@ describe("UnreadsPage: muted", () => {
     expect(screen.queryByRole("group", { name: "#quiet" })).not.toBeInTheDocument();
     fireEvent.click(show);
     expect(screen.getByRole("group", { name: "#quiet" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide muted (1)" }));
+    expect(screen.queryByRole("group", { name: "#quiet" })).not.toBeInTheDocument();
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["unreads.toggle_muted"],
+      ["unreads.toggle_muted"],
+    ]);
   });
 });
 
@@ -366,6 +379,7 @@ describe("UnreadsPage: when nothing shows", () => {
     expect(screen.getAllByRole("button", { name: "Show muted (1)" })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Show muted (1)" }));
+    expect(runCommandFromClick).toHaveBeenCalledWith("unreads.toggle_muted");
     expect(await screen.findByRole("group", { name: "#quiet" })).toBeInTheDocument();
     expect(
       screen.queryByText("Nothing unread outside muted conversations."),
@@ -616,6 +630,27 @@ describe("UnreadsPage: reading", () => {
     expect(marks()).toEqual([]);
   });
 
+  it("Undo on a card takes back that card's mark, not a newer one", async () => {
+    await loaded();
+    fireEvent.click(markIn("#development"));
+    await screen.findByText("#development marked as read");
+    const devMark = useDeferredMarks.getState().marks[0].id;
+    fireEvent.click(markIn("#finance"));
+    await screen.findByText("#finance marked as read");
+
+    const devCard = (await screen.findByText("#development marked as read")).closest(
+      "[data-unread-mark]",
+    ) as HTMLElement;
+    fireEvent.click(within(devCard).getByRole("button", { name: /^Undo/ }));
+
+    expect(runCommandFromClick).toHaveBeenLastCalledWith("workspace.unreads_undo", {
+      mark_id: devMark,
+    });
+    expect(await screen.findByRole("group", { name: "#development" })).toBeInTheDocument();
+    expect(screen.getByText("#finance marked as read")).toBeInTheDocument();
+    expect(useDeferredMarks.getState().marks).toHaveLength(1);
+  });
+
   it("leaving the page does not cancel a mark", async () => {
     await loaded();
     fireEvent.click(markIn("#development"));
@@ -627,6 +662,7 @@ describe("UnreadsPage: reading", () => {
   it("Mark all shown marks every loaded group with one Undo", async () => {
     await loaded();
     fireEvent.click(screen.getByRole("button", { name: "Mark all shown as read" }));
+    expect(runCommandFromClick).toHaveBeenCalledWith("unreads.mark_all_shown");
     expect(toastMock.success).toHaveBeenCalledWith(
       "2 conversations marked as read",
       expect.objectContaining({ duration: 10_000 }),
@@ -712,6 +748,11 @@ describe("UnreadsPage: reading", () => {
       press("u");
       expect(useDeferredMarks.getState().marks).toEqual([]);
       expect(marks()).toEqual([]);
+      expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+        ["workspace.unreads_next", undefined, { source: "key" }],
+        ["workspace.unreads_mark_group", undefined, { source: "key" }],
+        ["workspace.unreads_undo", undefined, { source: "key" }],
+      ]);
     });
 
     it("Enter opens the selected message", async () => {

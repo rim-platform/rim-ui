@@ -129,6 +129,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The buttons of the rail, the top bar, the side panels, the conversation header and list, Home
+  and Unreads run the same commands as the palette and keybinds, so a click does what the
+  command does. Open Direct Messages from the palette or a key now leaves Home and Unreads, as
+  the rail's button does.
 - A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
   list the macro's steps with the arguments fixed for each.

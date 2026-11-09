@@ -1,7 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import { ArrowLeft, Hash, Pin, Search, UserPlus } from "lucide-react";
 
-import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
@@ -17,7 +16,6 @@ import {
   pendingMembersOf,
   untitledGroupName,
 } from "../../features/conversations/utils";
-import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useTopicEditStore } from "../../features/conversations/state/useTopicEditStore";
 import { useShellStore, type DirectDraft } from "../state/useShellStore";
 import { draftSpaceId, useDraftPeer } from "../../features/conversations/hooks/useDraftPeer";
@@ -27,6 +25,7 @@ import { useUpdateTopicMutation } from "../../features/conversations/api/useUpda
 import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useAgentsReadingChannel } from "../../features/agents/hooks/useAgentsReadingChannel";
 import { botsInChannel, useWorkspaceBots } from "../../features/bots/hooks/useWorkspaceBots";
 import type { ConversationSummary } from "../../features/conversations/types";
@@ -39,7 +38,6 @@ import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { useCanModerate, useIsOwner } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 import {
-  returnFromDirect,
   useApplicableDirectOrigin,
   workspaceNameOf,
 } from "../../features/conversations/state/directOrigin";
@@ -87,13 +85,11 @@ function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
 function SelectedConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
-  const openSearch = useSearchOverlayStore((s) => s.openWithScope);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const { data: workspace } = useWorkspace(workspaceId ?? undefined);
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
-  const toggleMembers = useMembersPanelStore((s) => s.toggle);
   const narrow = useShellWidth() === "narrow";
 
   // A DM shows the other person's name, a group without a title its members' names.
@@ -211,7 +207,7 @@ function SelectedConversationHeader() {
             {isChannel && conversation && (
               <button
                 type="button"
-                onClick={toggleMembers}
+                onClick={() => void runCommandFromClick("workspace.toggle_conversation_members")}
                 aria-label={memberCountLabel(conversation.memberCount)}
                 className="whitespace-nowrap text-xs text-rim-text-faint transition hover:text-rim-text"
               >
@@ -270,18 +266,13 @@ function SelectedConversationHeader() {
       </div>
       {conversationId && (
         <div className="flex shrink-0 items-center gap-1">
-          {canInvite && <InviteButton onClick={() => setInviteOpen(true)} />}
+          {canInvite && <InviteButton />}
           {isChannel && workspaceId && (
             <LensPicker serverId={workspaceId} conversationId={conversationId} />
           )}
           {isChannel && <PinnedMessagesButton />}
           {!viewerInvited && (
-            <ConversationSearchButton
-              conversationId={conversationId}
-              displayTitle={displayTitle}
-              isChannel={isChannel}
-              openSearch={openSearch}
-            />
+            <ConversationSearchButton displayTitle={displayTitle} isChannel={isChannel} />
           )}
           {conversation && workspaceId && !viewerInvited && (
             <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
@@ -320,7 +311,7 @@ function BackToWorkspaceButton() {
     >
       <button
         type="button"
-        onClick={() => returnFromDirect()}
+        onClick={() => void runCommandFromClick("workspace.back_to_workspace")}
         aria-label={`Back to ${name}`}
         className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -331,7 +322,8 @@ function BackToWorkspaceButton() {
   );
 }
 
-function InviteButton({ onClick }: { onClick: () => void }) {
+/** Invite member: runs the invite command, which opens the invite dialog. */
+function InviteButton() {
   const keybind = useKeybindLabel("admin.invite_member");
   return (
     <HoverTooltip
@@ -348,7 +340,7 @@ function InviteButton({ onClick }: { onClick: () => void }) {
     >
       <button
         type="button"
-        onClick={onClick}
+        onClick={() => void runCommandFromClick("admin.invite_member")}
         aria-label="Invite member"
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -381,7 +373,7 @@ function ChannelBotsLine({
       {bots.length > 0 && (
         <button
           type="button"
-          onClick={() => useShellStore.getState().setBotsPanelOpen(!botsPanelOpen)}
+          onClick={() => void runCommandFromClick("workspace.toggle_channel_bots")}
           aria-expanded={botsPanelOpen}
           aria-keyshortcuts={keystroke ?? undefined}
           className="transition hover:text-rim-text"
@@ -393,7 +385,9 @@ function ChannelBotsLine({
       {agents.length > 0 && (
         <button
           type="button"
-          onClick={() => useShellStore.getState().setBotsPanelOpen(true)}
+          onClick={() => {
+            if (!botsPanelOpen) void runCommandFromClick("workspace.toggle_channel_bots");
+          }}
           className="transition hover:text-rim-text"
         >
           {agents.length === 1 ? "your agent can read this" : "your agents can read this"}
@@ -404,16 +398,13 @@ function ChannelBotsLine({
 }
 
 function PinnedMessagesButton() {
-  const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
-  const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
-
   return (
     <HoverTooltip
       content={<span className="text-xs text-rim-text whitespace-nowrap">Pinned messages</span>}
     >
       <button
         type="button"
-        onClick={() => setPinnedPanelOpen(!pinnedPanelOpen)}
+        onClick={() => void runCommandFromClick("workspace.toggle_pinned_messages")}
         aria-label="Pinned messages"
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -423,16 +414,13 @@ function PinnedMessagesButton() {
   );
 }
 
+/** Search in the open conversation: runs the command that opens search scoped to it. */
 function ConversationSearchButton({
-  conversationId,
   displayTitle,
   isChannel,
-  openSearch,
 }: {
-  conversationId: string;
   displayTitle: string | undefined;
   isChannel: boolean;
-  openSearch: (scope: { kind: "conversation"; conversationId: string }) => void;
 }) {
   const keystroke = useKeybindLabel("workspace.search_in_channel");
   const noun = isChannel ? "channel" : "conversation";
@@ -447,7 +435,7 @@ function ConversationSearchButton({
     >
       <button
         type="button"
-        onClick={() => openSearch({ kind: "conversation", conversationId })}
+        onClick={() => void runCommandFromClick("workspace.search_in_channel")}
         aria-label={accessibleName}
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >

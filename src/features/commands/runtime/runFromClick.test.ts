@@ -24,6 +24,7 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import {
+  CommandArgumentType,
   CommandInitiator,
   CommandSensitivity,
   ServerMemberRoleGql,
@@ -38,6 +39,7 @@ import { useConfirmationModalStore } from "../../agent/state/confirmationModalSt
 import { useSelectedMessageStore } from "../../messages/state/useSelectedMessageStore";
 import { spaceHasCapability } from "../../updater/api/serverCapabilities";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useCommandArgumentsStore } from "../state/useCommandArgumentsStore";
 import type { CommandDefinition, CommandResult } from "../types";
 import { dispatchCommand } from "./commandDispatcher";
 import { resolveClickCommand, runCommandFromClick } from "./runFromClick";
@@ -262,6 +264,47 @@ describe("a run its control already confirmed", () => {
     useConfirmationModalStore.getState().reject();
 
     expect(await pending).toEqual({ ok: false, cancelled: true, message: "" });
+  });
+});
+
+describe("a run with the arguments saved with its control", () => {
+  afterEach(() => {
+    useCommandArgumentsStore.getState().cancel();
+  });
+
+  it("runs this app's handler of a server command with them, where typed ones go to the server", async () => {
+    servePalette("ws-1", [command("chat.create_channel")]);
+
+    await runCommandFromClick("chat.create_channel", { name: "news" }, { savedArgs: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(useShellStore.getState().showNewChannelDialog).toBe(true);
+
+    await runCommandFromClick("chat.create_channel", { name: "news" });
+    expect(sentInputs()).toEqual([
+      expect.objectContaining({ commandId: "chat.create_channel", args: { name: "news" } }),
+    ]);
+  });
+
+  it("asks for the arguments the saved ones leave out, then sends them all", async () => {
+    const argument = (name: string) => ({
+      name,
+      argumentType: CommandArgumentType.STRING,
+      required: true,
+    });
+    servePalette("ws-1", [
+      command("reports.export", { arguments: [argument("scope"), argument("format")] }),
+    ]);
+
+    const pending = runCommandFromClick("reports.export", { scope: "all" }, { savedArgs: true });
+    await vi.waitFor(() =>
+      expect(
+        useCommandArgumentsStore.getState().request?.arguments.map((asked) => asked.name),
+      ).toEqual(["format"]),
+    );
+    useCommandArgumentsStore.getState().submit({ format: "csv" });
+
+    expect((await pending).ok).toBe(true);
+    expect(sentInputs()[0].args).toEqual({ scope: "all", format: "csv" });
   });
 });
 

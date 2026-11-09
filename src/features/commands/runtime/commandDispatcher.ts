@@ -34,6 +34,7 @@ import {
   useUnreadsPageStore,
   type UnreadsPageControls,
 } from "../../unreads/state/useUnreadsPageStore";
+import { undoDeferredMark } from "../../conversations/api/deferredMark";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
 import { markAsUnread, spaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
@@ -257,7 +258,13 @@ const localHandlers: Record<string, LocalHandler> = {
   "workspace.unreads_open": () => {
     if (!onUnreadsPage((c) => c.open())) openUnreads();
   },
-  "workspace.unreads_undo": () => {
+  // A mark's own Undo names it; without one, the newest mark still waiting is taken back.
+  "workspace.unreads_undo": (args) => {
+    const markId = args?.mark_id ?? args?.markId;
+    if (typeof markId === "number") {
+      undoDeferredMark(markId);
+      return;
+    }
     if (!onUnreadsPage((c) => c.undo())) onlyOnUnreadsPage();
   },
   "workspace.open_audit_log": () => {

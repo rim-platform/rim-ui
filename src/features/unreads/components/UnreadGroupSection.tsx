@@ -7,8 +7,9 @@ import { Button } from "../../../shared/ui/Button";
 import { workspaceInitials } from "../../../shared/utils/initials";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useConversation } from "../../conversations/api/useConversation";
-import { undoDeferredMark, type DeferredTarget } from "../../conversations/api/deferredMark";
+import type { DeferredTarget } from "../../conversations/api/deferredMark";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { MessageItem, type MessageItemHandlers } from "../../messages/components/MessageItem";
@@ -251,7 +252,7 @@ export function UnreadGroupSection({
           type="button"
           size="sm"
           variant="secondary"
-          onClick={() => undoDeferredMark(markId)}
+          onClick={() => void runCommandFromClick("workspace.unreads_undo", { mark_id: markId })}
         >
           Undo
           <KeyHint>U</KeyHint>

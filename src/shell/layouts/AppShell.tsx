@@ -53,6 +53,7 @@ import { PluginCommandConfirmDialog } from "../../features/plugins/components/Pl
 import { CommandArgumentsDialog } from "../../features/commands/components/CommandArgumentsDialog";
 import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
 import { AppCommandDialogs } from "../../features/commands/components/AppCommandDialogs";
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { ManageCommandHost } from "../../features/commands/components/ManageCommandHost";
 import { WorkspaceActionDialogs } from "../../features/workspaces/components/WorkspaceActionDialogs";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
@@ -323,6 +324,15 @@ function WorkspaceShell() {
   const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
   const botsPanelOpen = useShellStore((s) => s.botsPanelOpen);
   const closeBotsPanel = useCallback(() => useShellStore.getState().setBotsPanelOpen(false), []);
+  // The close buttons of the pinned and bots panels run the commands that show and hide them.
+  const closePinnedFromPanel = useCallback(
+    () => void runCommandFromClick("workspace.toggle_pinned_messages"),
+    [],
+  );
+  const closeBotsFromPanel = useCallback(
+    () => void runCommandFromClick("workspace.toggle_channel_bots"),
+    [],
+  );
   const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
   const draftDirect = useShellStore((s) => s.draftDirect);
@@ -490,7 +500,7 @@ function WorkspaceShell() {
                                   <PinnedMessagesPanel
                                     workspaceId={workspaceId}
                                     conversationId={selectedConversationId}
-                                    onClose={() => setPinnedPanelOpen(false)}
+                                    onClose={closePinnedFromPanel}
                                   />
                                 </SurfaceErrorBoundary>
                               </OverlayPanel>
@@ -508,7 +518,7 @@ function WorkspaceShell() {
                                   <ChannelBotsPanel
                                     workspaceId={workspaceId}
                                     conversationId={selectedConversationId}
-                                    onClose={closeBotsPanel}
+                                    onClose={closeBotsFromPanel}
                                   />
                                 </SurfaceErrorBoundary>
                               </OverlayPanel>
@@ -619,7 +629,7 @@ function WorkspaceShell() {
                             <PinnedMessagesPanel
                               workspaceId={workspaceId}
                               conversationId={selectedConversationId}
-                              onClose={() => setPinnedPanelOpen(false)}
+                              onClose={closePinnedFromPanel}
                             />
                           </SurfaceErrorBoundary>
                         )}
@@ -648,7 +658,7 @@ function WorkspaceShell() {
                             <ChannelBotsPanel
                               workspaceId={workspaceId}
                               conversationId={selectedConversationId}
-                              onClose={closeBotsPanel}
+                              onClose={closeBotsFromPanel}
                             />
                           </SurfaceErrorBoundary>
                         )}

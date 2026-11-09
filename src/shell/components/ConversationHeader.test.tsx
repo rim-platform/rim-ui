@@ -34,6 +34,14 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: () => null,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
+import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { lockVault } from "../../core/accountVault/accountVault";
 import { unlockTestVault } from "../../test/accountVault";
 import { ConversationHeader } from "./ConversationHeader";
@@ -592,5 +600,52 @@ describe("ConversationHeader — no conversation open", () => {
     expect(bar.className).toContain("flex-wrap");
     expect(bar.className).toContain("min-h-10");
     useShellStore.setState({ shellWidth: "wide" });
+  });
+});
+
+describe("ConversationHeader — the commands its controls run", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useMembersPanelStore.setState({ open: false });
+  });
+
+  afterEach(() => {
+    useSearchOverlayStore.getState().close();
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("runs the member count, Invite member, Pinned messages and Search in the open conversation", async () => {
+    const user = userEvent.setup();
+    serveConversation(
+      makeConversation({ id: "conv-1", title: "general", memberCount: 3 }),
+      ServerMemberRoleGql.OWNER,
+    );
+    renderHeader();
+
+    await user.click(await screen.findByRole("button", { name: "3 members" }));
+    expect(useMembersPanelStore.getState().open).toBe(true);
+    await user.click(await screen.findByRole("button", { name: "Invite member" }));
+    expect(useShellStore.getState().showInviteDialog).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Pinned messages" }));
+    expect(useShellStore.getState().pinnedPanelOpen).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Search in #general" }));
+    expect(useSearchOverlayStore.getState()).toMatchObject({
+      isOpen: true,
+      scope: { kind: "conversation", conversationId: "conv-1" },
+    });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_conversation_members"],
+      ["admin.invite_member"],
+      ["workspace.toggle_pinned_messages"],
+      ["workspace.search_in_channel"],
+    ]);
+    expect(
+      requestMock.mock.calls.filter(([doc]) => String(doc).includes("ExecuteCommand")),
+    ).toEqual([]);
   });
 });

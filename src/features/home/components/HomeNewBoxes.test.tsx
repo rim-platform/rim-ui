@@ -8,6 +8,8 @@ import {
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { RuntimeProvider } from "../../../core/runtime/RuntimeProvider";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient as appQueryClient } from "../../../core/query/queryClient";
 import { createTestQueryClient } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -39,10 +41,16 @@ vi.mock("../../relay/api/useDmRequests", () => ({
 vi.mock("../../updater/hooks/useServerInfo", () => ({
   useServerInfo: () => ({ info: { defaultWorkspace: null, capabilities: ["home_layout"] } }),
 }));
-vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
-  serverHasCapability: async (capability: string) => capability === "home_layout",
-}));
+const initiatorUi = vi.hoisted(() => ({ listed: false }));
+vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => {
+  const listed = async (capability: string) =>
+    capability === "home_layout" || (initiatorUi.listed && capability === "command_initiator_ui");
+  return {
+    ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
+    serverHasCapability: listed,
+    spaceHasCapability: (_spaceId: string, capability: string) => listed(capability),
+  };
+});
 vi.mock("../../agent/agentAvailability", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agent/agentAvailability")>()),
   agentAvailable: () => false,
@@ -63,6 +71,7 @@ vi.mock("../../relay/api/useDirectInbox", async (importOriginal) => ({
   }),
 }));
 
+import { useCommandArgumentsStore } from "../../commands/state/useCommandArgumentsStore";
 import { HomePage } from "./HomePage";
 
 const SERVERS = [
@@ -212,12 +221,15 @@ function saves(): Record<string, unknown>[] {
 }
 
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
+  // Edit Home runs its command, which reads the server's capabilities from the app's cache.
+  appQueryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["home_layout"] });
   await user.click(await screen.findByRole("button", { name: "Edit Home" }));
   await screen.findByRole("heading", { level: 1, name: "Editing Home" });
 }
 
 describe("Home's new boxes", () => {
   beforeEach(() => {
+    initiatorUi.listed = false;
     requestMock.mockReset();
     state.stored = null;
     state.conversation = null;
@@ -240,6 +252,7 @@ describe("Home's new boxes", () => {
   });
 
   afterEach(() => {
+    appQueryClient.clear();
     useAuthStore.setState({ session: null });
     useWorkspaceStore.setState({ workspaceId: null });
   });
@@ -494,14 +507,59 @@ describe("Home's new boxes", () => {
         expect(useConfirmationModalStore.getState().request?.commandId).toBe("reports.purge_old"),
       );
       const [first] = callsTo(requestMock, "mutation ExecuteCommand");
-      expect(first.input).toMatchObject({
+      expect(first.input).toEqual({
         commandId: "reports.purge_old",
         args: { scope: "all" },
         commandContext: { workspaceId: "ws-1" },
+        isPipe: undefined,
       });
       act(() => useConfirmationModalStore.getState().reject());
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1);
+    });
+
+    it("sends its run as UI on a server that lists it", async () => {
+      initiatorUi.listed = true;
+      state.commands = [command("reports.purge_old", "Purge Old Reports")];
+      state.execute = () => ({
+        executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+      });
+      stored(box("q", "quick", { actions: [{ commandId: "reports.purge_old" }] }));
+      serve();
+      const user = userEvent.setup();
+      renderHome();
+      await user.click(await screen.findByRole("button", { name: "Purge Old Reports" }));
+      await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+      expect(callsTo(requestMock, "mutation ExecuteCommand")[0].input).toMatchObject({
+        commandId: "reports.purge_old",
+        initiator: "UI",
+      });
+    });
+
+    it("asks for the arguments its saved ones leave out before running", async () => {
+      const exportArguments = [
+        { name: "scope", argumentType: "STRING", required: true },
+        { name: "format", argumentType: "STRING", required: true },
+      ];
+      state.commands = [
+        command("reports.export", "Export Reports", { arguments: exportArguments }),
+      ];
+      stored(
+        box("q", "quick", {
+          actions: [{ commandId: "reports.export", presetArgs: { scope: "all" } }],
+        }),
+      );
+      serve();
+      const user = userEvent.setup();
+      renderHome();
+      await user.click(await screen.findByRole("button", { name: "Export Reports" }));
+      await waitFor(() =>
+        expect(
+          useCommandArgumentsStore.getState().request?.arguments.map((argument) => argument.name),
+        ).toEqual(["format"]),
+      );
+      expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+      act(() => useCommandArgumentsStore.getState().cancel());
     });
 
     it("disables an action not offered here, saying why in its description", async () => {

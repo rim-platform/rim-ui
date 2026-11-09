@@ -76,7 +76,7 @@ describe("ConversationList — effective notification level", () => {
     serve();
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ConversationList onNewChannel={vi.fn()} />
+        <ConversationList />
       </QueryClientProvider>,
     );
     const button = await screen.findByRole("button", { name: /^Unreads/ });
@@ -90,7 +90,7 @@ describe("ConversationList — effective notification level", () => {
     serve();
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ConversationList onNewChannel={vi.fn()} />
+        <ConversationList />
       </QueryClientProvider>,
     );
     await titleOf("loud");
@@ -101,7 +101,7 @@ describe("ConversationList — effective notification level", () => {
     serve();
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ConversationList onNewChannel={vi.fn()} />
+        <ConversationList />
       </QueryClientProvider>,
     );
     const title = await titleOf("loud");
@@ -113,7 +113,7 @@ describe("ConversationList — effective notification level", () => {
     serve();
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ConversationList onNewChannel={vi.fn()} />
+        <ConversationList />
       </QueryClientProvider>,
     );
     for (const name of ["silenced", "timed"]) {

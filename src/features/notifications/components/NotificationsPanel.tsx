@@ -24,6 +24,7 @@ import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationReason } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import {
   useMuteConversationMutation,
   useUnmuteConversationMutation,
@@ -212,7 +213,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void runCommandFromClick("workspace.toggle_notifications")}
             title="Close notifications"
             aria-label="Close notifications"
             className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"

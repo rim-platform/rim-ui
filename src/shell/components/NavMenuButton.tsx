@@ -1,21 +1,22 @@
 import { Menu } from "lucide-react";
 
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useShellWidth } from "../hooks/useShellWidth";
 import { useShellStore } from "../state/useShellStore";
 
 /**
  * The top bar's button that opens the navigation drawer. It renders only in a narrow window,
- * where the workspace rail and the tool panel are not beside the main area.
+ * where the workspace rail and the tool panel are not beside the main area, and runs the
+ * sidebar command, which opens and closes the drawer there.
  */
 export function NavMenuButton() {
   const narrow = useShellWidth() === "narrow";
   const open = useShellStore((s) => s.navDrawerOpen);
-  const toggle = useShellStore((s) => s.toggleNavDrawer);
   if (!narrow) return null;
   return (
     <button
       type="button"
-      onClick={toggle}
+      onClick={() => void runCommandFromClick("workspace.toggle_sidebar")}
       aria-label="Open navigation"
       aria-haspopup="dialog"
       aria-expanded={open}

@@ -17,6 +17,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
+import { useConversationDialogStore } from "../state/useConversationDialogStore";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useUnreadStore } from "../state/useUnreadStore";
 import {
@@ -37,6 +38,7 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../commands/hooks/useKeybindLabel", () => ({ useKeybindLabel: () => null }));
 vi.mock("../../../core/events/usePrefetchMessages", () => ({ usePrefetchMessages: vi.fn() }));
 
+import { ConversationCommandHost } from "./ConversationCommandHost";
 import { ConversationList } from "./ConversationList";
 
 const general = makeConversation({ id: "c-general", title: "general" });
@@ -80,14 +82,14 @@ function serve({
 }
 
 async function renderList(role = ServerMemberRoleGql.MEMBER, defaultWorkspace?: string) {
-  const onNewChannel = vi.fn();
   const qc = createTestQueryClient();
   if (defaultWorkspace) {
     qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace }));
   }
   render(
     <QueryClientProvider client={qc}>
-      <ConversationList onNewChannel={onNewChannel} />
+      <ConversationList />
+      <ConversationCommandHost />
     </QueryClientProvider>,
   );
   await screen.findByText("general");
@@ -96,7 +98,7 @@ async function renderList(role = ServerMemberRoleGql.MEMBER, defaultWorkspace?: 
       role,
     ),
   );
-  return { qc, onNewChannel };
+  return { qc };
 }
 
 function rowButton(name: string): HTMLElement {
@@ -302,15 +304,16 @@ describe("ConversationList — section header menus", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
+    act(() => useConversationDialogStore.getState().closeBrowseChannels());
   });
 
   it("Channels offers Browse channels and Create channel", async () => {
     serve();
-    const { onNewChannel } = await renderList();
+    await renderList();
     fireEvent.contextMenu(screen.getByText("Channels"));
     expect(menuLabels()).toEqual(["Browse channels…", "Create channel…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
-    expect(onNewChannel).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(useShellStore.getState().showNewChannelDialog).toBe(true));
     fireEvent.contextMenu(screen.getByText("Channels"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
     expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();

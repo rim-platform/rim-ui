@@ -37,6 +37,12 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { NotificationBellButton } from "./NotificationBellButton";
 
@@ -419,6 +425,7 @@ describe("NotificationsPanel", () => {
 describe("NotificationBellButton", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
     useShellStore.getState().reset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useNotificationsPanelStore.setState({ open: false, unreadOnly: false });
@@ -473,6 +480,24 @@ describe("NotificationBellButton", () => {
     fireEvent.click(bell);
     expect(useNotificationsPanelStore.getState().open).toBe(false);
     expect(screen.queryByRole("region", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("closes the inbox from its close button through the notifications command", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close notifications" }));
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_notifications"],
+      ["workspace.toggle_notifications"],
+    ]);
   });
 
   it("closes the inbox on Escape and gives focus back to the bell", async () => {

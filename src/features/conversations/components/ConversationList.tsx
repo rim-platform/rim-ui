@@ -14,6 +14,7 @@ import { canCreateChannel } from "../../workspaces/role";
 import { usePrefetchMessages } from "../../../core/events/usePrefetchMessages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { isContextMenuKey, useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useMutedStore } from "../state/useMutedStore";
 import { usePendingDmRequestsIn } from "../../relay/api/useDmRequests";
 import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
@@ -21,15 +22,10 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useConversationMenuItems } from "../hooks/useConversationMenuItems";
 import type { ConversationSummary } from "../types";
 import { conversationRowIn, isInvited } from "../utils";
-import { BrowseChannelsDialog } from "./BrowseChannelsDialog";
 import { ConversationItem } from "./ConversationItem";
 import { WorkspaceBotsSection } from "../../bots/components/WorkspaceBotsSection";
 import { DirectConversationList } from "./DirectConversationList";
 import { DraftDirectItem } from "./DraftDirectItem";
-
-interface ConversationListProps {
-  onNewChannel: () => void;
-}
 
 const ROW_MENU = { label: "Conversation actions" };
 
@@ -37,13 +33,18 @@ const ROW_MENU = { label: "Conversation actions" };
  * The conversation list: a workspace's channels and DMs, or, in a direct space, the
  * DMs and groups of every direct space this account uses.
  */
-export function ConversationList(props: ConversationListProps) {
+export function ConversationList() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const direct = useIsDirectSpace(workspaceId);
-  return direct ? <DirectConversationList /> : <WorkspaceConversationList {...props} />;
+  return direct ? <DirectConversationList /> : <WorkspaceConversationList />;
 }
 
-function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
+/** Runs a command of the list's own controls: browsing channels or creating one. */
+function runListCommand(commandId: string, source: "button" | "menu" = "button"): void {
+  void runCommandFromClick(commandId, undefined, { source });
+}
+
+function WorkspaceConversationList() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const selectedId = useShellStore((s) => s.selectedConversationId);
   const setSelected = useShellStore((s) => s.setSelectedConversationId);
@@ -99,7 +100,6 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
   // The sidebar lists joined channels; archived ones sit in a collapsed "Archived" group that
   // only renders when there is something in it.
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
   const { channels, archivedChannels } = useMemo(() => {
     const items = channelsData?.items ?? [];
     return {
@@ -224,9 +224,19 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
     isGuest
       ? []
       : [
-          { id: "browse-channels", label: "Browse channels…", onSelect: () => setBrowseOpen(true) },
+          {
+            id: "browse-channels",
+            label: "Browse channels…",
+            onSelect: () => runListCommand("chat.browse_channels", "menu"),
+          },
           ...(canCreate
-            ? [{ id: "create-channel", label: "Create channel…", onSelect: () => onNewChannel() }]
+            ? [
+                {
+                  id: "create-channel",
+                  label: "Create channel…",
+                  onSelect: () => runListCommand("chat.create_channel", "menu"),
+                },
+              ]
             : []),
         ];
   const archivedSectionItems = (): DropdownMenuItem[] => [
@@ -257,7 +267,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
         {allUnread > 0 && (
           <button
             type="button"
-            onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
+            onClick={() => runListCommand("workspace.open_unreads")}
             className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
           >
             Unreads
@@ -276,7 +286,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => setBrowseOpen(true)}
+                  onClick={() => runListCommand("chat.browse_channels")}
                   title="Browse channels"
                   aria-label="Browse channels"
                   className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
@@ -286,7 +296,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
                 {canCreate && (
                   <button
                     type="button"
-                    onClick={() => onNewChannel()}
+                    onClick={() => runListCommand("chat.create_channel")}
                     title="New channel"
                     aria-label="New channel"
                     className="rounded p-0.5 text-rim-text-faint transition hover:bg-white/5 hover:text-rim-text"
@@ -304,7 +314,7 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
           ) : channels.length === 0 ? (
             <button
               type="button"
-              onClick={() => setBrowseOpen(true)}
+              onClick={() => runListCommand("chat.browse_channels")}
               className="w-full rounded-lg px-2 py-2 text-left text-sm text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
             >
               No channels joined yet. Browse channels
@@ -399,10 +409,6 @@ function WorkspaceConversationList({ onNewChannel }: ConversationListProps) {
               ))}
             </ul>
           </div>
-        )}
-
-        {browseOpen && workspaceId && !isGuest && (
-          <BrowseChannelsDialog workspaceId={workspaceId} onClose={() => setBrowseOpen(false)} />
         )}
       </div>
       {contextMenu.menu}

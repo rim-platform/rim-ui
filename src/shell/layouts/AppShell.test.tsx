@@ -241,15 +241,34 @@ vi.mock("../navigation/FocusPulse", () => ({ FocusPulse: () => null }));
 let pinnedShouldThrow = false;
 
 vi.mock("../../features/bots/components/ChannelBotsPanel", () => ({
-  ChannelBotsPanel: () => <div data-testid="bots-panel" />,
+  ChannelBotsPanel: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="bots-panel">
+      <button type="button" onClick={onClose}>
+        Close bots
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../../features/messages/components/PinnedMessagesPanel", () => ({
-  PinnedMessagesPanel: () => {
+  PinnedMessagesPanel: ({ onClose }: { onClose: () => void }) => {
     if (pinnedShouldThrow) throw new Error("pinned boom");
-    return <div data-testid="pinned-panel">pinned ok</div>;
+    return (
+      <div data-testid="pinned-panel">
+        pinned ok
+        <button type="button" onClick={onClose}>
+          Close pinned
+        </button>
+      </div>
+    );
   },
 }));
+
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
 
 vi.mock("../../features/conversations/components/ConversationSelectionRuntime", () => ({
   ConversationSelectionRuntime: () => {
@@ -261,6 +280,7 @@ vi.mock("../../features/conversations/components/ConversationSelectionRuntime", 
   },
 }));
 
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { AppShell } from "./AppShell";
 
 beforeEach(() => {
@@ -580,6 +600,25 @@ describe("AppShell — narrow and medium windows", () => {
     act(() => useShellStore.getState().setPinnedPanelOpen(true));
     expect(screen.queryByTestId("bots-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("pinned-panel")).toBeInTheDocument();
+  });
+
+  it("closes the pinned and bots panels from their close buttons through their commands", async () => {
+    const user = userEvent.setup();
+    vi.mocked(runCommandFromClick).mockClear();
+    useShellStore.setState({ pinnedPanelOpen: true });
+    renderAt(1400);
+    await user.click(screen.getByRole("button", { name: "Close pinned" }));
+    expect(useShellStore.getState().pinnedPanelOpen).toBe(false);
+
+    act(() => useShellStore.getState().setBotsPanelOpen(true));
+    resizeTo(900);
+    await user.click(screen.getByRole("button", { name: "Close bots" }));
+    expect(useShellStore.getState().botsPanelOpen).toBe(false);
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_pinned_messages"],
+      ["workspace.toggle_channel_bots"],
+    ]);
   });
 
   it("opens pinned messages and a tool-panel plugin as overlays in a medium window", async () => {

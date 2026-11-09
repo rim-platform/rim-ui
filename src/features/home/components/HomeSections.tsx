@@ -6,6 +6,7 @@ import { cn } from "../../../shared/ui/cn";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { durationOf, runCounts, type AgentRun } from "../../agents/runtime/runs";
 import { NotificationRow } from "../../notifications/components/NotificationsPanel";
@@ -182,7 +183,7 @@ export function UnreadBody({ rows }: { rows: readonly WorkspaceUnread[] }) {
       <li>
         <button
           type="button"
-          onClick={() => useShellStore.getState().setMainSurface({ kind: "unreads" })}
+          onClick={() => void runCommandFromClick("workspace.open_unreads")}
           className={ROW_CLASS}
         >
           <span className="min-w-0 flex-1 font-medium">See all unread</span>
