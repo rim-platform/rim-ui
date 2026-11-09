@@ -42,6 +42,54 @@ use tokio::sync::watch;
 use tokio::time::{timeout, Duration, Instant};
 
 const STOP_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// A running plugin's command grants, read from the state store at each request so a
+/// grant or revocation counts at once.
+pub(crate) struct StoreCommandGrants {
+    pub(crate) plugin_id: String,
+    pub(crate) store: std::sync::Arc<std::sync::Mutex<PluginStateStore>>,
+    pub(crate) state_path: PathBuf,
+}
+
+impl crate::plugin_host::broker::CommandGrants for StoreCommandGrants {
+    fn granted(&self, command_id: &str) -> bool {
+        self.store
+            .lock()
+            .map(|store| store.command_granted(&self.plugin_id, command_id))
+            .unwrap_or(false)
+    }
+
+    fn refused(&self, command_id: &str, code: &str) {
+        let Ok(mut store) = self.store.lock() else {
+            return;
+        };
+        if store.get(&self.plugin_id).is_none() {
+            return;
+        }
+        // The id comes from the plugin; one out of shape is recorded under a fixed name.
+        let shaped = !command_id.is_empty()
+            && command_id.len() <= 256
+            && command_id.bytes().all(|b| b.is_ascii_graphic());
+        let id = if shaped {
+            command_id
+        } else {
+            "invalid-command-id"
+        };
+        store.record_command_run(
+            &self.plugin_id,
+            id,
+            "refused",
+            Some(code),
+            chrono::Utc::now(),
+        );
+        if let Err(e) = store.save(&self.state_path) {
+            log::warn!(
+                "[plugin_host] command refusal of {} not saved: {e}",
+                self.plugin_id
+            );
+        }
+    }
+}
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long app exit waits for plugin processes before killing them.
 /// Covers the full graceful sequence in [`PluginProcess::shutdown`].
@@ -142,7 +190,12 @@ pub fn start_plugin(
     let broker = PluginBroker::new(plugin_id.to_string(), gate, BrokerConfig::default())
         .with_panel_relay(state.panel_relay.clone(), panel_ids)
         .with_chat_relay(state.chat_relay.clone())
-        .with_settings(SettingsReader::new(state, plugin_id));
+        .with_settings(SettingsReader::new(state, plugin_id))
+        .with_command_grants(std::sync::Arc::new(StoreCommandGrants {
+            plugin_id: plugin_id.to_string(),
+            store: state.store.clone(),
+            state_path: state.state_path.clone(),
+        }));
 
     let (client, outbound_rx) = PluginClient::channel();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -555,6 +608,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 
@@ -563,7 +617,7 @@ mod tests {
         let mut dirs = HashMap::new();
         dirs.insert(plugin_id.to_string(), plugin_dir.to_path_buf());
         PluginHostState {
-            store: std::sync::Mutex::new(PluginStateStore::default()),
+            store: std::sync::Arc::new(std::sync::Mutex::new(PluginStateStore::default())),
             manifests: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             state_path,
             plugin_dirs: std::sync::Mutex::new(dirs),
@@ -693,7 +747,7 @@ mod tests {
         // plugin_dirs is empty — no entry for "dev.example.test"
         let state_path = state_file_path(tmp.path());
         let state = PluginHostState {
-            store: std::sync::Mutex::new(PluginStateStore::default()),
+            store: std::sync::Arc::new(std::sync::Mutex::new(PluginStateStore::default())),
             manifests: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             state_path,
             plugin_dirs: std::sync::Mutex::new(HashMap::new()),

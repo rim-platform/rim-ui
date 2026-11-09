@@ -29,7 +29,14 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   category, where you tick the ones an agent may ask for. Every call shows an approval card first,
   a dangerous command is only proposed, and a command acts only in the workspaces and channels the
   agent can read. Agents get the tools `rim_list_commands` and `rim_run_command`.
-
+- Plugins can run RIM's own commands: a manifest lists the built-in and app commands it wants in
+  `runs_commands`, the permission prompt shows them under "Commands it can run" with nothing
+  ticked, and an update that lists more asks again. A plugin calls `host.commands.execute` in the
+  plugin SDK (`rim.command.execute` from plugin to host in protocol v1, and from a panel) and
+  hears only whether it ran. A command that changes something asks you each time in a card
+  naming the plugin; dangerous and restricted commands, other plugins' commands and agent
+  commands never run. Granted commands, with Revoke, and every run are in the plugin's row in
+  Settings → Plugins.
 - Commands for answering, connecting and managing agents in the desktop app: approve or refuse an
   agent's request, connect or turn down a program asking to, disconnect an agent, choose what it
   can read and its plugin commands, and open the runs and the record of what agents were given.

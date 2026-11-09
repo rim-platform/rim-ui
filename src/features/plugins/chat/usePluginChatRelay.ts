@@ -1,6 +1,8 @@
 // Answers the `rim.chat.*` calls of local-process plugins: the Rust broker
 // pushes each admitted call as `plugin-chat-request`, the message service
 // answers it, and `plugin_chat_respond` hands the answer back to the plugin.
+// A plugin's request to run a command the person granted it travels the same
+// way and is answered by the command runner.
 
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -9,6 +11,7 @@ import { logger } from "../../../core/logger";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { ErrorCode, RpcError } from "../web/rpc";
+import { runCommandForPlugin, type PluginRunResult } from "../runtime/pluginCommandRunner";
 import { appMessageService } from "./appMessageService";
 import type { MessageService } from "./messageService";
 
@@ -21,19 +24,37 @@ export interface ChatRequest {
   grantedCapabilities: string[];
 }
 
-/** Answer one relayed call through `service` and send the answer back to the broker. */
+/** The method of a plugin's request to run one of the app's own commands. */
+const RUN_COMMAND_METHOD = "rim.command.execute";
+
+/** Runs one of the app's own commands for a plugin, as `runCommandForPlugin` does. */
+export type CommandRunner = (
+  pluginId: string,
+  commandId: unknown,
+  args?: unknown,
+) => Promise<PluginRunResult>;
+
+/**
+ * Answer one relayed call through `service`, or a request to run a command through
+ * `runCommand`, and send the answer back to the broker.
+ */
 export async function answerChatRequest(
   request: ChatRequest,
   service: MessageService = appMessageService,
+  runCommand: CommandRunner = runCommandForPlugin,
 ): Promise<void> {
   let answer: { result: unknown; error: null } | { result: null; error: object };
   try {
-    const result = await service.call(
-      request.pluginId,
-      request.method,
-      request.params,
-      request.grantedCapabilities,
-    );
+    const params = (request.params ?? {}) as { commandId?: unknown; args?: unknown };
+    const result =
+      request.method === RUN_COMMAND_METHOD
+        ? await runCommand(request.pluginId, params.commandId, params.args)
+        : await service.call(
+            request.pluginId,
+            request.method,
+            request.params,
+            request.grantedCapabilities,
+          );
     answer = { result: result ?? null, error: null };
   } catch (error) {
     const rpc =

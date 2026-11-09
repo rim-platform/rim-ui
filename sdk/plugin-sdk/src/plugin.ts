@@ -25,6 +25,12 @@ export const SUPPORTED_VERSIONS: readonly number[] = Object.freeze([PROTOCOL_VER
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * How long a plugin waits for the host to run a command, which may first ask the person
+ * in a confirmation card. The host gives up at two minutes; this waits a little longer.
+ */
+const RUN_COMMAND_TIMEOUT_MS = 130_000;
+
+/**
  * Not frozen in v1: the broker routes it, but its shape may still change.
  * Needs the `ui.panel` capability.
  */
@@ -211,6 +217,25 @@ export interface Chat {
   ): Promise<{ id: string }>;
 }
 
+/** How a request to run a command ended. Never carries the command's output. */
+export type CommandRunResult = wire.RunCommandResult;
+
+/**
+ * The app's own commands, run as the person. A plugin runs only the built-in and app
+ * commands its manifest lists in `runs_commands` and the person granted; one that changes
+ * something first asks the person in a card naming the plugin.
+ */
+export interface Commands {
+  /**
+   * Ask the app to run `commandId`, such as `workspace.open_home`, with `args`. A
+   * `workspace_id`, `conversation_id` or `thread_id` in `args` replaces the person's
+   * current one. Resolves with how the run ended: `refused` with a `code` such as
+   * `NOT_GRANTED` when it did not run. Rejects with a {@link HostRequestError} whose code
+   * is `METHOD_NOT_FOUND` on a host from before this request.
+   */
+  execute(commandId: string, args?: Readonly<Record<string, unknown>>): Promise<CommandRunResult>;
+}
+
 /** What the plugin knows about the host after the handshake. */
 export interface Host {
   /** The plugin's id, as the host started it. */
@@ -228,6 +253,7 @@ export interface Host {
   readonly storage: Storage;
   readonly settings: Settings;
   readonly chat: Chat;
+  readonly commands: Commands;
 }
 
 /** A plugin, as passed to {@link definePlugin}. */
@@ -736,7 +762,7 @@ class Session {
     );
   }
 
-  request(method: string, params: unknown): Promise<unknown> {
+  request(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
     if (this.closed || this.stopping || !this.ready) {
       const message = this.ready
         ? "the connection to the host is closing"
@@ -746,16 +772,17 @@ class Session {
       );
     }
     const id = this.nextRequestId++;
+    const waitMs = timeoutMs ?? this.requestTimeoutMs;
     return new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(
           new HostRequestError(method, {
             code: ErrorCode.INTERNAL_ERROR,
-            message: `the host did not answer within ${this.requestTimeoutMs} ms`,
+            message: `the host did not answer within ${waitMs} ms`,
           }),
         );
-      }, this.requestTimeoutMs);
+      }, waitMs);
       this.pending.set(id, { method, resolve: resolvePromise, reject, timer });
       try {
         this.write({ jsonrpc: "2.0", id, method, params });
@@ -848,6 +875,35 @@ class Session {
             ...options,
           })) as { id: string },
       } satisfies Chat),
+      commands: Object.freeze({
+        execute: async (commandId: string, args: Readonly<Record<string, unknown>> = {}) => {
+          if (typeof commandId !== "string" || commandId === "") {
+            throw new TypeError("commands.execute: commandId must be a non-empty string");
+          }
+          if (!isRecord(args)) {
+            throw new TypeError("commands.execute: args must be an object");
+          }
+          const result = await session.request(
+            Method.runCommand,
+            { commandId, args },
+            Math.max(session.requestTimeoutMs, RUN_COMMAND_TIMEOUT_MS),
+          );
+          if (
+            !isRecord(result) ||
+            !["success", "error", "refused"].includes(String(result.status))
+          ) {
+            throw new HostRequestError(Method.runCommand, {
+              code: ErrorCode.INTERNAL_ERROR,
+              message: "the host answered without a run status",
+            });
+          }
+          return Object.freeze({
+            status: result.status as CommandRunResult["status"],
+            ...(typeof result.code === "string" ? { code: result.code } : {}),
+            ...(typeof result.message === "string" ? { message: result.message } : {}),
+          });
+        },
+      } satisfies Commands),
       panels: Object.freeze({
         set: (panelId: string, state: unknown) => session.updatePanel(panelId, state, false),
         patch: (panelId: string, patch: Readonly<Record<string, unknown>>) => {

@@ -15,6 +15,7 @@ import { installEntry, messageOf } from "../installer";
 import { sourceLine, statusWord } from "../model";
 import { fetchEntryBundle, isInstallable } from "../verify";
 import { TrustBadge } from "./TrustBadge";
+import { RunsCommandsList } from "../../components/RunsCommandsList";
 
 interface RegistryInstallDialogProps {
   item: RegistryItem;
@@ -119,6 +120,7 @@ export function RegistryInstallDialog({
               {KIND_CONSENT_TEXT[check.manifest.runtime_kind]}
             </p>
           )}
+          {check.ok && <RunsCommandsList ids={check.manifest.runs_commands ?? []} />}
           {state.kind === "installed" && <p>Installed.</p>}
           {otherWorkspace && <p>Installed from {otherWorkspace}. Switching verifies it again.</p>}
           {state.kind === "local" && (

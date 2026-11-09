@@ -13,6 +13,7 @@ import {
   WebCommandError,
   WebPluginHost,
   type ChatHandler,
+  type RunCommandHandler,
   type FrameHandle,
   type HostEnvironment,
   type HostServices,
@@ -257,11 +258,12 @@ async function startScripted(
   plugin: Partial<InstalledWebPlugin> = {},
   manifest = webManifest(),
   chat: ChatHandler | null = null,
+  runCommand: RunCommandHandler | null = null,
 ) {
   const t = testEnvironment();
   const s = testServices(manifest);
   const host = new WebPluginHost();
-  host.configure(t.env, s.services, ["https://api.rim.example/api"], chat);
+  host.configure(t.env, s.services, ["https://api.rim.example/api"], chat, runCommand);
   host.setPrincipal(PRINCIPAL);
   host.reconcile([installed(plugin)]);
   await flush();
@@ -485,6 +487,29 @@ describe("web plugin frames", () => {
       (await t.remote.call("rim.chat.post_message", { conversationId: "c-1", body: "hi" })).error,
     ).toEqual({ code: -32000, message: "capability denied: chat.write" });
     expect(calls).toHaveLength(1);
+  });
+
+  it("hands requests to run app commands to the runner and answers its status", async () => {
+    const runCommand = vi.fn<RunCommandHandler>(async () => ({ status: "success" }));
+    const t = await startScripted({}, {}, webManifest(), null, runCommand);
+    expect(
+      (await t.remote.call("rim.command.execute", { commandId: "workspace.open_home" })).result,
+    ).toEqual({ status: "success" });
+    expect(runCommand).toHaveBeenCalledWith("dev.example.scripted", "workspace.open_home", {});
+    expect((await t.remote.call("rim.command.execute", {})).error).toMatchObject({
+      code: -32602,
+    });
+    expect(
+      (await t.remote.call("rim.command.execute", { commandId: "x.y", args: [1] })).error,
+    ).toMatchObject({ code: -32602 });
+    expect(runCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers requests to run app commands with METHOD_NOT_FOUND without a runner", async () => {
+    const t = await startScripted();
+    expect(
+      (await t.remote.call("rim.command.execute", { commandId: "workspace.open_home" })).error,
+    ).toMatchObject({ code: -32601 });
   });
 
   it("refuses chat calls with only an encrypted grant, before the message service", async () => {

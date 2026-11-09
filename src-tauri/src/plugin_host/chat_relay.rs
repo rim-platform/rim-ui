@@ -4,7 +4,8 @@
 //! Tauri commands and sends through the person's own send path, which needs the session
 //! cookie and, in an encrypted conversation, the MLS group code. The broker admits a call
 //! (capability and rate limit), and the relay pushes it to the UI as [`PLUGIN_CHAT_EVENT`];
-//! the UI answers with `plugin_chat_respond`, which completes the waiting call.
+//! the UI answers with `plugin_chat_respond`, which completes the waiting call. A plugin's
+//! request to run a command the person granted it travels the same way.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,6 +22,10 @@ pub const PLUGIN_CHAT_EVENT: &str = "plugin-chat-request";
 
 /// How long a call waits for the UI's answer.
 pub const CHAT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a request to run a command waits for the UI's answer: long enough for the
+/// person to read and answer a confirmation, whose challenge lasts a minute.
+pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How many calls may wait for the UI to pick them up.
 const QUEUE: usize = 64;
@@ -79,12 +84,27 @@ impl ChatRelay {
 
     /// Hands one call to the UI and waits for its answer: the result, or the JSON-RPC
     /// error the plugin gets.
+    #[cfg(test)]
     pub async fn call(
         &self,
         plugin_id: &str,
         method: &str,
         params: serde_json::Value,
         granted_capabilities: Vec<String>,
+    ) -> Reply {
+        self.call_within(plugin_id, method, params, granted_capabilities, None)
+            .await
+    }
+
+    /// Hands one call to the UI and waits for its answer, `timeout` long or, when `None`,
+    /// the relay's own wait: the result, or the JSON-RPC error the plugin gets.
+    pub async fn call_within(
+        &self,
+        plugin_id: &str,
+        method: &str,
+        params: serde_json::Value,
+        granted_capabilities: Vec<String>,
+        timeout: Option<Duration>,
     ) -> Reply {
         let request_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (reply, answer) = oneshot::channel();
@@ -102,7 +122,7 @@ impl ChatRelay {
             self.forget(request_id);
             return Err(internal("the app is not ready to answer chat calls"));
         }
-        match tokio::time::timeout(self.timeout, answer).await {
+        match tokio::time::timeout(timeout.unwrap_or(self.timeout), answer).await {
             Ok(Ok(reply)) => reply,
             Ok(Err(_)) => Err(internal("the app dropped the chat call")),
             Err(_) => {

@@ -31,6 +31,8 @@ vi.mock("../api/usePluginList", () => ({
 
 vi.mock("../../commands/api/useCommands", () => ({
   reloadCommands: vi.fn(),
+  useCommands: vi.fn(() => ({ data: [] })),
+  fetchCommandList: vi.fn(async () => []),
 }));
 
 vi.mock("../web/webPluginHost", () => ({
@@ -186,6 +188,22 @@ describe("PluginSettingsPage — updating a plugin", () => {
     expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
     expect(within(dialog).getByText("Read your conversations:")).toBeInTheDocument();
     expect(screen.getByText("Updated to v2.0.0")).toBeInTheDocument();
+  });
+
+  it("asks for the commands a new version adds to run", async () => {
+    mockInvoke.mockImplementationOnce(async () => {
+      listed = [makePlugin({ version: "2.0.0", runs_commands: ["workspace.open_home"] })];
+      return updateResult({ new_version: "2.0.0", added_commands: ["workspace.open_home"] });
+    });
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("checkbox", { name: "Let it run Open Home" }),
+    ).not.toBeChecked();
   });
 
   it("asks before running the new version's install steps, then retries with consent", async () => {

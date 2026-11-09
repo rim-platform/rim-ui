@@ -38,6 +38,9 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
           {plan.newAiCommands.length > 0 && (
             <li>New commands the AI agent can run: {plan.newAiCommands.join(", ")}</li>
           )}
+          {plan.newCommands.length > 0 && (
+            <li>New commands it can run: {plan.newCommands.join(", ")}</li>
+          )}
           {plan.sitesChanged && (
             <li>
               Connects to other sites:{" "}
@@ -48,6 +51,7 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
             !plan.kindChanged &&
             plan.newCapabilities.length === 0 &&
             plan.newAiCommands.length === 0 &&
+            plan.newCommands.length === 0 &&
             !plan.sitesChanged && <li>It runs steps after installing.</li>}
         </ul>
         <p>Until you update, the installed version keeps running.</p>

@@ -2,7 +2,7 @@ import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import type { CommandDefinition } from "../types";
 import { AGENT_COMMANDS } from "./appCommands/agents";
 import { CONVERSATION_COMMANDS } from "./appCommands/conversation";
-import { localCommand } from "./appCommands/localCommand";
+import { localCommand, PLUGIN_RUNNABLE } from "./appCommands/localCommand";
 import { GENERAL_COMMANDS } from "./appCommands/generalDefinitions";
 import { MANAGE_COMMANDS } from "./appCommands/manage";
 
@@ -18,6 +18,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "View",
     "Show Keyboard Shortcuts",
     "List every shortcut that works right now",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.toggle_vim_mode",
@@ -30,18 +32,24 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Navigation",
     "Previous Unread Conversation",
     "Go to the previous conversation with unread messages",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.navigate_panel_left",
     "Navigation",
     "Focus the Pane to the Left",
     "Move keyboard focus to the pane on the left",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.navigate_panel_right",
     "Navigation",
     "Focus the Pane to the Right",
     "Move keyboard focus to the pane on the right",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.cycle_layout_preset",
@@ -60,6 +68,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Navigation",
     "Back to Workspace",
     "Return to the workspace and conversation a direct message was opened from",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.cycle_display_density",
@@ -91,18 +101,24 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Unreads",
     "Open Unreads",
     "See everything you haven't read across your workspaces",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.unreads_next",
     "Unreads",
     "Unreads: Next Message",
     "Select the next message on the Unreads page",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.unreads_previous",
     "Unreads",
     "Unreads: Previous Message",
     "Select the previous message on the Unreads page",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.unreads_mark_group",
@@ -115,6 +131,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Unreads",
     "Unreads: Open Message",
     "Open the selected message in its conversation",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.unreads_undo",
@@ -127,6 +145,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Home",
     "Open Home",
     "See what needs you across your workspaces",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   // Changing Home is the person's own act from the palette or Home, never a keybind's.
   localCommand(
@@ -141,6 +161,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Workspace",
     "Open Audit Log",
     "Open the workspace's record of who did what",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.open_message_requests",
@@ -153,6 +175,8 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Conversations",
     "Toggle Pinned Messages",
     "Show or hide the open conversation's pinned messages",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.toggle_channel_bots",
@@ -165,36 +189,48 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Notifications",
     "Toggle Notifications",
     "Show or hide the notification inbox",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.toggle_conversation_members",
     "Conversations",
     "Toggle Conversation Members",
     "Show or hide the open conversation's members",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.toggle_member_directory",
     "Workspace",
     "Toggle Workspace Members",
     "Show or hide the workspace's member directory",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.toggle_lens_picker",
     "Conversations",
     "Toggle Channel Lenses",
     "Show or hide the open channel's lenses",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.go_back",
     "Navigation",
     "Go Back",
     "Open the place you were before this one",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.go_forward",
     "Navigation",
     "Go Forward",
     "Open the place you went back from",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(QUIT_COMMAND_ID, "App", "Quit RIM", "Stop RIM completely, including in the tray"),
   ...CONVERSATION_COMMANDS,

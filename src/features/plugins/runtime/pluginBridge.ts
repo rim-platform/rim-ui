@@ -8,6 +8,7 @@ import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { openPluginSettings } from "../pluginSettingsLink";
 import { showPluginNotification } from "./pluginNotification";
 import { isCancelledResult } from "./pluginCommandInfo";
+import { runCommandForPlugin, type PluginRunResult } from "./pluginCommandRunner";
 import type { PluginCapability } from "../types";
 
 // Plugin iframe → Host message types
@@ -40,8 +41,12 @@ export type HostToPluginMessage =
       ok: boolean;
       message: string;
       payload: unknown;
-      /** The user declined to confirm a dangerous command, so nothing ran. */
+      /** The user declined a confirmation, so nothing ran. */
       cancelled?: boolean;
+      /** For one of the app's own commands: how the run ended. */
+      status?: PluginRunResult["status"];
+      /** For one of the app's own commands: why it was refused. */
+      code?: PluginRunResult["code"];
     };
 
 // Capability requirements for each message type
@@ -116,17 +121,6 @@ export function createPluginBridge(config: BridgeConfig) {
         break;
 
       case "rim.command.execute": {
-        // Scope validation: plugin can only execute its own commands
-        const allowedPrefix = `plugin.${pluginId}.`;
-        if (!msg.commandId.startsWith(allowedPrefix)) {
-          logger.warn(
-            `[RIM:PluginBridge] ${pluginId} denied: attempted to execute "${msg.commandId}" outside its scope (must start with "${allowedPrefix}")`,
-          );
-          return;
-        }
-        logger.debug(`[RIM:PluginBridge] ${pluginId} execute:`, msg.commandId);
-        // The panel never confirms a dangerous command: only `args` and the
-        // caller go through, and the host asks the user itself.
         const requestId =
           typeof msg.requestId === "string" && msg.requestId.length <= MAX_REQUEST_ID_LENGTH
             ? msg.requestId
@@ -137,6 +131,26 @@ export function createPluginBridge(config: BridgeConfig) {
           if (requestId !== null)
             sendToPlugin({ type: "rim.command.result", requestId, ...result });
         };
+        // The plugin's own commands run as before; any other id is one of the app's own
+        // commands, which only the runner's checks let through.
+        const allowedPrefix = `plugin.${pluginId}.`;
+        if (typeof msg.commandId !== "string" || !msg.commandId.startsWith(allowedPrefix)) {
+          logger.debug(`[RIM:PluginBridge] ${pluginId} asks to run an app command`);
+          void runCommandForPlugin(pluginId, msg.commandId, msg.args).then((run) => {
+            answer({
+              ok: run.status === "success",
+              message: run.message ?? "",
+              payload: null,
+              ...(run.code === "CONFIRMATION_DISMISSED" ? { cancelled: true } : {}),
+              status: run.status,
+              ...(run.code ? { code: run.code } : {}),
+            });
+          });
+          return;
+        }
+        logger.debug(`[RIM:PluginBridge] ${pluginId} execute:`, msg.commandId);
+        // The panel never confirms a dangerous command: only `args` and the
+        // caller go through, and the host asks the user itself.
         dispatchCommand(
           {
             id: msg.commandId,

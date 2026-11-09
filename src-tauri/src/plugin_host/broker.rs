@@ -1,8 +1,9 @@
 use crate::plugin_host::capability::{self, CapabilityGate, CHAT_METHODS};
-use crate::plugin_host::chat_relay::ChatRelay;
+use crate::plugin_host::chat_relay::{ChatRelay, COMMAND_TIMEOUT};
 use crate::plugin_host::panel_relay::PanelRelay;
 use crate::plugin_host::protocol::{method, LogLevel, LogParams};
 use crate::plugin_host::settings::{SettingsReadError, SettingsReader};
+use crate::plugin_host::validation::unrunnable_by_plugins;
 use crate::plugin_host::wire::{
     self, JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, WireError,
     CAPABILITY_DENIED, INTERNAL_ERROR, METHOD_NOT_FOUND, RATE_LIMITED,
@@ -21,6 +22,19 @@ const OUTBOUND_QUEUE: usize = 32;
 const INCOMING_QUEUE: usize = 32;
 /// How long the loop may spend telling the plugin to shut down before it closes stdin.
 const SHUTDOWN_NOTICE_TIMEOUT: Duration = Duration::from_millis(250);
+/// How many times a minute a plugin may ask the app to run a command.
+pub const COMMAND_CALLS_PER_MINUTE: u32 = 20;
+/// The rate bucket of a plugin's requests to run commands.
+const COMMAND_BUCKET: &str = "rim.command.execute";
+
+/// What the broker knows of a plugin's command grants: whether the person granted it a
+/// command now, and where a refusal is recorded.
+pub trait CommandGrants: Send + Sync {
+    /// Whether the plugin is on and the person granted it running `command_id`.
+    fn granted(&self, command_id: &str) -> bool;
+    /// Records in the plugin's audit that a run of `command_id` was refused with `code`.
+    fn refused(&self, command_id: &str, code: &str);
+}
 
 #[derive(Debug)]
 struct RateLimitBucket {
@@ -80,17 +94,21 @@ pub struct PluginBroker {
     /// Reads this plugin's settings; without it `rim.settings.get` is METHOD_NOT_FOUND
     /// and no `rim.settings.changed` is sent.
     settings: Option<SettingsReader>,
+    /// The plugin's command grants; without them every request to run a command is
+    /// refused `NOT_GRANTED`.
+    command_grants: Option<Arc<dyn CommandGrants>>,
 }
 
 /// How the broker answers one admitted plugin request.
 pub enum Routed {
     /// The answer is ready.
     Done(JsonRpcResponse),
-    /// The UI's message service answers it; run the call off the broker loop.
+    /// The UI answers it: a `rim.chat.*` call for its message service, or a request to run
+    /// a command; run the call off the broker loop.
     Chat(ChatCall),
 }
 
-/// A `rim.chat.*` call on its way to the UI.
+/// A `rim.chat.*` call, or a request to run a command, on its way to the UI.
 pub struct ChatCall {
     relay: Arc<ChatRelay>,
     id: serde_json::Value,
@@ -98,6 +116,8 @@ pub struct ChatCall {
     method: String,
     params: serde_json::Value,
     granted: Vec<String>,
+    /// How long the call waits for the UI; the relay's own wait when `None`.
+    timeout: Option<Duration>,
 }
 
 impl ChatCall {
@@ -105,7 +125,13 @@ impl ChatCall {
     pub async fn run(self) -> JsonRpcResponse {
         match self
             .relay
-            .call(&self.plugin_id, &self.method, self.params, self.granted)
+            .call_within(
+                &self.plugin_id,
+                &self.method,
+                self.params,
+                self.granted,
+                self.timeout,
+            )
             .await
         {
             Ok(result) => JsonRpcResponse::success(self.id, result),
@@ -132,7 +158,14 @@ impl PluginBroker {
             manifest_panel_ids: vec![],
             chat_relay: None,
             settings: None,
+            command_grants: None,
         }
+    }
+
+    /// Checks the plugin's requests to run commands against `grants`.
+    pub fn with_command_grants(mut self, grants: Arc<dyn CommandGrants>) -> Self {
+        self.command_grants = Some(grants);
+        self
     }
 
     /// Serves `rim.settings.get` and `rim.settings.changed` from `settings`.
@@ -165,6 +198,9 @@ impl PluginBroker {
     /// Admits a request (capability, rate limit) and answers it, or hands back the
     /// chat call that answers it.
     pub async fn route(&mut self, request: &JsonRpcRequest) -> Routed {
+        if request.method == method::COMMAND_EXECUTE {
+            return self.route_command(request);
+        }
         match self.refusal(request) {
             Some(response) => Routed::Done(response),
             None => match (
@@ -181,9 +217,111 @@ impl PluginBroker {
                         .clone()
                         .unwrap_or_else(|| serde_json::json!({})),
                     granted: self.gate.approved().to_vec(),
+                    timeout: None,
                 }),
                 _ => Routed::Done(self.dispatch(request).await),
             },
+        }
+    }
+
+    /// A plugin's request to run a built-in or app command: refused here when its id is one
+    /// no plugin may run, when the person has not granted it, or over the per-minute limit;
+    /// otherwise handed to the UI, which checks everything again, runs it and answers. Every
+    /// answer is a `{ status, code?, message? }` result, never the command's output.
+    fn route_command(&mut self, request: &JsonRpcRequest) -> Routed {
+        let params = request.params.clone().unwrap_or(serde_json::Value::Null);
+        let command_id = match params.get("commandId").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                return Routed::Done(JsonRpcResponse::error(
+                    request.id.clone(),
+                    wire::INVALID_PARAMS,
+                    "missing required param: commandId",
+                ))
+            }
+        };
+        let args = match params.get("args") {
+            None | Some(serde_json::Value::Null) => serde_json::json!({}),
+            Some(args) if args.is_object() => args.clone(),
+            Some(_) => {
+                return Routed::Done(JsonRpcResponse::error(
+                    request.id.clone(),
+                    wire::INVALID_PARAMS,
+                    "args must be an object",
+                ))
+            }
+        };
+        let limit = self
+            .config
+            .rate_limits
+            .get(COMMAND_BUCKET)
+            .copied()
+            .unwrap_or(COMMAND_CALLS_PER_MINUTE);
+        let within = self
+            .rate_buckets
+            .entry(COMMAND_BUCKET.to_string())
+            .or_insert_with(RateLimitBucket::new)
+            .check_and_increment(limit);
+        let refuse = |code: &str, message: &str| {
+            Routed::Done(JsonRpcResponse::success(
+                request.id.clone(),
+                serde_json::json!({ "status": "refused", "code": code, "message": message }),
+            ))
+        };
+        if !within {
+            log::warn!(
+                "plugin {} rate limited: method={}",
+                self.plugin_id,
+                method::COMMAND_EXECUTE
+            );
+            return refuse(
+                "RATE_LIMITED",
+                "too many commands this minute; try again shortly",
+            );
+        }
+        if let Some(reason) = unrunnable_by_plugins(&command_id) {
+            log::warn!(
+                "[AUDIT] event=plugin_command_refused plugin_id={} code=NOT_ALLOWED",
+                self.plugin_id
+            );
+            if let Some(grants) = &self.command_grants {
+                grants.refused(&command_id, "NOT_ALLOWED");
+            }
+            return refuse("NOT_ALLOWED", reason);
+        }
+        let granted = self
+            .command_grants
+            .as_ref()
+            .is_some_and(|grants| grants.granted(&command_id));
+        if !granted {
+            log::warn!(
+                "[AUDIT] event=plugin_command_refused plugin_id={} command_id={} code=NOT_GRANTED",
+                self.plugin_id,
+                command_id
+            );
+            if let Some(grants) = &self.command_grants {
+                grants.refused(&command_id, "NOT_GRANTED");
+            }
+            return refuse(
+                "NOT_GRANTED",
+                "the person has not let this plugin run this command",
+            );
+        }
+        match &self.chat_relay {
+            Some(relay) => Routed::Chat(ChatCall {
+                relay: relay.clone(),
+                id: request.id.clone(),
+                plugin_id: self.plugin_id.clone(),
+                method: request.method.clone(),
+                params: serde_json::json!({ "commandId": command_id, "args": args }),
+                granted: self.gate.approved().to_vec(),
+                timeout: Some(COMMAND_TIMEOUT),
+            }),
+            None => Routed::Done(JsonRpcResponse::error(
+                request.id.clone(),
+                METHOD_NOT_FOUND,
+                format!("method not found: {}", request.method),
+            )),
         }
     }
 
@@ -928,6 +1066,196 @@ mod tests {
             Routed::Done(resp) => assert_eq!(resp.error.unwrap().code, RATE_LIMITED),
             Routed::Chat(_) => panic!("the third chat.read call is over the limit"),
         }
+    }
+
+    // ── Commands the person granted ──
+
+    /// Grants that answer from a fixed list and keep the refusals they were told of.
+    #[derive(Default)]
+    struct FakeGrants {
+        granted: Vec<String>,
+        refusals: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl CommandGrants for FakeGrants {
+        fn granted(&self, command_id: &str) -> bool {
+            self.granted.iter().any(|c| c == command_id)
+        }
+        fn refused(&self, command_id: &str, code: &str) {
+            self.refusals
+                .lock()
+                .unwrap()
+                .push((command_id.to_string(), code.to_string()));
+        }
+    }
+
+    fn command_broker(granted: &[&str]) -> (PluginBroker, Arc<ChatRelay>, Arc<FakeGrants>) {
+        let relay = Arc::new(ChatRelay::default());
+        let grants = Arc::new(FakeGrants {
+            granted: granted.iter().map(|c| c.to_string()).collect(),
+            ..FakeGrants::default()
+        });
+        let broker = PluginBroker::new(
+            "dev.example.runner".into(),
+            CapabilityGate::new(vec![]),
+            BrokerConfig::default(),
+        )
+        .with_chat_relay(relay.clone())
+        .with_command_grants(grants.clone());
+        (broker, relay, grants)
+    }
+
+    fn run_command(id: i64, command_id: &str) -> JsonRpcRequest {
+        JsonRpcRequest::new(
+            method::COMMAND_EXECUTE,
+            Some(serde_json::json!({ "commandId": command_id, "args": { "query": "x" } })),
+            id,
+        )
+    }
+
+    #[tokio::test]
+    async fn ungranted_commands_are_refused_before_they_reach_the_ui() {
+        let (mut broker, relay, grants) = command_broker(&[
+            "workspace.go_back",
+            "plugin.dev.example.other.wipe",
+            "agents.approve_request",
+        ]);
+        let mut ui = relay.subscribe();
+        let resp = broker
+            .handle_request(&run_command(1, "chat.post_message"))
+            .await;
+        assert_eq!(
+            resp.result.unwrap(),
+            serde_json::json!({
+                "status": "refused",
+                "code": "NOT_GRANTED",
+                "message": "the person has not let this plugin run this command"
+            })
+        );
+        // Even a grant on record never lets a plugin run another plugin's or an agent command.
+        for id in ["plugin.dev.example.other.wipe", "agents.approve_request"] {
+            let resp = broker.handle_request(&run_command(2, id)).await;
+            assert_eq!(resp.result.unwrap()["code"], "NOT_ALLOWED", "{id}");
+        }
+        assert!(ui.try_recv().is_err(), "nothing was relayed");
+        assert_eq!(
+            *grants.refusals.lock().unwrap(),
+            vec![
+                ("chat.post_message".to_string(), "NOT_GRANTED".to_string()),
+                (
+                    "plugin.dev.example.other.wipe".to_string(),
+                    "NOT_ALLOWED".to_string()
+                ),
+                (
+                    "agents.approve_request".to_string(),
+                    "NOT_ALLOWED".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_broker_without_grants_refuses_every_command() {
+        let mut broker = test_broker().with_chat_relay(Arc::new(ChatRelay::default()));
+        let resp = broker
+            .handle_request(&run_command(1, "workspace.go_back"))
+            .await;
+        assert_eq!(resp.result.unwrap()["code"], "NOT_GRANTED");
+    }
+
+    #[tokio::test]
+    async fn granted_commands_go_to_the_ui_which_answers() {
+        let (mut broker, relay, grants) = command_broker(&["workspace.go_back"]);
+        let mut ui = relay.subscribe();
+        let answering = {
+            let relay = relay.clone();
+            tokio::spawn(async move {
+                let request = ui.recv().await.unwrap();
+                assert_eq!(request.plugin_id, "dev.example.runner");
+                assert_eq!(request.method, "rim.command.execute");
+                assert_eq!(
+                    request.params,
+                    serde_json::json!({ "commandId": "workspace.go_back", "args": { "query": "x" } })
+                );
+                relay.respond(
+                    request.request_id,
+                    Ok(serde_json::json!({ "status": "success" })),
+                );
+            })
+        };
+        let resp = broker
+            .handle_request(&run_command(7, "workspace.go_back"))
+            .await;
+        assert_eq!(resp.id, serde_json::json!(7));
+        assert_eq!(
+            resp.result.unwrap(),
+            serde_json::json!({ "status": "success" })
+        );
+        answering.await.unwrap();
+        assert!(grants.refusals.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn command_requests_are_limited_per_minute() {
+        let (mut broker, relay, _grants) = command_broker(&[]);
+        let _ui = relay.subscribe();
+        for i in 0..COMMAND_CALLS_PER_MINUTE {
+            let resp = broker
+                .handle_request(&run_command(i64::from(i), "x.y"))
+                .await;
+            assert_eq!(resp.result.unwrap()["code"], "NOT_GRANTED");
+        }
+        let resp = broker.handle_request(&run_command(99, "x.y")).await;
+        assert_eq!(resp.result.unwrap()["code"], "RATE_LIMITED");
+    }
+
+    #[tokio::test]
+    async fn a_command_request_needs_a_command_id_and_object_args() {
+        let (mut broker, _relay, _grants) = command_broker(&["workspace.go_back"]);
+        let missing = JsonRpcRequest::new(method::COMMAND_EXECUTE, Some(serde_json::json!({})), 1);
+        let resp = broker.handle_request(&missing).await;
+        assert_eq!(resp.error.unwrap().code, wire::INVALID_PARAMS);
+        let bad_args = JsonRpcRequest::new(
+            method::COMMAND_EXECUTE,
+            Some(serde_json::json!({ "commandId": "workspace.go_back", "args": [1] })),
+            2,
+        );
+        let resp = broker.handle_request(&bad_args).await;
+        assert_eq!(resp.error.unwrap().code, wire::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn store_grants_follow_the_state_store_as_it_is_now() {
+        use crate::plugin_host::runtime::StoreCommandGrants;
+        use crate::plugin_host::state::{PluginRecord, PluginStateStore, PluginStatus};
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(std::sync::Mutex::new(PluginStateStore::default()));
+        let grants = StoreCommandGrants {
+            plugin_id: "p".into(),
+            store: store.clone(),
+            state_path: tmp.path().join("plugin_state.json"),
+        };
+        assert!(!grants.granted("workspace.go_back"));
+        store.lock().unwrap().upsert(PluginRecord {
+            plugin_id: "p".into(),
+            status: PluginStatus::Enabled,
+            approved_capabilities: vec![],
+            approved_ai_commands: vec![],
+            manifest_hash: String::new(),
+            bundle_fingerprint: String::new(),
+            fingerprint_changed: false,
+            last_error: None,
+            source: None,
+            starting: false,
+            granted_commands: vec!["workspace.go_back".into()],
+        });
+        assert!(grants.granted("workspace.go_back"));
+        grants.refused("chat.post_message", "NOT_GRANTED");
+        grants.refused(&"x".repeat(300), "NOT_GRANTED");
+        let runs = store.lock().unwrap().audit["p"].command_runs.clone();
+        assert_eq!(runs[0].command_id, "chat.post_message");
+        assert_eq!(runs[1].command_id, "invalid-command-id");
+        assert!(tmp.path().join("plugin_state.json").exists());
     }
 
     // ── Settings ──

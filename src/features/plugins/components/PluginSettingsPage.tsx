@@ -88,7 +88,8 @@ export function PluginSettingsPage() {
   const installedPlugin = installedId
     ? (plugins?.find((p) => p.plugin_id === installedId) ?? null)
     : null;
-  // A plugin whose update asks for new permissions: its prompt opens on the reloaded entry.
+  // A plugin whose update asks for new permissions or new commands: its prompt opens on the
+  // reloaded entry.
   const [updatedId, setUpdatedId] = useState<string | null>(null);
   const updatedPlugin = updatedId
     ? (plugins?.find((p) => p.plugin_id === updatedId) ?? null)
@@ -180,7 +181,10 @@ export function PluginSettingsPage() {
           onSuccess: (result) => {
             setUpdateConsent(null);
             note(updateNote(result));
-            if (result.added_capabilities.length > 0) setUpdatedId(result.plugin_id);
+            // New permissions or new commands to run wait for the person in the prompt.
+            if (result.added_capabilities.length > 0 || (result.added_commands ?? []).length > 0) {
+              setUpdatedId(result.plugin_id);
+            }
           },
           onError: (err) => {
             const request = allowPostInstall ? null : parsePostInstallConsent(err);
@@ -583,7 +587,7 @@ function PluginEmptyState({ desktop }: { desktop: boolean }) {
       <p className="text-sm font-medium text-rim-text">No plugins installed</p>
       <p className="max-w-xs text-xs text-rim-text-muted">
         {desktop
-          ? "Install from a local folder or git URL to get started. Marketplace coming soon."
+          ? "Install from a local folder or git URL to get started, or from a link or your workspace's registry."
           : "Install a web plugin from a link to get started. Plugins that run programs on your computer need the desktop app."}
       </p>
     </div>

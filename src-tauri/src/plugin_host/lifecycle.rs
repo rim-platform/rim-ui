@@ -1,6 +1,8 @@
 use crate::plugin_host::manifest::PluginManifest;
 use crate::plugin_host::state::{GrantAction, PluginRecord, PluginStateStore, PluginStatus};
-use crate::plugin_host::validation::{validate_plugin_manifest, ValidationError};
+use crate::plugin_host::validation::{
+    unrunnable_by_plugins, validate_plugin_manifest, ValidationError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LifecycleError {
@@ -22,6 +24,12 @@ pub enum LifecycleError {
     UnknownCapability(String),
     #[error("AI command not declared by plugin: {0}")]
     UnknownAiCommand(String),
+    #[error("command not listed in the plugin's runs_commands: {0}")]
+    UnknownRunsCommand(String),
+    #[error("a plugin cannot run {0}: {1}")]
+    UnrunnableCommand(String, String),
+    #[error("invalid command run: {0}")]
+    InvalidCommandRun(String),
     #[error("manifest changed — re-consent required for AI commands")]
     AiConsentRequired,
     /// The bundle fingerprint differs from the one trusted at install; the user
@@ -89,6 +97,7 @@ pub fn install(
         last_error: None,
         source: None,
         starting: false,
+        granted_commands: vec![],
     });
     Ok(())
 }
@@ -262,6 +271,90 @@ pub fn revoke_capability(
     Ok(())
 }
 
+/// Grants `manifest`'s plugin running each of `command_ids`, recording each new grant.
+///
+/// # Errors
+///
+/// Returns [`LifecycleError::NotFound`] without a record,
+/// [`LifecycleError::UnknownRunsCommand`] for an id the manifest's `runs_commands` does
+/// not list, and [`LifecycleError::UnrunnableCommand`] for one no plugin may run.
+pub fn grant_commands(
+    store: &mut PluginStateStore,
+    manifest: &PluginManifest,
+    command_ids: &[String],
+) -> Result<(), LifecycleError> {
+    let record = store
+        .get(&manifest.plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(manifest.plugin_id.clone()))?
+        .clone();
+    for id in command_ids {
+        if !manifest.runs_commands.contains(id) {
+            return Err(LifecycleError::UnknownRunsCommand(id.clone()));
+        }
+        if let Some(reason) = unrunnable_by_plugins(id) {
+            return Err(LifecycleError::UnrunnableCommand(id.clone(), reason.into()));
+        }
+    }
+    let mut granted = record.granted_commands.clone();
+    let now = chrono::Utc::now();
+    for id in command_ids {
+        if !granted.contains(id) {
+            granted.push(id.clone());
+            store.record_command_grant(&manifest.plugin_id, id, GrantAction::Granted, now);
+        }
+    }
+    store.upsert(PluginRecord {
+        granted_commands: granted,
+        ..record
+    });
+    log::warn!(
+        "[AUDIT] event=plugin_commands_granted plugin_id={} commands={:?}",
+        manifest.plugin_id,
+        command_ids
+    );
+    Ok(())
+}
+
+/// Takes back `plugin_id`'s grant to run `command_id`, recording it when it was granted.
+/// The plugin keeps running: every run checks the grants as they are then.
+///
+/// # Errors
+///
+/// Returns [`LifecycleError::NotFound`] without a record.
+pub fn revoke_command(
+    store: &mut PluginStateStore,
+    plugin_id: &str,
+    command_id: &str,
+) -> Result<(), LifecycleError> {
+    let record = store
+        .get(plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.into()))?
+        .clone();
+    if !record.granted_commands.iter().any(|c| c == command_id) {
+        return Ok(());
+    }
+    store.record_command_grant(
+        plugin_id,
+        command_id,
+        GrantAction::Revoked,
+        chrono::Utc::now(),
+    );
+    let granted = record
+        .granted_commands
+        .iter()
+        .filter(|c| *c != command_id)
+        .cloned()
+        .collect();
+    store.upsert(PluginRecord {
+        granted_commands: granted,
+        ..record
+    });
+    log::warn!(
+        "[AUDIT] event=plugin_command_revoked plugin_id={plugin_id} command_id={command_id}"
+    );
+    Ok(())
+}
+
 pub fn enable(store: &mut PluginStateStore, plugin_id: &str) -> Result<(), LifecycleError> {
     let record = store
         .get(plugin_id)
@@ -351,7 +444,52 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
+    }
+
+    #[test]
+    fn commands_are_granted_only_from_runs_commands_and_audited() {
+        let mut store = PluginStateStore::default();
+        let manifest = PluginManifest {
+            runs_commands: vec!["workspace.go_back".into(), "chat.post_message".into()],
+            ..test_manifest("dev.example.runner")
+        };
+        install(&mut store, &manifest).unwrap();
+
+        let err = grant_commands(&mut store, &manifest, &["workspace.quit".into()]).unwrap_err();
+        assert!(matches!(err, LifecycleError::UnknownRunsCommand(_)));
+        // A manifest loaded without install validation still cannot have an agent command granted.
+        let sneaky = PluginManifest {
+            runs_commands: vec!["agents.approve_request".into()],
+            ..manifest.clone()
+        };
+        let err =
+            grant_commands(&mut store, &sneaky, &["agents.approve_request".into()]).unwrap_err();
+        assert!(matches!(err, LifecycleError::UnrunnableCommand(..)));
+        assert!(store
+            .get("dev.example.runner")
+            .unwrap()
+            .granted_commands
+            .is_empty());
+
+        grant_commands(&mut store, &manifest, &["workspace.go_back".into()]).unwrap();
+        grant_commands(&mut store, &manifest, &["workspace.go_back".into()]).unwrap();
+        assert_eq!(
+            store.get("dev.example.runner").unwrap().granted_commands,
+            vec!["workspace.go_back"]
+        );
+        revoke_command(&mut store, "dev.example.runner", "workspace.go_back").unwrap();
+        revoke_command(&mut store, "dev.example.runner", "workspace.go_back").unwrap();
+        let record = store.get("dev.example.runner").unwrap();
+        assert!(record.granted_commands.is_empty());
+        let grants = &store.audit["dev.example.runner"].grants;
+        assert_eq!(grants.len(), 2);
+        assert!(grants
+            .iter()
+            .all(|g| g.kind == crate::plugin_host::state::GrantKind::Command));
+        assert_eq!(grants[0].action, GrantAction::Granted);
+        assert_eq!(grants[1].action, GrantAction::Revoked);
     }
 
     #[test]
@@ -491,6 +629,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
 
         let err = install(&mut store, &manifest).unwrap_err();
@@ -542,6 +681,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
 
         let err = install(&mut store, &manifest).unwrap_err();
@@ -591,6 +731,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 

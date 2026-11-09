@@ -559,6 +559,107 @@
       },
       "examples": [{ "jsonrpc": "2.0", "id": 2, "result": { "payload": "Hello, RIM!" } }]
     },
+    "RunCommandParams": {
+      "type": "object",
+      "required": ["commandId"],
+      "additionalProperties": false,
+      "properties": {
+        "commandId": {
+          "description": "A built-in or app command the manifest lists in runs_commands and the person granted, such as workspace.open_home. Never a plugin command.",
+          "type": "string"
+        },
+        "args": {
+          "description": "The command's arguments, keyed by argument name. A workspace_id, conversation_id or thread_id among them replaces the person's current one. Missing means none.",
+          "type": "object"
+        }
+      }
+    },
+    "RunCommandRequest": {
+      "description": "Plugin to host: ask the app to run a built-in or app command the person granted the plugin. Added within v1. Needs no capability; the grant is checked at each request, as the person stands then. The app runs it as the person, in their current workspace and conversation; a command that changes something first asks the person in a card naming the plugin. The host answers within two minutes. A host from before this request answers METHOD_NOT_FOUND.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "method": {
+          "const": "rim.command.execute"
+        },
+        "params": {
+          "$ref": "#/$defs/RunCommandParams"
+        }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": "run-1",
+          "method": "rim.command.execute",
+          "params": {
+            "commandId": "workspace.open_home",
+            "args": {}
+          }
+        }
+      ]
+    },
+    "RunCommandResult": {
+      "description": "How the run ended. Never the command's output.",
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "description": "success: it ran. error: it ran and failed, or the confirmation expired. refused: it did not run; code says why.",
+          "enum": ["success", "error", "refused"]
+        },
+        "code": {
+          "description": "On error, the command's own error code when it has one, such as VALIDATION. On refused, why it did not run: NOT_ALLOWED (no plugin may run it), NOT_GRANTED (not granted, or the plugin is off), UNAVAILABLE (not offered here), RATE_LIMITED (over 20 a minute), COOLING_DOWN (the person dismissed this plugin's card in the last minute), BUSY (another confirmation is open), CONFIRMATION_DISMISSED (the person dismissed the card).",
+          "type": "string"
+        },
+        "message": {
+          "description": "One line for a log, not for the person.",
+          "type": "string"
+        }
+      }
+    },
+    "RunCommandResponse": {
+      "description": "Host to plugin: the answer to rim.command.execute. A refusal is a result too, never an error; INVALID_PARAMS answers a request without a string commandId or with args that are not an object. Missing args count as {}.",
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/JsonRpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/RunCommandResult"
+        }
+      },
+      "examples": [
+        {
+          "jsonrpc": "2.0",
+          "id": "run-1",
+          "result": {
+            "status": "success"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "run-2",
+          "result": {
+            "status": "refused",
+            "code": "NOT_GRANTED",
+            "message": "the person has not let this plugin run this command"
+          }
+        }
+      ]
+    },
     "LogParams": {
       "type": "object",
       "required": ["level", "message"],

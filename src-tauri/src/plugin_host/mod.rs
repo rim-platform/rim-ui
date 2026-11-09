@@ -36,7 +36,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub struct PluginHostState {
-    pub store: Mutex<PluginStateStore>,
+    /// Arc so a broker task can check its plugin's command grants as they are now.
+    pub store: Arc<Mutex<PluginStateStore>>,
     /// Arc so a broker task can read its plugin's settings schema.
     pub manifests: Arc<Mutex<HashMap<String, PluginManifest>>>,
     pub state_path: PathBuf,
@@ -123,7 +124,7 @@ pub(crate) fn init(
         principal: key_principal.clone(),
     };
     let plugin_host_state = PluginHostState {
-        store: Mutex::new(store),
+        store: Arc::new(Mutex::new(store)),
         manifests: Arc::new(Mutex::new(manifests)),
         state_path,
         plugin_dirs: Mutex::new(plugin_dirs),
@@ -254,7 +255,7 @@ impl PluginHostState {
             lifecycle::install(&mut store, manifest).expect("install test manifest");
         }
         Self {
-            store: Mutex::new(store),
+            store: Arc::new(Mutex::new(store)),
             manifests: Arc::new(Mutex::new(
                 manifests
                     .into_iter()

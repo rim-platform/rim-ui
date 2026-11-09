@@ -465,6 +465,21 @@ async fn host_errors_are_error_responses() {
 
 // ── Settings ──
 
+#[tokio::test]
+async fn run_command_refusal_is_frozen() {
+    // A broker with no command granted answers the example request with the frozen refusal.
+    let mut expected = SCHEMA["$defs"]["RunCommandResponse"]["examples"][1].clone();
+    let (_client, mut plugin, _shutdown) = connect(None);
+    let mut request = example("RunCommandRequest");
+    request["id"] = expected["id"].clone();
+    assert_valid("RunCommandRequest", &request);
+    wire::write_frame(&mut plugin, &request).await.unwrap();
+    let response = read(&mut plugin).await;
+    assert_valid("RunCommandResponse", &response);
+    expected["id"] = request["id"].clone();
+    assert_eq!(response, expected);
+}
+
 /// A host with HELLO_WORLD declaring the settings of the protocol's examples, and
 /// the examples' account signed in.
 fn settings_host() -> SettingsFixture {

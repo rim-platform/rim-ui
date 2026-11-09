@@ -167,6 +167,11 @@ pub struct PluginManifest {
     pub panels: Vec<PanelDef>,
     #[serde(default)]
     pub settings_schema: Vec<SettingSchema>,
+    /// The built-in and app commands the plugin asks to run, which the person grants
+    /// one by one. Skipped when empty, so it does not change the content hash of a
+    /// manifest that leaves it out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs_commands: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -385,6 +390,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
         assert!(m.has_reserved_prefix());
     }
@@ -407,6 +413,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
         assert!(!m.has_reserved_prefix());
     }
@@ -465,6 +472,7 @@ mod tests {
             }],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 
