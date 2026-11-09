@@ -10,7 +10,7 @@ them.
 - `getting-started.md`: from a fresh install to a first conversation: the account and its
   recovery kit, the first workspace, channels, DMs and requests, the shell, and a second device.
 - `commands-and-automation.md`: commands and their sensitivity, the command palette, keybinds,
-  user commands and macros, pipelines, workspace state and how the AI agent runs commands.
+  macros, pipelines, workspace state and how the AI agent runs commands.
 - `ai-agent.md`: the AI agent on the desktop: setting up a provider and key, using it, what it
   may run, its confirmations, encrypted conversations, privacy and troubleshooting.
 - `agents.md`: connecting an AI agent such as Claude Code that runs on this computer: pairing,

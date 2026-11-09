@@ -19,6 +19,7 @@ import { DraftDirectView } from "../../features/conversations/components/DraftDi
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
 import { CommandPalette, KeybindProvider } from "../../features/commands";
 import { useAppKeybindMove } from "../../features/commands/runtime/appKeybindMove";
+import { useMoveWorkspaceMacros } from "../../features/macros/runtime/macroMove";
 import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
 import { QuickAccessAssigner } from "../../features/commands/components/QuickAccessAssigner";
 import { ConversationCommandHost } from "../../features/conversations/components/ConversationCommandHost";
@@ -343,6 +344,7 @@ function WorkspaceShell() {
   useGlobalKeyHandlers();
   useNavigationHistory();
   useAppKeybindMove();
+  useMoveWorkspaceMacros();
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 

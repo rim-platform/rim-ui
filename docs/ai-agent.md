@@ -18,7 +18,7 @@ commands and their sensitivity, and rim-server's
   the provider bills you for what it uses. RIM ships neither a model nor a key.
 - **It never acts on its own.** It runs only when you send it a prompt, and stops when it has
   answered. A change waits for you in a confirmation dialog the agent cannot answer, and it cannot
-  run your user commands, your macros, or a plugin command you did not approve.
+  run a macro you did not let it run, or a plugin command you did not approve.
 
 ## Setting it up
 
@@ -102,9 +102,12 @@ workspace may run:
   one, which it can only propose: it tells you, and you run it yourself in RIM.
   [Using a plugin](plugins.md#using-a-plugin) has the rest.
 
-It never sees user commands, macros or any command not marked callable. Kept off the AI surface on
-purpose: editing and deleting messages, kicking, banning, changing roles, removing members and
-inviting to the workspace.
+It never sees any command not marked callable. Your own macros it sees only when you tick **The AI
+agent can run this** on one in Settings → Macros, which takes a macro whose steps are all commands
+the AI agent may run, run on RIM's server, with every argument fixed. It runs such a macro as one
+command, in the workspaces of your home server, and its confirmation lists the macro's steps.
+Kept off the AI surface on purpose: editing and deleting messages, kicking, banning, changing
+roles, removing members and inviting to the workspace.
 
 **Limits of a run.** A run is one prompt and everything the agent does to answer it.
 

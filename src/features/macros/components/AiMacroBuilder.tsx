@@ -6,19 +6,28 @@ import { useCommands } from "../../commands/api/useCommands";
 import { useMacroAgent } from "../runtime/useMacroAgent";
 import type { MacroStep } from "../api/useMacros";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
+import type { CommandDefinition } from "../../commands/types";
 
 interface AiMacroBuilderProps {
   open: boolean;
   onClose: () => void;
   onStepsGenerated: (macro: GeneratedMacro) => void;
+  /** The commands its steps may name; the open workspace's palette commands when left out. */
+  commands?: CommandDefinition[];
 }
 
-export function AiMacroBuilder({ open, onClose, onStepsGenerated }: AiMacroBuilderProps) {
+export function AiMacroBuilder({
+  open,
+  onClose,
+  onStepsGenerated,
+  commands: stepCommands,
+}: AiMacroBuilderProps) {
   const [prompt, setPrompt] = useState("");
   const [preview, setPreview] = useState<GeneratedMacro | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const { data: commands } = useCommands("PALETTE");
+  const { data: paletteCommands } = useCommands("PALETTE");
+  const commands = stepCommands ?? paletteCommands;
   const { generate, isGenerating, error: agentError } = useMacroAgent();
 
   const error = localError ?? agentError;

@@ -1,7 +1,4 @@
-import {
-  CommandArgumentType,
-  CommandInitiator,
-} from "../../../core/graphql/generated/schema-types";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { executeCommandAt } from "../../commands/api/useCommands";
@@ -26,6 +23,7 @@ import {
   type AccountMacroStep,
 } from "../api/useAccountMacros";
 import { isMacroId, macroRegistry, stepTitle, type MacroRegistry } from "./macroCommands";
+import { argumentTypeOfName } from "./macroSteps";
 
 /** How many macros a chain of macros naming macros may hold. */
 export const MAX_MACRO_DEPTH = 8;
@@ -87,25 +85,6 @@ function plannedSteps(macro: AccountMacro, registry: MacroRegistry): PlannedStep
   return planned;
 }
 
-/** The type of an asked argument a step's command does not declare, from its name. */
-function typeFromName(name: string): CommandArgumentType {
-  switch (name) {
-    case "conversation_id":
-    case "conversationId":
-      return CommandArgumentType.CONVERSATION_ID;
-    case "workspace_id":
-    case "workspaceId":
-    case "server_id":
-    case "serverId":
-      return CommandArgumentType.WORKSPACE_ID;
-    case "user_id":
-    case "userId":
-      return CommandArgumentType.USER_ID;
-    default:
-      return CommandArgumentType.STRING;
-  }
-}
-
 /** The field an argument a step asks for is filled in, named `<step index>:<name>`. */
 function askedField(
   index: number,
@@ -125,7 +104,7 @@ function askedField(
   return {
     name: `${index}:${name}`,
     title: label,
-    argumentType: typeFromName(name),
+    argumentType: argumentTypeOfName(name),
     required: pluginArgument?.required ?? true,
     ...(pluginArgument?.description ? { description: pluginArgument.description } : {}),
   };
