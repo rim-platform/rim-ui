@@ -121,9 +121,14 @@ export function useDirectTargets(): Targets {
   return { items: useNamed(items), isPending };
 }
 
-/** The open workspace's unarchived channels the viewer has not joined, as Browse channels lists them. */
-export function useJoinableTargets(): Targets {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+/**
+ * The unarchived channels of a workspace the viewer has not joined, as Browse channels lists them.
+ *
+ * @param inWorkspace - The workspace to list; the open one when left out.
+ */
+export function useJoinableTargets(inWorkspace?: string): Targets {
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const workspaceId = inWorkspace ?? openWorkspaceId;
   const { data, isPending } = useChannels(workspaceId);
   const conversations = useMemo(
     () => (data?.items ?? []).filter((c) => !c.isMember && !c.isArchived),

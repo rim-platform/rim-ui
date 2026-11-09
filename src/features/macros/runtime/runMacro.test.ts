@@ -58,6 +58,21 @@ const STEP_COMMANDS: MacroStepCommand[] = [
     ],
   }),
   stepCommand("chat.mark_conversation_read", "Mark Read"),
+  stepCommand("chat.join_channel", "Join Channel", {
+    arguments: [
+      {
+        name: "conversation_id",
+        title: "Channel",
+        argumentType: CommandArgumentType.CONVERSATION_ID,
+        required: true,
+      },
+    ],
+  }),
+  stepCommand("chat.post_message", "Post Message", {
+    arguments: [
+      { name: "text", title: "Text", argumentType: CommandArgumentType.STRING, required: true },
+    ],
+  }),
   stepCommand("chat.pin_latest", "Pin Latest"),
 ];
 
@@ -129,6 +144,25 @@ describe("runMacro", () => {
       expect(input.commandContext).toEqual({ workspaceId: "ws-1", conversationId: "c-1" });
     }
     expect(mocks.toast.success).toHaveBeenCalledWith('Macro "Tidy" ran');
+  });
+
+  it("runs a join step on a fixed channel, then the next step, in order", async () => {
+    haveMacros(
+      macro({
+        id: "user.join",
+        steps: [
+          step("chat.join_channel", { conversation_id: "c-eng" }),
+          step("chat.post_message", { text: "Welcome\n- read the docs\n- say hi" }),
+        ],
+      }),
+    );
+
+    await expect(runMacro("user.join", { workspaceId: "ws-1" })).resolves.toBe(true);
+
+    expect(executed().map(({ input }) => [input.commandId, input.args])).toEqual([
+      ["chat.join_channel", { conversation_id: "c-eng" }],
+      ["chat.post_message", { text: "Welcome\n- read the docs\n- say hi" }],
+    ]);
   });
 
   it("sends a server step to the server that hosts the workspace", async () => {

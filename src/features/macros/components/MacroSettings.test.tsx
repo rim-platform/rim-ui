@@ -60,6 +60,11 @@ const SET_TOPIC = stepCommand("chat.set_topic", "Set Topic", {
     { name: "topic", title: "Topic", argumentType: CommandArgumentType.STRING, required: true },
   ],
 });
+const POST_MESSAGE = stepCommand("chat.post_message", "Post Message", {
+  arguments: [
+    { name: "text", title: "Text", argumentType: CommandArgumentType.STRING, required: true },
+  ],
+});
 const MARK_READ = stepCommand("chat.mark_conversation_read", "Mark Read");
 const OPEN_UNREADS = stepCommand("workspace.open_unreads", "Open Unreads", {
   category: "Workspace",
@@ -101,6 +106,7 @@ function serve(macros: AccountMacro[]) {
     MARK_READ,
     OPEN_UNREADS,
     MANAGE_AGENTS,
+    POST_MESSAGE,
   ]);
   queryClient.setQueryData(queryKeys.accountMacros, macros);
   routeRequests(mocks.request, {
@@ -241,6 +247,32 @@ describe("MacroSettings form", () => {
           },
         },
       ]),
+    );
+  });
+
+  it("saves a step's message text with its line breaks", async () => {
+    serve([]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /New macro/ }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Checklist" } });
+    pickStep(1, "Post Message");
+    fireEvent.change(screen.getByLabelText("Text"), {
+      target: { value: "Day one\n- laptop\n- badge" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation CreateUserCommand")[0]).toMatchObject({
+        input: {
+          steps: [
+            {
+              commandId: "chat.post_message",
+              args: { text: "Day one\n- laptop\n- badge" },
+              ask: [],
+            },
+          ],
+        },
+      }),
     );
   });
 
