@@ -161,6 +161,9 @@ vi.mock("../../features/commands", () => ({
   CommandPalette: () => null,
   KeybindProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
+vi.mock("../../features/commands/runtime/appKeybindMove", () => ({
+  useAppKeybindMove: () => {},
+}));
 vi.mock("../../features/commands/components/QuickAccessAssigner", () => ({
   QuickAccessAssigner: () => null,
 }));

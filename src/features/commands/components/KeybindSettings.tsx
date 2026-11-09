@@ -23,6 +23,7 @@ import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
+  appCommandKeybindsOnServer,
   bindsOnDevice,
   isDeviceKeybind,
   useDeviceKeybindStore,
@@ -33,9 +34,20 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
-import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
+import {
+  listedKeybinds,
+  slotHolders,
+  unboundCommands,
+  useHomeAppKeybinds,
+} from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
-import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
+import { compareCommandCategories } from "../runtime/commandCategories";
+import {
+  BUILT_IN_COMMAND_TITLES,
+  isLocalCommand,
+  LOCAL_COMMANDS,
+  withClientLabel,
+} from "../runtime/localCommands";
 import { NEEDS_ARGUMENTS_NOTE, takesPresetFields } from "../runtime/commandRunnable";
 import {
   presetArgsOf,
@@ -49,56 +61,19 @@ import {
 import type { CommandDefinition, KeybindContext, ResolvedKeybind } from "../types";
 import { PresetArgumentsSection } from "./ArgumentFields";
 
-type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
+/** The group of a keybind whose command is not known here, listed after every category. */
+const UNKNOWN_CATEGORY = "Other";
 
-interface Category {
-  key: CategoryKey;
-  label: string;
-  match: (commandId: string) => boolean;
+/**
+ * Orders the group names of the keybind list like the palette's categories, with
+ * {@link UNKNOWN_CATEGORY} last.
+ */
+function compareGroups(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a === UNKNOWN_CATEGORY) return 1;
+  if (b === UNKNOWN_CATEGORY) return -1;
+  return compareCommandCategories(a, b);
 }
-
-const CATEGORIES: Category[] = [
-  {
-    key: "navigation",
-    label: "Navigation",
-    match: (id) =>
-      id.startsWith("workspace.open_") ||
-      id.startsWith("workspace.navigate_") ||
-      id.startsWith("workspace.switch_") ||
-      id.startsWith("workspace.previous_") ||
-      id.startsWith("workspace.next_") ||
-      id.startsWith("workspace.cycle_"),
-  },
-  {
-    key: "chat",
-    label: "Chat",
-    match: (id) => id.startsWith("chat."),
-  },
-  {
-    key: "panels",
-    label: "Panels",
-    match: (id) =>
-      id.startsWith("workspace.toggle_") ||
-      id.startsWith("workspace.close_") ||
-      id.startsWith("workspace.focus_") ||
-      id.startsWith("workspace.reopen_"),
-  },
-  {
-    key: "agent",
-    label: "Agent",
-    match: (id) => id === "workspace.open_agent",
-  },
-  {
-    key: "plugins",
-    label: "Plugins",
-    match: (id) => id.startsWith("plugin."),
-  },
-  {
-    key: "other",
-    label: "Other",
-    match: () => true, // fallback
-  },
-];
 
 /** What an empty required argument of a keybind does. */
 const ASKED_ON_PRESS = "asked for when the key is pressed";
@@ -173,18 +148,13 @@ function ConflictNote({
   );
 }
 
-function categorizeKeybind(commandId: string): CategoryKey {
-  for (const cat of CATEGORIES) {
-    if (cat.key !== "other" && cat.match(commandId)) return cat.key;
-  }
-  return "other";
-}
-
 export function KeybindSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const { data: serverKeybinds, isLoading } = useResolvedKeybinds(workspaceId ?? undefined);
-  // Keybinds to plugin commands are kept on this device (the server knows no plugin commands).
+  // In a workspace another server hosts, the app command keybinds the connected server keeps.
+  const homeAppKeybinds = useHomeAppKeybinds(workspaceId);
+  // Keybinds kept on this device: plugin commands, and app commands where the server keeps none.
   const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const addDeviceKeybind = useDeviceKeybindStore((s) => s.add);
   const updateDeviceKeybind = useDeviceKeybindStore((s) => s.update);
@@ -192,10 +162,10 @@ export function KeybindSettings() {
   const profile = useActiveKeybindProfile();
   const keybinds = useMemo(
     () =>
-      listedKeybinds(deviceKeybinds, serverKeybinds, profile).filter((kb) =>
+      listedKeybinds(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((kb) =>
         commandOfferedHere(kb.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
   // `workspace.open_command_palette`), which causes their titles to fall back to
@@ -214,7 +184,7 @@ export function KeybindSettings() {
   const [newCommandId, setNewCommandId] = useState("");
   const [newContext, setNewContext] = useState<KeybindContext>("GLOBAL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [collapsedSections, setCollapsedSections] = useState<Set<CategoryKey>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [capturingKeybindId, setCapturingKeybindId] = useState<string | null>(null);
   const [editingKeybindId, setEditingKeybindId] = useState<string | null>(null);
   const [editCommandId, setEditCommandId] = useState("");
@@ -233,6 +203,16 @@ export function KeybindSettings() {
     all: keybindableCommands,
     needsArguments,
   } = useKeybindableCommands();
+
+  // Where the server keeps bindings to this app's own commands, a server binding may name one.
+  const appCommandsOnServer = appCommandKeybindsOnServer();
+  const serverKeybindable = useMemo(
+    () =>
+      appCommandsOnServer
+        ? [...builtInKeybindable, ...deviceKeybindable.filter((cmd) => isLocalCommand(cmd.id))]
+        : builtInKeybindable,
+    [appCommandsOnServer, builtInKeybindable, deviceKeybindable],
+  );
 
   /** The server command `commandId` names when a keybind to it saves arguments in fields. */
   function presetCommand(commandId: string): CommandDefinition | undefined {
@@ -260,6 +240,14 @@ export function KeybindSettings() {
     }
     return { presetArgs: presetArgsOf(command, read.args, fieldsWorkspace) };
   }
+
+  // The category of each command a keybind can name: this app's own, the server's, the plugins'.
+  const commandCategoryMap = useMemo(() => {
+    const map = new Map<string, string>(LOCAL_COMMANDS.map((cmd) => [cmd.id, cmd.category]));
+    for (const cmd of commands ?? []) map.set(cmd.id, cmd.category);
+    for (const cmd of pluginCommands) map.set(cmd.id, cmd.category);
+    return map;
+  }, [commands, pluginCommands]);
 
   // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
@@ -298,10 +286,10 @@ export function KeybindSettings() {
   // Commands whose default keys a binding took, listed with no key
   const unbound = useMemo(
     () =>
-      unboundCommands(deviceKeybinds, serverKeybinds, profile).filter((c) =>
+      unboundCommands(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((c) =>
         commandOfferedHere(c.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   const filteredUnbound = useMemo(() => {
     if (!searchQuery.trim()) return unbound;
@@ -312,20 +300,26 @@ export function KeybindSettings() {
     });
   }, [unbound, searchQuery, commandTitleMap]);
 
-  // Group keybinds by category
-  const categorizedKeybinds = useMemo(() => {
-    const groups = new Map<CategoryKey, ResolvedKeybind[]>();
-    for (const cat of CATEGORIES) {
-      groups.set(cat.key, []);
-    }
-    for (const kb of filteredKeybinds) {
-      const cat = categorizeKeybind(kb.commandId);
-      groups.get(cat)!.push(kb);
-    }
-    return groups;
-  }, [filteredKeybinds]);
+  // Group keybinds and unbound commands by category, the groups in the palette's order
+  const categoryGroups = useMemo(() => {
+    const groups = new Map<string, { items: ResolvedKeybind[]; unbound: typeof filteredUnbound }>();
+    const groupOf = (commandId: string) => {
+      const category = commandCategoryMap.get(commandId) || UNKNOWN_CATEGORY;
+      let group = groups.get(category);
+      if (!group) {
+        group = { items: [], unbound: [] };
+        groups.set(category, group);
+      }
+      return group;
+    };
+    for (const kb of filteredKeybinds) groupOf(kb.commandId).items.push(kb);
+    for (const c of filteredUnbound) groupOf(c.commandId).unbound.push(c);
+    return [...groups.entries()]
+      .sort(([a], [b]) => compareGroups(a, b))
+      .map(([category, group]) => ({ category, ...group }));
+  }, [filteredKeybinds, filteredUnbound, commandCategoryMap]);
 
-  function toggleSection(key: CategoryKey) {
+  function toggleSection(key: string) {
     setCollapsedSections((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -433,7 +427,7 @@ export function KeybindSettings() {
     );
     if (!preset) return;
     reassign(createConflicts, () => {
-      if (bindsOnDevice(newCommandId)) {
+      if (bindsOnDevice(newCommandId, appCommandsOnServer)) {
         addDeviceKeybind({ keystroke: newKeystroke, commandId: newCommandId, context: newContext });
         resetCreateForm();
         return;
@@ -763,19 +757,14 @@ export function KeybindSettings() {
       )}
 
       {/* Categorized keybind sections */}
-      {CATEGORIES.map((cat) => {
-        const items = categorizedKeybinds.get(cat.key) ?? [];
-        const unboundItems = filteredUnbound.filter(
-          (c) => categorizeKeybind(c.commandId) === cat.key,
-        );
-        if (items.length + unboundItems.length === 0) return null;
-        const isCollapsed = collapsedSections.has(cat.key);
+      {categoryGroups.map(({ category, items, unbound: unboundItems }) => {
+        const isCollapsed = collapsedSections.has(category);
 
         return (
-          <div key={cat.key} className="border-b border-rim-line pb-2 mb-2">
+          <div key={category} className="border-b border-rim-line pb-2 mb-2">
             <button
               type="button"
-              onClick={() => toggleSection(cat.key)}
+              onClick={() => toggleSection(category)}
               className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium uppercase tracking-wider text-rim-text-muted hover:text-rim-text transition-colors"
             >
               <ChevronRight
@@ -784,7 +773,7 @@ export function KeybindSettings() {
                   !isCollapsed && "rotate-90",
                 )}
               />
-              <span>{cat.label}</span>
+              <span>{category}</span>
               <span className="text-rim-text-faint">({items.length + unboundItems.length})</span>
             </button>
 
@@ -845,14 +834,14 @@ export function KeybindSettings() {
                             <option value="">Select command...</option>
                             {editCommandId &&
                               !(
-                                isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable
+                                isDeviceKeybind(kb.id) ? deviceKeybindable : serverKeybindable
                               ).some((cmd) => cmd.id === editCommandId) && (
                                 <option value={editCommandId}>
                                   {commandTitleMap.get(editCommandId) ?? editCommandId}
                                 </option>
                               )}
-                            {/* A device keybind stays a device command; a server one a built-in. */}
-                            {(isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable).map(
+                            {/* A device keybind stays a device command; a server one a command the server keeps. */}
+                            {(isDeviceKeybind(kb.id) ? deviceKeybindable : serverKeybindable).map(
                               (cmd) => (
                                 <option key={cmd.id} value={cmd.id}>
                                   {cmd.title}
@@ -1006,7 +995,7 @@ export function KeybindSettings() {
                         {isDeviceKeybind(kb.id) && (
                           <span
                             className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
-                            title="Kept on this device, like the plugin it runs"
+                            title="Kept on this device only"
                           >
                             This device
                           </span>

@@ -67,6 +67,8 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { useCommands } from "../api/useCommands";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { compareCommandCategories } from "../runtime/commandCategories";
 import { CANCELLED_PAYLOAD } from "../../plugins/runtime/pluginCommandInfo";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
@@ -339,6 +341,60 @@ describe("CommandPalette search", () => {
       data: [MARK_AS_READ, LIST_STATE],
       isLoading: false,
     } as ReturnType<typeof useCommands>);
+  });
+
+  /** The category headers the open palette shows, top to bottom. */
+  function shownHeaders(): string[] {
+    return Array.from(document.querySelectorAll("[data-command-item]"))
+      .map((item) => item.previousElementSibling?.textContent)
+      .filter((text): text is string => Boolean(text));
+  }
+
+  it("lists the built-in categories in order with an empty query, the others after them", () => {
+    vi.mocked(usePluginCommands).mockReturnValue([
+      {
+        ...BASE_COMMAND,
+        id: "plugin.pods.refresh",
+        title: "Refresh Pods",
+        category: "Kubernetes Pods",
+        sourceKind: "PLUGIN",
+        executionTarget: "DESKTOP_LOCAL",
+        contextTypes: [],
+      },
+    ]);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [
+        serverCommand("admin.reset_password", "Reset Password", "Set a new password", "Admin"),
+        serverCommand("moderation.timeout", "Time Out Member", "Mute someone", "Moderation"),
+        serverCommand("chat.mark_all_as_read", "Mark All as Read", "Read everything", "Messages"),
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+    render(<CommandPalette />, { wrapper: Providers });
+    act(() => useCommandStore.getState().openCommandPalette());
+
+    const headers = shownHeaders();
+    expect(new Set(headers).size).toBe(headers.length);
+    expect(headers).toEqual([...headers].sort(compareCommandCategories));
+    expect(headers.indexOf("Navigation")).toBeLessThan(headers.indexOf("Messages"));
+    expect(headers.indexOf("Messages")).toBeLessThan(headers.indexOf("Moderation"));
+    expect(headers.indexOf("View")).toBeLessThan(headers.indexOf("Admin"));
+    expect(headers.slice(-2)).toEqual(["Admin", "Kubernetes Pods"]);
+    vi.mocked(usePluginCommands).mockReturnValue([]);
+  });
+
+  it("keeps the ranked order with a query, a group's header once above its first match", () => {
+    render(<CommandPalette />, { wrapper: Providers });
+    act(() => useCommandStore.getState().openCommandPalette());
+    fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
+      target: { value: "re" },
+    });
+
+    const titles = Array.from(document.querySelectorAll("[data-command-item]")).map(
+      (item) => item.querySelector("span")?.textContent,
+    );
+    expect(titles[0]).toBe("Reset Password");
+    expect(shownHeaders()[0]).toBe("Admin");
   });
 
   it("puts the best match first, under its group's header", () => {

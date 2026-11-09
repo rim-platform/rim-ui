@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { COMMAND_CATEGORIES } from "./commandCategories";
 import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "./localCommands";
 
 const SERVER_NAVIGATION = [
@@ -38,5 +39,24 @@ describe("titles shown before the command list loads", () => {
     }
     expect(BUILT_IN_COMMAND_TITLES["chat.create_group"]).toBe("New Message");
     expect(BUILT_IN_COMMAND_TITLES["workspace.toggle_lens_picker"]).toBe("Toggle Channel Lenses");
+  });
+});
+
+describe("local command categories", () => {
+  it("gives every app command one of the built-in categories", () => {
+    for (const command of LOCAL_COMMANDS) {
+      expect(COMMAND_CATEGORIES, command.id).toContain(command.category);
+    }
+  });
+
+  it("files commands by what they do", () => {
+    const category = (id: string) => LOCAL_COMMANDS.find((cmd) => cmd.id === id)?.category;
+    expect(category("workspace.go_back")).toBe("Navigation");
+    expect(category("workspace.toggle_lens_picker")).toBe("Conversations");
+    expect(category("workspace.unreads_undo")).toBe("Unreads");
+    expect(category("workspace.open_bots")).toBe("Bots & Webhooks");
+    expect(category("workspace.open_message_requests")).toBe("People");
+    expect(category("workspace.toggle_zen_mode")).toBe("View");
+    expect(category("app.quit")).toBe("App");
   });
 });

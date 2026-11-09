@@ -2,6 +2,7 @@ import * as microfuzz from "@nozbe/microfuzz";
 import type { HighlightRanges } from "@nozbe/microfuzz";
 
 import type { CommandDefinition } from "../types";
+import { compareCommandCategories } from "./commandCategories";
 
 type CreateFuzzySearch = typeof microfuzz.default;
 
@@ -71,8 +72,9 @@ function compareMatches<T extends Searchable>(a: PaletteMatch<T>, b: PaletteMatc
  * A search over the palette's commands. A title match ranks above a description or category
  * match; in a description or category only a match that starts at a word counts, since nearly
  * any few letters turn up somewhere in a sentence. Commands stay grouped by category, the groups
- * in the order of their best match. An empty query lists everything grouped alphabetically by
- * category, alphabetically by title inside a group.
+ * in the order of their best match. An empty query lists everything grouped by category, the
+ * built-in categories in their fixed order and the others after them alphabetically, and
+ * alphabetically by title inside a group.
  */
 export function createPaletteSearch<T extends Searchable>(
   list: T[],
@@ -91,7 +93,7 @@ export function createPaletteSearch<T extends Searchable>(
       return [...list]
         .sort(
           (a, b) =>
-            a.category.localeCompare(b.category, PALETTE_LOCALE) ||
+            compareCommandCategories(a.category, b.category) ||
             a.title.localeCompare(b.title, PALETTE_LOCALE),
         )
         .map((item) => ({

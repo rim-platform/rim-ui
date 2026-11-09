@@ -10,6 +10,9 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+import { useRelayStore } from "../../relay/state/useRelayStore";
+import type { SpaceRecord } from "../../relay/state/relayDb";
+import { useResolvedKeybinds } from "../api/useKeybinds";
 import { BUILT_IN_PROFILES, DEFAULT_BINDINGS } from "../profiles/builtInProfiles";
 import { PROFILE_FORMAT, mergeOverDefaults, type KeybindProfile } from "../profiles/keybindProfile";
 import type { ResolvedKeybind } from "../types";
@@ -19,6 +22,7 @@ import {
   slotHolders,
   unboundCommands,
   useEffectiveKeybinds,
+  useHomeAppKeybinds,
 } from "./effectiveKeybinds";
 import { matchKeybind } from "./keybindEngine";
 
@@ -235,5 +239,112 @@ describe("useEffectiveKeybinds", () => {
     (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     const { result: desktop } = renderHook(() => useEffectiveKeybinds());
     expect(commandFor(desktop.current, "Ctrl+Shift+A")).toBe("workspace.open_agent");
+  });
+});
+
+describe("app command keybinds of the connected server", () => {
+  const ZEN = keybind({
+    id: "home-zen",
+    keystroke: "Ctrl+Alt+F6",
+    commandId: "workspace.toggle_zen_mode",
+    source: "USER",
+  });
+  const HOME_SETTINGS = keybind({
+    id: "home-settings",
+    keystroke: "Ctrl+Alt+F7",
+    commandId: "workspace.open_settings",
+    source: "USER",
+  });
+  const HOME_DEFAULT = keybind({
+    id: "home-default",
+    keystroke: "Ctrl+Alt+F8",
+    commandId: "workspace.go_back",
+    source: "DEFAULT",
+  });
+  const HOST_SEARCH = keybind({
+    id: "host-search",
+    keystroke: "Ctrl+Alt+F9",
+    commandId: "workspace.open_search",
+    source: "USER",
+  });
+
+  /** The connected server answers with no workspace, the open workspace's server with one. */
+  function serversAnswer(home: ResolvedKeybind[], open: ResolvedKeybind[]) {
+    vi.mocked(useResolvedKeybinds).mockImplementation(
+      (spaceId?: string, enabled = true) =>
+        ({
+          data: enabled ? (spaceId === undefined ? home : open) : undefined,
+        }) as ReturnType<typeof useResolvedKeybinds>,
+    );
+  }
+
+  function hostedElsewhere() {
+    useRelayStore.setState({
+      spaces: { "ws-1": { spaceId: "ws-1", hostServerId: "srv-2" } as SpaceRecord },
+    });
+  }
+
+  afterEach(() => {
+    useRelayStore.setState({ spaces: {} });
+    vi.mocked(useResolvedKeybinds).mockImplementation(
+      () => ({ data: undefined }) as ReturnType<typeof useResolvedKeybinds>,
+    );
+  });
+
+  it("rank below this device's bindings and above the workspace's server", () => {
+    const device = [keybind({ id: "device:1", keystroke: "Ctrl+Alt+F6", commandId: "app.quit" })];
+    const host = [
+      keybind({
+        id: "host-1",
+        keystroke: "Ctrl+Alt+F6",
+        commandId: "workspace.open_search",
+      }),
+      keybind({ id: "host-2", keystroke: "Ctrl+Alt+F10", commandId: "workspace.open_search" }),
+    ];
+    const home = [ZEN, keybind({ ...ZEN, id: "home-g", keystroke: "Ctrl+Alt+F10" })];
+    const keybinds = resolveEffectiveKeybinds(device, host, BUILT_IN_PROFILES.minimal, home);
+
+    expect(commandFor(keybinds, "Ctrl+Alt+F6")).toBe("app.quit");
+    expect(commandFor(keybinds, "Ctrl+Alt+F10")).toBe("workspace.toggle_zen_mode");
+  });
+
+  it("fire in a workspace another server hosts, without the connected server's other keybinds", () => {
+    hostedElsewhere();
+    serversAnswer([ZEN, HOME_SETTINGS, HOME_DEFAULT], [HOST_SEARCH]);
+
+    const { result } = renderHook(() => useEffectiveKeybinds());
+
+    expect(commandFor(result.current, "Ctrl+Alt+F6")).toBe("workspace.toggle_zen_mode");
+    expect(commandFor(result.current, "Ctrl+Alt+F9")).toBe("workspace.open_search");
+    expect(commandFor(result.current, "Ctrl+Alt+F7")).toBeNull();
+    expect(commandFor(result.current, "Ctrl+Alt+F8")).toBeNull();
+  });
+
+  it("are not read again in a workspace of the connected server, which already has them", () => {
+    serversAnswer([ZEN], [ZEN, HOST_SEARCH]);
+
+    const { result: home } = renderHook(() => useHomeAppKeybinds("ws-1"));
+    const { result } = renderHook(() => useEffectiveKeybinds());
+
+    expect(home.current).toEqual([]);
+    expect(vi.mocked(useResolvedKeybinds)).toHaveBeenCalledWith(undefined, false);
+    expect(result.current.filter((kb) => kb.keystroke === "Ctrl+Alt+F6")).toEqual([ZEN]);
+  });
+
+  it("are listed and keep a default's keys from it in a workspace another server hosts", () => {
+    const host = [
+      HOST_SEARCH,
+      keybind({
+        id: "host-default",
+        keystroke: "Ctrl+Alt+F6",
+        commandId: "workspace.open_settings",
+      }),
+    ];
+    const listed = listedKeybinds([], host, profile([]), [ZEN]);
+
+    expect(listed.map((kb) => kb.id)).toEqual(["home-zen", "host-search"]);
+    expect(unboundCommands([], host, profile([]), [ZEN])).toEqual([
+      { commandId: "workspace.open_settings", context: "GLOBAL" },
+    ]);
   });
 });
