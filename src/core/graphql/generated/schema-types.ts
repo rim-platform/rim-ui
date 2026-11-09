@@ -701,8 +701,8 @@ export type CreateServerInput = {
 
 export type CreateUserCommandInput = {
   /**
-   * Lets the AI agent run the macro; refused unless every step is a built-in the server
-   * runs, with every argument fixed.
+   * Lets the AI agent run the macro; refused unless every step is an AI-callable built-in
+   * the server runs, with every argument fixed.
    */
   aiCallable?: Scalars['Boolean']['input'];
   commandId: Scalars['String']['input'];
@@ -5427,7 +5427,7 @@ export type User = {
 export type UserCommand = {
   /**
    * Whether the owner lets the AI agent run the macro. The agent runs it only while every
-   * step is a built-in the server runs, with every argument fixed.
+   * step is an AI-callable built-in the server runs, with every argument fixed.
    */
   aiCallable: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
