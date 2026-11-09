@@ -139,8 +139,10 @@ a workspace bound to a host, the person's and the plugins' calls also carry a to
 keybinds, quick boxes, the message box and context menus list and run its commands there. The
 cached command lists are read again whenever the router is set or cleared, so a list read before
 the relay started routing does not keep this server's answer.
-The keybinds themselves, user commands and macros stay on this server; the agents do not reach
-such a workspace.
+The keybinds themselves and the person's macros stay on this server, which is why macros show in
+such a workspace: the app reads them here and runs their steps there, each server step routed to
+the host. The old workspace macros of such a workspace are read, run, changed and deleted on its
+host. The agents do not reach such a workspace.
 
 Calls that name no space but belong to a host (`myMlsWelcomes`, `ackMlsWelcomes`) go through
 `hostClient(host)`; encrypted attachments of such a space are uploaded (as the exact multipart

@@ -24,6 +24,21 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- **Upgrade:** with a server that keeps your macros as your own commands (rim-server listing
+  `account_macros`), a macro is your own command made of commands, and every macro is a command:
+  it shows under Macro in the palette, the keybind picker, Home quick boxes and the composer's `/`
+  list in every workspace, on this server or another, and a key to it follows you there. The app
+  runs it step by step: one form first asks for every argument the steps ask for, each server step
+  goes to the workspace's server with its own confirmation, app and plugin steps run in the app,
+  and the first step that fails stops the rest with "Step \<n\> (\<command\>) failed". A plugin
+  never runs your macros.
+- Settings → Macros makes and edits these macros: a title, a description and up to 20 steps,
+  each picked from a searchable list of built-in, app and plugin commands by category, with a
+  field for each argument to fix it or **Ask when I run it**. **The AI agent can run this** lets
+  the agent run a macro whose steps are all commands the agent may run, run on RIM's server,
+  with every argument fixed; otherwise it says why it is off.
+- The macros you made in each workspace move into your macros once, and are deleted where they
+  were; at 100 macros the rest stay, and a toast says how many stayed where.
 - Connected agents outside RIM, such as Claude Code, can ask to run RIM's own commands in the
   desktop app: **Choose its commands** in Settings > Agents has a **RIM commands** section, by
   category, where you tick the ones an agent may ask for. Every call shows an approval card first,
@@ -112,6 +127,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
+  list the macro's steps with the arguments fixed for each.
+- `/macro <title>` and **Run Macro…** run your macros, found by title whatever the letter case;
+  a workspace macro that moved into them still runs from a key or quick action that named it.
+  Workspace macros of a workspace another server hosts are now read, run, changed and deleted on
+  that server.
 - Open Marketplace (Ctrl+Shift+X) is now Browse Plugins and opens Settings > Plugins, instead of a
   "coming soon" page. "Choose an Agent's Plugin Commands…" is now "Choose an Agent's Commands…".
 - Commands are grouped by what they do (Navigation, Messages, Moderation, Home…) in the palette and in Settings > Keybinds, and keyboard shortcuts for the app's own commands, such as Toggle Zen Mode and Go Back, follow you to your other devices on servers that support it. Shortcuts you already set for them on this device move to the server once, with a short note; plugin shortcuts stay on this device.
@@ -148,6 +169,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   that server; on an older server only the open workspace notifies. A notification from a
   workspace on another server that waited over five minutes while you were away goes to the inbox
   without popping up.
+
+### Removed
+
+- Settings → Commands, where the server keeps your macros as your own commands: what it made
+  are macros, in Settings → Macros, and the command that opened it opens Macros.
 
 ### Fixed
 
