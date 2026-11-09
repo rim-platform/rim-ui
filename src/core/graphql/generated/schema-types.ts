@@ -338,7 +338,9 @@ export enum CommandInitiator {
   /** User typed/clicked in the command palette. */
   PALETTE = 'PALETTE',
   /** Plugin's own runtime invoked the command. */
-  PLUGIN = 'PLUGIN'
+  PLUGIN = 'PLUGIN',
+  /** A button or other control in the app. */
+  UI = 'UI'
 }
 
 export type CommandResult = {

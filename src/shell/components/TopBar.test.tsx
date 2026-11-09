@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../test/utils";
@@ -198,11 +198,13 @@ describe("TopBar — search box", () => {
     const user = userEvent.setup();
     renderWithProviders(<TopBar />);
     await user.click(searchBox());
-    expect(useCommandStore.getState()).toMatchObject({
-      isCommandPaletteOpen: true,
-      mode: "search",
-      scope: "workspace",
-    });
+    await waitFor(() =>
+      expect(useCommandStore.getState()).toMatchObject({
+        isCommandPaletteOpen: true,
+        mode: "search",
+        scope: "workspace",
+      }),
+    );
     expect(useSearchOverlayStore.getState().isOpen).toBe(false);
     act(() => useCommandStore.getState().closeCommandPalette());
   });

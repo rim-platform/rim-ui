@@ -4,10 +4,14 @@ import { openThreadId } from "../../threads/api/openThreadId";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useSelectedMessageStore } from "../../messages/state/useSelectedMessageStore";
 
-/** A message a surface acts on in place of the open conversation, as a context menu does. */
+/**
+ * What a surface acts on in place of the open conversation, as a context menu or a row does: a
+ * workspace, a conversation in it, or a message there.
+ */
 export interface CommandContextTarget {
   workspaceId: string;
-  conversationId: string;
+  /** The conversation; left out for a control that acts on the workspace itself. */
+  conversationId?: string;
   /** The message's thread, when it has one. */
   threadId?: string;
   selectedMessageId?: string;
@@ -22,7 +26,7 @@ export interface CommandContextTarget {
  * thread and selected message with its own; the focused surface stays. The selected text and the
  * active panel are never set, as no store holds them.
  *
- * @param target - The message the surface acts on, when it names one.
+ * @param target - The workspace, conversation or message the surface acts on, when it names one.
  * @returns The context with only its known fields set; empty when no workspace is selected and
  *   no target is given.
  */
@@ -33,7 +37,7 @@ export function currentCommandContext(target?: CommandContextTarget): CommandCon
 
   const ctx: CommandContextInput = { workspaceId };
   if (target) {
-    ctx.conversationId = target.conversationId;
+    if (target.conversationId) ctx.conversationId = target.conversationId;
     if (target.threadId) ctx.threadId = target.threadId;
     if (target.selectedMessageId) ctx.selectedMessageId = target.selectedMessageId;
   } else if (shell.selectedConversationId) {

@@ -122,6 +122,7 @@ vi.mock("../../workspaces/api/useCurrentUser", () => ({
 
 vi.mock("../../conversations/api/useConversation", () => ({
   useConversation: () => ({ data: undefined }),
+  findCachedConversation: () => undefined,
 }));
 
 vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({

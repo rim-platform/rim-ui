@@ -148,20 +148,39 @@ export function executeCommandAt(
 }
 
 /**
+ * The way a person's run of a command is sent: {@link executeCommandAt} with `initiator`, which
+ * records a `TIMED_OUT` answer (a mutating command while timed out) so the composer switches to
+ * its timed-out banner, whichever surface ran the command.
+ *
+ * @param initiator - Who started the run; left out, the server takes a palette run, and a request
+ *   that names its own initiator keeps it.
+ * @returns A function that sends one run and rethrows its error.
+ */
+export function executeAsPerson(
+  initiator?: CommandInitiator,
+): (input: ExecuteCommandRequest) => Promise<{ executeCommand: CommandResult }> {
+  return async (input) => {
+    try {
+      return await executeCommandAt(
+        initiator && !input.initiator ? { ...input, initiator } : input,
+      );
+    } catch (err) {
+      noteTimedOutError(
+        input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,
+        err,
+      );
+      throw err;
+    }
+  };
+}
+
+/**
  * Runs a command a person started, on the server that hosts the workspace of its
  * `commandContext`; one without a workspace runs on the connected server.
  */
 export function useExecuteCommandMutation() {
   return useMutation({
-    mutationFn: (input: Omit<ExecuteCommandRequest, "initiator">) => executeCommandAt(input),
-    // A `TIMED_OUT` answer (a mutating command while timed out) switches the composer to its
-    // timed-out banner, whichever surface ran the command.
-    onError: (err, input) => {
-      noteTimedOutError(
-        input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,
-        err,
-      );
-    },
+    mutationFn: (input: ExecuteCommandRequest) => executeAsPerson()(input),
   });
 }
 

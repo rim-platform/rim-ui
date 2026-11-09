@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -118,6 +118,11 @@ interface SetDoNotDisturbVars {
   paused: boolean;
   /** RFC 3339 end of the pause; null pauses until turned off. Ignored when `paused` is false. */
   until: string | null;
+}
+
+/** Refreshes a workspace's notification settings once its do-not-disturb pause changed. */
+export function invalidateNotificationSettings(qc: QueryClient, serverId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.notificationSettings(serverId) });
 }
 
 /** Turns the manual do-not-disturb pause on (until an instant or until turned off) or off. */

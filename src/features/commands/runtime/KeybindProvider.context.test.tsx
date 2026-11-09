@@ -11,10 +11,12 @@ vi.mock("../api/useKeybinds", () => ({
   useResolvedKeybinds: vi.fn(() => ({ data: SERVER_KEYBINDS })),
 }));
 
+const mutateAsync = vi.hoisted(() => vi.fn());
+
 vi.mock("../api/useCommands", () => ({
   // The command lists are still loading, so a keybind runs through its stand-in command.
   useCommands: vi.fn(() => ({ data: undefined })),
-  useExecuteCommandMutation: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useExecuteCommandMutation: vi.fn(() => ({ mutateAsync })),
 }));
 
 vi.mock("./commandDispatcher", () => ({
@@ -32,6 +34,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 
 /** A workspace binding of Ctrl+Alt+L to `notifications.set_level` with a preset level. */
 const SERVER_KEYBINDS: ResolvedKeybind[] = [
@@ -92,6 +95,19 @@ describe("KeybindProvider command context", () => {
       commandContext: { workspaceId: "ws-1", conversationId: "conv-9", threadId: "thread-1" },
       askForArguments: true,
       onArguments: expect.any(Function),
+    });
+  });
+
+  it("sends the run as started by a keybind", async () => {
+    renderProvider();
+    pressCtrlAltL();
+
+    const execute = vi.mocked(dispatchCommand).mock.calls[0][1];
+    await execute({ commandId: "notifications.set_level", args: { level: "mentions" } });
+    expect(mutateAsync).toHaveBeenCalledWith({
+      commandId: "notifications.set_level",
+      args: { level: "mentions" },
+      initiator: CommandInitiator.KEYBIND,
     });
   });
 

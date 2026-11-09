@@ -386,6 +386,10 @@ enum CommandInitiator {
 	Out-of-process CLI client (rim-cli).
 	"""
 	CLI
+	"""
+	A button or other control in the app.
+	"""
+	UI
 }
 
 type CommandResult {

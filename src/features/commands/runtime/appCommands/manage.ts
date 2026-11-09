@@ -25,6 +25,7 @@ import { useManageCommandStore, type ManageRequest } from "../../state/useManage
 import { useSettingsIntentStore, type SettingsIntent } from "../../state/useSettingsIntentStore";
 import { localCommand } from "./localCommand";
 import { refuseManage } from "./manageAvailability";
+import { showWorkspace, targetWorkspaceOf } from "./targetWorkspace";
 import { OPEN_A_CONVERSATION, SELECT_A_MESSAGE, selectedMessageOf } from "./messageContext";
 
 export const MANAGE_COMMANDS: CommandDefinition[] = [
@@ -293,8 +294,11 @@ function requestHandler(
 }
 
 export const MANAGE_HANDLERS: Record<string, LocalHandler> = {
-  "moderation.open_reports": () => {
-    if (!refuseManage("moderation.open_reports")) openSettings("workspace-moderation");
+  "moderation.open_reports": (args, commandContext) => {
+    const workspaceId = targetWorkspaceOf(args, commandContext);
+    if (refuseManage("moderation.open_reports", workspaceId) || !workspaceId) return;
+    showWorkspace(workspaceId);
+    openSettings("workspace-moderation");
   },
   "moderation.resolve_report": opens("moderation.resolve_report", {
     kind: "report",

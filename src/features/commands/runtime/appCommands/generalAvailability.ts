@@ -52,7 +52,11 @@ export function updateReady(): boolean {
 
 /** Whether the viewer is an Owner or Moderator of the open workspace, outside the direct space. */
 export function moderatesOpenWorkspace(): boolean {
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
+  return moderatesWorkspace(useWorkspaceStore.getState().workspaceId);
+}
+
+/** Whether the viewer is an Owner or Moderator of `workspaceId`, outside the direct space. */
+export function moderatesWorkspace(workspaceId: string | null): boolean {
   if (!workspaceId || isDirectSpace(workspaceId)) return false;
   return canModerate(
     queryClient.getQueryData<ServerDetail>(queryKeys.server(workspaceId))?.viewerRole,

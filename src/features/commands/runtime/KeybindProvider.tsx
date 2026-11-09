@@ -26,6 +26,7 @@ import { useEffectiveKeybinds } from "./effectiveKeybinds";
 import { toast } from "../../../shared/toast";
 import { keybindCommand, keybindCommandTitle } from "./keybindCommand";
 import { installVimLayer } from "./vimLayer";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 import { keybindAnswersWaitingAgent } from "./appCommands/agents";
 
 interface KeybindProviderProps {
@@ -169,7 +170,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     const run = (args: Record<string, unknown> | undefined) => {
       // The arguments it ran with, with any the argument form asked for.
       let ranWith = args;
-      dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
+      const execute = (input: Parameters<typeof executeMutationRef.current.mutateAsync>[0]) =>
+        executeMutationRef.current.mutateAsync({ ...input, initiator: CommandInitiator.KEYBIND });
+      dispatchCommand(command, execute, {
         args,
         commandContext,
         askForArguments: true,

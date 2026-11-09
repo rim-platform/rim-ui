@@ -31,11 +31,12 @@ import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
 import { useAppDialogStore } from "../../state/useAppDialogStore";
 import { useQuickAccessStore } from "../../state/useQuickAccessStore";
 import {
-  moderatesOpenWorkspace,
+  moderatesWorkspace,
   settingsTabOffered,
   updateReady,
   updaterAvailable,
 } from "./generalAvailability";
+import { showWorkspace, targetWorkspaceOf } from "./targetWorkspace";
 
 export { GENERAL_ARGUMENT_PROMPTS, GENERAL_COMMANDS } from "./generalDefinitions";
 
@@ -177,11 +178,21 @@ async function togglePipelineById(pipelineId: string): Promise<void> {
   }
 }
 
-function openIfModerator(tab: string): void {
-  if (!moderatesOpenWorkspace()) {
+/**
+ * Opens the Settings tab `tab` of the workspace the command acts in, opening that workspace
+ * first, for its owners and moderators; tells anyone else it is theirs.
+ */
+function openIfModerator(
+  tab: string,
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+): void {
+  const workspaceId = targetWorkspaceOf(args, commandContext);
+  if (!workspaceId || !moderatesWorkspace(workspaceId)) {
     toast.info("This is for the owners and moderators of this workspace.");
     return;
   }
+  showWorkspace(workspaceId);
   openSettings(tab);
 }
 
@@ -220,8 +231,10 @@ export const GENERAL_HANDLERS: Record<string, Handler> = {
     useWorkspaceStore.getState().setWorkspaceId(directSpaceId);
   },
   "workspace.add": () => useAppDialogStore.getState().open("addWorkspace"),
-  "workspace.open_workspace_settings": () => openIfModerator("workspace"),
-  "workspace.open_join_requests": () => openIfModerator("workspace-moderation"),
+  "workspace.open_workspace_settings": (args, commandContext) =>
+    openIfModerator("workspace", args, commandContext),
+  "workspace.open_join_requests": (args, commandContext) =>
+    openIfModerator("workspace-moderation", args, commandContext),
   "people.set_status": () => useAppDialogStore.getState().open("status"),
   "people.view_profile": (args) => {
     const userId = stringArg(args, "userId", "user_id");
