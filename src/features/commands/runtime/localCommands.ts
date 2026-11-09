@@ -4,6 +4,7 @@ import { AGENT_COMMANDS } from "./appCommands/agents";
 import { CONVERSATION_COMMANDS } from "./appCommands/conversation";
 import { localCommand } from "./appCommands/localCommand";
 import { GENERAL_COMMANDS } from "./appCommands/generalDefinitions";
+import { MANAGE_COMMANDS } from "./appCommands/manage";
 
 /**
  * Commands that exist only in this app. The server does not list them, so the palette and the
@@ -199,6 +200,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   ...CONVERSATION_COMMANDS,
   ...GENERAL_COMMANDS,
   ...AGENT_COMMANDS,
+  ...MANAGE_COMMANDS,
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));

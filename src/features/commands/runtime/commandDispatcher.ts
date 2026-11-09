@@ -70,6 +70,7 @@ import { CONVERSATION_HANDLERS } from "./appCommands/conversation";
 import { GENERAL_ARGUMENT_PROMPTS, GENERAL_HANDLERS } from "./appCommands/general";
 import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
+import { MANAGE_HANDLERS } from "./appCommands/manage";
 import { withClientLabel } from "./localCommands";
 import {
   runWithHumanConfirmation,
@@ -194,6 +195,7 @@ export type LocalHandler = (
 
 const localHandlers: Record<string, LocalHandler> = {
   ...CONVERSATION_HANDLERS,
+  ...MANAGE_HANDLERS,
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },

@@ -52,6 +52,7 @@ import { PluginCommandConfirmDialog } from "../../features/plugins/components/Pl
 import { CommandArgumentsDialog } from "../../features/commands/components/CommandArgumentsDialog";
 import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
 import { AppCommandDialogs } from "../../features/commands/components/AppCommandDialogs";
+import { ManageCommandHost } from "../../features/commands/components/ManageCommandHost";
 import { WorkspaceActionDialogs } from "../../features/workspaces/components/WorkspaceActionDialogs";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
@@ -758,6 +759,7 @@ function WorkspaceShell() {
           <RegistryHost />
           <QuickAccessAssigner />
           <ConversationCommandHost />
+          <ManageCommandHost />
           <ToastContainer />
         </div>
 

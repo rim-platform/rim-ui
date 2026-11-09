@@ -164,6 +164,9 @@ vi.mock("../../features/commands", () => ({
 vi.mock("../../features/commands/runtime/appKeybindMove", () => ({
   useAppKeybindMove: () => {},
 }));
+vi.mock("../../features/commands/components/ManageCommandHost", () => ({
+  ManageCommandHost: () => null,
+}));
 vi.mock("../../features/commands/components/QuickAccessAssigner", () => ({
   QuickAccessAssigner: () => null,
 }));

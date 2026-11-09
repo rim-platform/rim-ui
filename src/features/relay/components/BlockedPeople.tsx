@@ -3,24 +3,11 @@ import { useId } from "react";
 import { asSentence, graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
-import { shortPrincipal } from "../../plugins/registry/model";
-import type { BlockedPrincipalView } from "../api/relayApi";
 import { useBlockedPrincipals, useUnblockPrincipal } from "../api/useBlockedPrincipals";
+import type { BlockedPrincipalView } from "../api/relayApi";
+import { blockedName } from "../blocking/blockedName";
 import { useContactStore } from "../contacts/useContactStore";
 import { useRelayStore } from "../state/useRelayStore";
-
-/**
- * How the list names a blocked person: the name given to them as a contact, their display name,
- * username, or a short principal id.
- */
-function blockedName(entry: BlockedPrincipalView, aliases: Record<string, string>): string {
-  return (
-    aliases[entry.principalId] ||
-    entry.displayName ||
-    entry.username ||
-    shortPrincipal(entry.principalId)
-  );
-}
 
 /**
  * Settings → Direct messages → Blocked people: the people this account blocked, newest first,

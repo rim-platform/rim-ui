@@ -5,8 +5,10 @@ import type { Bot } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { BotBadge } from "../../../shared/ui/BotBadge";
 import { Button } from "../../../shared/ui/Button";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { DEACTIVATE_BOT_DESCRIPTION } from "../confirmTexts";
 import { useBots, useDeactivateBot } from "../api/botsApi";
 import { webhooksAvailable } from "../availability";
 import { BotChannelsDialog } from "./BotChannelsDialog";
@@ -98,6 +100,29 @@ export function BotsSettings({ serverId }: { serverId: string }) {
   const active = bots.data?.filter((b) => !b.deactivatedAt) ?? [];
   const inactive = bots.data?.filter((b) => b.deactivatedAt) ?? [];
   const full = active.length >= MAX_ACTIVE_BOTS;
+
+  // A command asks for the new bot form or a bot's edit form once the bots have loaded.
+  const intent = useSettingsIntentStore((s) => s.intent);
+  const clearIntent = useSettingsIntentStore((s) => s.clear);
+  useEffect(() => {
+    if (!intent || (intent.kind !== "bot-create" && intent.kind !== "bot-edit")) return;
+    if (!bots.data) return;
+    clearIntent();
+    const list = bots.data;
+    // Opens the form after this effect, as an answer to the command rather than to a render.
+    queueMicrotask(() => {
+      if (intent.kind === "bot-create") {
+        if (list.filter((b) => !b.deactivatedAt).length >= MAX_ACTIVE_BOTS) {
+          toast.info(`A workspace holds at most ${MAX_ACTIVE_BOTS} active bots.`);
+        } else {
+          setDialog({ kind: "create" });
+        }
+        return;
+      }
+      const bot = list.find((b) => b.userId === intent.botUserId && !b.deactivatedAt);
+      if (bot) setDialog({ kind: "edit", bot });
+    });
+  }, [intent, bots.data, clearIntent]);
 
   useEffect(() => {
     if (!refocus || bots.isFetching) return;
@@ -217,7 +242,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
       {dialog?.kind === "deactivate" && (
         <ConfirmActionDialog
           title={`Deactivate ${dialog.bot.name}?`}
-          description="Its tokens and webhooks stop working and it leaves the workspace. Its messages stay. This can't be undone."
+          description={DEACTIVATE_BOT_DESCRIPTION}
           confirmLabel="Deactivate"
           danger
           isPending={deactivate.isPending}

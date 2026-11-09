@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -16,6 +16,7 @@ import { useLocalDirectSpaceId } from "../../relay/runtime/useDirectSpaceRuntime
 import { MessageReportsList } from "../../settings/components/ModerationSettings";
 import { ReportsSection } from "./ReportsSection";
 import { ERROR_BOX } from "./styles";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 
 /**
  * Settings → Instance → Moderation: the server's abuse reports, the reports of messages in its
@@ -73,6 +74,17 @@ function ModerationQueue({
   const directSpaceId = useLocalDirectSpaceId();
   const blockPrincipal = (principalId: string) =>
     setDraft((current) => ({ principalId, seq: current.seq + 1 }));
+
+  // A command asks for the block form with a principal in it.
+  const intent = useSettingsIntentStore((s) => s.intent);
+  const clearIntent = useSettingsIntentStore((s) => s.clear);
+  useEffect(() => {
+    if (intent?.kind !== "block-principal") return;
+    clearIntent();
+    queueMicrotask(() =>
+      setDraft((current) => ({ principalId: intent.principalId, seq: current.seq + 1 })),
+    );
+  }, [intent, clearIntent]);
 
   if ([reports.error, principalBlocks.error, ipBlocks.error].some(isOperatorRefusal)) {
     return <OperatorsOnly />;

@@ -1,4 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -558,15 +564,20 @@ export function useResolveReportMutation() {
  */
 export function useClearMessageFlag() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(clearMessageFlagOptions(qc));
+}
+
+/** The mutation {@link useClearMessageFlag} runs, for a caller outside a component. */
+export function clearMessageFlagOptions(qc: QueryClient) {
+  return {
     mutationFn: (vars: MutationClearMessageFlagArgs) =>
       graphqlClient.request<{ clearMessageFlag: boolean }>(CLEAR_MESSAGE_FLAG, vars),
-    onSuccess: (_data, vars) => {
+    onSuccess: (_data: unknown, vars: MutationClearMessageFlagArgs) => {
       setMessageFlagged(qc, vars.serverId, vars.conversationId, vars.messageId, false);
       toast.success("Flag cleared");
     },
-    onError: (err) => toast.error(graphqlErrorMessage(err, "Could not clear the flag")),
-  });
+    onError: (err: unknown) => toast.error(graphqlErrorMessage(err, "Could not clear the flag")),
+  };
 }
 
 /**

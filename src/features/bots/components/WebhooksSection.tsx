@@ -10,6 +10,7 @@ import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeDate } from "../../../shared/utils/formatDate";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
+import { REVOKE_WEBHOOK_DESCRIPTION } from "../confirmTexts";
 import { useAllChannels } from "../api/useAllChannels";
 import { useIncomingWebhooks, useInvalidateBots, useRevokeIncomingWebhook } from "../api/botsApi";
 import { WEBHOOK_FORMATS } from "../../updater/api/serverCapabilities";
@@ -187,7 +188,7 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
       {toRevoke && (
         <ConfirmActionDialog
           title="Revoke this webhook?"
-          description="The URL stops working at once. You can make a new one for the channel."
+          description={REVOKE_WEBHOOK_DESCRIPTION}
           confirmLabel="Revoke"
           danger
           isPending={revoke.isPending}

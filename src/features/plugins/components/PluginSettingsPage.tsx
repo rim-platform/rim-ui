@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Puzzle, Monitor, FolderOpen, GitBranch, AlertTriangle } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -303,6 +304,14 @@ export function PluginSettingsPage() {
         <p className="text-xs text-rim-text-muted">Your tools in the app.</p>
       </div>
 
+      <PluginIntentRunner
+        plugins={plugins ?? []}
+        onToggle={handleToggle}
+        onUninstall={handleUninstall}
+        onUpdate={(pluginId) => runUpdate(pluginId, false)}
+        canUpdate={desktop}
+      />
+
       <section aria-label="Add a plugin" className="space-y-3">
         <h3 className="text-sm font-medium text-rim-text">Add a plugin</h3>
         <div className="space-y-3 rounded-xl border border-rim-line bg-rim-panel p-4">
@@ -481,6 +490,48 @@ export function PluginSettingsPage() {
       )}
     </div>
   );
+}
+
+// ─── Commands ─────────────────────────────────────────────────────────────────
+
+/**
+ * Carries out what a command asked of this page: focuses the install choices, or runs the
+ * toggle, update or uninstall of a chosen plugin as its row's own control does, with the same
+ * confirmation and permission prompts.
+ */
+function PluginIntentRunner({
+  plugins,
+  onToggle,
+  onUninstall,
+  onUpdate,
+  canUpdate,
+}: {
+  plugins: PluginInfo[];
+  onToggle: (plugin: PluginInfo) => void;
+  onUninstall: (plugin: PluginInfo) => void;
+  onUpdate: (pluginId: string) => void;
+  canUpdate: boolean;
+}) {
+  const intent = useSettingsIntentStore((s) => s.intent);
+  const clear = useSettingsIntentStore((s) => s.clear);
+  useEffect(() => {
+    if (intent?.kind !== "plugin") return;
+    clear();
+    if (intent.action === "install") {
+      document
+        .querySelector<HTMLElement>(
+          'section[aria-label="Add a plugin"] button, section[aria-label="Add a plugin"] input',
+        )
+        ?.focus();
+      return;
+    }
+    const plugin = plugins.find((p) => p.plugin_id === intent.pluginId);
+    if (!plugin) return;
+    if (intent.action === "toggle") onToggle(plugin);
+    else if (intent.action === "uninstall") onUninstall(plugin);
+    else if (canUpdate && plugin.source?.kind === "git") onUpdate(plugin.plugin_id);
+  }, [intent, clear, plugins, onToggle, onUninstall, onUpdate, canUpdate]);
+  return null;
 }
 
 // ─── Update notes ─────────────────────────────────────────────────────────────
