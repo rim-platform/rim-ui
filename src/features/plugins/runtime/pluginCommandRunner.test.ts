@@ -139,6 +139,7 @@ describe("runCommandForPlugin", () => {
       `plugin.${PLUGIN}.mine`,
       "agents.approve_request",
       "agents.clear_record",
+      "agents.connect_agent",
     ]) {
       expect(await t.run(id), id).toMatchObject({ status: "refused", code: "NOT_ALLOWED" });
     }

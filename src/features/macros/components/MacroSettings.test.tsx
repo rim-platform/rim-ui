@@ -75,6 +75,10 @@ const MANAGE_AGENTS = stepCommand("agents.disconnect", "Disconnect Agent", {
   category: "Agents",
   executionTarget: "DESKTOP_LOCAL",
 });
+const CONNECT_AGENT = stepCommand("agents.connect_agent", "Connect an Agent", {
+  category: "Agents",
+  executionTarget: "DESKTOP_LOCAL",
+});
 
 function macro(overrides: Partial<AccountMacro> & { id: string }): AccountMacro {
   return {
@@ -106,6 +110,7 @@ function serve(macros: AccountMacro[]) {
     MARK_READ,
     OPEN_UNREADS,
     MANAGE_AGENTS,
+    CONNECT_AGENT,
     POST_MESSAGE,
   ]);
   queryClient.setQueryData(queryKeys.accountMacros, macros);
@@ -203,6 +208,7 @@ describe("MacroSettings form", () => {
     expect(within(list).getByText("Workspace")).toBeInTheDocument();
     expect(within(list).getByText("Set Topic description")).toBeInTheDocument();
     expect(within(list).queryByText("Disconnect Agent")).not.toBeInTheDocument();
+    expect(within(list).queryByText(/Connect an Agent/)).not.toBeInTheDocument();
     expect(within(list).queryByText("Standup")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Search commands for step 1 command" }), {

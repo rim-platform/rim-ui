@@ -8,7 +8,8 @@ export type AgentsSettingsRequest =
   | { kind: "allRuns" }
   | { kind: "runs"; agentId: string }
   | { kind: "record"; agentId?: string }
-  | { kind: "clearRecord" };
+  | { kind: "clearRecord" }
+  | { kind: "connect" };
 
 interface AgentsSettingsRequestState {
   /** The request waiting for Settings > Agents to take it, or `null`. */

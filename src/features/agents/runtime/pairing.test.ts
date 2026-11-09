@@ -18,7 +18,7 @@ vi.mock("./agentCrypto", async (importOriginal) => {
 
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { randomToken, sha256Base64Url, sixDigitCode, type RandomFill } from "./agentCrypto";
-import { createPairing, type PendingView } from "./pairing";
+import { createPairing, mintAgent, type PendingView } from "./pairing";
 
 const LIFETIME_MS = 120_000;
 const WAIT_MS = 10_000;
@@ -604,5 +604,46 @@ describe("createPairing", () => {
     ])("says bad_name for a name that is %s", async (_what, name) => {
       expect(await cleaned(name)).toEqual({ status: 400, body: { error: "bad_name" } });
     });
+  });
+});
+
+describe("mintAgent", () => {
+  it("makes the same agent and token approving a pairing does", async () => {
+    const { pairing, agents } = setup();
+    const { requestId, pollSecret } = await started(pairing);
+    await pairing.approve(requestId);
+    const { token: paired } = (await pairing.poll({ requestId, pollSecret })).body as {
+      token: string;
+    };
+    const minted = await mintAgent("Claude Code");
+    expect(minted).not.toBeNull();
+    const { token, agent } = minted!;
+    expect(token).toMatch(/^rimagent_[A-Za-z0-9_-]{43}$/);
+    expect(token).not.toBe(paired);
+    expect(Object.keys(agent).sort()).toEqual(Object.keys(agents[0]).sort());
+    expect(agent).toEqual({
+      ...agents[0],
+      id: expect.any(String),
+      tokenHash: await sha256Base64Url(token),
+      pairedAt: expect.any(String),
+    });
+    expect(agent.id).not.toBe(agents[0].id);
+    expect(JSON.stringify(agent)).not.toContain(token);
+  });
+
+  it("cleans the name, and grants nothing", async () => {
+    const minted = await mintAgent("  Codex\u202e on\n laptop  ", { now: () => 0 });
+    expect(minted?.agent).toMatchObject({
+      name: "Codex on laptop",
+      pairedAt: "1970-01-01T00:00:00.000Z",
+      grants: {},
+      pluginApprovals: {},
+      commandApprovals: [],
+    });
+  });
+
+  it("refuses a name with nothing visible left", async () => {
+    expect(await mintAgent(" \u200b ")).toBeNull();
+    expect(await mintAgent(42)).toBeNull();
   });
 });

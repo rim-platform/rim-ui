@@ -135,6 +135,44 @@ describe("AgentsSettings", () => {
     ).toBeInTheDocument();
   });
 
+  describe("connecting an agent from the app", () => {
+    afterEach(() => useAgentsSettingsRequestStore.setState({ request: null }));
+
+    it("mentions it while nothing is connected", async () => {
+      await renderedSwitch();
+      expect(screen.getByText(NOTHING)).toBeInTheDocument();
+      expect(
+        screen.getByText(/for Codex, opencode, Gemini CLI, Cursor, VS Code/),
+      ).toBeInTheDocument();
+    });
+
+    it("opens the dialog from its button, which turns the switch on from there", async () => {
+      const user = userEvent.setup();
+      await renderedSwitch();
+      await user.click(screen.getByRole("button", { name: "Connect an agent" }));
+      const dialog = await screen.findByRole("dialog", { name: "Connect an agent" });
+      expect(within(dialog).getByRole("button", { name: "Connect" })).toBeDisabled();
+
+      await user.click(within(dialog).getByRole("switch", { name: SWITCH }));
+      expect(setCalls()).toEqual([["agent_bridge_set_enabled", { enabled: true }]]);
+      await user.type(within(dialog).getByRole("textbox", { name: /Name/ }), "Codex");
+      await user.click(within(dialog).getByRole("button", { name: "Connect" }));
+      expect(await screen.findByRole("dialog", { name: "Set up the agent" })).toHaveTextContent(
+        "http://127.0.0.1:47821/mcp",
+      );
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Codex/ })).toBeInTheDocument();
+      expect(screen.getByText(/Nothing granted/)).toBeInTheDocument();
+    });
+
+    it("opens the dialog when the command asks", async () => {
+      await renderedSwitch();
+      act(() => useAgentsSettingsRequestStore.getState().open({ kind: "connect" }));
+      expect(await screen.findByRole("dialog", { name: "Connect an agent" })).toBeInTheDocument();
+    });
+  });
+
   it("disables the switch until the state is read", async () => {
     renderTab();
     const toggle = screen.getByRole("switch", { name: SWITCH });

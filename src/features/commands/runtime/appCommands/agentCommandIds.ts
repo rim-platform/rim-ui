@@ -7,6 +7,9 @@ export const APPROVE_AGENT_PAIRING = "agents.approve_pairing";
 /** Refuses the program waiting to pair. */
 export const REFUSE_AGENT_PAIRING = "agents.refuse_pairing";
 
+/** Opens the dialog that connects an agent from the app and shows its token once. */
+export const CONNECT_AGENT = "agents.connect_agent";
+
 /** The commands that answer a waiting agent: its request, or its asking to connect. */
 export const AGENT_ANSWER_COMMAND_IDS: readonly string[] = [
   APPROVE_AGENT_REQUEST,
@@ -27,4 +30,10 @@ export const AGENT_MANAGEMENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "agents.open_runs",
   "agents.open_record",
   "agents.clear_record",
+  CONNECT_AGENT,
+  "agents.start_session",
+  "agents.stop_session",
+  "agents.ask_about_message",
+  "agents.ask_about_conversation",
+  "workspace.open_agent_sessions",
 ]);

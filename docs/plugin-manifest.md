@@ -216,7 +216,9 @@ without listing them. Install refuses, with `INVALID_RUNS_COMMANDS` and ``invali
 - one of the commands that answer and manage agents: `agents.approve_request`,
   `agents.refuse_request`, `agents.approve_pairing`, `agents.refuse_pairing`,
   `agents.disconnect`, `agents.choose_reads`, `agents.choose_plugin_commands`,
-  `agents.open_runs`, `agents.open_record` and `agents.clear_record`.
+  `agents.open_runs`, `agents.open_record`, `agents.clear_record`, `agents.connect_agent`,
+  `agents.start_session`, `agents.stop_session`, `agents.ask_about_message`,
+  `agents.ask_about_conversation` and `workspace.open_agent_sessions`.
 
 An id neither the workspace nor the app knows installs: the permission prompt shows it as "Not
 available here". The prompt lists every id under "Commands it can run" with its title and

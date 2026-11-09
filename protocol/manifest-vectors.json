@@ -19,7 +19,13 @@
     "agents.choose_plugin_commands",
     "agents.open_runs",
     "agents.open_record",
-    "agents.clear_record"
+    "agents.clear_record",
+    "agents.connect_agent",
+    "agents.start_session",
+    "agents.stop_session",
+    "agents.ask_about_message",
+    "agents.ask_about_conversation",
+    "workspace.open_agent_sessions"
   ],
   "vectors": [
     {
@@ -3348,6 +3354,20 @@
         "runtime_kind": "WebSandboxed",
         "entrypoint": "main.mjs",
         "runs_commands": ["agents.approve_request"]
+      }
+    },
+    {
+      "name": "runs_commands naming connecting an agent",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["agents.connect_agent"]
       }
     },
     {

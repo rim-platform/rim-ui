@@ -21,6 +21,7 @@ import {
   AGENT_ANSWER_COMMAND_IDS,
   APPROVE_AGENT_PAIRING,
   APPROVE_AGENT_REQUEST,
+  CONNECT_AGENT,
   REFUSE_AGENT_PAIRING,
   REFUSE_AGENT_REQUEST,
 } from "./agentCommandIds";
@@ -28,6 +29,8 @@ import { localCommand } from "./localCommand";
 
 const NO_REQUEST = "No agent is waiting for an answer";
 const NO_PAIRING = "No agent is waiting to connect";
+/** What connecting an agent says in an app without agents. */
+export const CONNECT_DESKTOP_ONLY_MESSAGE = "Connecting agents needs the desktop app";
 
 /** The agent request open in the confirmation dialog, if one is: never the person's own command. */
 function openAgentRequest(): ConfirmationRequest | null {
@@ -150,6 +153,12 @@ export const AGENT_COMMANDS: CommandDefinition[] = [
     "Clear the Agents Record…",
     "Clear the record of what agents were given, after a confirmation",
   ),
+  localCommand(
+    CONNECT_AGENT,
+    "Agents",
+    "Connect an Agent…",
+    "Connect a program on this computer and get its token and setup, shown once",
+  ),
 ];
 
 export const AGENT_HANDLERS: Record<string, LocalHandler> = {
@@ -206,6 +215,13 @@ export const AGENT_HANDLERS: Record<string, LocalHandler> = {
       return;
     }
     openInAgentsSettings({ kind: "clearRecord" });
+  },
+  [CONNECT_AGENT]: () => {
+    if (detectPlatform() !== "desktop") {
+      toast.info(CONNECT_DESKTOP_ONLY_MESSAGE);
+      return;
+    }
+    openInAgentsSettings({ kind: "connect" });
   },
 };
 
