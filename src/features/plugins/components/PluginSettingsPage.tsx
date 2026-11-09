@@ -2,7 +2,11 @@ import { useState, useCallback, useEffect } from "react";
 import { Puzzle, Monitor, FolderOpen, GitBranch, AlertTriangle } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
-import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import {
+  useSettingsIntentStore,
+  type PluginInstallSource,
+} from "../../commands/state/useSettingsIntentStore";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -313,7 +317,11 @@ export function PluginSettingsPage() {
         onToggle={handleToggle}
         onUninstall={handleUninstall}
         onUpdate={(pluginId) => runUpdate(pluginId, false)}
-        canUpdate={desktop}
+        onInstallFrom={(source) => {
+          if (source === "folder") void handleFolderPick();
+          else setGitUrlOpen(true);
+        }}
+        desktop={desktop}
       />
 
       <section aria-label="Add a plugin" className="space-y-3">
@@ -326,7 +334,7 @@ export function PluginSettingsPage() {
                   className="inline-flex items-center"
                   variant="secondary"
                   size="sm"
-                  onClick={() => void handleFolderPick()}
+                  onClick={() => void runCommandFromClick("plugins.install", { source: "folder" })}
                   disabled={isInstalling}
                 >
                   <FolderOpen className="mr-1.5 h-4 w-4" />
@@ -337,7 +345,11 @@ export function PluginSettingsPage() {
                   className="inline-flex items-center"
                   variant="secondary"
                   size="sm"
-                  onClick={() => setGitUrlOpen((v) => !v)}
+                  onClick={() =>
+                    gitUrlOpen
+                      ? setGitUrlOpen(false)
+                      : void runCommandFromClick("plugins.install", { source: "git" })
+                  }
                   disabled={isInstalling}
                 >
                   <GitBranch className="mr-1.5 h-4 w-4" />
@@ -499,28 +511,35 @@ export function PluginSettingsPage() {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 /**
- * Carries out what a command asked of this page: focuses the install choices, or runs the
- * toggle, update or uninstall of a chosen plugin as its row's own control does, with the same
- * confirmation and permission prompts.
+ * Carries out what a command asked of this page: starts installing from a folder or a git URL on
+ * the desktop, else focuses the install choices, or runs the toggle, update or uninstall of a
+ * chosen plugin as its row's own control does, with the same confirmation and permission prompts.
  */
 function PluginIntentRunner({
   plugins,
   onToggle,
   onUninstall,
   onUpdate,
-  canUpdate,
+  onInstallFrom,
+  desktop,
 }: {
   plugins: PluginInfo[];
   onToggle: (plugin: PluginInfo) => void;
   onUninstall: (plugin: PluginInfo) => void;
   onUpdate: (pluginId: string) => void;
-  canUpdate: boolean;
+  onInstallFrom: (source: PluginInstallSource) => void;
+  /** Whether this app runs local-process plugins: installs from folders and git, and updates. */
+  desktop: boolean;
 }) {
   const intent = useSettingsIntentStore((s) => s.intent);
   const clear = useSettingsIntentStore((s) => s.clear);
   useEffect(() => {
     if (intent?.kind !== "plugin") return;
     clear();
+    if (intent.action === "install" && intent.source && desktop) {
+      onInstallFrom(intent.source);
+      return;
+    }
     if (intent.action === "install") {
       document
         .querySelector<HTMLElement>(
@@ -533,8 +552,8 @@ function PluginIntentRunner({
     if (!plugin) return;
     if (intent.action === "toggle") onToggle(plugin);
     else if (intent.action === "uninstall") onUninstall(plugin);
-    else if (canUpdate && plugin.source?.kind === "git") onUpdate(plugin.plugin_id);
-  }, [intent, clear, plugins, onToggle, onUninstall, onUpdate, canUpdate]);
+    else if (desktop && plugin.source?.kind === "git") onUpdate(plugin.plugin_id);
+  }, [intent, clear, plugins, onToggle, onUninstall, onUpdate, onInstallFrom, desktop]);
   return null;
 }
 

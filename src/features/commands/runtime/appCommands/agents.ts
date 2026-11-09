@@ -59,18 +59,38 @@ function openInAgentsSettings(request: AgentsSettingsRequest): void {
   useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" });
 }
 
+/** The `agent_id` (or `agentId`) argument, when one is given. */
+function agentIdArg(args: Record<string, unknown> | undefined): string | undefined {
+  const picked = args?.agentId ?? args?.agent_id;
+  return typeof picked === "string" && picked !== "" ? picked : undefined;
+}
+
+/** Whether `agentId` names a connected agent; when it does not, says so. */
+function stillConnected(agentId: string | undefined): agentId is string {
+  const known = useConnectedAgentsStore.getState().agents.some((agent) => agent.id === agentId);
+  if (!agentId || !known) toast.info("That agent is no longer connected");
+  return Boolean(agentId) && known;
+}
+
 /** A command that opens one connected agent's dialog in Settings > Agents, picked in the palette. */
 function forPickedAgent(kind: "disconnect" | "chooseReads" | "choosePlugins"): LocalHandler {
   return (args) => {
     if (!onDesktop()) return;
-    const picked = args?.agentId ?? args?.agent_id;
-    const agentId = typeof picked === "string" ? picked : undefined;
-    const known = useConnectedAgentsStore.getState().agents.some((agent) => agent.id === agentId);
-    if (!agentId || !known) {
-      toast.info("That agent is no longer connected");
-      return;
-    }
-    openInAgentsSettings({ kind, agentId });
+    const agentId = agentIdArg(args);
+    if (stillConnected(agentId)) openInAgentsSettings({ kind, agentId });
+  };
+}
+
+/**
+ * A command that opens what every agent did in Settings > Agents, or only what the connected
+ * agent its `agent_id` argument names did.
+ */
+function forEveryOrOneAgent(every: AgentsSettingsRequest, one: "runs" | "record"): LocalHandler {
+  return (args) => {
+    if (!onDesktop()) return;
+    const agentId = agentIdArg(args);
+    if (agentId === undefined) openInAgentsSettings(every);
+    else if (stillConnected(agentId)) openInAgentsSettings({ kind: one, agentId });
   };
 }
 
@@ -177,12 +197,8 @@ export const AGENT_HANDLERS: Record<string, LocalHandler> = {
   "agents.disconnect": forPickedAgent("disconnect"),
   "agents.choose_reads": forPickedAgent("chooseReads"),
   "agents.choose_plugin_commands": forPickedAgent("choosePlugins"),
-  "agents.open_runs": () => {
-    if (onDesktop()) openInAgentsSettings({ kind: "allRuns" });
-  },
-  "agents.open_record": () => {
-    if (onDesktop()) openInAgentsSettings({ kind: "record" });
-  },
+  "agents.open_runs": forEveryOrOneAgent({ kind: "allRuns" }, "runs"),
+  "agents.open_record": forEveryOrOneAgent({ kind: "record" }, "record"),
   "agents.clear_record": () => {
     if (!onDesktop()) return;
     if (useAgentRecordStore.getState().entries.length === 0) {

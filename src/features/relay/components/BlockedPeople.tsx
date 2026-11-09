@@ -1,10 +1,8 @@
 import { useId } from "react";
 
-import { asSentence, graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
-import { toast } from "../../../shared/toast";
+import { graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
 import { Button } from "../../../shared/ui/Button";
 import { useBlockedPrincipals, useUnblockPrincipal } from "../api/useBlockedPrincipals";
-import type { BlockedPrincipalView } from "../api/relayApi";
 import { blockedName } from "../blocking/blockedName";
 import { useContactStore } from "../contacts/useContactStore";
 import { useRelayStore } from "../state/useRelayStore";
@@ -22,17 +20,6 @@ export function BlockedPeople() {
   const aliases = useContactStore((s) => s.aliases);
 
   if (!relayOn) return null;
-
-  function unblockEntry(entry: BlockedPrincipalView, name: string) {
-    unblock.mutate(entry.principalId, {
-      onSuccess: () =>
-        toast.success(asSentence(`Unblocked ${name}`), {
-          description:
-            "They can message you again. A conversation they started comes back as a request when they next write in it.",
-        }),
-      onError: (err) => toast.error(graphqlErrorMessage(err, `Could not unblock ${name}`)),
-    });
-  }
 
   return (
     <section aria-labelledby={headingId} className="space-y-2">
@@ -73,8 +60,10 @@ export function BlockedPeople() {
                   size="sm"
                   aria-label={`Unblock ${name}`}
                   disabled={unblock.isPending}
-                  isLoading={unblock.isPending && unblock.variables === entry.principalId}
-                  onClick={() => unblockEntry(entry, name)}
+                  isLoading={
+                    unblock.isPending && unblock.variables?.principalId === entry.principalId
+                  }
+                  onClick={() => unblock.mutate({ principalId: entry.principalId, name })}
                 >
                   Unblock
                 </Button>

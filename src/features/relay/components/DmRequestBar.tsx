@@ -1,21 +1,36 @@
 import { useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useManageCommandStore } from "../../commands/state/useManageCommandStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { DmRequestView } from "../api/relayApi";
-import { BlockConfirmDialog } from "./BlockConfirmDialog";
 import { PrincipalFingerprint } from "./PrincipalFingerprint";
 import { REPORT_REASONS, useDmRequestActions } from "./useDmRequestActions";
 
 /**
  * In place of the composer of a conversation whose message request the viewer has not decided:
  * who wants to message them, that nothing they write reaches the sender before they accept, and
- * Accept, Ignore, Block, after a confirmation, and Report. Ignore and Block leave the
- * conversation's view.
+ * Accept, Ignore, Block, after a confirmation, and Report. Each runs its command on this
+ * conversation's request (`people.accept_request`, `people.ignore_request`, `people.block`,
+ * `people.report_request` with the reason picked), as the palette does. Ignore and Block leave
+ * the conversation's view.
  */
 export function DmRequestBar({ request }: { request: DmRequestView }) {
-  const actions = useDmRequestActions(request, { closeOnDismiss: true });
-  const { name, busy } = actions;
+  const { name, senderUnverified } = useDmRequestActions(request, { closeOnDismiss: true });
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  // A decision on this request is running, or waits for its confirmation.
+  const busy = useManageCommandStore(
+    (s) => s.request?.kind === "request" && s.request.requestId === request.id,
+  );
   const [reporting, setReporting] = useState(false);
+
+  const run = (commandId: string, args?: Record<string, unknown>) =>
+    runCommandFromClick(
+      commandId,
+      args,
+      workspaceId ? { target: { workspaceId, conversationId: request.conversationId } } : {},
+    );
 
   return (
     <section
@@ -29,17 +44,22 @@ export function DmRequestBar({ request }: { request: DmRequestView }) {
         </p>
         <p className="text-xs text-rim-text-faint">
           <PrincipalFingerprint principalId={request.fromPrincipalId} />
-          {actions.senderUnverified && " · their card could not be verified"}
+          {senderUnverified && " · their card could not be verified"}
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" disabled={busy} onClick={() => void actions.accept()}>
+        <Button size="sm" disabled={busy} onClick={() => void run("people.accept_request")}>
           Accept
         </Button>
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void actions.ignore()}>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => void run("people.ignore_request")}
+        >
           Ignore
         </Button>
-        <Button variant="danger" size="sm" disabled={busy} onClick={actions.askBlock}>
+        <Button variant="danger" size="sm" disabled={busy} onClick={() => void run("people.block")}>
           Block
         </Button>
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => setReporting((v) => !v)}>
@@ -55,20 +75,15 @@ export function DmRequestBar({ request }: { request: DmRequestView }) {
               size="sm"
               disabled={busy}
               onClick={() =>
-                void actions.report(reason).then((done) => done && setReporting(false))
+                void run("people.report_request", { reason }).then(
+                  (outcome) => outcome.ok && setReporting(false),
+                )
               }
             >
               {reason}
             </Button>
           ))}
         </div>
-      )}
-      {actions.confirmingBlock && (
-        <BlockConfirmDialog
-          name={actions.blockName}
-          onConfirm={() => void actions.block()}
-          onClose={actions.cancelBlock}
-        />
       )}
     </section>
   );

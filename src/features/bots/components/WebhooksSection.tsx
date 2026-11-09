@@ -9,6 +9,8 @@ import {
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeDate } from "../../../shared/utils/formatDate";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { REVOKE_WEBHOOK_DESCRIPTION } from "../confirmTexts";
 import { useAllChannels } from "../api/useAllChannels";
@@ -58,6 +60,21 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   );
   const activeBots = bots.filter((b) => !b.deactivatedAt);
 
+  // The New Webhook command asks for the new webhook form once the lists have loaded.
+  const intent = useSettingsIntentStore((s) => s.intent);
+  const clearIntent = useSettingsIntentStore((s) => s.clear);
+  const loaded = webhooks.data !== undefined && channels.data !== undefined;
+  const noBot = activeBots.length === 0;
+  const noChannel = freeChannels.length === 0;
+  useEffect(() => {
+    if (intent?.kind !== "webhook-create" || !loaded) return;
+    clearIntent();
+    if (noBot) toast.info("Add a bot first.");
+    else if (noChannel) toast.info("Every channel you can add one to already has a webhook.");
+    // Opens the form after this effect, as an answer to the command rather than to a render.
+    else queueMicrotask(() => setCreating(true));
+  }, [intent, loaded, noBot, noChannel, clearIntent]);
+
   useEffect(() => {
     if (!refocus || webhooks.isFetching) return;
     setTimeout(() => {
@@ -81,7 +98,11 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           ref={newRef}
           variant="secondary"
           size="sm"
-          onClick={() => setCreating(true)}
+          onClick={() =>
+            void runCommandFromClick("bots.new_webhook", undefined, {
+              target: { workspaceId: serverId },
+            })
+          }
           disabled={activeBots.length === 0 || freeChannels.length === 0}
         >
           New webhook
@@ -196,15 +217,9 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
           onConfirm={() => {
             const at = active.findIndex((w) => w.id === toRevoke);
             const next = active[at + 1]?.id ?? null;
-            revoke.mutate(toRevoke, {
-              onSuccess: () => {
-                setToRevoke(null);
-                setRefocus({ revokeOf: next });
-              },
-              onError: (err) => {
-                setToRevoke(null);
-                toast.error(graphqlErrorMessage(err, "Could not revoke the webhook"));
-              },
+            void revoke.mutateAsync(toRevoke).then((done) => {
+              setToRevoke(null);
+              if (done) setRefocus({ revokeOf: next });
             });
           }}
         />

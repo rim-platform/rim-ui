@@ -133,6 +133,15 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   and Unreads run the same commands as the palette and keybinds, so a click does what the
   command does. Open Direct Messages from the palette or a key now leaves Home and Unreads, as
   the rail's button does.
+- The buttons of Settings > Plugins, Bots and Agents and of a message request run their commands,
+  as the palette does: Install from local folder and Install from git URL run Install Plugin,
+  New bot and New webhook run theirs, a message request's Accept, Ignore, Block and Report run
+  the message request commands, and an agent's Disconnect, Choose what it can read, Choose its
+  commands, What it was given and Its runs run the agent commands for that agent. New webhook
+  from the palette with no conversation open opens the form in Settings > Bots, and What Agents
+  Were Given and Open Agent Runs can name one agent. The rows that revoke invites, answer join
+  requests, unblock people, deactivate bots, revoke webhooks and take back a plugin's AI access do
+  the same as their commands, with the same messages.
 - A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
   list the macro's steps with the arguments fixed for each.

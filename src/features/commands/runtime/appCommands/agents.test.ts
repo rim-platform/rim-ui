@@ -266,6 +266,27 @@ describe("agent commands", () => {
       expect(useAgentsSettingsRequestStore.getState().request).toEqual({ kind: "record" });
     });
 
+    it("opens one connected agent's runs and record when its agent_id is given", async () => {
+      useConnectedAgentsStore.setState({ agents: [AGENT] });
+      await run("agents.open_runs", { agent_id: "agent-1" });
+      expect(useAgentsSettingsRequestStore.getState().request).toEqual({
+        kind: "runs",
+        agentId: "agent-1",
+      });
+      await run("agents.open_record", { agent_id: "agent-1" });
+      expect(useAgentsSettingsRequestStore.getState().request).toEqual({
+        kind: "record",
+        agentId: "agent-1",
+      });
+    });
+
+    it("opens no runs or record of an agent that is gone", async () => {
+      await run("agents.open_runs", { agent_id: "gone" });
+      await run("agents.open_record", { agent_id: "gone" });
+      expect(toast.info).toHaveBeenCalledWith("That agent is no longer connected");
+      expect(useAgentsSettingsRequestStore.getState().request).toBeNull();
+    });
+
     it("opens the clear confirmation, never clearing itself", async () => {
       const entry = {
         at: "2026-11-06T10:00:00.000Z",

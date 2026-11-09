@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useInstalledPlugins } from "../../plugins/api/usePluginList";
 import type { PluginInfo } from "../../plugins/types";
 import { useMyServers } from "../../workspaces/api/useMyServers";
@@ -101,28 +102,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 /**
  * One connected agent on one page: what it can read, what asks the person first, what stays
- * closed, which plugin commands are approved and what it has been given.
+ * closed, which plugin commands are approved and what it has been given. Its buttons run the
+ * agent commands (disconnect, choose reads, choose commands, record, runs) on this agent.
  */
-export function AgentDetail({
-  agent,
-  onDisconnect,
-  onChoose,
-  onChoosePlugins,
-  onViewRecord,
-  onViewRuns,
-}: {
-  agent: ConnectedAgent;
-  onDisconnect: () => void;
-  onChoose: () => void;
-  onChoosePlugins: () => void;
-  onViewRecord: () => void;
-  onViewRuns: () => void;
-}) {
+export function AgentDetail({ agent }: { agent: ConnectedAgent }) {
   const qc = useQueryClient();
   const { data: servers } = useMyServers();
   const { data: plugins } = useInstalledPlugins();
   const entries = useAgentRecordStore((s) => s.entries);
   const name = showInvisibleCharacters(agent.name);
+  const run = (commandId: string) => void runCommandFromClick(commandId, { agent_id: agent.id });
 
   const workspaceName = (id: string) =>
     showInvisibleCharacters(
@@ -153,7 +142,7 @@ export function AgentDetail({
           variant="secondary"
           size="sm"
           aria-label={`Disconnect ${name}`}
-          onClick={onDisconnect}
+          onClick={() => run("agents.disconnect")}
         >
           Disconnect
         </Button>
@@ -199,7 +188,7 @@ export function AgentDetail({
           variant="secondary"
           size="sm"
           aria-label={`Choose what ${name} can read`}
-          onClick={onChoose}
+          onClick={() => run("agents.choose_reads")}
         >
           Choose what it can read
         </Button>
@@ -256,7 +245,7 @@ export function AgentDetail({
           variant="secondary"
           size="sm"
           aria-label={`Choose the commands of ${name}`}
-          onClick={onChoosePlugins}
+          onClick={() => run("agents.choose_plugin_commands")}
         >
           Choose its commands
         </Button>
@@ -321,7 +310,7 @@ export function AgentDetail({
             variant="secondary"
             size="sm"
             aria-label={`What ${name} was given`}
-            onClick={onViewRecord}
+            onClick={() => run("agents.open_record")}
           >
             What it was given
           </Button>
@@ -330,7 +319,7 @@ export function AgentDetail({
             variant="secondary"
             size="sm"
             aria-label={`Runs of ${name}`}
-            onClick={onViewRuns}
+            onClick={() => run("agents.open_runs")}
           >
             Its runs
           </Button>

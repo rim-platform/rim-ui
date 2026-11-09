@@ -4,12 +4,18 @@ import { create } from "zustand";
 export type SettingsIntent =
   | { kind: "bot-create" }
   | { kind: "bot-edit"; botUserId: string }
+  | { kind: "webhook-create" }
   | { kind: "block-principal"; principalId: string }
   | {
       kind: "plugin";
       action: "install" | "toggle" | "update" | "uninstall";
       pluginId?: string;
+      /** For `install`: start installing from a folder or a git URL rather than offer the ways. */
+      source?: PluginInstallSource;
     };
+
+/** A way to install a plugin that the Install Plugin command can start. */
+export type PluginInstallSource = "folder" | "git";
 
 interface SettingsIntentState {
   intent: SettingsIntent | null;

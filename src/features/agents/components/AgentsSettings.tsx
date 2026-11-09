@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
+import { settingsTabCommandId } from "../../settings/settingsTabs";
 import { rejectOutsideAgentConfirmation } from "../../agent/state/confirmationModalStore";
 import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
 import {
@@ -12,7 +14,6 @@ import {
   type AgentBridgeStatus,
 } from "../api/agentBridge";
 import { agentAvailable } from "../../agent/agentAvailability";
-import { useShellStore } from "../../../shell/state/useShellStore";
 import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { plural } from "../runtime/runs";
@@ -44,7 +45,6 @@ export function AgentsSettings() {
   const [clearingAll, setClearingAll] = useState(false);
   const entries = useAgentRecordStore((s) => s.entries);
   const hasRecord = entries.length > 0;
-  const setMainSurface = useShellStore((s) => s.setMainSurface);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected =
     agents.find((agent) => agent.id === selectedId) ?? (agents.length === 1 ? agents[0] : null);
@@ -72,7 +72,7 @@ export function AgentsSettings() {
       const request = useAgentsSettingsRequestStore.getState().take();
       if (!request) return;
       if (request.kind === "allRuns") return setAllRuns(true);
-      if (request.kind === "record") return setViewingAll(true);
+      if (request.kind === "record" && request.agentId === undefined) return setViewingAll(true);
       if (request.kind === "clearRecord") return setClearingAll(true);
       const agent = useConnectedAgentsStore
         .getState()
@@ -84,7 +84,9 @@ export function AgentsSettings() {
       setSelectedId(agent.id);
       if (request.kind === "disconnect") setDisconnecting(agent);
       else if (request.kind === "chooseReads") setChoosing(agent);
-      else setChoosingPlugins(agent);
+      else if (request.kind === "choosePlugins") setChoosingPlugins(agent);
+      else if (request.kind === "runs") setRunsOf(agent);
+      else setViewing(agent);
     };
     take();
     return useAgentsSettingsRequestStore.subscribe(take);
@@ -201,30 +203,31 @@ export function AgentsSettings() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => setMainSurface({ kind: "settings", tab: "agent" })}
+            onClick={() => void runCommandFromClick(settingsTabCommandId("agent"))}
           >
             Open AI Agent
           </Button>
         </div>
       )}
 
-      {selected && (
-        <AgentDetail
-          agent={selected}
-          onDisconnect={() => setDisconnecting(selected)}
-          onChoose={() => setChoosing(selected)}
-          onChoosePlugins={() => setChoosingPlugins(selected)}
-          onViewRecord={() => setViewing(selected)}
-          onViewRuns={() => setRunsOf(selected)}
-        />
-      )}
+      {selected && <AgentDetail agent={selected} />}
 
       {hasRecord && (
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" size="sm" onClick={() => setViewingAll(true)}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => void runCommandFromClick("agents.open_record")}
+          >
             What agents were given
           </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setAllRuns(true)}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => void runCommandFromClick("agents.open_runs")}
+          >
             All runs
           </Button>
         </div>

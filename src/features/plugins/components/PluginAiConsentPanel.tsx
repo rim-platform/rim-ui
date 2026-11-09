@@ -171,23 +171,7 @@ export function PluginConsentRow({ plugin }: PluginConsentRowProps) {
   }
 
   function handleRevokeAll() {
-    revokeAll.mutate(
-      { pluginId: plugin.plugin_id, commandIds: plugin.approved_ai_commands },
-      {
-        onSuccess: ({ failed }) => {
-          if (failed.length > 0) {
-            toast.error("Some commands could not be revoked", {
-              description: `Failed: ${failed.join(", ")}`,
-            });
-          }
-        },
-        onError: (err) => {
-          toast.error("Failed to revoke AI access", {
-            description: friendlyError(err),
-          });
-        },
-      },
-    );
+    revokeAll.mutate({ pluginId: plugin.plugin_id, commandIds: plugin.approved_ai_commands });
   }
 
   const hasAiCommands = plugin.ai_callable_commands.length > 0;

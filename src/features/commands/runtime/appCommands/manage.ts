@@ -21,7 +21,11 @@ import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
 import type { CommandDefinition } from "../../types";
 import { currentCommandContext } from "../commandContext";
 import type { LocalHandler } from "../commandDispatcher";
-import { useManageCommandStore, type ManageRequest } from "../../state/useManageCommandStore";
+import {
+  useManageCommandStore,
+  type ManageRequest,
+  type RequestAction,
+} from "../../state/useManageCommandStore";
 import { useSettingsIntentStore, type SettingsIntent } from "../../state/useSettingsIntentStore";
 import { localCommand } from "./localCommand";
 import { refuseManage } from "./manageAvailability";
@@ -230,6 +234,12 @@ function personHandler(
 ): LocalHandler {
   return (_args, commandContext) => {
     if (refuseManage(id)) return;
+    // In a message request's conversation, the person to block is the one who sent it.
+    const request = purpose === "block" ? contextRequest(commandContext) : undefined;
+    if (request) {
+      open({ kind: "request", action: "block", requestId: request.id });
+      return;
+    }
     open({ kind: "person", purpose, userId: contextPerson(commandContext) });
   };
 }
@@ -259,9 +269,17 @@ function clearFlag(_args: unknown, commandContext: Record<string, unknown> | und
     .catch(() => undefined);
 }
 
+/**
+ * Opens the new webhook form: for the channel of the context, or, with no conversation in the
+ * context, the one in Settings > Bots that asks for the channel.
+ */
 function openWebhook(commandContext: Record<string, unknown> | undefined): void {
   if (refuseManage("bots.new_webhook")) return;
-  const { conversation } = conversationOf(commandContext);
+  const { conversationId, conversation } = conversationOf(commandContext);
+  if (!conversationId) {
+    openSettings("bots", { kind: "webhook-create" });
+    return;
+  }
   if (!conversation || conversation.conversationType !== ConversationTypeEnum.CHANNEL) {
     toast.info("Open a channel first");
     return;
@@ -269,20 +287,31 @@ function openWebhook(commandContext: Record<string, unknown> | undefined): void 
   open({ kind: "new-webhook", conversation });
 }
 
-/** A command on the message request of the open conversation; with none, the requests page. */
-function requestHandler(
-  id: string,
-  action: "accept" | "ignore" | "read-first" | "report",
-): LocalHandler {
-  return (_args, commandContext) => {
+/** The undecided message request this account received in the context's conversation. */
+function contextRequest(
+  commandContext: Record<string, unknown> | undefined,
+): DmRequestView | undefined {
+  const { conversationId } = conversationOf(commandContext);
+  const pending = queryClient.getQueryData<DmRequestView[]>(
+    queryKeys.dmRequests(DmRequestStatus.PENDING),
+  );
+  return incomingRequestOf(pending, conversationId);
+}
+
+/**
+ * A command on the message request of the context's conversation; with none, the requests page.
+ * Reporting takes its reason from a `reason` argument, else asks for one.
+ */
+function requestHandler(id: string, action: Exclude<RequestAction, "block">): LocalHandler {
+  return (args, commandContext) => {
     if (refuseManage(id)) return;
-    const { conversationId } = conversationOf(commandContext);
-    const pending = queryClient.getQueryData<DmRequestView[]>(
-      queryKeys.dmRequests(DmRequestStatus.PENDING),
-    );
-    const request = incomingRequestOf(pending, conversationId);
+    const request = contextRequest(commandContext);
     if (request) {
-      open({ kind: "request", action, requestId: request.id });
+      const reason =
+        action === "report" && typeof args?.reason === "string" && args.reason.trim() !== ""
+          ? args.reason.trim()
+          : undefined;
+      open({ kind: "request", action, requestId: request.id, ...(reason && { reason }) });
       return;
     }
     const workspaceId = useWorkspaceStore.getState().workspaceId;
@@ -337,10 +366,10 @@ export const MANAGE_HANDLERS: Record<string, LocalHandler> = {
   "bots.deactivate": opens("bots.deactivate", { kind: "bot", action: "deactivate" }),
   "bots.new_webhook": (_args, commandContext) => openWebhook(commandContext),
   "bots.revoke_webhook": opens("bots.revoke_webhook", { kind: "revoke-webhook" }),
-  "plugins.install": () => {
-    if (!refuseManage("plugins.install")) {
-      openSettings("plugins", { kind: "plugin", action: "install" });
-    }
+  "plugins.install": (args) => {
+    if (refuseManage("plugins.install")) return;
+    const source = args?.source === "folder" || args?.source === "git" ? args.source : undefined;
+    openSettings("plugins", { kind: "plugin", action: "install", ...(source && { source }) });
   },
   "plugins.toggle": opens("plugins.toggle", { kind: "plugin", action: "toggle" }),
   "plugins.update": opens("plugins.update", { kind: "plugin", action: "update" }),
