@@ -51,6 +51,7 @@ import {
   dispatchCommand,
   hasLocalHandler,
   runDesktopLocalCommand,
+  runLocalCommandForCaller,
   targetPickerKind,
 } from "../commandDispatcher";
 import { LOCAL_COMMANDS } from "../localCommands";
@@ -337,6 +338,19 @@ describe("desktop commands", () => {
 });
 
 describe("keybind, macro and pipeline commands", () => {
+  it("assigns a keybind to the workspace a control names, not the open conversation", () => {
+    useShellStore.getState().setSelectedConversationId("c-1");
+    queryClient.setQueryData(queryKeys.myServers(), [{ id: "ws-2", name: "Beta" }]);
+    expect(
+      runLocalCommandForCaller("settings.assign_keybind", {}, { workspaceId: "ws-2" }),
+    ).toEqual({ ok: true, message: "" });
+    expect(useQuickAccessStore.getState().target).toEqual({
+      kind: "workspace",
+      workspaceId: "ws-2",
+      label: "Beta",
+    });
+  });
+
   it("assigns a keybind to the open workspace when no conversation is open", () => {
     run("settings.assign_keybind");
     expect(useQuickAccessStore.getState().target).toMatchObject({

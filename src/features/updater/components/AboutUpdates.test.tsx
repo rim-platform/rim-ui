@@ -8,6 +8,12 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => runtime,
 }));
 
+// The update commands read the platform this app runs on.
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => runtime.platform,
+}));
+
 vi.mock("../api/updaterApi", () => ({
   BUILD_VERSION: "0.1.0",
   fetchUpdaterConfigured: vi.fn(),

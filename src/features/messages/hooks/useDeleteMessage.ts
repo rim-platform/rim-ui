@@ -1,12 +1,9 @@
 import { useCallback } from "react";
-import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
-import { runWithHumanConfirmation } from "../../commands/runtime/humanConfirmation";
+import { runCommandFromClick, type ClickSource } from "../../commands/runtime/runFromClick";
 import { queryKeys } from "../../../core/query/keys";
-import { toast } from "../../../shared/toast";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type { MessagesPage } from "../api/useMessages";
 
 const DELETE_MESSAGE = "chat.delete_message";
@@ -38,65 +35,53 @@ export function markMessageDeleted(
   );
 }
 
+/** How {@link useDeleteMessage}'s function deletes a message. */
+export interface DeleteMessageOptions {
+  /** Deletes another member's message as an Owner or Moderator, who must type the verb. */
+  asModerator?: boolean;
+  /** The kind of control that asked; a menu item when left out. */
+  source?: ClickSource;
+  /** The thread the message is in, when it is a reply in one. */
+  threadId?: string;
+}
+
+/**
+ * A function that deletes a message of `conversationId` with `chat.delete_message`, as the
+ * palette runs it on that message: the author's own, or with `asModerator` anyone's for an
+ * Owner or Moderator. The server holds the delete until the person confirms it in the
+ * confirmation dialog, which says what deleting does; a moderator must also type the verb, the
+ * author need not. The message shows as deleted once the server reports success, and a
+ * moderator is told so. The function resolves `true` when the message was deleted; a failure is
+ * shown as the command's refusal.
+ */
 export function useDeleteMessage(
   workspaceId: string | null | undefined,
   conversationId: string | null | undefined,
 ) {
-  const executeCommandMutation = useExecuteCommandMutation();
-  const qc = useQueryClient();
-
-  /**
-   * Deletes a message: the author's own, or with `asModerator` anyone's for Owner/Moderator.
-   * The server holds the delete until the user confirms it in the confirmation dialog; a
-   * moderator must also type the verb, the author need not. The message leaves the cache only
-   * once the server reports success. Resolves `true` when the message was deleted; failures
-   * are toasted.
-   */
-  const deleteMessage = useCallback(
-    async (messageId: string, options: { asModerator?: boolean } = {}): Promise<boolean> => {
+  return useCallback(
+    async (messageId: string, options: DeleteMessageOptions = {}): Promise<boolean> => {
       if (!workspaceId || !conversationId) return false;
-
-      const commandContext = { workspaceId, conversationId, selectedMessageId: messageId };
-      try {
-        const outcome = await runWithHumanConfirmation(
-          async (confirmation) => {
-            const res = await executeCommandMutation.mutateAsync({
-              commandId: DELETE_MESSAGE,
-              commandContext,
-              confirmation,
-            });
-            return res.executeCommand;
-          },
-          {
-            commandId: DELETE_MESSAGE,
-            title: "Delete Message",
-            description: options.asModerator
-              ? MODERATOR_DELETE_DESCRIPTION
-              : "Delete this message. This cannot be undone.",
-            sensitivity: CommandSensitivity.RESTRICTED,
-            // Deleting someone else's message needs the verb typed; one's own does not.
-            ...(options.asModerator ? {} : { verb: null }),
-          },
-        );
-        if (outcome.kind === "cancelled" || outcome.kind === "stale") return false;
-        if (outcome.kind === "unconfirmed") {
-          toast.error(outcome.message);
-          return false;
-        }
-        if (outcome.result.status !== "SUCCESS") {
-          toast.error(outcome.result.message || "Failed to delete message");
-          return false;
-        }
-      } catch (err) {
-        toast.error(graphqlErrorMessage(err, "Failed to delete message"));
-        return false;
-      }
-
-      markMessageDeleted(qc, workspaceId, conversationId, messageId);
-      return true;
+      const outcome = await runCommandFromClick(DELETE_MESSAGE, undefined, {
+        source: options.source ?? "menu",
+        target: {
+          workspaceId,
+          conversationId,
+          selectedMessageId: messageId,
+          ...(options.threadId && { threadId: options.threadId }),
+        },
+        confirmation: {
+          title: "Delete Message",
+          description: options.asModerator
+            ? MODERATOR_DELETE_DESCRIPTION
+            : "Delete this message. This cannot be undone.",
+          sensitivity: CommandSensitivity.RESTRICTED,
+          // Deleting someone else's message needs the verb typed; one's own does not.
+          ...(options.asModerator ? {} : { verb: null }),
+        },
+        successToast: options.asModerator ? "Message deleted" : null,
+      });
+      return outcome.ok;
     },
-    [workspaceId, conversationId, executeCommandMutation, qc],
+    [workspaceId, conversationId],
   );
-
-  return deleteMessage;
 }

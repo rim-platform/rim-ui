@@ -161,14 +161,3 @@ export function togglePipeline(vars: { pipelineId: string; enabled: boolean }) {
     enabled: vars.enabled,
   });
 }
-
-export function useTogglePipelineMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { pipelineId: string; enabled: boolean; serverId: string }) =>
-      togglePipeline(vars),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.pipelines(vars.serverId) });
-    },
-  });
-}

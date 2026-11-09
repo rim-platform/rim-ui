@@ -473,10 +473,7 @@ export function SettingsPage() {
                 )}
 
                 {shownTab === "account" && (
-                  <AccountSettings
-                    onNavigateToProfile={() => setActiveTab("profile")}
-                    onNavigateToWorkspace={() => setActiveTab("workspace")}
-                  />
+                  <AccountSettings onNavigateToWorkspace={() => setActiveTab("workspace")} />
                 )}
                 {shownTab === "about" && <AboutRim />}
               </Suspense>

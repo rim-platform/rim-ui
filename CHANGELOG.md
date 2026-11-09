@@ -148,6 +148,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   commands, as the palette does: the audit log records a click as `ui` or `context_menu`, a
   click asks for the confirmation the palette asks for and only once, and a failure names the
   missing permission.
+- A message's menu and reaction chips, the list's pin key, the pinned list's Unpin, the report
+  dialog, a workspace's menu on the rail, Pause notifications and the Settings buttons for
+  updates, the log folder, Back up now, shortcuts, macros, pipelines, status and signing out run
+  the same commands as the palette: the same confirmation, and a refusal says why, such as the
+  permission that is missing. Back up now and opening the log folder answer in a toast, and Set
+  status opens the status dialog.
 - A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
   list the macro's steps with the arguments fixed for each.

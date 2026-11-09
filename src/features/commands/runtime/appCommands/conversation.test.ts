@@ -304,4 +304,13 @@ describe("conversation dialogs and the inbox", () => {
     await run("chat.browse_channels");
     expect(useConversationDialogStore.getState().browseChannelsIn).toBe("ws-1");
   });
+
+  it("opens Browse channels for the workspace a control names", async () => {
+    const command = LOCAL_COMMANDS.find((c) => c.id === "chat.browse_channels")!;
+    await dispatchCommand(command, executeBackend, {
+      commandContext: currentCommandContext({ workspaceId: "ws-2" }),
+    });
+    expect(useConversationDialogStore.getState().browseChannelsIn).toBe("ws-2");
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+  });
 });

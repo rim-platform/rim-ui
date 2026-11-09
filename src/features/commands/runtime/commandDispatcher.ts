@@ -15,6 +15,7 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import { useConversationDialogStore } from "../../conversations/state/useConversationDialogStore";
 import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
 import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
@@ -77,7 +78,7 @@ import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { MANAGE_HANDLERS } from "./appCommands/manage";
 import { withClientLabel } from "./localCommands";
-import { showWorkspace, targetWorkspaceOf } from "./appCommands/targetWorkspace";
+import { targetWorkspaceOf } from "./appCommands/targetWorkspace";
 import { tomorrowMorning } from "../../notifications/rules";
 import { accountMacrosOn } from "../../macros/api/useAccountMacros";
 import { isMacroId } from "../../macros/runtime/macroCommands";
@@ -446,7 +447,13 @@ const localHandlers: Record<string, LocalHandler> = {
   "workspace.cycle_recent_activity": () => {
     cycleRecentActivity();
   },
-  "chat.create_channel": () => {
+  "chat.create_channel": (args, commandContext) => {
+    // Another workspace's channel dialog opens without opening that workspace.
+    const workspaceId = targetWorkspaceOf(args, commandContext);
+    if (workspaceId && workspaceId !== useWorkspaceStore.getState().workspaceId) {
+      useConversationDialogStore.getState().openCreateChannel(workspaceId);
+      return;
+    }
     // Switch to the conversation surface, then open the channel dialog
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewChannelDialog(true);
@@ -500,9 +507,14 @@ const localHandlers: Record<string, LocalHandler> = {
     markWorkspaceRead(workspaceId);
   },
   "chat.mark_as_unread": (args, commandContext) => {
-    const workspaceId = spaceOf(args ?? {});
+    // The arguments' workspace and conversation, else the context's, else the open ones.
+    const workspaceId =
+      argString(args, "serverId", "server_id") ??
+      argString(commandContext, "workspaceId") ??
+      useWorkspaceStore.getState().workspaceId;
     const conversationId =
       argString(args, "conversationId", "conversation_id") ??
+      argString(commandContext, "conversationId") ??
       useShellStore.getState().selectedConversationId;
     const messageId =
       argString(args, "messageId", "message_id") ?? selectedMessageOf(commandContext);
@@ -521,14 +533,16 @@ const localHandlers: Record<string, LocalHandler> = {
     return resultText("Commands reloaded");
   },
   "admin.invite_member": (args, commandContext) => {
-    // The invite dialog belongs to the open workspace: another one is opened first.
+    // The open conversation's header shows the open workspace's invite dialog; any other
+    // workspace's, or one asked for away from a conversation, opens without switching.
     const workspaceId = targetWorkspaceOf(args, commandContext);
     const shell = useShellStore.getState();
-    if (workspaceId && workspaceId !== useWorkspaceStore.getState().workspaceId) {
-      showWorkspace(workspaceId);
-      shell.setMainSurface({ kind: "conversation" });
-    }
-    shell.setShowInviteDialog(true);
+    const inHeader =
+      workspaceId === useWorkspaceStore.getState().workspaceId &&
+      shell.mainSurface.kind === "conversation" &&
+      shell.selectedConversationId !== null;
+    if (inHeader) shell.setShowInviteDialog(true);
+    else if (workspaceId) useConversationDialogStore.getState().openInvite(workspaceId);
   },
   "workspace.toggle_lens_picker": () => {
     const shell = useShellStore.getState();

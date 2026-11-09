@@ -1,6 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
+import { runPinCommand } from "../api/messageCommands";
 import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
@@ -104,18 +104,6 @@ export function useMessageNavigation({
   );
   const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null);
   const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
-
-  const pinMessage = usePinMessageMutation();
-  const unpinMessage = useUnpinMessageMutation();
-
-  // Stabilize mutation functions via refs so the handleMessageListKeyDown
-  // callback is not recreated every render (useMutation returns new objects).
-  const pinMessageRef = useRef(pinMessage.mutate);
-  const unpinMessageRef = useRef(unpinMessage.mutate);
-  useLayoutEffect(() => {
-    pinMessageRef.current = pinMessage.mutate;
-    unpinMessageRef.current = unpinMessage.mutate;
-  }, [pinMessage.mutate, unpinMessage.mutate]);
 
   /** Select a row and scroll it into view. */
   const selectIndex = useCallback(
@@ -335,14 +323,15 @@ export function useMessageNavigation({
           if (!canPin) break;
           e.preventDefault();
           if (!workspaceId || !conversationId) break;
-          const vars = { serverId: workspaceId, conversationId, messageId: msg.id };
-          if (msg.isPinned) {
-            unpinMessageRef.current(vars);
-            toast.success("Message unpinned");
-          } else {
-            pinMessageRef.current(vars);
-            toast.success("Message pinned");
-          }
+          // The list key runs the pin or unpin command on the selected message.
+          void runPinCommand(
+            { workspaceId, conversationId, selectedMessageId: msg.id },
+            !msg.isPinned,
+            {
+              source: "key",
+              successToast: msg.isPinned ? "Message unpinned" : "Message pinned",
+            },
+          );
           break;
         }
         case "d": {

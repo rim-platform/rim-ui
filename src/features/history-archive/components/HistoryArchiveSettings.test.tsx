@@ -22,6 +22,9 @@ const identityBackup = vi.hoisted(() => ({
 }));
 vi.mock("../../key-identity/api/identityBackup", () => identityBackup);
 
+const runCommandFromClick = vi.hoisted(() => vi.fn());
+vi.mock("../../commands/runtime/runFromClick", () => ({ runCommandFromClick }));
+
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { ArchiveStatus } from "../api/historyArchive";
@@ -92,6 +95,7 @@ function type(label: string, value: string) {
 describe("HistoryArchiveSettings", () => {
   beforeEach(() => {
     tauri.available = true;
+    runCommandFromClick.mockReset();
     mockInvoke.mockReset();
     mockRequestCacheSync.mockReset();
     Object.values(identityBackup).forEach((fn) => fn.mockReset());
@@ -275,8 +279,9 @@ describe("HistoryArchiveSettings", () => {
     renderSettings();
 
     expect(await screen.findByText("/home/ada/Dropbox/RIM")).toBeInTheDocument();
+    // Back up now runs the command, which says in a toast how it went.
     fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
-    expect(await screen.findByText("Backed up 40 message changes in 2 files.")).toBeInTheDocument();
+    expect(runCommandFromClick).toHaveBeenCalledWith("settings.back_up_history");
 
     fireEvent.click(screen.getByRole("button", { name: "Restore from archive" }));
     expect(await screen.findByText(/1 file has not synced/)).toBeInTheDocument();
@@ -803,7 +808,6 @@ describe("HistoryArchiveSettings device backups", () => {
     backend({
       history_archive_status: inOneDrive,
       history_archive_devices: devices,
-      history_archive_export: { segments: 1, messages: 3, conversations: 1 },
     });
     renderSettings();
 
@@ -818,10 +822,6 @@ describe("HistoryArchiveSettings device backups", () => {
     const warnings = screen.getAllByText(/Nothing backed up from it for over seven days/);
     expect(warnings).toHaveLength(1);
     expect(rows[1]).toContainElement(warnings[0]);
-
-    // A backup from here reads the devices again.
-    fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
-    await waitFor(() => expect(devices).toHaveBeenCalledTimes(2));
   });
 
   it("says when no device has backed up yet", async () => {

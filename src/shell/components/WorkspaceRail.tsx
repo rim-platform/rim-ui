@@ -8,13 +8,7 @@ import { ownerName, workspaceLabels } from "../../features/workspaces/workspaceL
 import { useIsDirectSpace, useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
 import { unreadTotal, useUnreadStore } from "../../features/conversations/state/useUnreadStore";
-import { BrowseChannelsDialog } from "../../features/conversations/components/BrowseChannelsDialog";
-import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
-import { InviteDialog } from "../../features/settings/components/InviteDialog";
-import {
-  useWorkspaceMenuItems,
-  type WorkspaceMenuDialog,
-} from "../../features/workspaces/hooks/useWorkspaceMenuItems";
+import { useWorkspaceMenuItems } from "../../features/workspaces/hooks/useWorkspaceMenuItems";
 import { cn } from "../../shared/ui/cn";
 import { useContextMenu } from "../../shared/ui/contextMenu/useContextMenu";
 import { handleVerticalStripKeys } from "../../shared/ui/focusNavigation";
@@ -86,10 +80,6 @@ export function WorkspaceRail() {
   const homeCount = useHomeMentionCount();
   const counts = useUnreadStore((s) => s.counts);
   const spaceOf = useUnreadStore((s) => s.spaceOf);
-  const [dialog, setDialog] = useState<{ kind: WorkspaceMenuDialog; workspaceId: string } | null>(
-    null,
-  );
-  const closeDialog = useCallback(() => setDialog(null), []);
 
   return (
     <>
@@ -154,7 +144,6 @@ export function WorkspaceRail() {
               unread={unread}
               active={active}
               onSelect={() => setWorkspaceId(server.id)}
-              onOpenDialog={(kind) => setDialog({ kind, workspaceId: server.id })}
             />
           );
         })}
@@ -173,15 +162,6 @@ export function WorkspaceRail() {
           <RailFooter auditLog={Boolean(workspaceId) && !directSpaceOpen && !acrossWorkspaces} />
         </div>
       </aside>
-      {dialog?.kind === "invite" && (
-        <InviteDialog open workspaceId={dialog.workspaceId} onClose={closeDialog} />
-      )}
-      {dialog?.kind === "browse-channels" && (
-        <BrowseChannelsDialog workspaceId={dialog.workspaceId} onClose={closeDialog} />
-      )}
-      {dialog?.kind === "create-channel" && (
-        <NewChannelDialog workspaceId={dialog.workspaceId} onClose={closeDialog} />
-      )}
     </>
   );
 }
@@ -198,7 +178,6 @@ function WorkspaceRailButton({
   unread,
   active,
   onSelect,
-  onOpenDialog,
 }: {
   workspaceId: string;
   name: string;
@@ -206,15 +185,12 @@ function WorkspaceRailButton({
   unread: number;
   active: boolean;
   onSelect: () => void;
-  onOpenDialog: (dialog: WorkspaceMenuDialog) => void;
 }) {
   const [reached, setReached] = useState(false);
   const getItems = useWorkspaceMenuItems({
     workspaceId,
-    label,
     // The open workspace's menu data loads with the rail, so its first menu is complete.
     enabled: reached || active,
-    onOpenDialog,
   });
   const { bind, refresh, menu: openMenu } = useContextMenu();
   const menu = bind(getItems, { label: `${label} actions` });

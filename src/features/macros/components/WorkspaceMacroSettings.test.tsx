@@ -2,7 +2,8 @@ import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
-import { createTestQueryClient } from "../../../test/utils";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { limitsQueryClient } from "../../../test/limits";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
@@ -65,12 +66,13 @@ function serve(executeMacro: (variables: Record<string, unknown>) => unknown) {
   });
 }
 
-/** Renders the settings, against a server whose macro cap is `macrosPerWorkspace` when given. */
+/**
+ * Renders the settings, against a server whose macro cap is `macrosPerWorkspace` when given,
+ * else with the app's query client, which the Run macro command reads the macros from.
+ */
 function renderSettings(macrosPerWorkspace?: number) {
   const client =
-    macrosPerWorkspace === undefined
-      ? createTestQueryClient()
-      : limitsQueryClient({ macrosPerWorkspace });
+    macrosPerWorkspace === undefined ? queryClient : limitsQueryClient({ macrosPerWorkspace });
   render(
     <QueryClientProvider client={client}>
       <WorkspaceMacroSettings />
@@ -83,6 +85,10 @@ async function clickRun() {
   fireEvent.click(await screen.findByTitle("Run macro"));
 }
 
+afterEach(() => {
+  queryClient.clear();
+});
+
 describe("WorkspaceMacroSettings running a macro", () => {
   beforeEach(() => {
     requestMock.mockReset();
@@ -90,6 +96,8 @@ describe("WorkspaceMacroSettings running a macro", () => {
     vi.mocked(toast.error).mockReset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useConfirmationModalStore.getState().reset();
+    // The app keeps the workspace's palette commands, whose sensitivity the confirmation shows.
+    queryClient.setQueryData(queryKeys.commands("PALETTE", "ws-1"), [deleteCommand]);
   });
 
   it("runs a macro the server does not hold, without confirmedDangerous", async () => {

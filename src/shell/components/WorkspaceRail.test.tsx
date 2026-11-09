@@ -13,6 +13,24 @@ import { callsTo, routeRequests } from "../../features/conversations/__fixtures_
 import { fakeServerInfo } from "../../test/serverInfo";
 import { useWorkspaceActionStore } from "../../features/workspaces/state/useWorkspaceActionStore";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../../features/updater/api/serverCapabilities";
+import { CommandInitiator } from "../../core/graphql/generated/schema-types";
+import { queryClient } from "../../core/query/queryClient";
+import { useConversationDialogStore } from "../../features/conversations/state/useConversationDialogStore";
+import {
+  backendCommand,
+  COMMAND_OK,
+  paletteInput,
+  serveHostCommands,
+} from "../../test/clickCommands";
+
+const DND = backendCommand("notifications.dnd", { title: "Do Not Disturb" });
+
+/** The `notifications.dnd` runs sent. */
+function dndRuns(): Record<string, unknown>[] {
+  return callsTo(requestMock, "mutation ExecuteCommand").map(
+    (vars) => vars.input as Record<string, unknown>,
+  );
+}
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../core/graphql/client", () => ({
@@ -370,6 +388,11 @@ describe("WorkspaceRail — audit log, Settings and the account", () => {
 });
 
 describe("WorkspaceRail — workspace context menu", () => {
+  /** Renders with the app's query client, whose cache the menu's commands read. */
+  function renderWithQuery(ui: React.ReactElement) {
+    return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  }
+
   function serve(
     role: ServerMemberRoleGql,
     dndPaused = false,
@@ -377,6 +400,7 @@ describe("WorkspaceRail — workspace context menu", () => {
     defaultWorkspace?: string,
     capabilities: string[] = [],
   ) {
+    serveHostCommands("ws-2", [DND]);
     routeRequests(requestMock, {
       "query ServerInfo": () => ({
         serverInfo: fakeServerInfo({}, { defaultWorkspace, capabilities }),
@@ -402,17 +426,7 @@ describe("WorkspaceRail — workspace context menu", () => {
         },
       }),
       "mutation MarkAllAsRead": () => ({ markAllAsRead: true }),
-      "mutation SetDoNotDisturb": (vars) => ({
-        setDoNotDisturb: {
-          serverId: vars.serverId,
-          defaultLevel: "ALL",
-          keywords: [],
-          dnd: null,
-          dndPaused: vars.paused,
-          dndPausedUntil: vars.until ?? null,
-          digest: "OFF",
-        },
-      }),
+      "mutation ExecuteCommand": () => ({ executeCommand: COMMAND_OK }),
     });
   }
 
@@ -440,6 +454,15 @@ describe("WorkspaceRail — workspace context menu", () => {
     requestMock.mockReset();
     setWorkspaceId.mockReset();
     useQuickAccessStore.getState().close();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+    useConversationDialogStore.setState({
+      browseChannelsIn: null,
+      inviteTo: null,
+      createChannelIn: null,
+    });
   });
 
   it("gives the owner of another workspace its full menu, and acts there without switching", async () => {
@@ -472,7 +495,7 @@ describe("WorkspaceRail — workspace context menu", () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await openBetaMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "Reports…" }));
-    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    await waitFor(() => expect(setWorkspaceId).toHaveBeenCalledWith("ws-2"));
     expect(useShellStore.getState().mainSurface).toEqual({
       kind: "settings",
       tab: "workspace-moderation",
@@ -487,7 +510,7 @@ describe("WorkspaceRail — workspace context menu", () => {
       expect(menuLabels()).toContain("Join requests…: 2 waiting");
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Join requests…: 2 waiting" }));
-    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    await waitFor(() => expect(setWorkspaceId).toHaveBeenCalledWith("ws-2"));
     expect(useShellStore.getState().mainSurface).toEqual({
       kind: "settings",
       tab: "workspace-moderation",
@@ -526,11 +549,22 @@ describe("WorkspaceRail — workspace context menu", () => {
         name: "For 1 hour",
       }),
     );
-    await waitFor(() => expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toHaveLength(1));
-    expect(callsTo(requestMock, "mutation SetDoNotDisturb")[0]).toMatchObject({
-      serverId: "ws-2",
-      paused: true,
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    const sent = dndRuns()[0];
+    expect(sent).toMatchObject({
+      commandId: "notifications.dnd",
+      args: { mode: "until" },
+      commandContext: { workspaceId: "ws-2" },
+      initiator: CommandInitiator.CONTEXT_MENU,
     });
+    const { initiator: _initiator, ...input } = sent;
+    expect(input).toEqual(
+      await paletteInput(
+        DND,
+        sent.commandContext as Record<string, unknown>,
+        sent.args as Record<string, unknown>,
+      ),
+    );
     expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
@@ -542,11 +576,31 @@ describe("WorkspaceRail — workspace context menu", () => {
       expect(menuLabels()).toContain("Resume notifications");
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Resume notifications" }));
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    expect(dndRuns()[0]).toMatchObject({
+      args: { mode: "off" },
+      commandContext: { workspaceId: "ws-2" },
+    });
+  });
+
+  it("opens that workspace's channel, invite and new-channel dialogs without switching", async () => {
+    serve(ServerMemberRoleGql.OWNER);
+    const beta = await openBetaMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toEqual([
-        { serverId: "ws-2", paused: false, until: null },
-      ]),
+      expect(useConversationDialogStore.getState().browseChannelsIn).toBe("ws-2"),
     );
+    useConversationDialogStore.getState().closeBrowseChannels();
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Invite people…" }));
+    await waitFor(() => expect(useConversationDialogStore.getState().inviteTo).toBe("ws-2"));
+    useConversationDialogStore.getState().closeInvite();
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
+    await waitFor(() => expect(useConversationDialogStore.getState().createChannelIn).toBe("ws-2"));
+    expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
   it("gives a member no invite or settings, and a guest no channels either", async () => {
@@ -562,7 +616,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   it("gives a member of the default workspace no Create channel", async () => {
     serve(ServerMemberRoleGql.MEMBER, false, 0, "ws-2");
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -579,7 +633,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   /** Opens Beta's menu once its role and the server's capabilities are cached. */
   async function openBetaMenuWithCapabilities() {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -605,6 +659,7 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Leave workspace…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Leave workspace…" }));
+    await waitFor(() => expect(useWorkspaceActionStore.getState().action).not.toBeNull());
     expect(useWorkspaceActionStore.getState().action).toEqual({
       kind: "leave",
       workspaceId: "ws-2",
@@ -668,7 +723,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   it("hides browsing and creating channels from a guest", async () => {
     serve(ServerMemberRoleGql.GUEST);
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -681,6 +736,7 @@ describe("WorkspaceRail — workspace context menu", () => {
     fireEvent.keyDown(beta, { key: "ContextMenu" });
     expect(menuLabels()).toEqual(["Pause notifications", "Assign keybind…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Assign keybind…" }));
+    await waitFor(() => expect(useQuickAccessStore.getState().target).not.toBeNull());
     expect(useQuickAccessStore.getState().target).toEqual({
       kind: "workspace",
       workspaceId: "ws-2",

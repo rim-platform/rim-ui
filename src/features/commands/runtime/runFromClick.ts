@@ -37,7 +37,10 @@ export interface ClickOptions {
   successToast?: string | null | ((result: CommandResult) => string | null);
   /** The title a refusal shows in place of the command's title. */
   errorTitle?: string;
-  /** Throws a failure as an `Error` with the server's message instead of showing it. */
+  /**
+   * Throws a failure as an `Error` with the server's message instead of showing it; an error the
+   * request threw is its `cause`.
+   */
   throwOnError?: boolean;
   /** Runs in place of the command when its workspace's server does not list it. */
   fallback?: () => Promise<void>;
@@ -187,7 +190,7 @@ export async function runCommandFromClick(
 
   const failed = (err: unknown): ClickOutcome => {
     const message = graphqlErrorMessage(err, "Command failed");
-    if (options.throwOnError) throw new Error(message);
+    if (options.throwOnError) throw new Error(message, { cause: err });
     showCommandRefusal(errorTitle, err, () => void runCommandFromClick(commandId, args, options));
     return { ok: false, cancelled: false, message };
   };

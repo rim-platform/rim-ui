@@ -21,7 +21,7 @@ import {
   useCreatePipelineMutation,
   useUpdatePipelineMutation,
   useDeletePipelineMutation,
-  useTogglePipelineMutation,
+  togglePipeline,
 } from "./usePipelines";
 import type { Pipeline } from "./usePipelines";
 import { queryClient as globalQueryClient } from "../../../core/query/queryClient";
@@ -137,18 +137,13 @@ describe("pipeline api hooks", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pipelines("ws-1") });
   });
 
-  it("toggles with the target state and invalidates the workspace list", async () => {
+  it("toggles with the target state", async () => {
     requestMock.mockResolvedValue({ togglePipeline: { ...pipeline, enabled: false } });
-    const invalidate = vi.spyOn(qc, "invalidateQueries");
-    const { result } = renderHook(() => useTogglePipelineMutation(), { wrapper });
 
-    await act(() =>
-      result.current.mutateAsync({ pipelineId: "p-1", enabled: false, serverId: "ws-1" }),
-    );
+    await togglePipeline({ pipelineId: "p-1", enabled: false });
 
     expect(requestMock.mock.calls[0][0]).toContain("mutation TogglePipeline");
     expect(requestMock.mock.calls[0][1]).toEqual({ pipelineId: "p-1", enabled: false });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pipelines("ws-1") });
   });
 
   it("does not invalidate when a mutation fails", async () => {

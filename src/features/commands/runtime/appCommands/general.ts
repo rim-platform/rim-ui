@@ -142,7 +142,11 @@ function assignKeybind(
     return;
   }
   const label =
-    queryClient.getQueryData<{ name?: string }>(queryKeys.server(workspaceId))?.name ?? "Workspace";
+    queryClient.getQueryData<{ name?: string }>(queryKeys.server(workspaceId))?.name ??
+    queryClient
+      .getQueryData<{ id: string; name: string }[]>(queryKeys.myServers())
+      ?.find((server) => server.id === workspaceId)?.name ??
+    "Workspace";
   useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label });
 }
 

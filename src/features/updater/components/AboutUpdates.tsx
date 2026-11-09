@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useClientVersion } from "../hooks/useClientVersion";
 import { useUpdater, type UpdaterView } from "../hooks/useUpdater";
 import { hourCycleOptions } from "../../../shared/utils/formatTime";
@@ -46,6 +47,16 @@ function summaryOf(view: UpdaterView): string {
   }
 }
 
+/** Runs `app.check_for_updates`, as the palette does. */
+function checkForUpdates() {
+  void runCommandFromClick("app.check_for_updates");
+}
+
+/** Runs `app.restart_to_update`, as the palette does. */
+function restartToUpdate() {
+  void runCommandFromClick("app.restart_to_update");
+}
+
 function UpdateAction({ view }: { view: UpdaterView }) {
   switch (view.status) {
     case "idle":
@@ -56,7 +67,7 @@ function UpdateAction({ view }: { view: UpdaterView }) {
           variant="secondary"
           size="sm"
           isLoading={view.status === "checking"}
-          onClick={() => void view.check()}
+          onClick={checkForUpdates}
         >
           Check for updates
         </Button>
@@ -73,18 +84,14 @@ function UpdateAction({ view }: { view: UpdaterView }) {
           Download update
         </Button>
       ) : (
-        <Button variant="secondary" size="sm" onClick={() => void view.check()}>
+        <Button variant="secondary" size="sm" onClick={checkForUpdates}>
           Check for updates
         </Button>
       );
     case "ready":
     case "installing":
       return (
-        <Button
-          size="sm"
-          isLoading={view.status === "installing"}
-          onClick={() => void view.restart()}
-        >
+        <Button size="sm" isLoading={view.status === "installing"} onClick={restartToUpdate}>
           Restart to update
         </Button>
       );

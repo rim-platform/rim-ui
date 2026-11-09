@@ -27,6 +27,7 @@ import {
 import {
   invalidateMemberMessageCounts,
   invalidateMembers,
+  invalidateMessageReports,
   refreshAfterBan,
   refreshAfterUnban,
 } from "../../workspaces/api/useModeration";
@@ -190,6 +191,9 @@ const COMMAND_EFFECTS: Readonly<Record<string, CommandEffect>> = {
         markMessageDeleted(queryClient, workspaceId, conversationId, messageId);
       }
     },
+  },
+  "chat.report_message": {
+    after: inWorkspace((workspaceId) => invalidateMessageReports(queryClient, workspaceId)),
   },
   "chat.archive_channel": MEMBERSHIP_CHANGE,
   "chat.unarchive_channel": MEMBERSHIP_CHANGE,

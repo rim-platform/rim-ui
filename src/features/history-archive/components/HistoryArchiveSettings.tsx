@@ -13,13 +13,13 @@ import {
 import { currentCacheAccount, type CacheAccount } from "../../messages/api/messageCache";
 import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import {
   ArchiveErrorCode,
   CLOUD_SERVICE_NAMES,
   ENDPOINT_NAME,
   MIN_PASSPHRASE_LENGTH,
   S3_NAME,
-  archiveDevicesQueryKey,
   archiveLocation,
   authorizeCloud,
   cancelCloudSignIn,
@@ -44,7 +44,7 @@ import {
   type S3Setup,
 } from "../api/historyArchive";
 import { ArchiveDevices } from "./ArchiveDevices";
-import { describeExport, describeRestore, errorText } from "./archiveReports";
+import { describeRestore, errorText } from "./archiveReports";
 import { EndpointForm } from "./EndpointForm";
 import { S3Form } from "./S3Form";
 
@@ -620,25 +620,23 @@ function ConnectedArchive({
   notice: Notice | null;
   onDisconnected: () => void;
 }) {
-  const [busy, setBusy] = useState<"export" | "restore" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"restore" | "disconnect" | null>(null);
   const [message, setMessage] = useState<string | null>(notice?.message ?? null);
   const [error, setError] = useState<string | null>(notice?.error ?? null);
   const afterRestore = useAfterRestore();
-  const qc = useQueryClient();
 
-  async function run(kind: "export" | "restore" | "disconnect") {
+  /** Runs `settings.back_up_history`, which says in a toast how the back-up went. */
+  function backUpNow() {
+    setMessage(null);
+    setError(null);
+    void runCommandFromClick("settings.back_up_history");
+  }
+
+  async function run(kind: "restore" | "disconnect") {
     setBusy(kind);
     setMessage(null);
     setError(null);
-    if (kind === "export") {
-      const result = await exportArchive(account);
-      if (result.ok) {
-        setMessage(describeExport(result.value));
-        void qc.invalidateQueries({ queryKey: archiveDevicesQueryKey(account) });
-      } else {
-        setError(errorText(result.error));
-      }
-    } else if (kind === "restore") {
+    if (kind === "restore") {
       const result = await restoreArchive(account);
       if (result.ok) {
         setMessage(describeRestore(result.value));
@@ -670,12 +668,7 @@ function ConnectedArchive({
       </div>
       <ArchiveDevices account={account} />
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={() => void run("export")}
-          isLoading={busy === "export"}
-          disabled={busy !== null}
-        >
+        <Button size="sm" onClick={backUpNow} disabled={busy !== null}>
           Back up now
         </Button>
         <Button

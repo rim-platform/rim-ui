@@ -1,15 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Play,
-  ChevronUp,
-  ChevronDown,
-  X,
-  Wand2,
-  Loader2,
-} from "lucide-react";
+import { Plus, Pencil, Trash2, Play, ChevronUp, ChevronDown, X, Wand2 } from "lucide-react";
 
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
@@ -31,7 +21,7 @@ import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { AiMacroBuilder } from "./AiMacroBuilder";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
-import { runLegacyMacro } from "../runtime/runLegacyMacro";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 
 const MAX_STEPS = 20;
 
@@ -298,7 +288,6 @@ interface PendingAiMacro {
 export function WorkspaceMacroSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: macros, isLoading } = useMyMacros(workspaceId ?? undefined);
-  const { data: commands } = useCommands("PALETTE");
   const deleteMacro = useDeleteMacroMutation();
   // The client lists only its own macros, so it shows the workspace's cap without a count.
   const macroLimit = limitView(
@@ -313,7 +302,6 @@ export function WorkspaceMacroSettings() {
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [executingId, setExecutingId] = useState<string | null>(null);
 
   const handleAiStepsGenerated = useCallback((macro: GeneratedMacro) => {
     setPendingAiMacro({
@@ -338,19 +326,13 @@ export function WorkspaceMacroSettings() {
     [deleteMacro, workspaceId],
   );
 
-  /** Runs a macro; one with a dangerous step asks for confirmation first. */
-  const handleRunMacro = useCallback(
-    async (macro: Macro) => {
-      if (!workspaceId) return;
-      setExecutingId(macro.id);
-      try {
-        await runLegacyMacro(macro, workspaceId, commands);
-      } finally {
-        setExecutingId(null);
-      }
-    },
-    [commands, workspaceId],
-  );
+  /**
+   * Runs `app.run_macro` on a macro, as the palette's Run Macro… does; one with a dangerous step
+   * asks for confirmation first.
+   */
+  const handleRunMacro = useCallback((macro: Macro) => {
+    void runCommandFromClick("app.run_macro", { macro_id: macro.id });
+  }, []);
 
   if (editing !== null) {
     const isNew = editing === "new";
@@ -436,19 +418,14 @@ export function WorkspaceMacroSettings() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => void handleRunMacro(macro)}
-                  disabled={executingId === macro.id}
+                  onClick={() => handleRunMacro(macro)}
                   title="Run macro"
                   className={cn(
                     "rounded-md p-1.5 text-rim-text-muted transition",
                     "hover:bg-rim-accent/10 hover:text-rim-accent disabled:opacity-50",
                   )}
                 >
-                  {executingId === macro.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                  <Play className="h-4 w-4" />
                 </button>
                 <button
                   type="button"

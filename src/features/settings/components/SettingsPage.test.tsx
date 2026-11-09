@@ -16,12 +16,7 @@ vi.mock("../../relay/components/ContactsSettings", () => ({
 }));
 
 vi.mock("./AccountSettings", () => ({
-  AccountSettings: ({ onNavigateToProfile }: { onNavigateToProfile: () => void }) => (
-    <div data-testid="account-settings">
-      Account Panel
-      <button onClick={onNavigateToProfile}>Go to profile</button>
-    </div>
-  ),
+  AccountSettings: () => <div data-testid="account-settings">Account Panel</div>,
 }));
 
 vi.mock("../../commands/components/KeyboardSettings", () => ({
@@ -414,15 +409,6 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByLabelText("Close settings"));
     expect(mockSetMainSurface).toHaveBeenCalledWith({ kind: "conversation" });
-  });
-
-  it("Account tab can navigate back to Profile", async () => {
-    const user = userEvent.setup();
-    renderSettings();
-
-    await user.click(screen.getByText("Account"));
-    await user.click(screen.getByText("Go to profile"));
-    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
   });
 
   it("Notifications tab renders", async () => {
