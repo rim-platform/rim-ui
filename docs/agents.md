@@ -85,7 +85,7 @@ The setup each tab gives, with your token in place of `TOKEN`:
 
 | Tool | Where it goes | What it adds |
 |---|---|---|
-| Claude Code | a terminal, in the folder you use Claude Code in; it saves to `~/.claude.json` | `claude mcp add --transport http rim http://127.0.0.1:47821/mcp --header "Authorization: Bearer TOKEN"` |
+| Claude Code | a terminal; it saves to `~/.claude.json` for your user, so it works in every folder | `claude mcp add --transport http --scope user rim http://127.0.0.1:47821/mcp --header "Authorization: Bearer TOKEN"` |
 | Codex | `~/.codex/config.toml` | a `[mcp_servers.rim]` table with `url` and `http_headers = { Authorization = "Bearer TOKEN" }` |
 | opencode | `~/.config/opencode/opencode.json` | `mcp.rim` with `"type": "remote"`, `url`, `"enabled": true` and `headers` |
 | Gemini CLI | `~/.gemini/settings.json` | `mcpServers.rim` with `httpUrl` and `headers` |

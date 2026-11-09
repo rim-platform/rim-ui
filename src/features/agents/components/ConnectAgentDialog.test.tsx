@@ -119,7 +119,7 @@ describe("ConnectAgentDialog", () => {
     const snippet = (id: string) =>
       TOOL_SETUPS.find((setup) => setup.id === id)!.snippet(ADDRESS, "rimagent_T");
     expect(snippet("claude-code")).toBe(
-      `claude mcp add --transport http rim ${ADDRESS} --header "Authorization: Bearer rimagent_T"`,
+      `claude mcp add --transport http --scope user rim ${ADDRESS} --header "Authorization: Bearer rimagent_T"`,
     );
     expect(snippet("codex")).toBe(
       `[mcp_servers.rim]\nurl = "${ADDRESS}"\nhttp_headers = { Authorization = "Bearer rimagent_T" }`,

@@ -44,6 +44,15 @@ const IDS = [
   "agents.connect_agent",
 ];
 
+/** Agent session commands no macro, plugin or agent may run, listed before they exist. */
+const SESSION_IDS = [
+  "agents.start_session",
+  "agents.stop_session",
+  "agents.ask_about_message",
+  "agents.ask_about_conversation",
+  "workspace.open_agent_sessions",
+];
+
 const executeBackend = vi.fn();
 
 function run(id: string, args?: Record<string, unknown>) {
@@ -101,7 +110,7 @@ describe("agent commands", () => {
 
   it("defines each command in Agents, run on this device, keybindable, with a handler", () => {
     expect(AGENT_COMMANDS.map((c) => c.id)).toEqual(IDS);
-    expect([...AGENT_MANAGEMENT_COMMAND_IDS].sort()).toEqual([...IDS].sort());
+    expect([...AGENT_MANAGEMENT_COMMAND_IDS].sort()).toEqual([...IDS, ...SESSION_IDS].sort());
     for (const id of IDS) {
       const command = LOCAL_COMMANDS.find((c) => c.id === id);
       expect(command, id).toBeDefined();

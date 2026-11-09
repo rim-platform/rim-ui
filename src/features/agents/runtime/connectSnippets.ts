@@ -22,9 +22,9 @@ export const TOOL_SETUPS: readonly ToolSetup[] = [
     id: "claude-code",
     label: "Claude Code",
     where:
-      "Run this in a terminal, in the folder you use Claude Code in. Claude Code saves it in ~/.claude.json.",
+      "Run this in a terminal. Claude Code saves it for your user in ~/.claude.json, so it works in every folder.",
     snippet: (address, token) =>
-      `claude mcp add --transport http rim ${address} --header "Authorization: Bearer ${token}"`,
+      `claude mcp add --transport http --scope user rim ${address} --header "Authorization: Bearer ${token}"`,
   },
   {
     id: "codex",

@@ -31,4 +31,9 @@ export const AGENT_MANAGEMENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "agents.open_record",
   "agents.clear_record",
   CONNECT_AGENT,
+  "agents.start_session",
+  "agents.stop_session",
+  "agents.ask_about_message",
+  "agents.ask_about_conversation",
+  "workspace.open_agent_sessions",
 ]);
