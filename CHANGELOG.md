@@ -168,6 +168,13 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Starting the desktop app while it is already running brings the open window forward instead of
   starting a second copy on the same data.
 
+### Security
+
+- The desktop app's encrypted message cache uses a newer bundled SQLCipher (4.19.0, on SQLite
+  3.53.4, through rusqlite 0.41), the release RUSTSEC-2026-0459 lists as patched; existing caches
+  open as before. The SQLite fix for CVE-2026-119375 (3.54.0) is not in a SQLCipher release that
+  rusqlite bundles yet.
+
 ## [0.0.11] - 2026-11-03
 
 ### Fixed
