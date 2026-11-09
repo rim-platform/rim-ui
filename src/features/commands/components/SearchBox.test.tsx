@@ -171,7 +171,7 @@ describe("the search box", () => {
 
   it("lists channels and people, messages and commands, each as an announced group", () => {
     openBox();
-    type("rel");
+    type("relea");
     expect(
       within(group("Channels and people"))
         .getAllByRole("option")
@@ -186,7 +186,7 @@ describe("the search box", () => {
 
   it("moves through every row with the arrow keys, naming the active one on the field", () => {
     openBox();
-    type("rel");
+    type("relea");
     const options = screen.getAllByRole("option");
     expect(field()).toHaveAttribute("aria-activedescendant", options[0].id);
     expect(options[0]).toHaveAttribute("aria-selected", "true");

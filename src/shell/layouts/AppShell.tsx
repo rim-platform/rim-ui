@@ -21,6 +21,7 @@ import { CommandPalette, KeybindProvider } from "../../features/commands";
 import { useAppKeybindMove } from "../../features/commands/runtime/appKeybindMove";
 import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
 import { QuickAccessAssigner } from "../../features/commands/components/QuickAccessAssigner";
+import { ConversationCommandHost } from "../../features/conversations/components/ConversationCommandHost";
 import { SearchOverlay } from "../../features/messages/components/SearchOverlay";
 import { ToastContainer } from "../../shared/toast";
 import { AgentOverlay } from "../../features/agent/components/AgentOverlay";
@@ -754,6 +755,7 @@ function WorkspaceShell() {
           <PluginSettingsDialogHost />
           <RegistryHost />
           <QuickAccessAssigner />
+          <ConversationCommandHost />
           <ToastContainer />
         </div>
 

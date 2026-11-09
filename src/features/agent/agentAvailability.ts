@@ -8,6 +8,7 @@ export const AGENT_DESKTOP_ONLY_MESSAGE = "The AI agent is available in the desk
 const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "workspace.open_agent",
   "workspace.open_agents",
+  "agents.allow_in_encrypted_conversation",
 ]);
 
 /** Whether this app has the AI agent, which runs in the desktop app only. */

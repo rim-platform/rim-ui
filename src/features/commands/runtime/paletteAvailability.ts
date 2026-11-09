@@ -4,6 +4,7 @@ export const DIRECT_SPACE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   "state.list",
   "chat.join_channel",
   "workspace.navigate_to_channel",
+  "chat.browse_channels",
 ]);
 
 /** What decides whether the palette offers a command that only applies in some situations. */
@@ -22,6 +23,8 @@ export const UNREADS_PAGE_COMMANDS: ReadonlySet<string> = new Set([
   "workspace.unreads_mark_group",
   "workspace.unreads_open",
   "workspace.unreads_undo",
+  "unreads.mark_all_shown",
+  "unreads.toggle_muted",
 ]);
 
 /**

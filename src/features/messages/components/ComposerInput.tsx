@@ -573,6 +573,7 @@ export function ComposerInput({
           <button
             type="button"
             onClick={onFilePickerOpen}
+            data-composer-attach={inThread ? undefined : true}
             className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
             title="Attach file"
             aria-label="Attach file"
@@ -602,6 +603,7 @@ export function ComposerInput({
           ref={emojiButtonRef}
           type="button"
           onClick={() => setEmojiPickerOpen((prev) => !prev)}
+          data-composer-emoji={inThread ? undefined : true}
           className="rounded-lg p-2 text-rim-text-muted transition hover:text-rim-accent"
           title="Insert emoji"
           aria-label="Insert emoji"

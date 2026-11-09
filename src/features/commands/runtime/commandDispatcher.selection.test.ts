@@ -57,6 +57,10 @@ function fakeActions(overrides: Partial<SelectedMessageActions> = {}): SelectedM
     reply: vi.fn(() => true),
     edit: vi.fn(() => true),
     report: vi.fn(() => true),
+    forward: vi.fn(() => true),
+    deleteAttachment: vi.fn(() => true),
+    select: vi.fn(() => true),
+    toggleFold: vi.fn(() => true),
     ...overrides,
   };
 }

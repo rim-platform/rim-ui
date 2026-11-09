@@ -5,7 +5,10 @@ import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
-import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
+import {
+  useSelectedMessageStore,
+  type MessageSelectionTarget,
+} from "../state/useSelectedMessageStore";
 
 interface MessageNavItem {
   id: string;
@@ -179,6 +182,32 @@ export function useMessageNavigation({
     };
   }, []);
 
+  /** Moves the selection as the list's navigation keys do; `false` when the list is empty. */
+  const moveSelection = useCallback(
+    (target: MessageSelectionTarget): boolean => {
+      if (items.length === 0) return false;
+      setDeleteConfirmMessageId(null);
+      if (target === "first") selectIndex(0);
+      else if (target === "last") selectIndex(items.length - 1);
+      else if (target === "next") selectIndex(Math.min(selectedMessageIndex + 1, items.length - 1));
+      else selectIndex(selectedMessageIndex <= 0 ? 0 : selectedMessageIndex - 1);
+      return true;
+    },
+    [items, selectedMessageIndex, selectIndex],
+  );
+
+  /** Shows more or less of a message whose tall text folds; `false` when it does not fold. */
+  const toggleFold = useCallback(
+    (messageId: string): boolean => {
+      const fold = useMessageFoldStore.getState();
+      if (messageId === editingMessageId || !fold.foldable.has(messageId)) return false;
+      onFoldToggle?.(messageId, !fold.expanded.has(messageId));
+      fold.toggleExpanded(messageId);
+      return true;
+    },
+    [editingMessageId, onFoldToggle],
+  );
+
   const handleMessageListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       // Skip when a text input is focused (e.g. message edit textarea)
@@ -233,22 +262,19 @@ export function useMessageNavigation({
       // Home and End: first and last message
       if (e.key === "Home" || e.key === "End") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(e.key === "Home" ? 0 : items.length - 1);
+        moveSelection(e.key === "Home" ? "first" : "last");
         return;
       }
 
       // Navigation: j/k and ArrowDown/ArrowUp
       if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(Math.min(selectedMessageIndex + 1, items.length - 1));
+        moveSelection("next");
         return;
       }
       if (e.key === "ArrowUp" || e.key === "k") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(selectedMessageIndex <= 0 ? 0 : selectedMessageIndex - 1);
+        moveSelection("previous");
         return;
       }
 
@@ -345,11 +371,7 @@ export function useMessageNavigation({
         }
         // o shows more or less of a message whose tall text folds.
         case "o": {
-          const fold = useMessageFoldStore.getState();
-          if (msg.id === editingMessageId || !fold.foldable.has(msg.id)) break;
-          e.preventDefault();
-          onFoldToggle?.(msg.id, !fold.expanded.has(msg.id));
-          fold.toggleExpanded(msg.id);
+          if (toggleFold(msg.id)) e.preventDefault();
           break;
         }
         case "/": {
@@ -377,7 +399,8 @@ export function useMessageNavigation({
       canStartThread,
       canPin,
       onOpenActions,
-      onFoldToggle,
+      toggleFold,
+      moveSelection,
       workspaceId,
       conversationId,
       firstNewIndex,
@@ -391,5 +414,7 @@ export function useMessageNavigation({
     deleteConfirmMessageId,
     handleMessageListKeyDown,
     selectPressedMessage,
+    moveSelection,
+    toggleFold,
   };
 }

@@ -15,6 +15,7 @@ import { LensBanner } from "../../lenses/components/LensBanner";
 import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
 import { useMessageContextMenu } from "../hooks/useMessageContextMenu";
+import { AttachmentDeleteDialog } from "./AttachmentDeleteDialog";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { useMemberRemovals } from "../../conversations/api/useMemberRemovals";
@@ -56,6 +57,7 @@ import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
 import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
 import {
+  isDeletableAttachment,
   selectedMessageActions,
   type SelectedMessageSource,
 } from "./timeline/selectedMessageActions";
@@ -242,6 +244,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
+  const [attachmentDeleteFor, setAttachmentDeleteFor] = useState<string | null>(null);
 
   // Reply is offered where the composer, not a bar in its place, is shown.
   const rights = usePostingRights(workspaceId, conversationId);
@@ -288,10 +291,20 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     currentUserId,
     onReply,
     report: messageMenu.report,
+    forward,
+    deleteAttachment: setAttachmentDeleteFor,
   });
   useLayoutEffect(() => {
-    selectedActionsRef.current = { itemsById, currentUserId, onReply, report: messageMenu.report };
-  }, [itemsById, currentUserId, onReply, messageMenu.report]);
+    selectedActionsRef.current = {
+      ...selectedActionsRef.current,
+      itemsById,
+      currentUserId,
+      onReply,
+      report: messageMenu.report,
+      forward,
+      deleteAttachment: setAttachmentDeleteFor,
+    };
+  }, [itemsById, currentUserId, onReply, messageMenu.report, forward]);
   useEffect(() => {
     if (!conversationId) return;
     const actions = selectedMessageActions(conversationId, selectedActionsRef);
@@ -373,6 +386,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     deleteConfirmMessageId,
     handleMessageListKeyDown,
     selectPressedMessage,
+    moveSelection,
+    toggleFold,
   } = useMessageNavigation({
     items,
     conversationId,
@@ -392,6 +407,13 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     scrollToIndex,
     pointerEntryRef,
   });
+  useLayoutEffect(() => {
+    selectedActionsRef.current = {
+      ...selectedActionsRef.current,
+      select: moveSelection,
+      toggleFold,
+    };
+  }, [moveSelection, toggleFold]);
   const selectedId = selectedMessageIndex >= 0 ? items[selectedMessageIndex]?.id : undefined;
   const selectedFoldable = useMessageFoldStore((s) =>
     selectedId ? s.foldable.has(selectedId) : false,
@@ -631,6 +653,18 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       {contextMenu}
       {messageMenu.dialog}
       {userMenu.element}
+      {attachmentDeleteFor && workspaceId && (
+        <AttachmentDeleteDialog
+          serverId={workspaceId}
+          attachments={(itemsById.get(attachmentDeleteFor)?.attachments ?? []).filter(
+            isDeletableAttachment,
+          )}
+          onClose={() => {
+            setAttachmentDeleteFor(null);
+            scrollContainerRef.current?.focus();
+          }}
+        />
+      )}
       {forwardMessage && workspaceId && (
         <ForwardDialog
           open={!!forwardMessage}

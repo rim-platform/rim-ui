@@ -24,6 +24,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- New commands for replying, editing, forwarding, attachments, message selection, invitations, lenses, conversation invites, notifications and Unreads, so each can be run from the palette, a keybind or a quick box.
 - Three new boxes for Home: Direct messages, Channel, which shows the latest messages of a channel
   you pick, and Quick actions, buttons that run commands you choose (`docs/home.md`). Channel and
   Quick actions can be added more than once, each with its own settings, and showing them marks
