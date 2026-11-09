@@ -17,13 +17,14 @@ function statusMenuPosition(): { x: number; y: number } {
 export function AppCommandDialogs() {
   const dialog = useAppDialogStore((s) => s.dialog);
   const userId = useAppDialogStore((s) => s.userId);
+  const statusAt = useAppDialogStore((s) => s.statusAt);
   const close = useAppDialogStore((s) => s.close);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   switch (dialog) {
     case "signOut":
       return <SignOutDialog open onClose={close} />;
     case "status":
-      return <StatusDropdown position={statusMenuPosition()} onClose={close} />;
+      return <StatusDropdown position={statusAt ?? statusMenuPosition()} onClose={close} />;
     case "addWorkspace":
       return <AddWorkspaceDialog onClose={close} />;
     case "profile":

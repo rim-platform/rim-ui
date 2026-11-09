@@ -26,6 +26,13 @@ vi.mock("../../features/bots/hooks/useWorkspaceBots", async (importOriginal) => 
   useWorkspaceBots: () => bots.list,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { ConversationHeader } from "./ConversationHeader";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useConnectedAgentsStore } from "../../features/agents/state/useConnectedAgentsStore";
@@ -72,6 +79,7 @@ const devChannel = (memberIds: string[], encryptedAt: string | null = null) =>
 
 beforeEach(() => {
   requestMock.mockReset();
+  vi.mocked(runCommandFromClick).mockClear();
   bots.list = [botMember("b-1", "Release Helper"), botMember("b-2", "Docs Helper")];
   useWorkspaceStore.setState({ workspaceId: "srv-1" });
   useShellStore.getState().reset();
@@ -97,6 +105,8 @@ describe("ConversationHeader — bots in a channel", () => {
     expect(count).toHaveAttribute("aria-expanded", "true");
     await user.click(count);
     expect(useShellStore.getState().botsPanelOpen).toBe(false);
+    expect(runCommandFromClick).toHaveBeenCalledTimes(2);
+    expect(runCommandFromClick).toHaveBeenCalledWith("workspace.toggle_channel_bots");
   });
 
   it("says 1 bot for one", async () => {
@@ -132,5 +142,10 @@ describe("ConversationHeader — bots in a channel", () => {
     expect(screen.queryByRole("button", { name: /bots?$/ })).not.toBeInTheDocument();
     await user.click(agent);
     expect(useShellStore.getState().botsPanelOpen).toBe(true);
+    expect(runCommandFromClick).toHaveBeenCalledWith("workspace.toggle_channel_bots");
+    // It only opens the panel: a second click leaves it open.
+    await user.click(agent);
+    expect(useShellStore.getState().botsPanelOpen).toBe(true);
+    expect(runCommandFromClick).toHaveBeenCalledTimes(1);
   });
 });

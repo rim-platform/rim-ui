@@ -41,6 +41,12 @@ export interface ClickOptions {
   throwOnError?: boolean;
   /** Runs in place of the command when its workspace's server does not list it. */
   fallback?: () => Promise<void>;
+  /**
+   * The arguments were saved with the control, as a quick action's are, not typed for the
+   * server: the argument form asks for any it lacks, and this app's own handler runs with them,
+   * as for a keybind.
+   */
+  savedArgs?: boolean;
 }
 
 /** How a click's command ended. */
@@ -162,6 +168,7 @@ export async function runCommandFromClick(
   const commandContext = currentCommandContext(options.target);
   const workspaceId = commandContext.workspaceId ?? undefined;
   const hasArgs = args !== undefined && Object.keys(args).length > 0;
+  const typedArgs = hasArgs && !options.savedArgs;
 
   // A command this app runs itself needs no list; one the server runs is looked up there first.
   let resolved = resolveClickCommand(commandId, workspaceId);
@@ -218,8 +225,8 @@ export async function runCommandFromClick(
     result = await dispatchCommand(command, execute, {
       args,
       commandContext,
-      typedArgs: hasArgs,
-      askForArguments: !hasArgs,
+      typedArgs,
+      askForArguments: !typedArgs,
       confirmedByCaller: options.confirmed,
       confirmationSubject: options.confirmation,
     });

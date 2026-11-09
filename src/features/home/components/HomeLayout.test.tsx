@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { RuntimeProvider } from "../../../core/runtime/RuntimeProvider";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient as appQueryClient } from "../../../core/query/queryClient";
 import { createTestQueryClient } from "../../../test/utils";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -47,6 +49,12 @@ vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
 const available = vi.hoisted(() => ({ agent: true }));
 vi.mock("../../agent/agentAvailability", () => ({ agentAvailable: () => available.agent }));
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { HomePage } from "./HomePage";
 
 const SERVERS = [
@@ -127,8 +135,11 @@ function refused(message: string, variables: Record<string, unknown>): ClientErr
 }
 
 async function startEditing(user: ReturnType<typeof userEvent.setup>) {
+  // Edit Home runs its command, which reads the server's capabilities from the app's cache.
+  appQueryClient.setQueryData(queryKeys.serverInfo, { capabilities: server.capabilities });
   await user.click(await screen.findByRole("button", { name: "Edit Home" }));
   await screen.findByRole("heading", { level: 1, name: "Editing Home" });
+  expect(runCommandFromClick).toHaveBeenLastCalledWith("workspace.edit_home");
 }
 
 /** Moves the box `name` one place up or down through its More menu. */
@@ -190,6 +201,7 @@ describe("Home made of boxes", () => {
   });
 
   afterEach(() => {
+    appQueryClient.removeQueries({ queryKey: queryKeys.serverInfo });
     useAuthStore.setState({ session: null });
     useWorkspaceStore.setState({ workspaceId: null });
   });

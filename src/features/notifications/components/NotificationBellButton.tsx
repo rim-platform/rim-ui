@@ -5,6 +5,7 @@ import { cn } from "../../../shared/ui/cn";
 import { HoverTooltip } from "../../../shared/ui/HoverTooltip";
 import { closeOnEscape } from "../../../shell/hooks/overlayEscape";
 import { useOverlayFocus } from "../../../shell/hooks/useOverlayFocus";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { usePendingDmRequestCount } from "../../relay/api/useDmRequests";
 import { useUnreadNotificationCount } from "../api/useNotifications";
@@ -18,7 +19,6 @@ import { NotificationsPanel } from "./NotificationsPanel";
 export function NotificationBellButton() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const open = useNotificationsPanelStore((s) => s.open);
-  const toggle = useNotificationsPanelStore((s) => s.toggle);
   const setOpen = useNotificationsPanelStore((s) => s.setOpen);
   const { data: notifications = 0 } = useUnreadNotificationCount(workspaceId);
   const requests = usePendingDmRequestCount();
@@ -37,7 +37,7 @@ export function NotificationBellButton() {
         <button
           ref={buttonRef}
           type="button"
-          onClick={toggle}
+          onClick={() => void runCommandFromClick("workspace.toggle_notifications")}
           aria-label={label}
           aria-expanded={shown}
           aria-controls={shown ? panelId : undefined}

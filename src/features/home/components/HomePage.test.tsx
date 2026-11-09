@@ -50,6 +50,12 @@ vi.mock("../../notifications/runtime/jumpToNotification", () => ({
   jumpToNotification: (...args: unknown[]) => jump(...args),
 }));
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { HomePage } from "./HomePage";
 
 const SERVERS = [
@@ -390,6 +396,7 @@ describe("HomePage", () => {
     expect(section).toHaveTextContent("1 read");
     await userEvent.click(within(section).getByRole("button", { name: "All runs" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
+    expect(runCommandFromClick).toHaveBeenLastCalledWith("workspace.open_agents");
   });
 
   it("opens a run in the run dialog", async () => {
@@ -448,6 +455,7 @@ describe("HomePage: the way to Unreads", () => {
     expect(row).toHaveTextContent("5");
     await userEvent.setup().click(row);
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });
+    expect(runCommandFromClick).toHaveBeenLastCalledWith("workspace.open_unreads");
     useUnreadStore.setState({ counts: {}, spaceOf: {} });
   });
 });

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { House, MessagesSquare, Plus } from "lucide-react";
 
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
-import { AddWorkspaceDialog } from "../../features/workspaces/components/AddWorkspaceDialog";
 import { ownerName, workspaceLabels } from "../../features/workspaces/workspaceLabel";
 import { useIsDirectSpace, useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
@@ -54,7 +54,6 @@ export function WorkspaceRail() {
     [openWorkspace],
   );
   const { data: servers } = useMyServers();
-  const [showCreate, setShowCreate] = useState(false);
   const directSpaceId = useRelayStore((s) => s.info?.directSpaceId ?? null);
   const remoteSpaces = useRelayStore((s) => s.spaces);
   const origins = useRelayStore((s) => s.origins);
@@ -106,7 +105,7 @@ export function WorkspaceRail() {
           title="Home"
           aria-label={homeCount > 0 ? `Home (${homeCount} mentions and replies)` : "Home"}
           aria-current={homeSurface ? "page" : undefined}
-          onClick={() => useShellStore.getState().setMainSurface({ kind: "home" })}
+          onClick={() => void runCommandFromClick("workspace.open_home")}
           className={cn(
             "relative flex h-9 w-9 items-center justify-center rounded-xl transition",
             homeSurface
@@ -126,7 +125,7 @@ export function WorkspaceRail() {
               directUnread > 0 ? `Direct messages (${directUnread} unread)` : "Direct messages"
             }
             aria-pressed={inDirectSpace}
-            onClick={() => setWorkspaceId(directSpaceId)}
+            onClick={() => void runCommandFromClick("workspace.open_direct_messages")}
             className={cn(
               "relative flex h-9 w-9 items-center justify-center rounded-xl transition",
               inDirectSpace
@@ -164,7 +163,7 @@ export function WorkspaceRail() {
           type="button"
           title="Add workspace"
           aria-label="Add workspace"
-          onClick={() => setShowCreate(true)}
+          onClick={() => void runCommandFromClick("workspace.add")}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-rim-text-muted transition hover:bg-white/10 hover:text-rim-text"
         >
           <Plus className="h-4 w-4" />
@@ -173,8 +172,6 @@ export function WorkspaceRail() {
         <div className="mt-auto pt-2">
           <RailFooter auditLog={Boolean(workspaceId) && !directSpaceOpen && !acrossWorkspaces} />
         </div>
-
-        {showCreate && <AddWorkspaceDialog onClose={() => setShowCreate(false)} />}
       </aside>
       {dialog?.kind === "invite" && (
         <InviteDialog open workspaceId={dialog.workspaceId} onClose={closeDialog} />

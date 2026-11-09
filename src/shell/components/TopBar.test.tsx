@@ -65,6 +65,13 @@ vi.mock("../../features/notifications/components/NotificationsPanel", () => ({
   NotificationsPanel: () => <p>Notification inbox</p>,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { SEARCH_BOX_NAME, TopBar } from "./TopBar";
 
 function makePlugin(overrides: Partial<PluginInfo>): PluginInfo {
@@ -108,6 +115,7 @@ const plugins = () => screen.getByRole("button", { name: "Plugins" });
 const pluginMenu = () => screen.queryByRole("menu", { name: "Plugin panels" });
 
 beforeEach(() => {
+  vi.mocked(runCommandFromClick).mockClear();
   requestMock.mockReset();
   requestMock.mockImplementation(() => new Promise(() => {}));
   useShellStore.getState().reset();
@@ -431,5 +439,58 @@ describe("TopBar — narrow window", () => {
   it("has no navigation button in a wide window", () => {
     renderWithProviders(<TopBar />);
     expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+  });
+});
+
+describe("TopBar — the commands its controls run", () => {
+  /** The `executeCommand` requests sent to the server. */
+  const executed = () =>
+    requestMock.mock.calls.filter(([document]) => String(document).includes("executeCommand"));
+
+  it("runs Back, Forward, the bell and Manage plugins as the palette runs them, on this device", async () => {
+    const user = userEvent.setup();
+    pluginList.data = withPanels();
+    act(() => {
+      useShellStore.getState().recordPlace({
+        workspaceId: "ws-1",
+        surface: { kind: "conversation" },
+        conversationId: "c-1",
+      });
+      useShellStore.getState().recordPlace({
+        workspaceId: "ws-1",
+        surface: { kind: "conversation" },
+        conversationId: "c-2",
+      });
+    });
+    renderWithProviders(<TopBar />);
+
+    await user.click(within(topBar()).getByRole("button", { name: "Back" }));
+    await user.click(within(topBar()).getByRole("button", { name: "Forward" }));
+    await user.click(within(topBar()).getByRole("button", { name: "Notifications" }));
+    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    await user.click(plugins());
+    await user.click(screen.getByRole("menuitem", { name: "Manage plugins…" }));
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.go_back"],
+      ["workspace.go_forward"],
+      ["workspace.toggle_notifications"],
+      ["plugins.open_settings", undefined, { source: "menu" }],
+    ]);
+    await waitFor(() =>
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugins" }),
+    );
+    expect(executed()).toEqual([]);
+  });
+
+  it("opens and closes the navigation drawer through the sidebar command", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ shellWidth: "narrow" });
+    renderWithProviders(<TopBar />);
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(runCommandFromClick).toHaveBeenLastCalledWith("workspace.toggle_sidebar");
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
   });
 });

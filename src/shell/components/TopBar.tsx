@@ -15,7 +15,7 @@ import { cn } from "../../shared/ui/cn";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { WindowControls } from "../../shared/ui/WindowControls";
 import { useShellWidth } from "../hooks/useShellWidth";
-import { goBack, goForward, useCanGoBack, useCanGoForward } from "../navigation/history";
+import { useCanGoBack, useCanGoForward } from "../navigation/history";
 import { useShellStore } from "../state/useShellStore";
 import { NavMenuButton } from "./NavMenuButton";
 import { PluginPanelMenu } from "./PluginPanelMenu";
@@ -92,37 +92,26 @@ function HistoryButtons() {
   const canGoForward = useCanGoForward();
   return (
     <div className="flex items-center gap-0.5">
-      <HistoryButton
-        label="Back"
-        commandId="workspace.go_back"
-        enabled={canGoBack}
-        onClick={goBack}
-      >
+      <HistoryButton label="Back" commandId="workspace.go_back" enabled={canGoBack}>
         <ArrowLeft aria-hidden className="h-4 w-4" />
       </HistoryButton>
-      <HistoryButton
-        label="Forward"
-        commandId="workspace.go_forward"
-        enabled={canGoForward}
-        onClick={goForward}
-      >
+      <HistoryButton label="Forward" commandId="workspace.go_forward" enabled={canGoForward}>
         <ArrowRight aria-hidden className="h-4 w-4" />
       </HistoryButton>
     </div>
   );
 }
 
+/** A history button: it runs `commandId`, and is disabled while there is nowhere to go. */
 function HistoryButton({
   label,
   commandId,
   enabled,
-  onClick,
   children,
 }: {
   label: string;
   commandId: string;
   enabled: boolean;
-  onClick: () => void;
   children: React.ReactNode;
 }) {
   const keystroke = useKeybindLabel(commandId);
@@ -136,7 +125,7 @@ function HistoryButton({
     >
       <button
         type="button"
-        onClick={onClick}
+        onClick={() => void runCommandFromClick(commandId)}
         aria-label={label}
         aria-keyshortcuts={keystroke ?? undefined}
         disabled={!enabled}

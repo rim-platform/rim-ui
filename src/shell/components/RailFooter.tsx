@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { ClipboardList, LogOut, Settings } from "lucide-react";
 
-import { SignOutDialog } from "../../features/auth/components/SignOutDialog";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
-import { StatusDropdown } from "../../features/settings/components/StatusDropdown";
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
+import { useAppDialogStore } from "../../features/commands/state/useAppDialogStore";
 import { useCurrentUser } from "../../features/workspaces/api/useCurrentUser";
 import { Avatar } from "../../shared/ui/Avatar";
 import { cn } from "../../shared/ui/cn";
@@ -28,18 +28,19 @@ export function RailFooter({ auditLog }: { auditLog: boolean }) {
   );
 }
 
-/** A rail button with a tooltip naming it and, when one is bound, its keystroke. */
+/**
+ * A rail button that runs `commandId`, with a tooltip naming it and, when one is bound, its
+ * keystroke.
+ */
 function RailButton({
   label,
   commandId,
   current,
-  onClick,
   children,
 }: {
   label: string;
   commandId: string;
   current: boolean;
-  onClick: () => void;
   children: ReactNode;
 }) {
   const keystroke = useKeybindLabel(commandId);
@@ -50,7 +51,7 @@ function RailButton({
     >
       <button
         type="button"
-        onClick={onClick}
+        onClick={() => void runCommandFromClick(commandId)}
         aria-label={label}
         aria-current={current ? "page" : undefined}
         className={cn(
@@ -69,12 +70,7 @@ function RailButton({
 function AuditLogButton() {
   const current = useShellStore((s) => s.mainSurface.kind === "audit-log");
   return (
-    <RailButton
-      label="Audit log"
-      commandId="workspace.open_audit_log"
-      current={current}
-      onClick={() => useShellStore.getState().setMainSurface({ kind: "audit-log" })}
-    >
+    <RailButton label="Audit log" commandId="workspace.open_audit_log" current={current}>
       <ClipboardList aria-hidden className="h-4 w-4" />
     </RailButton>
   );
@@ -83,12 +79,7 @@ function AuditLogButton() {
 function SettingsButton() {
   const current = useShellStore((s) => s.mainSurface.kind === "settings");
   return (
-    <RailButton
-      label="Settings"
-      commandId="workspace.open_settings"
-      current={current}
-      onClick={() => useShellStore.getState().setMainSurface({ kind: "settings" })}
-    >
+    <RailButton label="Settings" commandId="workspace.open_settings" current={current}>
       <Settings aria-hidden className="h-4 w-4" />
     </RailButton>
   );
@@ -99,9 +90,6 @@ function UserMenu() {
   const { data: user } = useCurrentUser();
   const username = user?.username;
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [statusPosition, setStatusPosition] = useState<{ x: number; y: number } | null>(null);
-  const setMainSurface = useShellStore((s) => s.setMainSurface);
-  const [signOutOpen, setSignOutOpen] = useState(false);
 
   function handleAvatarClick(e: React.MouseEvent) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -111,20 +99,16 @@ function UserMenu() {
     });
   }
 
-  function handleSignOut() {
+  /** Closes the menu and runs the command of the item chosen in it. */
+  function runFromMenu(commandId: string) {
     setMenuPosition(null);
-    setSignOutOpen(true);
-  }
-
-  function handleSettings() {
-    setMenuPosition(null);
-    setMainSurface({ kind: "settings" });
+    void runCommandFromClick(commandId, undefined, { source: "menu" });
   }
 
   function handleOpenStatus() {
-    if (!menuPosition) return;
-    setStatusPosition({ x: menuPosition.x, y: menuPosition.y });
-    setMenuPosition(null);
+    // The status menu opens where the account menu was.
+    if (menuPosition) useAppDialogStore.getState().anchorStatus(menuPosition);
+    runFromMenu("people.set_status");
   }
 
   return (
@@ -159,24 +143,18 @@ function UserMenu() {
               id: "settings",
               label: "Settings",
               icon: <Settings className="h-4 w-4" />,
-              onSelect: handleSettings,
+              onSelect: () => runFromMenu("workspace.open_settings"),
             },
             {
               id: "signout",
               label: "Sign out...",
               icon: <LogOut className="h-4 w-4" />,
               danger: true,
-              onSelect: handleSignOut,
+              onSelect: () => runFromMenu("app.sign_out"),
             },
           ]}
         />
       )}
-
-      {statusPosition && (
-        <StatusDropdown position={statusPosition} onClose={() => setStatusPosition(null)} />
-      )}
-
-      <SignOutDialog open={signOutOpen} onClose={() => setSignOutOpen(false)} />
     </div>
   );
 }

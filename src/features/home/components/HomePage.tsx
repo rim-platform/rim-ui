@@ -9,6 +9,7 @@ import { AgentRunDialog } from "../../agents/components/AgentRunDialog";
 import { groupRuns, type AgentRun } from "../../agents/runtime/runs";
 import { useAgentRecordStore } from "../../agents/state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { EmptyWorkspaceState } from "../../workspaces/components/EmptyWorkspaceState";
 import { useHomeLayout } from "../api/useHomeLayout";
 import { useHomeMentions } from "../api/useHomeMentions";
@@ -16,6 +17,7 @@ import { useHomeUnread } from "../api/useHomeUnread";
 import { useHomeWaiting } from "../api/useHomeWaiting";
 import { useHomeWorkspaces } from "../api/useHomeWorkspaces";
 import type { HomeBoxData } from "../boxes/registry";
+import { EDIT_HOME_COMMAND_ID } from "../editHome";
 import { useHomeEditStore } from "../state/useHomeEditStore";
 import { useHomeHiddenStore } from "../state/useHomeLayoutStore";
 import { HomeBoxGrid } from "./HomeBoxes";
@@ -110,7 +112,7 @@ export function HomePage() {
     shownWorkspaces: shown.length,
     labelOf,
     onOpenRun: (run) => setOpenRun(runKey(run)),
-    onAllRuns: () => useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" }),
+    onAllRuns: () => void runCommandFromClick("workspace.open_agents"),
   };
 
   return (
@@ -132,7 +134,7 @@ export function HomePage() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => startEditing(view.layout)}
+                  onClick={() => void runCommandFromClick(EDIT_HOME_COMMAND_ID)}
                 >
                   Edit Home
                 </Button>

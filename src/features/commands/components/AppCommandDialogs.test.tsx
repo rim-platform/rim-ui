@@ -6,7 +6,11 @@ vi.mock("../../auth/components/SignOutDialog", () => ({
   SignOutDialog: ({ open }: { open: boolean }) => (open ? <p>sign-out dialog</p> : null),
 }));
 vi.mock("../../settings/components/StatusDropdown", () => ({
-  StatusDropdown: () => <p>status menu</p>,
+  StatusDropdown: ({ position }: { position: { x: number; y: number } }) => (
+    <p>
+      status menu at {position.x},{position.y}
+    </p>
+  ),
 }));
 vi.mock("../../workspaces/components/AddWorkspaceDialog", () => ({
   AddWorkspaceDialog: () => <p>add workspace dialog</p>,
@@ -32,12 +36,29 @@ describe("AppCommandDialogs", () => {
     act(() => useAppDialogStore.getState().open("signOut"));
     expect(screen.getByText("sign-out dialog")).toBeInTheDocument();
     act(() => useAppDialogStore.getState().open("status"));
-    expect(screen.getByText("status menu")).toBeInTheDocument();
+    expect(screen.getByText(/^status menu at/)).toBeInTheDocument();
     act(() => useAppDialogStore.getState().open("addWorkspace"));
     expect(screen.getByText("add workspace dialog")).toBeInTheDocument();
     act(() => useAppDialogStore.getState().open("profile", "u-9"));
     expect(screen.getByText("profile of u-9")).toBeInTheDocument();
     act(() => useAppDialogStore.getState().close());
     expect(screen.queryByText(/dialog|menu|profile/)).not.toBeInTheDocument();
+  });
+
+  it("opens the status menu where the control that ran it asked, until it closes", () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AppCommandDialogs />
+      </QueryClientProvider>,
+    );
+    act(() => {
+      useAppDialogStore.getState().anchorStatus({ x: 56, y: 600 });
+      useAppDialogStore.getState().open("status");
+    });
+    expect(screen.getByText("status menu at 56,600")).toBeInTheDocument();
+    act(() => useAppDialogStore.getState().close());
+    act(() => useAppDialogStore.getState().open("status"));
+    expect(screen.queryByText("status menu at 56,600")).not.toBeInTheDocument();
+    expect(screen.getByText(/status menu at/)).toBeInTheDocument();
   });
 });

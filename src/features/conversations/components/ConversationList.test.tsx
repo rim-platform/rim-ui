@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
@@ -35,6 +35,15 @@ vi.mock("../../commands/hooks/useKeybindLabel", () => ({ useKeybindLabel: () => 
 const prefetch = vi.hoisted(() => ({ usePrefetchMessages: vi.fn() }));
 vi.mock("../../../core/events/usePrefetchMessages", () => prefetch);
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useUnreadStore } from "../state/useUnreadStore";
+import { useConversationDialogStore } from "../state/useConversationDialogStore";
+import { ConversationCommandHost } from "./ConversationCommandHost";
 import { ConversationList } from "./ConversationList";
 import { ConversationSelectionRuntime } from "./ConversationSelectionRuntime";
 
@@ -89,7 +98,8 @@ function renderList(defaultWorkspace?: string) {
   render(
     <QueryClientProvider client={qc}>
       <ConversationSelectionRuntime />
-      <ConversationList onNewChannel={vi.fn()} />
+      <ConversationList />
+      <ConversationCommandHost />
     </QueryClientProvider>,
   );
   return qc;
@@ -105,6 +115,7 @@ describe("ConversationList — channels sidebar", () => {
   });
 
   afterEach(() => {
+    useConversationDialogStore.getState().closeBrowseChannels();
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
     useRelayStore.getState().reset();
@@ -484,5 +495,67 @@ describe("ConversationList — navigation drawer", () => {
     );
 
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+  });
+});
+
+describe("ConversationList — the commands its controls run", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
+    useShellStore.getState().reset();
+    useShellStore.setState({ selectedConversationId: "c-general" });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useConversationDialogStore.getState().closeBrowseChannels();
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  it("opens Unreads, Browse channels and New channel through their commands, on this device", async () => {
+    const user = userEvent.setup();
+    serve();
+    useUnreadStore.getState().setCounts("ws-1", { "c-secret": 2 });
+    renderList();
+
+    await user.click(await screen.findByRole("button", { name: /^Unreads/ }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });
+    await user.click(screen.getByRole("button", { name: "Browse channels" }));
+    expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
+    act(() => useConversationDialogStore.getState().closeBrowseChannels());
+    await user.click(await screen.findByRole("button", { name: "New channel" }));
+    expect(useShellStore.getState()).toMatchObject({
+      showNewChannelDialog: true,
+      mainSurface: { kind: "conversation" },
+    });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.open_unreads", undefined, { source: "button" }],
+      ["chat.browse_channels", undefined, { source: "button" }],
+      ["chat.create_channel", undefined, { source: "button" }],
+    ]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+
+  it("runs the Channels header menu's items as menu commands", async () => {
+    serve();
+    renderList();
+    await screen.findByText("general");
+    await waitFor(() => {
+      fireEvent.contextMenu(screen.getByText("Channels"));
+      expect(screen.getByRole("menuitem", { name: "Create channel…" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
+    fireEvent.contextMenu(screen.getByText("Channels"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["chat.browse_channels", undefined, { source: "menu" }],
+      ["chat.create_channel", undefined, { source: "menu" }],
+    ]);
+    expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
   });
 });

@@ -229,6 +229,11 @@ export const GENERAL_HANDLERS: Record<string, Handler> = {
       return;
     }
     useWorkspaceStore.getState().setWorkspaceId(directSpaceId);
+    // Home and Unreads span every workspace, so the direct messages open in place of them.
+    const shell = useShellStore.getState();
+    if (shell.mainSurface.kind === "home" || shell.mainSurface.kind === "unreads") {
+      shell.setMainSurface({ kind: "conversation" });
+    }
   },
   "workspace.add": () => useAppDialogStore.getState().open("addWorkspace"),
   "workspace.open_workspace_settings": (args, commandContext) =>

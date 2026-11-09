@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { cn } from "../../../shared/ui/cn";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
 import { isAfter } from "../../../shared/utils/timestamps";
-import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import {
   deferMark,
   undoLatestDeferredMark,
@@ -208,7 +208,7 @@ export function UnreadsPage() {
           : KEY_COMMANDS[key];
       if (!commandId) return;
       event.preventDefault();
-      runDesktopLocalCommand(commandId);
+      void runCommandFromClick(commandId, undefined, { source: "key" });
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -236,7 +236,7 @@ export function UnreadsPage() {
                 size="sm"
                 variant="secondary"
                 disabled={shown.length === 0}
-                onClick={markAllShown}
+                onClick={() => void runCommandFromClick("unreads.mark_all_shown")}
               >
                 Mark all shown as read
               </Button>
@@ -297,7 +297,7 @@ export function UnreadsPage() {
                   type="button"
                   size="sm"
                   variant="secondary"
-                  onClick={() => setShowMuted(true)}
+                  onClick={() => void runCommandFromClick("unreads.toggle_muted")}
                 >
                   {`Show muted (${mutedCount})`}
                 </Button>
@@ -327,7 +327,7 @@ export function UnreadsPage() {
                   size="sm"
                   variant="secondary"
                   aria-pressed={showMuted}
-                  onClick={() => setShowMuted((value) => !value)}
+                  onClick={() => void runCommandFromClick("unreads.toggle_muted")}
                 >
                   {showMuted ? `Hide muted (${mutedCount})` : `Show muted (${mutedCount})`}
                 </Button>

@@ -196,6 +196,19 @@ describe("workspace commands", () => {
     useRelayStore.setState({ info: null });
   });
 
+  it("leaves Home and Unreads for the direct messages, and stays on other pages", () => {
+    useRelayStore.setState({ info: { directSpaceId: "direct-1" } as never });
+    for (const kind of ["home", "unreads"] as const) {
+      useShellStore.getState().setMainSurface({ kind });
+      run("workspace.open_direct_messages");
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    }
+    useShellStore.getState().setMainSurface({ kind: "settings" });
+    run("workspace.open_direct_messages");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+    useRelayStore.setState({ info: null });
+  });
+
   it("opens the add dialog", () => {
     run("workspace.add");
     expect(useAppDialogStore.getState().dialog).toBe("addWorkspace");

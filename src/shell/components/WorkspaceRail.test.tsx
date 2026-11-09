@@ -47,8 +47,17 @@ vi.mock("../../features/workspaces/components/AddWorkspaceDialog", () => ({
   AddWorkspaceDialog: () => null,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useShellStore } from "../state/useShellStore";
+import { AppCommandDialogs } from "../../features/commands/components/AppCommandDialogs";
+import { useAppDialogStore } from "../../features/commands/state/useAppDialogStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -347,10 +356,16 @@ describe("WorkspaceRail — audit log, Settings and the account", () => {
 
   it("asks whether to keep the account before signing out", async () => {
     const user = userEvent.setup();
-    renderWithQuery(<WorkspaceRail />);
+    renderWithQuery(
+      <>
+        <WorkspaceRail />
+        <AppCommandDialogs />
+      </>,
+    );
     await user.click(screen.getByRole("button", { name: "User menu" }));
     await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
-    expect(screen.getByRole("dialog", { name: "Sign out" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Sign out" })).toBeInTheDocument();
+    act(() => useAppDialogStore.getState().close());
   });
 });
 
@@ -671,5 +686,77 @@ describe("WorkspaceRail — workspace context menu", () => {
       workspaceId: "ws-2",
       label: "Beta",
     });
+  });
+});
+
+describe("WorkspaceRail — the commands its buttons run", () => {
+  const dmInfo = { directSpaceId: "ws-dm" } as never;
+  beforeEach(() => {
+    myServers.data = alphaBeta;
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    setWorkspaceId.mockClear();
+    vi.mocked(runCommandFromClick).mockClear();
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: dmInfo });
+  });
+  afterEach(() => {
+    act(() => useAppDialogStore.getState().close());
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+
+  it("opens Home, the direct messages, Add a workspace, the audit log and Settings through their commands", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+
+    await user.click(screen.getByRole("button", { name: "Home" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    await user.click(screen.getByRole("button", { name: "Direct messages" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-dm");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    await user.click(screen.getByRole("button", { name: "Add workspace" }));
+    expect(useAppDialogStore.getState().dialog).toBe("addWorkspace");
+    await user.click(screen.getByRole("button", { name: "Audit log" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.open_home"],
+      ["workspace.open_direct_messages"],
+      ["workspace.add"],
+      ["workspace.open_audit_log"],
+      ["workspace.open_settings"],
+    ]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+
+  it("runs the account menu's items as menu commands, opening the status menu by the avatar", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const account = screen.getByRole("button", { name: "User menu" });
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /set status/i }));
+    expect(useAppDialogStore.getState()).toMatchObject({
+      dialog: "status",
+      statusAt: { x: expect.any(Number), y: expect.any(Number) },
+    });
+    act(() => useAppDialogStore.getState().close());
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /settings/i }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+    expect(useAppDialogStore.getState().dialog).toBe("signOut");
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["people.set_status", undefined, { source: "menu" }],
+      ["workspace.open_settings", undefined, { source: "menu" }],
+      ["app.sign_out", undefined, { source: "menu" }],
+    ]);
   });
 });
