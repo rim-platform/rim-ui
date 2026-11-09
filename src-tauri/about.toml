@@ -19,6 +19,9 @@ accepted = [
   "CDLA-Permissive-2.0",
   # The IBM Plex Sans and JetBrains Mono fonts bundled by @fontsource.
   "OFL-1.1",
+  # SQLite's public-domain dedication and libtomcrypt, both in the SQLCipher of sqlcipher-src.
+  "blessing",
+  "WTFPL",
 ]
 # Test-only crates never ship.
 ignore-dev-dependencies = true
