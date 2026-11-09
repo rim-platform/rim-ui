@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import type {
   QueryUserCommandArgs,
   UserCommand,
@@ -126,15 +127,26 @@ export function useUserCommandSteps() {
   });
 }
 
+/** Creates a user command on the home server. */
+export async function createUserCommand(input: CreateUserCommandInput): Promise<void> {
+  await graphqlClient.request(CreateUserCommandDocument, { input });
+}
+
+/** Drops the person's macros read from the home server, so every list reads them again. */
+export function invalidateAccountMacros(): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.accountMacros });
+  void queryClient.invalidateQueries({ queryKey: ["commands"] });
+}
+
 /** Creates a user command, then refreshes the command lists and the saved user commands. */
 export function useCreateUserCommandMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateUserCommandInput) =>
-      graphqlClient.request(CreateUserCommandDocument, { input }),
+    mutationFn: createUserCommand,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commands"] });
       qc.invalidateQueries({ queryKey: queryKeys.userCommands });
+      invalidateAccountMacros();
     },
   });
 }
@@ -148,6 +160,7 @@ export function useUpdateUserCommandMutation() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commands"] });
       qc.invalidateQueries({ queryKey: queryKeys.userCommands });
+      invalidateAccountMacros();
     },
   });
 }
@@ -161,6 +174,7 @@ export function useDeleteUserCommandMutation() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commands"] });
       qc.invalidateQueries({ queryKey: queryKeys.userCommands });
+      invalidateAccountMacros();
     },
   });
 }

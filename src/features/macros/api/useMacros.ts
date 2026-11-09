@@ -43,6 +43,40 @@ const MyMacrosDocument = gql`
   }
 `;
 
+const MacrosToMoveDocument = gql`
+  query MacrosToMove($serverId: ID!) {
+    myMacros(serverId: $serverId) {
+      id
+      name
+      description
+      aiCallable
+      nlDescription
+      intentSamples
+      steps {
+        commandId
+        args
+      }
+    }
+  }
+`;
+
+/** A workspace macro with what moving it into the person's macros keeps. */
+export type MacroToMove = Pick<
+  MacroDef,
+  "id" | "name" | "description" | "steps" | "aiCallable" | "nlDescription" | "intentSamples"
+>;
+
+/**
+ * The person's workspace macros in `serverId`, read from the server that hosts it, with what
+ * moving them keeps.
+ */
+export async function fetchMacrosToMove(serverId: string): Promise<MacroToMove[]> {
+  const res = await graphqlClient.request<{ myMacros: MacroToMove[] }>(MacrosToMoveDocument, {
+    serverId,
+  });
+  return res.myMacros;
+}
+
 const CreateMacroDocument = gql`
   mutation CreateMacro($input: CreateMacroInput!) {
     createMacro(input: $input) {

@@ -1,7 +1,7 @@
 # Commands and automation
 
-Everything RIM does runs as a command: the command palette, keybinds, user commands, macros,
-pipelines, plugins and the AI agent all run them. This page is for the person using the app and
+Everything RIM does runs as a command: the command palette, keybinds, macros, pipelines,
+plugins and the AI agent all run them. This page is for the person using the app and
 goes deeper than [Getting started](getting-started.md). The contract behind it is rim-server's
 [command model](../../rim-server/docs/command_model.md).
 
@@ -14,8 +14,8 @@ three places:
 
 - **Built in.** Shipped with RIM. Most run on the server, such as posting a message or setting a
   slow mode; the ones that only move around the app, such as opening search, run in the app.
-- **Your own.** User commands and macros, each a sequence of other commands, kept on the server
-  for your account.
+- **Your own.** Macros, each a sequence of other commands, kept on your home server for your
+  account ([Macros](#macros)).
 - **Plugins.** Each turned-on plugin adds commands that run on this device, inside the plugin
   ([Plugins](plugins.md)).
 
@@ -105,7 +105,7 @@ scattered through it; in a description or category only a match that starts at a
 The arrow keys move, <kbd>Enter</kbd> runs, <kbd>Esc</kbd> closes.
 
 Without a search the list is grouped by category, in alphabetical order: the built-in Admin,
-Chat, Notifications, State and Workspace; User, for your user commands; one per turned-on plugin,
+Chat, Notifications, State and Workspace; Macro, for your macros; one per turned-on plugin,
 under its name, with an "Open \<panel\>" command for each panel of a running plugin; and
 Workspace plugins, the registry's plugins this device has not installed, as "Install \<name\>"
 ([Workspace registry](plugins.md#workspace-registry)). With one, the groups follow their best
@@ -117,8 +117,7 @@ member), **Do Not Disturb** (the mode) or **Mark as Read** with no conversation 
 asks for it when run (see "The argument form" below). Left out are a command that needs a selected
 message, which the palette never has, such as **Pin Message**; a plugin command that needs arguments, which its plugin's
 panel runs, or a conversation while none is open; **Archive Channel** outside a channel that is not
-archived and **Unarchive Channel** outside an archived one; and macros, which run from Settings →
-Macros or `/macro`. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
+archived and **Unarchive Channel** outside an archived one. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
 does: "Archive \<channel\>?" always, "Leave \<name\>?" for a group or a private channel; a
 public channel, which you can join again, is left at once. Running a command closes the palette
 at once; a toast gives its title and the result's message on success, such as "List Channels: 3
@@ -241,59 +240,72 @@ a text field is insert mode ([Vim mode](keyboard.md#vim-mode)).
 shortcuts** in Settings → Keyboard opens "Keyboard shortcuts". It lists every binding in force,
 grouped by context, with "Vim normal mode" while Vim is on, and "Filter shortcuts..." narrows it.
 
-## User commands and macros
+## Macros
 
-Both run a sequence of commands as one, and both are yours alone: nobody else in the workspace
-sees or runs them.
+A **command** is one action RIM or a plugin gives you. A **macro** is your own action, made of
+commands that run one after another. Every macro is a command too, in the Macro category: it
+shows in the palette, the keybind picker, Home quick boxes and the composer's `/` list, a key can
+run it, and it works in every workspace you are in, on this server or another. Your macros are
+kept on your home server for your account, and nobody else sees or runs them.
 
-**User commands** appear in the palette and can be bound to keys. Settings → Commands, **New
-command**, asks for a **Command ID** (saved as `user.<id>`, in lowercase letters, numbers, dots,
-dashes and underscores), a **Title**, a **Description** and the **Steps**: **+ Add step** picks
-a command the server runs, and the arrows reorder. **Create** saves it. Its steps take no
-arguments here, so each one uses the context, and **+ Add step** offers only commands the
-context can fill: none that needs other arguments. A user command can be bound when all its
-steps can, is dangerous when one step is, and can include other user commands, eight levels
-deep at most. The list shows each one's id and number of steps. The
-pencil loads the saved command into the form, its title, description and steps in order, with
-a step's arguments shown under it. Changing a step's command drops its arguments; **Save**
-stays off until a step is chosen, and the steps on the form replace the saved ones. A command
-deleted elsewhere closes the editor with "\<title\> no longer exists for this account, so it
-cannot be edited."
+**Making one.** Settings → Macros, **New macro**, asks for a **Title** (no two of your macros
+share one), a **Description** and up to 20 **Steps**. Each step has a command, picked from a
+list you can search, grouped by category, with each command's description: the built-ins, the
+app's own commands and the commands of the plugins installed on this device. Macros, the
+commands that answer and manage agents, and Edit Home are not offered. Under the command is a
+field for each of its arguments. Fill one in to fix it, or tick **Ask when I run it** to be
+asked each time. An argument the macro finds where it runs, such as the open workspace, the open
+conversation or the selected message, can be left empty. **Save** stays blocked while a required
+argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
+turns a description into steps with their arguments filled in, which open in the form to check.
 
-**Macros** carry arguments for each step. Settings → Macros, **New Macro**, opens "Create
-Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
-"Search commands...", and an arguments field that takes JSON, such as
-`{"conversation_id": "…", "text": "…"}`. The search leaves out commands that only run in the app,
-and a step typed as one is marked as failing. A step whose text is not a command id is marked
-"Unknown command: \<id\>" and the macro is not saved until it is fixed. **Save** stores it. On
-the desktop, **Build with AI** turns a description into steps with the provider set in
-Settings → AI Agent: **Generate**, check the preview, then **Use these steps** opens them in the
-editor.
+**Running one.** Run a macro from the palette, a key, a quick box, the play button on its row
+in Settings → Macros, **Run Macro…**, `/` in the composer, or `/macro <title>`, which finds it
+whatever the letter case. The app runs it step by step, in the workspace, conversation and
+thread you are in when it starts:
 
-A macro runs from the play button on its row ("Run macro"), or from the composer: send
-`/macro <name>` ("Run Macro"). It runs on the server, step by step, in the open workspace, the
-open conversation and the thread open beside it, read when the run starts:
+- **Asked arguments come first.** One form asks for every argument the steps ask for, each
+  labelled "Step \<n\> · \<command\>: \<argument\>". Cancelling it runs nothing.
+- **Each step runs as it would on its own.** A server command goes to the server that hosts the
+  workspace, with its own confirmation when it needs one; an app or plugin command runs in the
+  app. Steps do not pipe: each gets its own arguments.
+- **A step that opens a form goes last.** A step that opens a form or a picker does not wait for
+  you to finish it, so put it at the end. The form marks such a step when it is not last.
+- **A failing step stops the rest.** The steps before it stay done, and the toast says
+  `Step <n> (<command>) failed: <reason>`. A cancelled confirmation stops it the same way. A
+  macro that finishes says `Macro "<title>" ran`.
+- **Plugins never run your macros.** A plugin step whose plugin is not installed on this device
+  fails with "its plugin isn't installed on this device".
 
-- **Steps do not pipe.** Each step gets its own arguments. A step that needs a conversation acts
-  on the open one, or on the one its `conversation_id` names, which wins; with none open it needs
-  `conversation_id`. A command that only runs in the app fails as a step.
-- **Confirmation.** A macro with a restricted step asks once, before any step runs, in
-  `Run macro "<name>"`: "This macro includes commands marked as dangerous. They may delete data
-  or make irreversible changes." A dangerous step below the restricted tier, such as kicking a
-  member, cannot be confirmed inside a macro, and the macro stops there.
-- **A failing step** stops the macro. The steps before it stay done, and the toast says
-  `Macro "<name>" failed`, with the server's reason under it. A macro that finishes says
-  `Macro "<name>" executed`.
-- **Limits.** A macro cannot contain another macro, and its name has at most 128 characters. You
-  can keep 50 macros per workspace, and the page shows the server's own cap when it sets one.
+**The AI agent.** Tick **The AI agent can run this** to let the agent run a macro as one
+command, in the workspaces of your home server. It can be ticked only when every step is a
+command the AI agent may run, which RIM's server runs, with every argument fixed; otherwise the
+form says "Only commands the AI agent may run, run on RIM's server, with every argument fixed".
+When the agent asks to run it, the confirmation lists the macro's steps with their arguments
+([The AI agent](#the-ai-agent)).
+
+**Limits.** You keep at most 100 macros, each with at most 20 steps and a title of at most 128
+characters. A macro saved before steps could name other commands keeps any step that runs
+another macro, shown as "Another macro (kept, no longer offered)".
+
+**Workspace macros move into your macros.** Macros used to be kept per workspace. The first time
+the app finds your home server keeping your macros, it moves the ones you made in each workspace
+into your macros and deletes them where they were; one with the title and steps of a macro you
+already have is only deleted, and one whose title is taken gets " (2)". At 100 macros the rest
+stay where they are, and a toast says how many stayed in which workspace. Settings → Macros lists
+the ones that stayed, at 100 macros or because the server refused them, under **Not moved yet**,
+each with its workspace and the reason: **Try again** moves that workspace's macros once more,
+and **Delete** deletes it from its workspace after a confirm. Settings → Commands is
+gone: what it made are macros. With a home server that does not keep your macros, Settings →
+Macros still lists the macros of the open workspace and Settings → Commands is still there.
 
 Two macros, as examples:
 
-- **Standup.** `chat.post_message` with `{"conversation_id": "<#standup's id>", "text": "Standup:
-  yesterday, today, blockers?"}`, then `state.incr` with `{"key": "standup.count"}`, which
+- **Standup.** `chat.post_message` with the conversation set to #standup and the text
+  "Standup: yesterday, today, blockers?", then `state.incr` with the key `standup.count`, which
   counts the standups in workspace state.
-- **Heads down.** `notifications.mark_all_read` with no arguments, then `notifications.dnd` with
-  `{"mode": "until", "minutes": "120"}`, which pauses your notifications for two hours.
+- **Heads down.** `notifications.mark_all_read`, then `notifications.dnd` with the mode `until`
+  and **Ask when I run it** on its minutes: each run asks how long to pause your notifications.
 
 ## Pipelines
 
@@ -386,10 +398,10 @@ can be edited and deleted, and shows when it expires.
 
 On the desktop, the AI agent (<kbd>Ctrl+Shift+A</kbd>, or `/agent` in the composer) works
 through the same commands and the same gates as you do. It sees only commands marked callable by
-an AI: a reviewed set of built-ins and the plugin commands you approved in Settings → Plugin AI,
-and no user command or macro made in Settings. A call that changes anything waits for you in the
-confirmation dialog, headed "Agent wants to:", and the agent runs at most three such actions per
-run. Settings → AI Agent sets its provider and key, and
+an AI: a reviewed set of built-ins, the plugin commands you approved in Settings → Plugin AI,
+and your macros with **The AI agent can run this** ticked, each run as one command. A call that
+changes anything waits for you in the confirmation dialog, headed "Agent wants to:", which lists
+a macro's steps with their arguments, and the agent runs at most three such actions per run. Settings → AI Agent sets its provider and key, and
 [Using a plugin](plugins.md#using-a-plugin) covers approving a plugin's commands for it. A
 server's operator can turn its access off. In the web app it is not offered: the palette, the
 keybind, the `/agent` suggestion and **Build with AI** are left out, and `/agent` typed in full

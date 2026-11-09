@@ -141,6 +141,15 @@ export function fetchAccountMacros(): Promise<AccountMacro[]> {
   });
 }
 
+/** The person's macros, read from the home server now. */
+export function refetchAccountMacros(): Promise<AccountMacro[]> {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.accountMacros,
+    staleTime: 0,
+    queryFn: requestAccountMacros,
+  });
+}
+
 /**
  * Every built-in and app command a macro step may name, read once from the home server while it
  * lists {@link ACCOUNT_MACROS}.

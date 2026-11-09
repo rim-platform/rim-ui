@@ -131,12 +131,15 @@ read. Nothing is ticked at first, and what you approved for the built-in agent d
 RIM offers a command only when the server lets agents call it, the server runs it, and it changes
 something. Commands that only move around the app or read are left out: the agent reads through its
 read tools. Sending a message has its own request, above. Commands that connect, answer or manage
-agents are never offered.
+agents are never offered. Your own macros with **The AI agent can run this** ticked are offered
+too, under Macro, in the workspaces of your home server, each run as one command
+([Macros](commands-and-automation.md#macros)).
 
 - **Every call asks you first**, with an approval card like the one for posting: the agent's
   name, the command, the workspace, the channel when it names one, and every argument in full.
-  Values that look like secrets are hidden. A command the server marks as restricted also asks you
-  to type its word.
+  Values that look like secrets are hidden. For a macro the card also lists its steps, each with
+  the arguments fixed for it. A command the server marks as restricted also asks you to type its
+  word.
 - **A command marked "Only proposed"** is dangerous. It never runs from an agent: the agent can only
   suggest it, and you run it yourself.
 - **It acts only where you let the agent read.** The agent names the workspace and every

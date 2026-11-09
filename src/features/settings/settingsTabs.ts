@@ -90,6 +90,8 @@ export interface SettingsTabAccess {
   agentAvailable: boolean;
   desktopShellAvailable: boolean;
   inDirectSpace: boolean;
+  /** Whether the home server keeps the person's macros as their own commands, which Macros edits. */
+  accountMacros: boolean;
 }
 
 /**
@@ -106,6 +108,7 @@ export function visibleSettingsTabs(access: SettingsTabAccess): typeof SETTINGS_
       (tab.key !== "bots" || access.botsManageable) &&
       (!AGENT_TABS.includes(tab.key) || access.agentAvailable) &&
       (tab.key !== "desktop" || access.desktopShellAvailable) &&
+      (tab.key !== "commands" || !access.accountMacros) &&
       !(access.inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
   );
 }
