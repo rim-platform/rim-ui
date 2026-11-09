@@ -133,6 +133,13 @@ received. An answer without them, or one that does not verify, is a relay failur
 answer. A verified `409 {"error":"replay","highestSeq":…}` moves the counter above `highestSeq`
 and signs once more.
 
+Command calls name their workspace only in `commandContext` (`commands`, `executeCommand`): for
+a workspace bound to a host, the person's and the plugins' calls also carry a top-level
+`workspaceId` that the operation does not declare, which routes them to that host, so the palette,
+keybinds, quick boxes, the message box and context menus list and run its commands there.
+The keybinds themselves, user commands and macros stay on this server; the agents do not reach
+such a workspace.
+
 Calls that name no space but belong to a host (`myMlsWelcomes`, `ackMlsWelcomes`) go through
 `hostClient(host)`; encrypted attachments of such a space are uploaded (as the exact multipart
 bytes) and downloaded the same way. Each host's failures are recorded (`relayHealth.ts`, kept

@@ -29,6 +29,7 @@ import { offeredLocalCommands } from "../../commands/runtime/offeredLocalCommand
 import { CONFIRMATION_STALE } from "../../commands/runtime/humanConfirmation";
 import type { CommandContextInput, CommandDefinition } from "../../commands/types";
 import { findCachedConversation } from "../../conversations/api/useConversation";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import { fetchPluginList } from "../api/usePluginList";
 import { recordPluginCommandRun } from "../api/pluginCommandGrants";
 import { usePluginConfirmStore } from "../state/usePluginConfirmStore";
@@ -448,15 +449,18 @@ const appRunner = createPluginCommandRunner({
   execute: async ({ commandId, args, commandContext, confirmation }) => {
     const res = await graphqlClient.request<{ executeCommand: ServerAnswer }>(
       PLUGIN_EXECUTE_COMMAND,
-      {
-        input: {
-          commandId,
-          args,
-          commandContext,
-          initiator: CommandInitiator.PLUGIN,
-          ...(confirmation ? { confirmation } : {}),
+      routedToWorkspace(
+        {
+          input: {
+            commandId,
+            args,
+            commandContext,
+            initiator: CommandInitiator.PLUGIN,
+            ...(confirmation ? { confirmation } : {}),
+          },
         },
-      },
+        commandContext.workspaceId,
+      ),
     );
     return res.executeCommand;
   },

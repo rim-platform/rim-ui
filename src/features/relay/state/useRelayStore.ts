@@ -153,3 +153,20 @@ export function hostOf(spaceId: string | null | undefined): string | null {
   if (!spaceId) return null;
   return useRelayStore.getState().spaces[spaceId]?.hostServerId ?? null;
 }
+
+/**
+ * `variables` with a top-level `workspaceId` when `workspaceId` is a space on another server, so
+ * the request goes to that space's host; unchanged for a space this relay hosts. For operations
+ * that name their workspace only deeper in their variables: the operation declares no such
+ * variable, and the server ignores a variable the operation does not declare.
+ *
+ * @param variables - The operation's own variables.
+ * @param workspaceId - The workspace the request is about, if any.
+ * @returns The variables to send.
+ */
+export function routedToWorkspace<V extends object>(
+  variables: V,
+  workspaceId: string | null | undefined,
+): V {
+  return workspaceId && hostOf(workspaceId) ? { ...variables, workspaceId } : variables;
+}
