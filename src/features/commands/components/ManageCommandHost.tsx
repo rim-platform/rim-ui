@@ -49,7 +49,7 @@ import {
 } from "../../settings/api/useWorkspaceInvites";
 import { revokeInviteDescription } from "../../settings/inviteText";
 import { decideJoinRequest, useJoinRequests } from "../../workspaces/api/publicJoinLink";
-import { useMessageReports, useResolveReportMutation } from "../../workspaces/api/useModeration";
+import { useMessageReports, useSettleReport } from "../../workspaces/api/useModeration";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
 import { useManageCommandStore, type RequestAction } from "../state/useManageCommandStore";
@@ -122,7 +122,7 @@ export function ManageCommandHost() {
 
 function ReportPicker({ workspaceId, onClose, resolve }: PickerProps & { resolve: boolean }) {
   const reports = useMessageReports(workspaceId, MessageReportStatus.OPEN);
-  const mutation = useResolveReportMutation();
+  const settle = useSettleReport();
   const items: PickerItem[] = (reports.data?.pages.flatMap((p) => p.items) ?? []).map((r) => ({
     id: r.id,
     label: r.reason || "No reason given",
@@ -130,16 +130,11 @@ function ReportPicker({ workspaceId, onClose, resolve }: PickerProps & { resolve
   }));
   function pick(item: PickerItem) {
     onClose();
-    mutation
-      .mutateAsync({
-        serverId: workspaceId,
-        reportId: item.id,
-        outcome: resolve ? ReportOutcome.RESOLVED : ReportOutcome.DISMISSED,
-      })
-      .then(() => toast.success(resolve ? "Report resolved" : "Report dismissed"))
-      .catch((err: unknown) =>
-        toast.error(graphqlErrorMessage(err, "Could not update the report")),
-      );
+    settle.mutate({
+      serverId: workspaceId,
+      reportId: item.id,
+      outcome: resolve ? ReportOutcome.RESOLVED : ReportOutcome.DISMISSED,
+    });
   }
   return (
     <ListPickerDialog
@@ -325,14 +320,7 @@ function UnblockPrincipalPicker({ onClose }: { onClose: () => void }) {
   });
   function pick(item: PickerItem) {
     onClose();
-    unblock
-      .mutateAsync({ principalId: item.id })
-      .then((outcome) => {
-        if (!outcome.lifted) toast.info(`${item.label} was not blocked`);
-        else if (outcome.emailUnblocked) toast.success(`Unblocked ${item.label} and their email`);
-        else toast.success(`Unblocked ${item.label}`);
-      })
-      .catch((err: unknown) => toast.error(graphqlErrorMessage(err, "Could not lift the block")));
+    unblock.mutate({ principalId: item.id, name: item.label });
   }
   return (
     <ListPickerDialog
@@ -352,12 +340,7 @@ function UnblockIpPicker({ onClose }: { onClose: () => void }) {
   const unblock = useUnblockIpMutation();
   function pick(item: PickerItem) {
     onClose();
-    unblock
-      .mutateAsync({ cidr: item.id })
-      .then((lifted) =>
-        lifted ? toast.success(`Unblocked ${item.id}`) : toast.info(`${item.id} was not blocked`),
-      )
-      .catch((err: unknown) => toast.error(graphqlErrorMessage(err, "Could not lift the block")));
+    unblock.mutate({ cidr: item.id });
   }
   return (
     <ListPickerDialog

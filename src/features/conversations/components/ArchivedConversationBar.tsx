@@ -1,10 +1,10 @@
+import { useState } from "react";
 import { Archive } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
-import { useSetConversationArchivedMutation } from "../api/useChannelMembership";
 import type { ConversationSummary } from "../types";
 
 interface ArchivedConversationBarProps {
@@ -18,8 +18,29 @@ export function ArchivedConversationBar({
   conversation,
 }: ArchivedConversationBarProps) {
   const canModerate = useCanModerate(workspaceId);
-  const setArchived = useSetConversationArchivedMutation();
+  const [unarchiving, setUnarchiving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const isChannel = conversation.conversationType === ConversationTypeEnum.CHANNEL;
+
+  async function unarchive() {
+    setUnarchiving(true);
+    setError(null);
+    try {
+      await runCommandFromClick(
+        "chat.unarchive_channel",
+        { server_id: workspaceId, conversation_id: conversation.id },
+        {
+          target: { workspaceId, conversationId: conversation.id },
+          throwOnError: true,
+          successToast: () => null,
+        },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not unarchive the channel");
+    } finally {
+      setUnarchiving(false);
+    }
+  }
 
   return (
     <div
@@ -37,22 +58,16 @@ export function ArchivedConversationBar({
             type="button"
             variant="secondary"
             size="sm"
-            isLoading={setArchived.isPending}
-            onClick={() =>
-              setArchived.mutate({
-                serverId: workspaceId,
-                conversationId: conversation.id,
-                archived: false,
-              })
-            }
+            isLoading={unarchiving}
+            onClick={() => void unarchive()}
           >
             Unarchive
           </Button>
         )}
       </div>
-      {setArchived.error && (
+      {error && (
         <p role="alert" className="text-xs text-rim-danger">
-          {graphqlErrorMessage(setArchived.error, "Could not unarchive the channel")}
+          {error}
         </p>
       )}
     </div>

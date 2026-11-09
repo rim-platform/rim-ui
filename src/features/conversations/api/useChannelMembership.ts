@@ -4,26 +4,17 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import type {
   MutationAddConversationMembersArgs,
-  MutationJoinChannelArgs,
   MutationLeaveConversationArgs,
   MutationRemoveConversationMemberArgs,
-  MutationSetConversationArchivedArgs,
   RemoteMemberInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { CONVERSATION_FIELDS } from "../../../graphql/fragments/conversation";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { clearLeaving, markLeaving } from "../state/pendingLeaves";
+import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import type { ConversationSummary } from "../types";
 import { commitOwnMembershipChange } from "../../e2ee/runtime/membership";
-
-const JOIN_CHANNEL = gql`
-  mutation JoinChannel($serverId: ID!, $conversationId: ID!) {
-    joinChannel(serverId: $serverId, conversationId: $conversationId) {
-      ...ConversationFields
-    }
-  }
-  ${CONVERSATION_FIELDS}
-`;
 
 const LEAVE_CONVERSATION = gql`
   mutation LeaveConversation($serverId: ID!, $conversationId: ID!) {
@@ -67,19 +58,6 @@ const REMOVE_CONVERSATION_MEMBER = gql`
   }
 `;
 
-const SET_CONVERSATION_ARCHIVED = gql`
-  mutation SetConversationArchived($serverId: ID!, $conversationId: ID!, $archived: Boolean!) {
-    setConversationArchived(
-      serverId: $serverId
-      conversationId: $conversationId
-      archived: $archived
-    ) {
-      ...ConversationFields
-    }
-  }
-  ${CONVERSATION_FIELDS}
-`;
-
 /**
  * Refreshes everything a membership or archive change can affect: both channel lists (the
  * `channels` prefix covers the joined list), the inbox, and the conversation itself.
@@ -118,33 +96,21 @@ export function startLeaving(conversationId: string): void {
   markLeaving(conversationId);
 }
 
+/**
+ * Closes a conversation the viewer has left when it is the open one, with its members panel; the
+ * conversation list then opens its first conversation.
+ */
+export function closeLeftConversation(conversationId: string): void {
+  const shell = useShellStore.getState();
+  if (shell.selectedConversationId !== conversationId) return;
+  useMembersPanelStore.getState().setOpen(false);
+  shell.setSelectedConversationId(null);
+}
+
 /** Ends a leave, whichever way it went, and refreshes what it affects. */
 export function finishLeaving(qc: QueryClient, serverId: string, conversationId: string): void {
   clearLeaving(conversationId);
   invalidateConversationQueries(qc, serverId, conversationId);
-}
-
-/** Join a public, unarchived channel. */
-export function useJoinChannelMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: MutationJoinChannelArgs) => {
-      const res = await graphqlClient.request<{ joinChannel: ConversationSummary }>(
-        JOIN_CHANNEL,
-        vars,
-      );
-      return res.joinChannel;
-    },
-    onSuccess: (conversation, vars) => {
-      qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      refreshAfterMembershipChange(
-        qc,
-        vars.serverId,
-        vars.conversationId,
-        Boolean(conversation.encryptedAt),
-      );
-    },
-  });
 }
 
 /** Leave a channel or group (not a DM). */
@@ -240,29 +206,6 @@ export function useRemoveConversationMemberMutation() {
     },
     onSuccess: (_data, vars) => {
       refreshAfterMembershipChange(qc, vars.serverId, vars.conversationId, true);
-    },
-  });
-}
-
-/** Archive or unarchive a channel (Owner/Moderator). */
-export function useSetConversationArchivedMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: MutationSetConversationArchivedArgs) => {
-      const res = await graphqlClient.request<{ setConversationArchived: ConversationSummary }>(
-        SET_CONVERSATION_ARCHIVED,
-        vars,
-      );
-      return res.setConversationArchived;
-    },
-    onSuccess: (conversation, vars) => {
-      qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      refreshAfterMembershipChange(
-        qc,
-        vars.serverId,
-        vars.conversationId,
-        Boolean(conversation.encryptedAt),
-      );
     },
   });
 }

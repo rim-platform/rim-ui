@@ -1,6 +1,7 @@
+import { useState } from "react";
+
 import { Button } from "../../../shared/ui/Button";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { useJoinChannelMutation } from "../api/useChannelMembership";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import type { ConversationSummary } from "../types";
 import { ChannelIcon } from "./ChannelIcon";
 
@@ -11,8 +12,29 @@ interface JoinChannelBarProps {
 
 /** Replaces the composer while the viewer reads a public channel they have not joined. */
 export function JoinChannelBar({ workspaceId, conversation }: JoinChannelBarProps) {
-  const join = useJoinChannelMutation();
+  const [joining, setJoining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const count = conversation.memberCount;
+
+  async function join() {
+    setJoining(true);
+    setError(null);
+    try {
+      await runCommandFromClick(
+        "chat.join_channel",
+        { server_id: workspaceId, conversation_id: conversation.id },
+        {
+          target: { workspaceId, conversationId: conversation.id },
+          throwOnError: true,
+          successToast: () => null,
+        },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not join the channel");
+    } finally {
+      setJoining(false);
+    }
+  }
 
   return (
     <div
@@ -32,15 +54,15 @@ export function JoinChannelBar({ workspaceId, conversation }: JoinChannelBarProp
           type="button"
           variant="primary"
           size="sm"
-          isLoading={join.isPending}
-          onClick={() => join.mutate({ serverId: workspaceId, conversationId: conversation.id })}
+          isLoading={joining}
+          onClick={() => void join()}
         >
           Join channel
         </Button>
       </div>
-      {join.error && (
+      {error && (
         <p role="alert" className="text-xs text-rim-danger">
-          {graphqlErrorMessage(join.error, "Could not join the channel")}
+          {error}
         </p>
       )}
     </div>

@@ -1,12 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import {
   NotificationLevel,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
 import { toast } from "../../../shared/toast";
 import type { ConversationSummary } from "../types";
 import { callsTo, makeConversation, routeRequests } from "../__fixtures__/conversations";
@@ -42,22 +49,34 @@ function serve({ defaultLevel = NotificationLevel.MENTIONS, muted = (): MutedRow
       },
     }),
     "query MutedConversations": () => ({ mutedConversations: muted() }),
-    "mutation SetConversationNotificationLevel": (vars) => ({
-      setConversationNotificationLevel: {
-        conversationId: vars.conversationId,
-        level: vars.level ?? null,
-        effectiveLevel: vars.level ?? defaultLevel,
-        mutedUntil: null,
-      },
-    }),
-    "mutation MuteConversation": () => ({ muteConversation: true }),
-    "mutation UnmuteConversation": () => ({ unmuteConversation: true }),
+    "mutation ExecuteCommand": (vars) => {
+      const { commandId, args } = (
+        vars as { input: { commandId: string; args: Record<string, unknown> } }
+      ).input;
+      if (commandId !== "notifications.set_level") return commandSucceeded();
+      const level = args.level === "default" ? null : args.level;
+      return commandSucceeded({
+        conversation_id: args.conversation_id,
+        level,
+        effective_level: level ?? defaultLevel.toLowerCase(),
+      });
+    },
   });
 }
 
+/** What a Notifications item on `conv-1` of `ws-1` sends, as the palette would apart from the initiator. */
+function menuRun(commandId: string, args: Record<string, unknown>) {
+  return {
+    commandId,
+    args: { server_id: "ws-1", conversation_id: "conv-1", ...args },
+    commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+    initiator: "CONTEXT_MENU",
+  };
+}
+
 async function openNotifications(conversation: ConversationSummary, summary: string | RegExp) {
-  // Keeps unobserved cache entries so the test can read the patched conversation.
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The app's own cache, which the commands' effects patch and refresh.
+  const qc = queryClient;
   qc.setQueryData(queryKeys.conversation("ws-1", conversation.id), conversation);
   render(
     <QueryClientProvider client={qc}>
@@ -89,6 +108,16 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     requestMock.mockReset();
     vi.mocked(toast.success).mockReset();
     useMutedStore.setState({ mutedIds: new Set() });
+    serveCommands("ws-1", [
+      "notifications.set_level",
+      "notifications.mute_conversation",
+      "notifications.unmute_conversation",
+    ]);
+  });
+
+  afterEach(() => {
+    clearServedCommands();
+    queryClient.clear();
   });
 
   it("lists the levels and the mutes, and checks the workspace default without an override", async () => {
@@ -138,8 +167,8 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     fireEvent.click(choice("Mentions only"));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetConversationNotificationLevel")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", level: NotificationLevel.MENTIONS },
+      expect(sentCommands(requestMock)).toEqual([
+        menuRun("notifications.set_level", { level: "mentions" }),
       ]),
     );
     await waitFor(() =>
@@ -150,11 +179,13 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
         effectiveNotificationLevel: NotificationLevel.MENTIONS,
       }),
     );
-    expect(toast.success).toHaveBeenCalledWith("Notifications for #general: Mentions only");
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Notifications for #general: Mentions only"),
+    );
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("goes back to the workspace default with level null", async () => {
+  it("goes back to the workspace default with level default", async () => {
     serve();
     await openNotifications(
       makeConversation({ notificationLevel: NotificationLevel.ALL }),
@@ -163,9 +194,14 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
 
     fireEvent.click(choice(/^Workspace default/));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetConversationNotificationLevel")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", level: null },
+      expect(sentCommands(requestMock)).toEqual([
+        menuRun("notifications.set_level", { level: "default" }),
       ]),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Notifications for #general: workspace default (Mentions only)",
+      ),
     );
   });
 
@@ -173,7 +209,7 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     // Like the server: level NONE lists the conversation as muted (without an end).
     serve({
       muted: () =>
-        callsTo(requestMock, "mutation SetConversationNotificationLevel").length > 0
+        sentCommands(requestMock).length > 0
           ? [{ conversationId: "conv-1", mutedUntil: null }]
           : [],
     });
@@ -183,20 +219,25 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
   });
 
   it("mutes for an hour with a timed mute", async () => {
-    serve();
+    // Like the server: the muted list holds the conversation once the mute is sent.
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    serve({
+      muted: () =>
+        sentCommands(requestMock).length > 0
+          ? [{ conversationId: "conv-1", mutedUntil: later }]
+          : [],
+    });
     await openNotifications(makeConversation(), "All messages");
 
     const before = Date.now();
     fireEvent.click(within(submenu()).getByRole("menuitem", { name: "Mute for 1 hour" }));
 
-    await waitFor(() => expect(callsTo(requestMock, "mutation MuteConversation")).toHaveLength(1));
-    const input = callsTo(requestMock, "mutation MuteConversation")[0].input as {
-      serverId: string;
-      conversationId: string;
-      mutedUntil: string;
-    };
-    expect(input).toMatchObject({ serverId: "ws-1", conversationId: "conv-1" });
-    const delta = Date.parse(input.mutedUntil) - before;
+    await waitFor(() => expect(sentCommands(requestMock)).toHaveLength(1));
+    const [sent] = sentCommands(requestMock);
+    const until = String(sent.args?.until);
+    expect(sent).toEqual(menuRun("notifications.mute_conversation", { duration: "until", until }));
+    expect(useMutedStore.getState().mutedIds.has("conv-1")).toBe(true);
+    const delta = Date.parse(until) - before;
     expect(delta).toBeGreaterThanOrEqual(59 * 60 * 1000);
     expect(delta).toBeLessThanOrEqual(61 * 60 * 1000);
   });
@@ -212,9 +253,56 @@ describe("ConversationActionsMenu — Notifications submenu", () => {
     expect(within(submenu()).queryByRole("menuitem")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Unmute" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation UnmuteConversation")).toEqual([
-        { input: { serverId: "ws-1", conversationId: "conv-1" } },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([menuRun("notifications.unmute_conversation", {})]),
+    );
+  });
+});
+
+describe("ConversationActionsMenu — Notifications on an older host", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(toast.success).mockReset();
+    useMutedStore.setState({ mutedIds: new Set() });
+    // The host lists its commands, and not the mute commands.
+    serveCommands("ws-1", ["notifications.set_level"]);
+  });
+
+  afterEach(() => {
+    clearServedCommands();
+    queryClient.clear();
+  });
+
+  it("mutes with the muteConversation mutation when the host lacks the command", async () => {
+    serve();
+    routeRequests(requestMock, {
+      "query Server(": () => ({
+        server: { id: "ws-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
+      }),
+      "query MyNotificationSettings": () => ({
+        myNotificationSettings: {
+          serverId: "ws-1",
+          defaultLevel: NotificationLevel.MENTIONS,
+          keywords: [],
+          dnd: null,
+          dndPaused: false,
+          dndPausedUntil: null,
+          digest: "OFF",
+        },
+      }),
+      "query MutedConversations": () => ({ mutedConversations: [] }),
+      "mutation MuteConversation": () => ({ muteConversation: true }),
+    });
+    await openNotifications(makeConversation(), "All messages");
+    fireEvent.click(within(submenu()).getByRole("menuitem", { name: "Mute for 1 hour" }));
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation MuteConversation")).toHaveLength(1));
+    expect(sentCommands(requestMock)).toEqual([]);
+    expect(
+      (callsTo(requestMock, "mutation MuteConversation")[0].input as { conversationId: string })
+        .conversationId,
+    ).toBe("conv-1");
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/^Muted #general until /)),
     );
   });
 });

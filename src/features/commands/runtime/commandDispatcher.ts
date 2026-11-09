@@ -58,6 +58,10 @@ import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { findCachedConversation } from "../../conversations/api/useConversation";
 import {
+  isShownConversation,
+  showConversation,
+} from "../../conversations/hooks/useOpenConversation";
+import {
   CommandArgumentType,
   ConversationTypeEnum,
 } from "../../../core/graphql/generated/schema-types";
@@ -299,16 +303,25 @@ const localHandlers: Record<string, LocalHandler> = {
   "workspace.toggle_notifications": () => {
     useNotificationsPanelStore.getState().toggle();
   },
-  "workspace.toggle_conversation_members": () => {
+  "workspace.toggle_conversation_members": (_args, commandContext) => {
     const shell = useShellStore.getState();
-    if (!shell.selectedConversationId) {
+    const conversationId =
+      contextString(commandContext, "conversationId") ?? shell.selectedConversationId;
+    if (!conversationId) {
       toast.info("Open a conversation to see its members");
       return;
     }
+    // Another conversation than the one shown, as a sidebar row's menu names, opens with them.
+    const workspaceId = contextString(commandContext, "workspaceId");
+    const shown = workspaceId
+      ? isShownConversation(workspaceId, conversationId)
+      : shell.selectedConversationId === conversationId;
+    if (!shown) showConversation(conversationId, workspaceId);
     shell.setMainSurface({ kind: "conversation" });
     shell.setActivePanel("inbox");
     useNotificationsPanelStore.getState().setOpen(false);
-    useMembersPanelStore.getState().toggle();
+    if (shown) useMembersPanelStore.getState().toggle();
+    else useMembersPanelStore.getState().setOpen(true);
   },
   "workspace.toggle_member_directory": () => {
     const shell = useShellStore.getState();

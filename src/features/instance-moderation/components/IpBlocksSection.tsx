@@ -35,14 +35,7 @@ export function IpBlocksSection({ blocks }: { blocks: UseQueryResult<InstanceIpB
   const unblock = useUnblockIpMutation();
 
   function handleUnblock(cidr: string) {
-    unblock.mutate(
-      { cidr },
-      {
-        onSuccess: (lifted) =>
-          lifted ? toast.success(`Unblocked ${cidr}`) : toast.info(`${cidr} was not blocked`),
-        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not lift the block")),
-      },
-    );
+    unblock.mutate({ cidr });
   }
 
   return (

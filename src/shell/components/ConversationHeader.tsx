@@ -21,7 +21,8 @@ import { useShellStore, type DirectDraft } from "../state/useShellStore";
 import { draftSpaceId, useDraftPeer } from "../../features/conversations/hooks/useDraftPeer";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useMemberLookup } from "../../features/workspaces/hooks/useMemberLookup";
-import { useUpdateTopicMutation } from "../../features/conversations/api/useUpdateTopic";
+import { updateConversationTopic } from "../../features/conversations/api/useUpdateTopic";
+import { queryClient } from "../../core/query/queryClient";
 import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
@@ -147,7 +148,6 @@ function SelectedConversationHeader() {
     stop: stopTopicEdit,
   } = useTopicEditStore.getState();
   const topicInputRef = useRef<HTMLInputElement>(null);
-  const updateTopic = useUpdateTopicMutation();
 
   // The edit can start from a menu before the channel has loaded.
   const showTopicInput = isChannel && isEditingTopic && canEditTopic;
@@ -169,12 +169,22 @@ function SelectedConversationHeader() {
         stopTopicEdit();
       } else if (e.key === "Enter") {
         if (workspaceId && conversationId && topicDraft !== (topic ?? "")) {
-          updateTopic.mutate({ serverId: workspaceId, conversationId, topic: topicDraft });
+          const vars = { serverId: workspaceId, conversationId, topic: topicDraft };
+          void runCommandFromClick(
+            "chat.set_topic",
+            { server_id: workspaceId, conversation_id: conversationId, topic: topicDraft },
+            {
+              target: { workspaceId, conversationId },
+              successToast: () => null,
+              errorTitle: "The topic could not be changed",
+              fallback: () => updateConversationTopic(queryClient, vars),
+            },
+          );
         }
         stopTopicEdit();
       }
     },
-    [workspaceId, conversationId, topicDraft, topic, updateTopic, stopTopicEdit],
+    [workspaceId, conversationId, topicDraft, topic, stopTopicEdit],
   );
 
   return (

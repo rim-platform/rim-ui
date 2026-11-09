@@ -1,42 +1,17 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import {
-  ConversationTypeEnum,
-  PostingPolicy,
-  type MutationSetChannelPostingArgs,
-} from "../../../core/graphql/generated/schema-types";
+import { ConversationTypeEnum, PostingPolicy } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import type { ConversationSummary } from "../types";
 import { postingAllows, type PostKind } from "../utils";
 import { useConversation } from "./useConversation";
-import { invalidateConversationQueries } from "./useChannelMembership";
 
 const CHANNEL_POSTING = gql`
   query ChannelPosting($serverId: ID!, $conversationId: ID!) {
     conversation(serverId: $serverId, conversationId: $conversationId) {
-      id
-      postingPolicy
-      postingAllowsThreads
-    }
-  }
-`;
-
-const SET_CHANNEL_POSTING = gql`
-  mutation SetChannelPosting(
-    $serverId: ID!
-    $conversationId: ID!
-    $policy: PostingPolicy!
-    $allowsThreads: Boolean!
-  ) {
-    setChannelPosting(
-      serverId: $serverId
-      conversationId: $conversationId
-      policy: $policy
-      allowsThreads: $allowsThreads
-    ) {
       id
       postingPolicy
       postingAllowsThreads
@@ -159,22 +134,4 @@ export function usePostingRights(
     reaction: postingAllows(posting, canModerate, "reaction"),
     pin: postingAllows(posting, canModerate, "pin"),
   };
-}
-
-/** Set who may post in a channel (Owner/Moderator; channels only; not when archived). */
-export function useSetChannelPostingMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: MutationSetChannelPostingArgs) => {
-      const res = await graphqlClient.request<{ setChannelPosting: PostingFields }>(
-        SET_CHANNEL_POSTING,
-        vars,
-      );
-      return res.setChannelPosting;
-    },
-    onSuccess: (posting, vars) => {
-      qc.setQueryData(channelPostingKey(vars.serverId, vars.conversationId), posting);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-    },
-  });
 }

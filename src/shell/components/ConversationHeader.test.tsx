@@ -46,7 +46,15 @@ import { lockVault } from "../../core/accountVault/accountVault";
 import { unlockTestVault } from "../../test/accountVault";
 import { ConversationHeader } from "./ConversationHeader";
 import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../test/clickCommands";
+import { toast } from "../../shared/toast";
+import {
   emptyInbox,
+  graphqlError,
   makeConversation,
   workspaceMembers,
 } from "../../features/conversations/__fixtures__/conversations";
@@ -99,9 +107,17 @@ describe("ConversationHeader — keyboard", () => {
   });
 });
 
-function serveConversation(conversation: ConversationSummary, viewerRole?: ServerMemberRoleGql) {
+function serveConversation(
+  conversation: ConversationSummary,
+  viewerRole?: ServerMemberRoleGql,
+  execute: () => Promise<unknown> = async () => commandSucceeded(),
+) {
   requestMock.mockImplementation((document: string) => {
     if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
+    if (document.includes("mutation ExecuteCommand")) return execute();
+    if (document.includes("mutation UpdateConversationTopic")) {
+      return Promise.resolve({ updateConversationTopic: { id: conversation.id, topic: "" } });
+    }
     if (document.includes("query Conversation(")) {
       return Promise.resolve({ conversation });
     }
@@ -124,6 +140,7 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useShellStore.getState().reset();
+    clearServedCommands();
   });
 
   it("shows a lock and the member count for a private channel; the count opens the members panel", async () => {
@@ -169,27 +186,69 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     expect(screen.queryByText(/1 members/)).not.toBeInTheDocument();
   });
 
+  /** Opens the topic edit from the conversation menu and types `topic` into it. */
+  async function editTopic(topic: string) {
+    renderHeader();
+    fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
+    const input = await screen.findByPlaceholderText("Set a topic...");
+    expect(input).toHaveValue("Old topic");
+    await waitFor(() => expect(input).toHaveFocus());
+    fireEvent.change(input, { target: { value: topic } });
+    return input;
+  }
+
   it("edits the topic from the conversation menu and saves it with Enter", async () => {
+    serveCommands("srv-1", ["chat.set_topic"]);
     serveConversation(
       makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
       ServerMemberRoleGql.MODERATOR,
     );
-    renderHeader();
-    fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
-
-    const input = await screen.findByPlaceholderText("Set a topic...");
-    expect(input).toHaveValue("Old topic");
-    await waitFor(() => expect(input).toHaveFocus());
-    fireEvent.change(input, { target: { value: "New topic" } });
+    const input = await editTopic("New topic");
     fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "chat.set_topic",
+          args: { server_id: "srv-1", conversation_id: "conv-1", topic: "New topic" },
+          commandContext: { workspaceId: "srv-1", conversationId: "conv-1" },
+        },
+      ]),
+    );
+    expect(useTopicEditStore.getState().conversationId).toBeNull();
+    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
+  });
+
+  it("sets the topic with the mutation on a host without the command", async () => {
+    serveCommands("srv-1", ["chat.join_channel"]);
+    serveConversation(
+      makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
+      ServerMemberRoleGql.MODERATOR,
+    );
+    fireEvent.keyDown(await editTopic("New topic"), { key: "Enter" });
     await waitFor(() =>
       expect(
         requestMock.mock.calls.filter(([doc]) => String(doc).includes("UpdateConversationTopic")),
       ).toHaveLength(1),
     );
-    expect(useTopicEditStore.getState().conversationId).toBeNull();
-    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
+    expect(sentCommands(requestMock)).toEqual([]);
+  });
+
+  it("tells why the server refused a topic", async () => {
+    const error = vi.spyOn(toast, "error");
+    serveCommands("srv-1", ["chat.set_topic"]);
+    serveConversation(
+      makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
+      ServerMemberRoleGql.MODERATOR,
+      async () => {
+        throw graphqlError("VALIDATION", "the topic is too long");
+      },
+    );
+    fireEvent.keyDown(await editTopic("x".repeat(600)), { key: "Enter" });
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("The topic could not be changed: the topic is too long"),
+    );
+    error.mockRestore();
   });
 
   it("marks an archived channel", async () => {

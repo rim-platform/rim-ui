@@ -3,6 +3,12 @@ import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-li
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
@@ -75,7 +81,7 @@ function serve(viewerRole: ServerMemberRoleGql, alice: Alice = {}) {
       contacts: [{ principalId: "rimp1_bob", relayUrls: [], addedAt: "" }],
     }),
     "mutation ClearTimeout": () => ({ clearTimeout: true }),
-    "mutation SetMemberRole": () => ({ setMemberRole: { userId: "u-alice", memberRole: GUEST } }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
     "mutation RemoveContact": () => ({ removeContact: true }),
   });
 }
@@ -158,10 +164,12 @@ describe("useUserContextMenu", () => {
     useRelayStore.getState().reset();
     useAuthStore.setState({ session: { userId: "me" } });
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    serveCommands("ws-1", ["admin.set_role", "admin.clear_timeout"]);
   });
 
   afterEach(() => {
     useAuthStore.setState({ session: null });
+    clearServedCommands();
   });
 
   it("offers a member someone else's profile, a message and their username", async () => {
@@ -371,13 +379,17 @@ describe("useUserContextMenu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Change Alice's role" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Guest" })).toBeChecked();
-    expect(callsTo(requestMock, "mutation SetMemberRole")).toHaveLength(0);
+    expect(sentCommands(requestMock)).toHaveLength(0);
     fireEvent.click(
       within(screen.getByTestId("moderation-dialog")).getByRole("button", { name: "Change role" }),
     );
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetMemberRole")).toEqual([
-        { serverId: "ws-1", userId: "u-alice", role: GUEST },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "admin.set_role",
+          args: { server_id: "ws-1", user_id: "u-alice", role: "guest" },
+          commandContext: { workspaceId: "ws-1" },
+        },
       ]),
     );
   });
@@ -409,10 +421,30 @@ describe("useUserContextMenu", () => {
     expect(items).not.toContain("Time out");
     fireEvent.click(screen.getByRole("menuitem", { name: "Clear timeout" }));
     await waitFor(() =>
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "admin.clear_timeout",
+          args: { server_id: "ws-1", user_id: "u-alice" },
+          commandContext: { workspaceId: "ws-1" },
+          initiator: "CONTEXT_MENU",
+        },
+      ]),
+    );
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Cleared Alice's timeout"));
+  });
+
+  it("clears a timeout with the mutation on a host without the command", async () => {
+    serveCommands("ws-1", ["admin.set_role"]);
+    serve(OWNER, { timeoutUntil: "2999-01-01T00:00:00Z" });
+    await renderPerson(OWNER);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear timeout" }));
+    await waitFor(() =>
       expect(callsTo(requestMock, "mutation ClearTimeout")).toEqual([
         { serverId: "ws-1", userId: "u-alice" },
       ]),
     );
+    expect(sentCommands(requestMock)).toEqual([]);
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Cleared Alice's timeout"));
   });
 

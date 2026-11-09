@@ -1,16 +1,12 @@
 import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { toast } from "../../../shared/toast";
 import { formatTime } from "../../../shared/utils/formatTime";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationLevel } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
-import {
-  useMuteConversationMutation,
-  useUnmuteConversationMutation,
-} from "../../conversations/api/useMuteConversation";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { muteConversation, unmuteConversation } from "../../conversations/api/useMuteConversation";
 import {
   isMuteActive,
   useMutedConversations,
@@ -18,11 +14,11 @@ import {
 } from "../../conversations/api/useMutedConversations";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel } from "../../conversations/utils";
-import { useSetConversationNotificationLevel } from "../api/useConversationNotificationLevel";
 import {
   useNotificationSettings,
   type NotificationSettingsData,
 } from "../api/useNotificationSettings";
+import { levelPatchOf } from "../api/conversationLevel";
 import { inOneHour, tomorrowMorning } from "../rules";
 
 export const LEVEL_LABELS: Record<NotificationLevel, string> = {
@@ -32,6 +28,49 @@ export const LEVEL_LABELS: Record<NotificationLevel, string> = {
 };
 
 const LEVEL_ORDER = [NotificationLevel.ALL, NotificationLevel.MENTIONS, NotificationLevel.NONE];
+
+/**
+ * Mutes a conversation until `until` with the Mute Conversation command, from a menu item;
+ * a server without the command gets the `muteConversation` mutation.
+ */
+export function muteFromMenu(
+  qc: QueryClient,
+  serverId: string,
+  conversationId: string,
+  until: Date,
+  label: string,
+): void {
+  const iso = until.toISOString();
+  void runCommandFromClick(
+    "notifications.mute_conversation",
+    { server_id: serverId, conversation_id: conversationId, duration: "until", until: iso },
+    {
+      source: "menu",
+      target: { workspaceId: serverId, conversationId },
+      successToast: `Muted ${label} until ${formatTime(iso)}`,
+      errorTitle: "Could not mute the conversation",
+      fallback: () => muteConversation(qc, { serverId, conversationId, mutedUntil: iso }),
+    },
+  );
+}
+
+/**
+ * Unmutes a conversation with the Unmute Conversation command, from a menu item; a server
+ * without the command gets the `unmuteConversation` mutation.
+ */
+export function unmuteFromMenu(qc: QueryClient, serverId: string, conversationId: string): void {
+  void runCommandFromClick(
+    "notifications.unmute_conversation",
+    { server_id: serverId, conversation_id: conversationId },
+    {
+      source: "menu",
+      target: { workspaceId: serverId, conversationId },
+      successToast: () => null,
+      errorTitle: "Could not unmute the conversation",
+      fallback: () => unmuteConversation(qc, { serverId, conversationId }),
+    },
+  );
+}
 
 export const MUTE_DURATIONS: { id: string; label: string; until: () => Date }[] = [
   { id: "mute-1h", label: "Mute for 1 hour", until: () => inOneHour() },
@@ -57,9 +96,6 @@ export function useConversationNotificationItems(
   workspaceId: string | null,
 ): (conversation: ConversationSummary) => DropdownMenuItem[] {
   const qc = useQueryClient();
-  const { mutate: setLevel } = useSetConversationNotificationLevel();
-  const { mutate: mute } = useMuteConversationMutation();
-  const { mutate: unmute } = useUnmuteConversationMutation();
   useNotificationSettings(workspaceId);
   useMutedConversations(workspaceId ?? undefined);
 
@@ -83,29 +119,26 @@ export function useConversationNotificationItems(
         (override === null && !mutedUntil ? conversation.effectiveNotificationLevel : undefined);
 
       function chooseLevel(level: NotificationLevel | null) {
-        setLevel(
-          { serverId, conversationId, level },
+        void runCommandFromClick(
+          "notifications.set_level",
           {
-            onSuccess: (result) => {
+            server_id: serverId,
+            conversation_id: conversationId,
+            level: level ? level.toLowerCase() : "default",
+          },
+          {
+            source: "menu",
+            target: { workspaceId: serverId, conversationId },
+            successToast: (result) => {
+              const effective = levelPatchOf(result.payload)?.effectiveNotificationLevel;
               const shown = level
                 ? LEVEL_LABELS[level]
-                : `workspace default (${LEVEL_LABELS[result.effectiveLevel]})`;
-              toast.success(`Notifications for ${label}: ${shown}`);
+                : effective
+                  ? `workspace default (${LEVEL_LABELS[effective]})`
+                  : "workspace default";
+              return `Notifications for ${label}: ${shown}`;
             },
-            onError: (err) =>
-              toast.error(graphqlErrorMessage(err, "Could not change the notification level")),
-          },
-        );
-      }
-
-      function muteUntil(until: Date) {
-        mute(
-          { serverId, conversationId, mutedUntil: until.toISOString() },
-          {
-            onSuccess: () =>
-              toast.success(`Muted ${label} until ${formatTime(until.toISOString())}`),
-            onError: (err) =>
-              toast.error(graphqlErrorMessage(err, "Could not mute the conversation")),
+            errorTitle: "Could not change the notification level",
           },
         );
       }
@@ -131,7 +164,7 @@ export function useConversationNotificationItems(
             id: duration.id,
             label: duration.label,
             separatorBefore: index === 0,
-            onSelect: () => muteUntil(duration.until()),
+            onSelect: () => muteFromMenu(qc, serverId, conversationId, duration.until(), label),
           })),
         );
       }
@@ -150,18 +183,11 @@ export function useConversationNotificationItems(
         items.push({
           id: "unmute",
           label: "Unmute",
-          onSelect: () =>
-            unmute(
-              { serverId, conversationId },
-              {
-                onError: (err) =>
-                  toast.error(graphqlErrorMessage(err, "Could not unmute the conversation")),
-              },
-            ),
+          onSelect: () => unmuteFromMenu(qc, serverId, conversationId),
         });
       }
       return items;
     },
-    [qc, setLevel, mute, unmute],
+    [qc],
   );
 }

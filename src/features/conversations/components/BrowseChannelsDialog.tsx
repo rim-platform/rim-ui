@@ -2,10 +2,9 @@ import { useMemo, useState } from "react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { useArchivedChannels, useChannels } from "../api/useChannels";
-import { useJoinChannelMutation } from "../api/useChannelMembership";
 import { useOpenConversation } from "../hooks/useOpenConversation";
 import type { ConversationSummary } from "../types";
 import { memberCountLabel } from "../utils";
@@ -28,7 +27,7 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
   const { data, isPending, isError } = useChannels(workspaceId);
   const canModerate = useCanModerate(workspaceId);
   const { data: archivedData } = useArchivedChannels(workspaceId, canModerate);
-  const join = useJoinChannelMutation();
+  const [joinError, setJoinError] = useState<string | null>(null);
   const openConversation = useOpenConversation();
 
   const channels = useMemo(() => matching(data?.items ?? [], query), [data, query]);
@@ -39,15 +38,25 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
     onClose();
   }
 
-  function handleJoin(channel: ConversationSummary) {
+  async function handleJoin(channel: ConversationSummary) {
     setJoiningId(channel.id);
-    join.mutate(
-      { serverId: workspaceId, conversationId: channel.id },
-      {
-        onSuccess: () => open(channel.id),
-        onSettled: () => setJoiningId(null),
-      },
-    );
+    setJoinError(null);
+    try {
+      const outcome = await runCommandFromClick(
+        "chat.join_channel",
+        { server_id: workspaceId, conversation_id: channel.id },
+        {
+          target: { workspaceId, conversationId: channel.id },
+          throwOnError: true,
+          successToast: () => null,
+        },
+      );
+      if (outcome.ok) open(channel.id);
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : "Could not join the channel");
+    } finally {
+      setJoiningId(null);
+    }
   }
 
   return (
@@ -61,12 +70,12 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
         className="mb-3 w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40"
       />
 
-      {join.error && (
+      {joinError && (
         <p
           role="alert"
           className="mb-3 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
         >
-          {graphqlErrorMessage(join.error, "Could not join the channel")}
+          {joinError}
         </p>
       )}
 
@@ -120,7 +129,7 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
                     size="sm"
                     isLoading={joiningId === channel.id}
                     disabled={joiningId !== null}
-                    onClick={() => handleJoin(channel)}
+                    onClick={() => void handleJoin(channel)}
                     aria-label={`Join ${channel.title ?? "channel"}`}
                   >
                     Join

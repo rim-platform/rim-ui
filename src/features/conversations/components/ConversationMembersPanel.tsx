@@ -7,6 +7,7 @@ import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useCanModerate, useMyServerRole } from "../../workspaces/api/useMyServerRole";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
@@ -28,7 +29,6 @@ import { useConversation } from "../api/useConversation";
 import {
   useAddConversationMembersMutation,
   useAddDirectConversationMembersMutation,
-  useRemoveConversationMemberMutation,
 } from "../api/useChannelMembership";
 import { useLeaveConversation } from "../hooks/useLeaveConversation";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
@@ -130,7 +130,8 @@ function MembersList({
   const [confirmLeave, setConfirmLeave] = useState(false);
   const addMembers = useAddConversationMembersMutation();
   const addDirect = useAddDirectConversationMembersMutation();
-  const removeMember = useRemoveConversationMemberMutation();
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
 
   const isDm = conversation.conversationType === ConversationTypeEnum.DIRECT;
@@ -182,25 +183,47 @@ function MembersList({
     setInvitePeople([]);
   }
 
-  function handleInvite() {
+  /** Announces members added to the conversation, naming those who join once set up for encryption. */
+  function announceAdded(updated: ConversationSummary | null) {
+    const waiting = updated ? pendingMembersOf(updated).filter((id) => inviteIds.includes(id)) : [];
+    const added = inviteIds.length === 1 ? "Member added" : `${inviteIds.length} members added`;
+    if (waiting.length === 0) toast.success(added);
+    else {
+      const names = joinNames(waiting.map((id) => memberLookup.resolve(id).displayName));
+      toast.success(added, {
+        description: `${names} ${waiting.length === 1 ? "joins" : "join"} once they set up a device for encryption.`,
+      });
+    }
+    setInviteIds([]);
+    closeInvite();
+  }
+
+  async function handleInvite() {
     if (inviteIds.length === 0) return;
+    // A plaintext conversation adds them with the Invite to Conversation command; an encrypted
+    // one keeps its own call, whose answer names who waits for a device.
+    if (!conversation.encryptedAt) {
+      setAdding(true);
+      try {
+        const outcome = await runCommandFromClick(
+          "chat.invite_to_conversation",
+          { server_id: workspaceId, conversation_id: conversation.id, user_ids: inviteIds },
+          {
+            target: { workspaceId, conversationId: conversation.id },
+            successToast: () => null,
+            errorTitle: "Could not add members",
+          },
+        );
+        if (outcome.ok) announceAdded(null);
+      } finally {
+        setAdding(false);
+      }
+      return;
+    }
     addMembers.mutate(
       { serverId: workspaceId, conversationId: conversation.id, userIds: inviteIds },
       {
-        onSuccess: (updated) => {
-          const waiting = pendingMembersOf(updated).filter((id) => inviteIds.includes(id));
-          const added =
-            inviteIds.length === 1 ? "Member added" : `${inviteIds.length} members added`;
-          if (waiting.length === 0) toast.success(added);
-          else {
-            const names = joinNames(waiting.map((id) => memberLookup.resolve(id).displayName));
-            toast.success(added, {
-              description: `${names} ${waiting.length === 1 ? "joins" : "join"} once they set up a device for encryption.`,
-            });
-          }
-          setInviteIds([]);
-          closeInvite();
-        },
+        onSuccess: (updated) => announceAdded(updated),
         onError: (err) => toast.error(graphqlErrorMessage(err, "Could not add members")),
       },
     );
@@ -250,17 +273,24 @@ function MembersList({
     );
   }
 
-  function handleRemove(userId: string) {
-    removeMember.mutate(
-      { serverId: workspaceId, conversationId: conversation.id, userId },
-      {
-        onSuccess: () => setConfirmRemoveId(null),
-        onError: (err) => {
-          setConfirmRemoveId(null);
-          toast.error(graphqlErrorMessage(err, "Could not remove the member"));
+  /** Removes a member the row's own Remove button confirmed, with the command that does it. */
+  async function handleRemove(userId: string) {
+    setRemoving(true);
+    try {
+      await runCommandFromClick(
+        "chat.remove_conversation_member",
+        { server_id: workspaceId, conversation_id: conversation.id, user_id: userId },
+        {
+          target: { workspaceId, conversationId: conversation.id },
+          confirmed: true,
+          successToast: () => null,
+          errorTitle: "Could not remove the member",
         },
-      },
-    );
+      );
+    } finally {
+      setRemoving(false);
+      setConfirmRemoveId(null);
+    }
   }
 
   return (
@@ -297,7 +327,7 @@ function MembersList({
               includeBots={
                 canModerate && conversation.conversationType === ConversationTypeEnum.CHANNEL
               }
-              onConfirm={handleInvite}
+              onConfirm={() => void handleInvite()}
               onEscape={cancelInvite}
               autoFocus
               placeholder="Find people to invite..."
@@ -313,8 +343,10 @@ function MembersList({
               variant="primary"
               size="sm"
               disabled={pickedCount === 0}
-              isLoading={inDirectSpace ? addDirect.isPending || resolving : addMembers.isPending}
-              onClick={inDirectSpace ? () => void handleAddDirect() : handleInvite}
+              isLoading={
+                inDirectSpace ? addDirect.isPending || resolving : addMembers.isPending || adding
+              }
+              onClick={inDirectSpace ? () => void handleAddDirect() : () => void handleInvite()}
             >
               Add{pickedCount > 0 ? ` (${pickedCount})` : ""}
             </Button>
@@ -403,8 +435,8 @@ function MembersList({
                     type="button"
                     variant="danger"
                     size="sm"
-                    isLoading={removeMember.isPending}
-                    onClick={() => handleRemove(member.userId)}
+                    isLoading={removing}
+                    onClick={() => void handleRemove(member.userId)}
                     aria-label={`Confirm removing ${member.displayName}`}
                   >
                     Remove

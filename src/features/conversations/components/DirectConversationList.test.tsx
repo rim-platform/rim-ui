@@ -7,6 +7,8 @@ import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 
 const inbox = vi.hoisted(() => ({ fetchInboxConversations: vi.fn() }));
 const relayApi = vi.hoisted(() => ({
@@ -175,6 +177,10 @@ describe("DirectConversationList", () => {
   });
 
   it("opens a row's menu with right click, about the conversation's own space", async () => {
+    // The app's cache, which the keybind assigner reads the row's conversation from.
+    queryClient.setQueryData(queryKeys.conversations("remote-space"), {
+      items: [dm("remote-dm", "remote-space")],
+    });
     renderWithProviders(
       <>
         <ConversationSelectionRuntime />
@@ -188,13 +194,16 @@ describe("DirectConversationList", () => {
       .map((el) => el.getAttribute("aria-label") ?? el.firstElementChild?.textContent);
     expect(labels).toEqual(["Notifications: All messages", "Assign keybind…"]);
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Assign keybind…" }));
-    expect(useQuickAccessStore.getState().target).toEqual({
-      kind: "dm",
-      conversationId: "remote-dm",
-      serverId: "remote-space",
-      label: "Alice",
-    });
+    await waitFor(() =>
+      expect(useQuickAccessStore.getState().target).toEqual({
+        kind: "dm",
+        conversationId: "remote-dm",
+        serverId: "remote-space",
+        label: "Alice",
+      }),
+    );
     // The menu acts on the row without opening it.
     expect(useWorkspaceStore.getState().workspaceId).toBe("direct-1");
+    queryClient.clear();
   });
 });

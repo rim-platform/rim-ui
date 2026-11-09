@@ -2,9 +2,7 @@ import { useCallback } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
-import { useShellStore } from "../../../shell/state/useShellStore";
-import { useLeaveConversationMutation } from "../api/useChannelMembership";
-import { useMembersPanelStore } from "../state/useMembersPanelStore";
+import { closeLeftConversation, useLeaveConversationMutation } from "../api/useChannelMembership";
 import type { ConversationSummary } from "../types";
 import { conversationLabel } from "../utils";
 
@@ -29,11 +27,7 @@ export function useLeaveConversation(workspaceId: string | null | undefined) {
         { serverId, conversationId: conversation.id },
         {
           onSuccess: () => {
-            const shell = useShellStore.getState();
-            if (shell.selectedConversationId === conversation.id) {
-              useMembersPanelStore.getState().setOpen(false);
-              shell.setSelectedConversationId(null);
-            }
+            closeLeftConversation(conversation.id);
             toast.success(`Left ${conversationLabel(conversation)}`);
           },
           onError: (err) => {

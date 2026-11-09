@@ -7,6 +7,9 @@ import { logger } from "../../../../core/logger";
 import { toast } from "../../../../shared/toast";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { findCachedConversation } from "../../../conversations/api/useConversation";
+import type { ConversationSummary } from "../../../conversations/types";
+import { directPeerId } from "../../../conversations/utils";
+import type { ServerMember } from "../../../workspaces/api/useServerMembers";
 import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { ConversationTypeEnum } from "../../../../core/graphql/generated/schema-types";
 import { backUpHistoryNow } from "../../../history-archive/backUpNow";
@@ -92,23 +95,49 @@ async function checkForUpdates(): Promise<void> {
   else toast.success("You have the latest version.");
 }
 
-function assignKeybind(): void {
-  const { selectedConversationId } = useShellStore.getState();
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
+/** The name a DM's other person goes by in its workspace's cached member list, if known. */
+function directPeerName(conversation: ConversationSummary): string | undefined {
+  const peerId = directPeerId(conversation, useAuthStore.getState().session?.userId);
+  const peer = queryClient
+    .getQueryData<ServerMember[]>(queryKeys.serverMembers(conversation.serverId))
+    ?.find((m) => m.userId === peerId);
+  return peer?.displayName || peer?.username || undefined;
+}
+
+/**
+ * Opens the keybind assigner on the context's conversation, which a conversation's menu names,
+ * else on the open one; with neither, on the workspace. A `label` argument names the
+ * conversation as the surface that ran it shows it.
+ */
+function assignKeybind(
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+): void {
+  const ctx = commandContext ?? {};
+  const contextWorkspace = typeof ctx.workspaceId === "string" ? ctx.workspaceId : undefined;
+  const contextConversation =
+    typeof ctx.conversationId === "string" ? ctx.conversationId : undefined;
+  const workspaceId = contextWorkspace ?? useWorkspaceStore.getState().workspaceId;
+  const conversationId = contextWorkspace
+    ? contextConversation
+    : useShellStore.getState().selectedConversationId;
   if (!workspaceId) {
     toast.info("Open a workspace first.");
     return;
   }
-  const conversation = selectedConversationId
-    ? findCachedConversation(queryClient, workspaceId, selectedConversationId)
+  const conversation = conversationId
+    ? findCachedConversation(queryClient, workspaceId, conversationId)
     : undefined;
-  if (selectedConversationId && conversation) {
+  if (conversationId && conversation) {
     const dm = conversation.conversationType === ConversationTypeEnum.DIRECT;
     useQuickAccessStore.getState().open({
       kind: dm ? "dm" : "channel",
       conversationId: conversation.id,
       serverId: conversation.serverId,
-      label: conversation.title || (dm ? "Direct message" : "Conversation"),
+      label:
+        (typeof args?.label === "string" && args.label.trim() !== "" ? args.label : undefined) ||
+        conversation.title ||
+        (dm ? (directPeerName(conversation) ?? "Direct message") : "Conversation"),
     });
     return;
   }

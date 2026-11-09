@@ -12,13 +12,13 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { MessageReportStatus, ReportOutcome } from "../../../core/graphql/generated/schema-types";
 import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import {
   useDeleteReportedMessageMutation,
   useMessageReports,
-  useResolveReportMutation,
   useServerBans,
-  useUnbanMemberMutation,
+  useSettleReport,
   type MessageReportRow,
   type ServerBanRow,
 } from "../../workspaces/api/useModeration";
@@ -73,8 +73,8 @@ const ERROR_BOX =
 
 function BansList({ serverId }: { serverId: string }) {
   const { data: bans, isPending, isError, error } = useServerBans(serverId);
-  const unban = useUnbanMemberMutation();
   const qc = useQueryClient();
+  const [unbanningId, setUnbanningId] = useState<string | null>(null);
   const offersDeletion = hasCapability(useServerInfo().info, DELETE_MEMBER_MESSAGES);
   const [deleting, setDeleting] = useState<ModeratedMember | null>(null);
 
@@ -82,20 +82,23 @@ function BansList({ serverId }: { serverId: string }) {
     return ban.user ? personName(ban.user, ban.userId, null) : "this person";
   }
 
-  function handleUnban(ban: ServerBanRow) {
-    unban.mutate(
-      { serverId, userId: ban.userId },
-      {
-        onSuccess: () => {
-          const isDefault =
-            qc.getQueryData<KnownServerInfo>(queryKeys.serverInfo)?.defaultWorkspace === serverId;
-          toast.success(
-            `Unbanned ${banName(ban)}${isDefault ? ". Local accounts are restored to the default workspace." : ""}`,
-          );
+  async function handleUnban(ban: ServerBanRow) {
+    const isDefault =
+      qc.getQueryData<KnownServerInfo>(queryKeys.serverInfo)?.defaultWorkspace === serverId;
+    setUnbanningId(ban.userId);
+    try {
+      await runCommandFromClick(
+        "admin.unban",
+        { server_id: serverId, user_id: ban.userId },
+        {
+          target: { workspaceId: serverId },
+          successToast: `Unbanned ${banName(ban)}${isDefault ? ". Local accounts are restored to the default workspace." : ""}`,
+          errorTitle: "Could not lift the ban",
         },
-        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not lift the ban")),
-      },
-    );
+      );
+    } finally {
+      setUnbanningId(null);
+    }
   }
 
   return (
@@ -146,8 +149,8 @@ function BansList({ serverId }: { serverId: string }) {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={unban.isPending && unban.variables?.userId === ban.userId}
-                  onClick={() => handleUnban(ban)}
+                  disabled={unbanningId === ban.userId}
+                  onClick={() => void handleUnban(ban)}
                   aria-label={`Unban ${name}`}
                 >
                   Unban
@@ -278,7 +281,7 @@ function ReportRow({
   onClearProfile?: (principalId: string) => void;
 }) {
   const memberLookup = useMemberLookup(serverId);
-  const resolve = useResolveReportMutation();
+  const resolve = useSettleReport();
   const deleteMessage = useDeleteReportedMessageMutation();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // A report with no reporter was filed by the server's automatic check.
@@ -305,16 +308,7 @@ function ReportRow({
   const canDelete = onBlockPrincipal !== undefined && !verified && report.messageText !== null;
 
   function handleResolve(outcome: ReportOutcome) {
-    resolve.mutate(
-      { serverId, reportId: report.id, outcome },
-      {
-        onSuccess: () =>
-          toast.success(
-            outcome === ReportOutcome.RESOLVED ? "Report resolved" : "Report dismissed",
-          ),
-        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not update the report")),
-      },
-    );
+    resolve.mutate({ serverId, reportId: report.id, outcome });
   }
 
   return (

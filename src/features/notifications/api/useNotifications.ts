@@ -289,6 +289,12 @@ function markReadInCache(qc: QueryClient, vars: MarkNotificationsReadVars, readA
   }
 }
 
+/** Shows every notification of `serverId` as read at once, before the server answers. */
+export function markAllReadInCache(qc: QueryClient, serverId: string): void {
+  const now = new Date().toISOString();
+  markReadInCache(qc, { serverId, allBefore: now }, now);
+}
+
 /**
  * Marks notifications read: the given ids, or everything created up to `allBefore`. The inbox
  * and badge update at once and then refetch from the server either way.

@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
+import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
@@ -90,8 +97,8 @@ function serve(
   });
 }
 
-function renderList(defaultWorkspace?: string) {
-  const qc = createTestQueryClient();
+/** Renders the list; `qc` is the cache it reads, a fresh one unless given. */
+function renderList(defaultWorkspace?: string, qc: QueryClient = createTestQueryClient()) {
   if (defaultWorkspace) {
     qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace }));
   }
@@ -298,7 +305,15 @@ describe("ConversationList — channels sidebar", () => {
 
   it("browse lists channels with member counts, joins one and navigates to it", async () => {
     serve();
-    renderList();
+    const route = requestMock.getMockImplementation()!;
+    requestMock.mockImplementation((document: unknown, variables?: Record<string, unknown>) =>
+      String(document).includes("mutation ExecuteCommand")
+        ? Promise.resolve(commandSucceeded())
+        : route(document, variables),
+    );
+    serveCommands("ws-1", ["chat.join_channel"]);
+    // The app's own cache, which the join's effect refreshes.
+    renderList(undefined, queryClient);
     fireEvent.click(await screen.findByRole("button", { name: "Browse channels" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Browse channels" });
@@ -313,8 +328,12 @@ describe("ConversationList — channels sidebar", () => {
     fireEvent.click(within(randomRow).getByRole("button", { name: "Join random" }));
 
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-random"));
-    expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
-      { serverId: "ws-1", conversationId: "c-random" },
+    expect(sentCommands(requestMock)).toEqual([
+      {
+        commandId: "chat.join_channel",
+        args: { server_id: "ws-1", conversation_id: "c-random" },
+        commandContext: { workspaceId: "ws-1", conversationId: "c-random" },
+      },
     ]);
     expect(screen.queryByRole("dialog", { name: "Browse channels" })).not.toBeInTheDocument();
     // The joined list is refetched so the channel lands in the sidebar.
@@ -325,6 +344,8 @@ describe("ConversationList — channels sidebar", () => {
         ).length,
       ).toBeGreaterThan(1),
     );
+    clearServedCommands();
+    queryClient.clear();
   });
 
   it("Open on a joined channel navigates without joining", async () => {

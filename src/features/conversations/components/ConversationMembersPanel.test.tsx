@@ -3,6 +3,13 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import {
   ConversationTypeEnum,
@@ -98,7 +105,25 @@ function serve(role: ServerMemberRoleGql, conversation: ConversationSummary = ch
     }),
     "mutation RemoveConversationMember": () => ({ removeConversationMember: true }),
     "mutation LeaveConversation": () => ({ leaveConversation: true }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
   });
+}
+
+beforeEach(() => {
+  serveCommands("ws-1", ["chat.invite_to_conversation", "chat.remove_conversation_member"]);
+});
+
+afterEach(() => {
+  clearServedCommands();
+});
+
+/** What a control of the panel on `conv-1` of `ws-1` sends, as the palette would. */
+function panelRun(commandId: string, args: Record<string, unknown>) {
+  return {
+    commandId,
+    args: { server_id: "ws-1", conversation_id: "conv-1", ...args },
+    commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+  };
 }
 
 async function renderPanel(role: ServerMemberRoleGql, seed?: (qc: QueryClient) => void) {
@@ -282,10 +307,12 @@ describe("ConversationMembersPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add (1)" }));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation AddConversationMembers")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", userIds: ["u-bob"] },
+      expect(sentCommands(requestMock)).toEqual([
+        panelRun("chat.invite_to_conversation", { user_ids: ["u-bob"] }),
       ]),
     );
+    expect(callsTo(requestMock, "mutation AddConversationMembers")).toEqual([]);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Member added"));
   });
 
   describe("with a bot in the workspace", () => {
@@ -430,14 +457,16 @@ describe("ConversationMembersPanel", () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await renderPanel(ServerMemberRoleGql.MODERATOR);
     fireEvent.click(screen.getByRole("button", { name: "Remove Alice" }));
-    expect(callsTo(requestMock, "mutation RemoveConversationMember")).toHaveLength(0);
+    expect(sentCommands(requestMock)).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Alice" }));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation RemoveConversationMember")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", userId: "u-alice" },
+      expect(sentCommands(requestMock)).toEqual([
+        panelRun("chat.remove_conversation_member", { user_id: "u-alice" }),
       ]),
     );
+    // The row's own confirmation was the person's: nothing asks again.
+    expect(useConfirmationModalStore.getState().request).toBeNull();
     // Never on the viewer's own row: that one is Leave.
     expect(screen.queryByRole("button", { name: /remove me myself/i })).not.toBeInTheDocument();
   });
@@ -564,11 +593,11 @@ describe("ConversationMembersPanel", () => {
       key: "ContextMenu",
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove from #general…" }));
-    expect(callsTo(requestMock, "mutation RemoveConversationMember")).toHaveLength(0);
+    expect(sentCommands(requestMock)).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm removing Alice" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation RemoveConversationMember")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", userId: "u-alice" },
+      expect(sentCommands(requestMock)).toEqual([
+        panelRun("chat.remove_conversation_member", { user_id: "u-alice" }),
       ]),
     );
   });

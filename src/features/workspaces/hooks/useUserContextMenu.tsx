@@ -8,8 +8,10 @@ import {
   useContextMenu,
   type ContextMenuBindings,
 } from "../../../shared/ui/contextMenu/useContextMenu";
+import { queryClient } from "../../../core/query/queryClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel } from "../../conversations/utils";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
@@ -22,7 +24,7 @@ import { StatusDropdown } from "../../settings/components/StatusDropdown";
 import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServerRole } from "../api/useMyServerRole";
-import { useClearTimeoutMutation } from "../api/useModeration";
+import { clearMemberTimeout } from "../api/useModeration";
 import { useServerMembers } from "../api/useServerMembers";
 import {
   MemberModerationDialog,
@@ -125,7 +127,6 @@ export function useUserContextMenu({
   const contacts = useContacts();
   const { addContact } = useAddMemberContact();
   const removeContact = useRemoveContact();
-  const clearTimeoutMutation = useClearTimeoutMutation();
   const { info: serverInfo } = useServerInfo();
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
@@ -277,12 +278,15 @@ export function useUserContextMenu({
         id: "clear-timeout",
         label: "Clear timeout",
         onSelect: () =>
-          clearTimeoutMutation.mutate(
-            { serverId: workspaceId, userId },
+          void runCommandFromClick(
+            "admin.clear_timeout",
+            { server_id: workspaceId, user_id: userId },
             {
-              onSuccess: () => toast.success(`Cleared ${name}'s timeout`),
-              onError: (err) =>
-                toast.error(graphqlErrorMessage(err, "Could not clear the timeout")),
+              source: "menu",
+              target: { workspaceId },
+              successToast: `Cleared ${name}'s timeout`,
+              errorTitle: "Could not clear the timeout",
+              fallback: () => clearMemberTimeout(queryClient, { serverId: workspaceId, userId }),
             },
           ),
       });
