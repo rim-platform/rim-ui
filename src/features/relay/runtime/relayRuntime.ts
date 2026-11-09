@@ -11,7 +11,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { applyWorkspaceEvent } from "../../../core/events/useWorkspaceEvents";
 import type { WorkspaceEvent } from "../../../core/events/types";
-import { setSpaceRouter } from "../../../core/graphql/client";
+import { setSpaceRouter, type SpaceRouter } from "../../../core/graphql/client";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { onWsConnected, wsClient } from "../../../core/graphql/wsClient";
 import {
@@ -138,6 +138,19 @@ export function applyRelayEvent(
   applyWorkspaceEvent(event, qc, spaceId);
 }
 
+/**
+ * Sets where requests for spaces on other servers go, `null` for nowhere, and refetches every
+ * cached command list: a list names its workspace's host only through the router, so one read
+ * before the router changed may hold another server's commands.
+ *
+ * @param qc - The query client that caches the command lists.
+ * @param router - The router to use from now on.
+ */
+export function routeSpaces(qc: QueryClient, router: SpaceRouter | null): void {
+  setSpaceRouter(router);
+  void qc.invalidateQueries({ queryKey: ["commands"] });
+}
+
 async function start(userId: string, qc: QueryClient): Promise<() => void> {
   const info = await fetchRelayInfo();
   const me = await fetchRelayMe();
@@ -165,7 +178,7 @@ async function start(userId: string, qc: QueryClient): Promise<() => void> {
     .getState()
     .load()
     .catch(() => undefined);
-  setSpaceRouter({
+  routeSpaces(qc, {
     hostOf,
     send: (host, body) => activeDirect()?.send(host, body) ?? sendGraphql(host, body),
   });
@@ -304,8 +317,8 @@ export function useRelayRuntime() {
       unsubscribeWs();
       unsubscribeOffline();
       stop?.();
-      setSpaceRouter(null);
       useRelayStore.getState().reset();
+      routeSpaces(qc, null);
       useBlockedConversations.getState().reset();
       resetBlockedCreators();
       resetPinCache();

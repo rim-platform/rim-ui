@@ -151,6 +151,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- In a workspace hosted on another server, the palette, keybinds, quick boxes, the message box,
+  context menus and plugins now list and run that server's commands.
 - Turning a keybind off or giving it other keys no longer drops the arguments saved with it.
 - Muting a conversation until tomorrow from the palette, a keybind or a quick box ends at 9:00 on this device's clock, as the conversation menu does.
 - Keybinds, quick boxes and the message box now run every command they offer, including ones that act on the selected message: Delete, Edit, Report, Reply, Copy Message Text and Open Thread work from a key on the message selected in the list, and say so when none is selected. The keybind and quick box pickers leave out commands that need arguments they cannot supply, and mark a saved one; the message box lists the app's own and the plugins' commands, and sends arguments typed after a command such as `/chat.create_channel name=ops` to it. Unreads, focus and the new Toggle Channel Lenses commands say where they work instead of doing nothing.

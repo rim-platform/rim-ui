@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import type {
@@ -67,23 +68,23 @@ const ExecuteCommandDocument = gql`
 `;
 
 /**
- * The commands the server lists on `surface` in `commandContext`, fetched now, bypassing
- * the cache.
+ * The commands the server that hosts the context's workspace lists on `surface` in
+ * `commandContext`, fetched now, bypassing the cache.
  */
 export async function fetchCommandList(
   surface: CommandSurface,
   commandContext?: CommandContextInput,
 ): Promise<CommandDefinition[]> {
-  const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(CommandsDocument, {
-    surface,
-    commandContext,
-  });
+  const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
+    CommandsDocument,
+    routedToWorkspace({ surface, commandContext }, commandContext?.workspaceId),
+  );
   return res.commands;
 }
 
 /**
- * The command registry for one surface, fetched with the active workspace as context and
- * cached per workspace.
+ * The command registry for one surface, fetched with the active workspace as context from the
+ * server that hosts it, and cached per workspace.
  */
 export function useCommands(surface?: CommandSurface, commandContext?: CommandContextInput) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -94,15 +95,25 @@ export function useCommands(surface?: CommandSurface, commandContext?: CommandCo
     gcTime: Infinity,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(CommandsDocument, {
-        surface: surface ?? "PALETTE",
-        commandContext: workspaceId ? { ...commandContext, workspaceId } : commandContext,
-      });
+      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
+        CommandsDocument,
+        routedToWorkspace(
+          {
+            surface: surface ?? "PALETTE",
+            commandContext: workspaceId ? { ...commandContext, workspaceId } : commandContext,
+          },
+          workspaceId,
+        ),
+      );
       return res.commands;
     },
   });
 }
 
+/**
+ * Runs a command a person started, on the server that hosts the workspace of its
+ * `commandContext`; one without a workspace runs on the connected server.
+ */
 export function useExecuteCommandMutation() {
   return useMutation({
     mutationFn: (input: {
@@ -112,15 +123,21 @@ export function useExecuteCommandMutation() {
       isPipe?: boolean;
       confirmation?: ConfirmationProof;
     }) =>
-      graphqlClient.request<{ executeCommand: CommandResult }>(ExecuteCommandDocument, {
-        input: {
-          commandId: input.commandId,
-          args: input.args,
-          commandContext: input.commandContext,
-          isPipe: input.isPipe,
-          ...(input.confirmation && { confirmation: input.confirmation }),
-        },
-      }),
+      graphqlClient.request<{ executeCommand: CommandResult }>(
+        ExecuteCommandDocument,
+        routedToWorkspace(
+          {
+            input: {
+              commandId: input.commandId,
+              args: input.args,
+              commandContext: input.commandContext,
+              isPipe: input.isPipe,
+              ...(input.confirmation && { confirmation: input.confirmation }),
+            },
+          },
+          input.commandContext?.workspaceId,
+        ),
+      ),
     // A `TIMED_OUT` answer (a mutating command while timed out) switches the composer to its
     // timed-out banner, whichever surface ran the command.
     onError: (err, input) => {
