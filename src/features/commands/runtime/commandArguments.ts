@@ -3,12 +3,15 @@ import type { CommandArgumentInfo, CommandContextInput, CommandDefinition } from
 import { runsOnServer } from "./serverRunnable";
 
 /** The parts of a command's context the server fills arguments from. */
-export type ArgumentContext = Pick<CommandContextInput, "workspaceId" | "conversationId">;
+export type ArgumentContext = Pick<
+  CommandContextInput,
+  "workspaceId" | "conversationId" | "selectedMessageId"
+>;
 
 /**
  * Whether the server takes `argument` from `context` when the caller leaves it out: a
  * workspace argument from the context's workspace, a conversation argument from its
- * conversation.
+ * conversation, a message argument from its selected message.
  */
 export function contextSuppliesArgument(
   argument: CommandArgumentInfo,
@@ -19,6 +22,8 @@ export function contextSuppliesArgument(
       return Boolean(context.workspaceId);
     case CommandArgumentType.CONVERSATION_ID:
       return Boolean(context.conversationId);
+    case CommandArgumentType.MESSAGE_ID:
+      return Boolean(context.selectedMessageId);
     default:
       return false;
   }

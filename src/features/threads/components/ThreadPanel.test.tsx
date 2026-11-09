@@ -32,6 +32,7 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 vi.mock("../../plugins/api/usePluginCommands", () => ({
+  usePluginCommands: () => [],
   usePluginContextMenuCommands: () => [],
 }));
 vi.mock("../../e2ee/hooks/useE2eeConversation", () => ({

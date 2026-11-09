@@ -37,6 +37,10 @@ import {
   splitCommandLine,
 } from "../../commands/runtime/commandLine";
 import { missingArgumentNames, NOT_FROM_MESSAGE_BOX } from "../../commands/runtime/commandRunnable";
+import { withClientLabel } from "../../commands/runtime/localCommands";
+import { offeredLocalCommands } from "../../commands/runtime/offeredLocalCommands";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { useRunnableHere } from "../../plugins/runtime/pluginContext";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { BotBadge } from "../../../shared/ui/BotBadge";
 import type { CommandDefinition } from "../../commands/types";
@@ -123,7 +127,26 @@ export function ComposerInput({
   // Fetch all commands and keybinds for inline command preview
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { emojis: customEmojis } = useCustomEmojis(workspaceId);
-  const { data: allCommands } = useCommands("PALETTE");
+  const { data: serverCommands } = useCommands("PALETTE");
+  const pluginCommands = usePluginCommands();
+  const runnableHere = useRunnableHere();
+  // The server's commands with this app's titles, then this app's own and the plugins', as the
+  // palette lists them.
+  const allCommands = useMemo(() => {
+    const server = (serverCommands ?? []).map(withClientLabel);
+    const serverIds = new Set(server.map((cmd) => cmd.id));
+    const seen = new Set<string>();
+    const plugins = pluginCommands.filter((cmd) => {
+      if (!cmd.visibleInPalette || seen.has(cmd.id) || !runnableHere(cmd.requiredContext)) {
+        return false;
+      }
+      seen.add(cmd.id);
+      return true;
+    });
+    return [...server, ...offeredLocalCommands(serverIds), ...plugins];
+    // The workspace decides which of this app's commands it offers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverCommands, pluginCommands, runnableHere, workspaceId]);
   const { data: keybinds } = useResolvedKeybinds(workspaceId ?? undefined);
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);

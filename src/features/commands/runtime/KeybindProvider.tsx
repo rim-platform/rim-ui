@@ -16,16 +16,15 @@ import { showCommandOutcome } from "./commandOutcome";
 import { showCommandRefusal } from "./refusal";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
-import { findPluginCommand } from "../../plugins/runtime/pluginCommandInfo";
 import { useCommandResultStore } from "../state/useCommandResultStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
 import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { useEffectiveKeybinds } from "./effectiveKeybinds";
-import { LOCAL_COMMANDS } from "./localCommands";
+import { toast } from "../../../shared/toast";
+import { keybindCommand, keybindCommandTitle } from "./keybindCommand";
 import { installVimLayer } from "./vimLayer";
-import type { CommandDefinition } from "../types";
 
 interface KeybindProviderProps {
   children: ReactNode;
@@ -69,7 +68,8 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
   const resolvedKeybinds = useEffectiveKeybinds();
-  const { data: commands } = useCommands("PALETTE");
+  const { data: keybindCommands } = useCommands("KEYBIND_PICKER");
+  const { data: paletteCommands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);
   executeMutationRef.current = executeCommandMutation;
@@ -142,30 +142,11 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     event.preventDefault();
     event.stopPropagation();
 
-    // Find command definition from backend. If commands haven't loaded yet,
-    // build a minimal dispatch stub so keybinds still work during loading.
-    // The stub is only used for dispatch — never shown in UI.
-    const isLocalPrefix =
-      match.commandId.startsWith("workspace.") ||
-      match.commandId.startsWith("chat.") ||
-      match.commandId.startsWith("admin.");
-    const isPluginCommand = match.commandId.startsWith("plugin.");
-    const pluginCommand = isPluginCommand ? findPluginCommand(match.commandId) : null;
-    const command: CommandDefinition = commands?.find((cmd) => cmd.id === match.commandId) ??
-      LOCAL_COMMANDS.find((cmd) => cmd.id === match.commandId) ?? {
-        id: match.commandId,
-        title: pluginCommand?.title ?? match.commandId,
-        description: "",
-        category: "",
-        sourceKind: isPluginCommand ? "PLUGIN" : "BUILT_IN",
-        executionTarget: isLocalPrefix || isPluginCommand ? "DESKTOP_LOCAL" : "BACKEND",
-        requiredContext: [],
-        requiredCapabilities: [],
-        visibleInPalette: false,
-        visibleInContextMenus: false,
-        keybindCapable: true,
-        dangerous: pluginCommand?.dangerous ?? false,
-      };
+    const command = keybindCommand(match.commandId, keybindCommands, paletteCommands);
+    if (!command) {
+      toast.error(`${keybindCommandTitle(match.commandId)}: This command isn't available here`);
+      return;
+    }
 
     // A search with its query given opens the search overlay on that query.
     const presetArgs = match.presetArgs as Record<string, unknown> | undefined;

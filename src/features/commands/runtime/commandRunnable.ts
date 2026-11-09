@@ -1,6 +1,21 @@
 import type { CommandDefinition } from "../types";
-import { argumentPromptName, hasLocalHandler } from "./commandDispatcher";
+import { argumentPromptName, hasLocalHandler, typedArgumentsGoToServer } from "./commandDispatcher";
 import { unfilledRequiredArguments, type ArgumentContext } from "./commandArguments";
+
+/**
+ * The names of the arguments `command` requires that neither `context`, its argument prompt nor
+ * `given` supplies.
+ */
+function unsuppliedArguments(
+  command: CommandDefinition,
+  context: ArgumentContext,
+  given: Record<string, unknown> = {},
+): string[] {
+  const prompted = argumentPromptName(command.id);
+  return unfilledRequiredArguments(command, context)
+    .filter((argument) => argument.name !== prompted && !isGiven(given[argument.name]))
+    .map((argument) => argument.name);
+}
 
 /**
  * Whether a command can run as picked from the palette or the message box, with no arguments
@@ -8,12 +23,43 @@ import { unfilledRequiredArguments, type ArgumentContext } from "./commandArgume
  * the surface that asks for it.
  */
 export function runsFromPalette(command: CommandDefinition, context: ArgumentContext): boolean {
-  if (hasLocalHandler(command.id)) return true;
-  const prompted = argumentPromptName(command.id);
-  return unfilledRequiredArguments(command, context).every(
-    (argument) => argument.name === prompted,
-  );
+  return hasLocalHandler(command.id) || unsuppliedArguments(command, context).length === 0;
 }
+
+/**
+ * A context with every part a command can take an argument from, as a keybind or a quick action
+ * may find it when it runs: a workspace, an open conversation and a selected message.
+ */
+const EVERY_CONTEXT: ArgumentContext = {
+  workspaceId: "workspace",
+  conversationId: "conversation",
+  selectedMessageId: "message",
+};
+
+/**
+ * The names of the arguments a keybind or quick action to `command` would run without: those it
+ * requires that neither this app's own handler, the context at its fullest, its argument prompt
+ * nor `presetArgs` supplies.
+ *
+ * @param command - The command the keybind or quick action names.
+ * @param presetArgs - The arguments saved with it, when it has any.
+ * @returns The missing names; empty when it can run.
+ */
+export function argumentsNoSurfaceSupplies(
+  command: CommandDefinition,
+  presetArgs?: Record<string, unknown>,
+): string[] {
+  if (hasLocalHandler(command.id)) return [];
+  return unsuppliedArguments(command, EVERY_CONTEXT, presetArgs);
+}
+
+/** Whether a keybind or quick action with no arguments of its own can run `command`. */
+export function runsWithoutArguments(command: CommandDefinition): boolean {
+  return argumentsNoSurfaceSupplies(command).length === 0;
+}
+
+/** What a keybind or quick action whose command needs arguments it cannot have says about it. */
+export const NEEDS_ARGUMENTS_NOTE = "Needs arguments this can't supply yet";
 
 /**
  * Arguments a command this app runs itself still needs from the message box, which has no
@@ -30,22 +76,20 @@ export const NOT_FROM_MESSAGE_BOX: ReadonlySet<string> = new Set([
 
 /**
  * The names of the arguments `command` requires that neither the context, a prompt nor `given`
- * supplies, which a command run from the message box still has to be given.
+ * supplies, which a command run from the message box still has to be given. A command this app
+ * runs itself needs none, unless `given` sends it to the server instead.
  */
 export function missingArgumentNames(
   command: CommandDefinition,
   context: ArgumentContext,
   given: Record<string, unknown> = {},
 ): string[] {
-  if (hasLocalHandler(command.id)) {
+  if (hasLocalHandler(command.id) && !typedArgumentsGoToServer(command, given)) {
     return (BOX_REQUIRED_ARGUMENTS[command.id] ?? []).filter(
       (name) => !isGiven(given[name]) && !isGiven(given[camelCase(name)]),
     );
   }
-  const prompted = argumentPromptName(command.id);
-  return unfilledRequiredArguments(command, context)
-    .filter((argument) => argument.name !== prompted && !isGiven(given[argument.name]))
-    .map((argument) => argument.name);
+  return unsuppliedArguments(command, context, given);
 }
 
 function camelCase(name: string): string {

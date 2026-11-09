@@ -36,6 +36,7 @@ import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profile
 import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
 import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
+import { NEEDS_ARGUMENTS_NOTE } from "../runtime/commandRunnable";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 
 type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
@@ -194,6 +195,7 @@ export function KeybindSettings() {
     builtIn: builtInKeybindable,
     device: deviceKeybindable,
     all: keybindableCommands,
+    needsArguments,
   } = useKeybindableCommands();
 
   // Build a lookup from command ID to title (built-in + plugin)
@@ -589,6 +591,11 @@ export function KeybindSettings() {
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
             >
               <option value="">Select command...</option>
+              {newCommandId && !keybindableCommands.some((cmd) => cmd.id === newCommandId) && (
+                <option value={newCommandId}>
+                  {commandTitleMap.get(newCommandId) ?? newCommandId}
+                </option>
+              )}
               {keybindableCommands.map((cmd) => (
                 <option key={cmd.id} value={cmd.id}>
                   {cmd.title}
@@ -718,6 +725,14 @@ export function KeybindSettings() {
                             className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
                           >
                             <option value="">Select command...</option>
+                            {editCommandId &&
+                              !(
+                                isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable
+                              ).some((cmd) => cmd.id === editCommandId) && (
+                                <option value={editCommandId}>
+                                  {commandTitleMap.get(editCommandId) ?? editCommandId}
+                                </option>
+                              )}
                             {/* A device keybind stays a device command; a server one a built-in. */}
                             {(isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable).map(
                               (cmd) => (
@@ -777,6 +792,11 @@ export function KeybindSettings() {
                           {kb.keystroke}
                         </kbd>
                         <span className="flex-1 truncate">{title}</span>
+                        {needsArguments(kb.commandId, kb.presetArgs) && (
+                          <span className="shrink-0 text-[10px] text-rim-text-muted">
+                            {NEEDS_ARGUMENTS_NOTE}
+                          </span>
+                        )}
                         <span
                           className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
                           title="A default binding. A binding of yours on the same keys and context takes its place."
@@ -842,6 +862,11 @@ export function KeybindSettings() {
                         <span className="flex-1 truncate">
                           {commandTitleMap.get(kb.commandId) ?? kb.commandId}
                         </span>
+                        {needsArguments(kb.commandId, kb.presetArgs) && (
+                          <span className="shrink-0 text-[10px] text-rim-text-muted">
+                            {NEEDS_ARGUMENTS_NOTE}
+                          </span>
+                        )}
                         {isDeviceKeybind(kb.id) && (
                           <span
                             className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"

@@ -23,7 +23,8 @@ vi.mock("../api/useKeybinds", () => ({
 }));
 
 vi.mock("../api/useCommands", () => ({
-  useCommands: vi.fn(() => ({ data: [] })),
+  // The command lists are still loading, so a keybind runs through its stand-in command.
+  useCommands: vi.fn(() => ({ data: undefined })),
   useExecuteCommandMutation: vi.fn(() => ({ mutateAsync: vi.fn() })),
 }));
 

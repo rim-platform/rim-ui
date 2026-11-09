@@ -22,7 +22,10 @@ import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plug
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
-import { useUnreadsPageStore } from "../../unreads/state/useUnreadsPageStore";
+import {
+  useUnreadsPageStore,
+  type UnreadsPageControls,
+} from "../../unreads/state/useUnreadsPageStore";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
 import { markAsUnread, spaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
@@ -43,6 +46,15 @@ import { openWorkspaceAction, workspaceCommandOffered } from "../../workspaces/w
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
+import {
+  useSelectedMessageStore,
+  type SelectedMessageActions,
+} from "../../messages/state/useSelectedMessageStore";
+import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
+import { findCachedConversation } from "../../conversations/api/useConversation";
+import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import { currentCommandContext } from "./commandContext";
+import { withClientLabel } from "./localCommands";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -131,18 +143,75 @@ export function argString(
   return undefined;
 }
 
-/** The id of the message selected in the open message list, as the list announces it. */
-function selectedMessageInList(): string | undefined {
-  const active = document
-    .querySelector("[data-message-list]")
-    ?.getAttribute("aria-activedescendant");
-  return active?.startsWith("message-") ? active.slice("message-".length) : undefined;
+/** What a command that acts on the selected message tells the person when none is selected. */
+const SELECT_A_MESSAGE = "Select a message first";
+
+/** What a command that acts on the open conversation tells the person when none is open. */
+const OPEN_A_CONVERSATION = "Open a conversation first";
+
+/**
+ * The message a command acts on: the context's selected message, else the one selected in the
+ * open conversation's message list.
+ */
+function selectedMessageOf(
+  commandContext: Record<string, unknown> | undefined,
+): string | undefined {
+  const id = (commandContext ?? currentCommandContext()).selectedMessageId;
+  return typeof id === "string" && id !== "" ? id : undefined;
 }
 
-const localHandlers: Record<
-  string,
-  (args: Record<string, unknown> | undefined) => void | CommandResult
-> = {
+/**
+ * The selected message with the message list on screen that holds it, for the commands that act
+ * on it as that list does; `null`, after saying so in a toast, when no message is selected or no
+ * list shows its conversation.
+ */
+function selectedMessageInList(
+  commandContext: Record<string, unknown> | undefined,
+): { messageId: string; actions: SelectedMessageActions } | null {
+  const ctx = commandContext ?? currentCommandContext();
+  const messageId = selectedMessageOf(ctx);
+  const actions = useSelectedMessageStore.getState().actions;
+  if (!messageId || !actions || actions.conversationId !== ctx.conversationId) {
+    toast.info(SELECT_A_MESSAGE);
+    return null;
+  }
+  return { messageId, actions };
+}
+
+/** Runs one of the Unreads page's commands while the page is open; `false` when it is not. */
+function onUnreadsPage(run: (controls: UnreadsPageControls) => void): boolean {
+  const controls = useUnreadsPageStore.getState().controls;
+  if (!controls) return false;
+  run(controls);
+  return true;
+}
+
+function openUnreads(): void {
+  useShellStore.getState().setMainSurface({ kind: "unreads" });
+}
+
+/** The answer of the Unreads page's commands that act on the page's selection elsewhere. */
+function onlyOnUnreadsPage(): void {
+  toast.info("This works on the Unreads page");
+}
+
+/** Focuses the element `selector` names, or says that a conversation must be open first. */
+function focusInConversation(selector: string): void {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) element.focus();
+  else toast.info(OPEN_A_CONVERSATION);
+}
+
+/**
+ * A command this app runs itself: called with the command's arguments and the context it runs
+ * in, it acts and returns nothing, or a result that says what happened.
+ */
+type LocalHandler = (
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+) => void | CommandResult;
+
+const localHandlers: Record<string, LocalHandler> = {
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
@@ -182,14 +251,24 @@ const localHandlers: Record<
     useShellStore.getState().setMainSurface({ kind: "home" });
   },
   [EDIT_HOME_COMMAND_ID]: () => editHome(),
-  "workspace.open_unreads": () => {
-    useShellStore.getState().setMainSurface({ kind: "unreads" });
+  "workspace.open_unreads": openUnreads,
+  // Off the Unreads page, moving and opening open the page; marking and undoing say where they
+  // work.
+  "workspace.unreads_next": () => {
+    if (!onUnreadsPage((c) => c.next())) openUnreads();
   },
-  "workspace.unreads_next": () => useUnreadsPageStore.getState().controls?.next(),
-  "workspace.unreads_previous": () => useUnreadsPageStore.getState().controls?.previous(),
-  "workspace.unreads_mark_group": () => useUnreadsPageStore.getState().controls?.markGroup(),
-  "workspace.unreads_open": () => useUnreadsPageStore.getState().controls?.open(),
-  "workspace.unreads_undo": () => useUnreadsPageStore.getState().controls?.undo(),
+  "workspace.unreads_previous": () => {
+    if (!onUnreadsPage((c) => c.previous())) openUnreads();
+  },
+  "workspace.unreads_mark_group": () => {
+    if (!onUnreadsPage((c) => c.markGroup())) onlyOnUnreadsPage();
+  },
+  "workspace.unreads_open": () => {
+    if (!onUnreadsPage((c) => c.open())) openUnreads();
+  },
+  "workspace.unreads_undo": () => {
+    if (!onUnreadsPage((c) => c.undo())) onlyOnUnreadsPage();
+  },
   "workspace.open_audit_log": () => {
     useShellStore.getState().setMainSurface({ kind: "audit-log" });
   },
@@ -241,12 +320,8 @@ const localHandlers: Record<
     useMembersPanelStore.getState().setOpen(false);
     useMemberDirectoryStore.getState().toggle();
   },
-  "workspace.focus_composer": () => {
-    document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
-  },
-  "workspace.focus_message_list": () => {
-    document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
-  },
+  "workspace.focus_composer": () => focusInConversation("[data-composer-input]"),
+  "workspace.focus_message_list": () => focusInConversation("[data-message-list]"),
   "workspace.navigate_to_channel": (args) => {
     const conversationId = argString(args, "conversationId", "conversation_id");
     if (!args || !conversationId) return;
@@ -374,15 +449,36 @@ const localHandlers: Record<
   "chat.scroll_to_top": () => {
     document.querySelector("[data-message-list]")?.scrollTo({ top: 0, behavior: "smooth" });
   },
-  "chat.copy_message_text": () => {
-    logger.debug("[RIM] copy_message_text: handled at context menu level");
+  "chat.copy_message_text": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (!selected) return;
+    const text = selected.actions.textOf(selected.messageId);
+    if (text === null) toast.info(SELECT_A_MESSAGE);
+    else copyToClipboard(text);
   },
-  "chat.open_thread": (args) => {
-    // The context menu opens threads itself; the agent passes the root message id.
-    if (typeof args?.rootMessageId === "string") {
-      useShellStore.getState().openThreadForMessage(args.rootMessageId);
-    } else {
-      logger.debug("[RIM] open_thread: handled at context menu level");
+  "chat.open_thread": (args, commandContext) => {
+    // The agent names the root message; a person's surfaces act on the selected message.
+    const rootMessageId =
+      argString(args, "rootMessageId", "root_message_id") ?? selectedMessageOf(commandContext);
+    if (rootMessageId) useShellStore.getState().openThreadForMessage(rootMessageId);
+    else toast.info(SELECT_A_MESSAGE);
+  },
+  "chat.reply_to_selected_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.reply(selected.messageId)) {
+      toast.info("You can't reply in this conversation");
+    }
+  },
+  "chat.edit_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.edit(selected.messageId)) {
+      toast.info("Only your own messages can be edited");
+    }
+  },
+  "chat.report_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.report(selected.messageId)) {
+      toast.info("Your own messages can't be reported");
     }
   },
   "chat.mark_all_as_read": () => {
@@ -390,12 +486,13 @@ const localHandlers: Record<
     if (!workspaceId) return;
     markWorkspaceRead(workspaceId);
   },
-  "chat.mark_as_unread": (args) => {
+  "chat.mark_as_unread": (args, commandContext) => {
     const workspaceId = spaceOf(args ?? {});
     const conversationId =
       argString(args, "conversationId", "conversation_id") ??
       useShellStore.getState().selectedConversationId;
-    const messageId = argString(args, "messageId", "message_id") ?? selectedMessageInList();
+    const messageId =
+      argString(args, "messageId", "message_id") ?? selectedMessageOf(commandContext);
     if (!workspaceId || !conversationId || !messageId) {
       toast.info("Select a message to mark unread from");
       return;
@@ -414,6 +511,22 @@ const localHandlers: Record<
     useShellStore.getState().setShowInviteDialog(true);
   },
   "workspace.toggle_lens_picker": () => {
+    const shell = useShellStore.getState();
+    const conversationId = shell.selectedConversationId;
+    if (!conversationId) {
+      toast.info(OPEN_A_CONVERSATION);
+      return;
+    }
+    const conversation = findCachedConversation(
+      queryClient,
+      useWorkspaceStore.getState().workspaceId ?? undefined,
+      conversationId,
+    );
+    if (conversation && conversation.conversationType !== ConversationTypeEnum.CHANNEL) {
+      toast.info("Lenses are offered in channels");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
     const store = useLensStore.getState();
     store.setLensPickerOpen(!store.lensPickerOpen);
   },
@@ -521,13 +634,38 @@ function openArgumentPrompt(
  * to execute desktop-local commands, so agent tool calls for them land here instead of
  * `executeCommand`. Returns `false` when no local handler exists. Only meant for
  * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
- * dialog for a human, which is not what an agent call should do.
+ * dialog for a human, which is not what an agent call should do. The handler gets no selected
+ * message: a command on one acts only on the message its arguments name.
  */
 export function runDesktopLocalCommand(commandId: string, args?: Record<string, unknown>): boolean {
   const handler = localHandlers[commandId];
   if (!handler) return false;
-  handler(args);
+  handler(args, {});
   return true;
+}
+
+/**
+ * Backend commands whose local handler acts on the arguments typed in the message box itself,
+ * rather than leaving them to the server.
+ */
+const HANDLERS_TAKING_TYPED_ARGUMENTS: ReadonlySet<string> = new Set(["chat.mark_as_unread"]);
+
+/**
+ * Whether a run with `typedArgs` goes to the server instead of the local handler of `command`: a
+ * backend command whose local handler opens a dialog or acts on the selected message, run with
+ * arguments typed for the server.
+ */
+export function typedArgumentsGoToServer(
+  command: Pick<CommandDefinition, "id" | "executionTarget">,
+  typedArgs: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    command.executionTarget === "BACKEND" &&
+    hasLocalHandler(command.id) &&
+    !HANDLERS_TAKING_TYPED_ARGUMENTS.has(command.id) &&
+    typedArgs !== undefined &&
+    Object.keys(typedArgs).length > 0
+  );
 }
 
 export async function dispatchCommand(
@@ -541,6 +679,11 @@ export async function dispatchCommand(
     isPipe?: boolean;
     /** Set when a plugin panel asks to run a command; the host then refuses other plugins' commands. */
     callerPluginId?: string;
+    /**
+     * Set when `args` were typed in the message box: a backend command then runs on the server
+     * with them, even when this app has a handler that would run it without them.
+     */
+    typedArgs?: boolean;
   },
 ): Promise<CommandResult | null> {
   // A command that lacks the argument a surface asks for opens that surface instead.
@@ -553,12 +696,11 @@ export async function dispatchCommand(
     };
   }
 
-  // Local handlers always take precedence — even if the backend marks a
-  // command as "Backend", the frontend may have a local handler that opens
-  // a dialog or performs a client-side action instead.
+  // A local handler takes precedence, even over a backend target: it opens a dialog or acts as
+  // the app does, unless arguments typed for the server were given.
   const localHandler = localHandlers[command.id];
-  if (localHandler) {
-    const result = localHandler(context?.args);
+  if (localHandler && !(context?.typedArgs && typedArgumentsGoToServer(command, context.args))) {
+    const result = localHandler(context?.args, context?.commandContext);
     if (result) return result;
     return {
       status: "SUCCESS",
@@ -609,6 +751,16 @@ export async function dispatchCommand(
     };
   }
 
+  // A command on the selected message never reaches the server without one.
+  if (
+    !context?.isPipe &&
+    command.requiredContext.includes("selected_message") &&
+    !selectedMessageOf(context?.commandContext ?? {}) &&
+    !argString(context?.args, "message_id", "messageId")
+  ) {
+    return { status: "ERROR", message: SELECT_A_MESSAGE, payload: null, followUpCommands: [] };
+  }
+
   if (
     !context?.isPipe &&
     !(await confirmConversationCommand(command.id, context?.args, context?.commandContext))
@@ -635,8 +787,8 @@ export async function dispatchCommand(
     },
     {
       commandId: command.id,
-      title: command.title || command.id,
-      description: command.description || undefined,
+      title: withClientLabel(command).title || command.id,
+      description: withClientLabel(command).description || undefined,
       args: context?.args,
       argumentTypes: argumentTypesOf(command.arguments),
       sensitivity: command.sensitivity,

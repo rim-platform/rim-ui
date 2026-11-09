@@ -20,6 +20,11 @@ const requestMock = vi.fn();
 vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: { request: (...args: unknown[]) => requestMock(...args) },
 }));
+const pluginCommands = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => pluginCommands.list,
+}));
 vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: () => {} }),
 }));
@@ -86,8 +91,8 @@ function serve(extra: Record<string, (vars: Record<string, unknown>) => unknown>
   });
 }
 
-async function renderBox(thread = false) {
-  serve();
+async function renderBox(thread = false, extraCommands: object[] = []) {
+  serve({ "query Commands": () => ({ commands: [...commands, ...extraCommands] }) });
   render(
     <QueryClientProvider client={serverInfoQueryClient()}>
       {thread ? (
@@ -122,6 +127,84 @@ function highlighted(): string {
 function press(box: HTMLTextAreaElement, key: string) {
   fireEvent.keyDown(box, { key });
 }
+
+describe("Composer — the list's commands", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    queryClient.clear();
+    useDraftStore.getState().clearDraft("conv-1");
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1", showNewChannelDialog: false });
+  });
+
+  afterEach(() => {
+    pluginCommands.list = [];
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.setState({ selectedConversationId: null, showNewChannelDialog: false });
+  });
+
+  const createGroup = definition("chat.create_group", "Create Group", [
+    { name: "member_ids", type: "STRING" },
+  ]);
+  const createChannel = definition("chat.create_channel", "Create Channel", [
+    { name: "server_id", type: "WORKSPACE_ID" },
+    { name: "name", type: "STRING" },
+  ]);
+
+  it("lists a server command under this app's title", async () => {
+    const box = await renderBox(false, [createGroup]);
+    type(box, "/chat.create_group");
+
+    expect(await screen.findByRole("option", { name: /New Message/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Create Group/ })).not.toBeInTheDocument();
+  });
+
+  it("lists this app's own commands", async () => {
+    const box = await renderBox();
+    type(box, "/open home");
+
+    expect(await screen.findByRole("option", { name: /Open Home/ })).toBeInTheDocument();
+  });
+
+  it("lists the plugins' commands", async () => {
+    pluginCommands.list = [
+      {
+        ...definition("plugin.chat.rim.poll.create", "Create Poll", []),
+        sourceKind: "PLUGIN",
+        executionTarget: "DESKTOP_LOCAL",
+        category: "Poll",
+        contextTypes: [],
+      },
+    ];
+    const box = await renderBox();
+    type(box, "/create poll");
+
+    expect(await screen.findByRole("option", { name: /Create Poll/ })).toBeInTheDocument();
+  });
+
+  it("sends typed arguments to the server for a command with a dialog of its own", async () => {
+    const box = await renderBox(false, [createChannel]);
+    type(box, "/chat.create_channel name=ops");
+    await screen.findByRole("option", { name: /Create Channel/ });
+    press(box, "Enter");
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0]).toMatchObject({
+      input: { commandId: "chat.create_channel", args: { name: "ops" } },
+    });
+    expect(useShellStore.getState().showNewChannelDialog).toBe(false);
+  });
+
+  it("opens the command's dialog when no arguments are typed", async () => {
+    const box = await renderBox(false, [createChannel]);
+    type(box, "/chat.create_channel");
+    await screen.findByRole("option", { name: /Create Channel/ });
+    press(box, "Enter");
+
+    await waitFor(() => expect(useShellStore.getState().showNewChannelDialog).toBe(true));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
+  });
+});
 
 describe("Composer — commands", () => {
   beforeEach(() => {

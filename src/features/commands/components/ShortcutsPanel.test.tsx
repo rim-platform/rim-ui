@@ -61,8 +61,8 @@ describe("ShortcutsPanel", () => {
       ).length,
     );
     expect(screen.queryByText("Ctrl+Q")).not.toBeInTheDocument();
-    expect(within(rowFor("Open command palette")).getByText("Ctrl+K")).toBeInTheDocument();
-    expect(within(rowFor("Close the open panel")).getByText("Escape")).toBeInTheDocument();
+    expect(within(rowFor("Open Command Palette")).getByText("Ctrl+K")).toBeInTheDocument();
+    expect(within(rowFor("Close Panel")).getByText("Escape")).toBeInTheDocument();
   });
 
   it("lists Ctrl+Shift+G as New message", () => {

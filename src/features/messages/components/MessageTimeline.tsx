@@ -54,6 +54,11 @@ import { useTimelineScroll } from "./timeline/useTimelineScroll";
 import { replyQuoteFor } from "./message-item/replyQuoteView";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
+import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
+import {
+  selectedMessageActions,
+  type SelectedMessageSource,
+} from "./timeline/selectedMessageActions";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
@@ -276,6 +281,27 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   });
   const getMenuItems = (target: TimelineMenuTarget) =>
     messageMenu.getItems({ ...target, message: itemsById.get(target.messageId) });
+
+  // The commands on the selected message act through this list while it is on screen.
+  const selectedActionsRef = useRef<SelectedMessageSource>({
+    itemsById,
+    currentUserId,
+    onReply,
+    report: messageMenu.report,
+  });
+  useLayoutEffect(() => {
+    selectedActionsRef.current = { itemsById, currentUserId, onReply, report: messageMenu.report };
+  }, [itemsById, currentUserId, onReply, messageMenu.report]);
+  useEffect(() => {
+    if (!conversationId) return;
+    const actions = selectedMessageActions(conversationId, selectedActionsRef);
+    useSelectedMessageStore.getState().setActions(actions);
+    return () => {
+      if (useSelectedMessageStore.getState().actions === actions) {
+        useSelectedMessageStore.getState().setActions(null);
+      }
+    };
+  }, [conversationId]);
 
   const {
     handlers: rowHandlers,

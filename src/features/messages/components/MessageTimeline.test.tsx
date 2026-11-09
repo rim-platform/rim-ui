@@ -126,6 +126,7 @@ vi.mock("../../conversations/api/useChannelPosting", async (importOriginal) => (
   usePostingRights: () => posting.rights,
 }));
 vi.mock("../../plugins/api/usePluginCommands", () => ({
+  usePluginCommands: () => [],
   usePluginContextMenuCommands: () => [],
 }));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));

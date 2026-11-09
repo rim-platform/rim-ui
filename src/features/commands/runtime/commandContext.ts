@@ -2,6 +2,7 @@ import type { CommandContextInput } from "../types";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { openThreadId } from "../../threads/api/openThreadId";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useSelectedMessageStore } from "../../messages/state/useSelectedMessageStore";
 
 /** A message a surface acts on in place of the open conversation, as a context menu does. */
 export interface CommandContextTarget {
@@ -14,10 +15,12 @@ export interface CommandContextTarget {
 
 /**
  * The context a command runs in, as `executeCommand` takes it in `commandContext`: the selected
- * workspace, the open conversation, the thread open beside it and the focused surface. `threadId`
- * is the thread's own id and is left out until the open thread exists and has loaded. A `target`
- * replaces the workspace, conversation and thread with its own and adds its message; the focused
- * surface stays. The selected text and the active panel are never set, as no store holds them.
+ * workspace, the open conversation, the thread open beside it, the message selected in that
+ * conversation's message list and the focused surface. `threadId` is the thread's own id and is
+ * left out until the open thread exists and has loaded; the selected message is left out when it
+ * is in another workspace or conversation. A `target` replaces the workspace, conversation,
+ * thread and selected message with its own; the focused surface stays. The selected text and the
+ * active panel are never set, as no store holds them.
  *
  * @param target - The message the surface acts on, when it names one.
  * @returns The context with only its known fields set; empty when no workspace is selected and
@@ -37,6 +40,14 @@ export function currentCommandContext(target?: CommandContextTarget): CommandCon
     ctx.conversationId = shell.selectedConversationId;
     const threadId = openThreadId(workspaceId, shell.selectedConversationId);
     if (threadId) ctx.threadId = threadId;
+    const selection = useSelectedMessageStore.getState().selection;
+    if (
+      selection &&
+      selection.workspaceId === workspaceId &&
+      selection.conversationId === shell.selectedConversationId
+    ) {
+      ctx.selectedMessageId = selection.messageId;
+    }
   }
   if (shell.focusedSurface) {
     ctx.focusedSurface = shell.focusedSurface;

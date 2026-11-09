@@ -237,9 +237,14 @@ describe("dispatchCommand", () => {
     });
 
     it("otherwise takes the message selected in the open list", async () => {
-      document.body.innerHTML =
-        '<div data-message-list aria-activedescendant="message-msg-3"></div>';
-      await run({ serverId: "ws-9", conversationId: "conv-9" });
+      await dispatchCommand(makeCommand({ id: "chat.mark_as_unread" }), mockExecuteBackend, {
+        args: { serverId: "ws-9", conversationId: "conv-9" },
+        commandContext: {
+          workspaceId: "ws-9",
+          conversationId: "conv-9",
+          selectedMessageId: "msg-3",
+        },
+      });
       expect(markAsUnreadMock).toHaveBeenCalledWith(
         expect.objectContaining({ messageId: "msg-3" }),
       );
