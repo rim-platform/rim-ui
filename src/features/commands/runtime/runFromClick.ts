@@ -34,7 +34,7 @@ export interface ClickOptions {
   /** What the confirmation dialog shows in place of the command's own title and description. */
   confirmation?: Partial<ConfirmationSubject>;
   /** The toast a success shows in place of the command's own outcome; `null` shows none. */
-  successToast?: string | ((result: CommandResult) => string | null);
+  successToast?: string | null | ((result: CommandResult) => string | null);
   /** The title a refusal shows in place of the command's title. */
   errorTitle?: string;
   /** Throws a failure as an `Error` with the server's message instead of showing it. */

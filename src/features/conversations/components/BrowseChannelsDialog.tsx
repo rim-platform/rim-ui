@@ -48,7 +48,7 @@ export function BrowseChannelsDialog({ workspaceId, onClose }: BrowseChannelsDia
         {
           target: { workspaceId, conversationId: channel.id },
           throwOnError: true,
-          successToast: () => null,
+          successToast: null,
         },
       );
       if (outcome.ok) open(channel.id);

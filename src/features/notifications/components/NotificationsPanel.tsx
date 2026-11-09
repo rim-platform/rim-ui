@@ -111,7 +111,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
         { server_id: workspaceId },
         {
           target: { workspaceId },
-          successToast: () => null,
+          successToast: null,
           errorTitle: "Could not mark notifications read",
         },
       );

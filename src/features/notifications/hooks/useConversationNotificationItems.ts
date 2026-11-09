@@ -65,7 +65,7 @@ export function unmuteFromMenu(qc: QueryClient, serverId: string, conversationId
     {
       source: "menu",
       target: { workspaceId: serverId, conversationId },
-      successToast: () => null,
+      successToast: null,
       errorTitle: "Could not unmute the conversation",
       fallback: () => unmuteConversation(qc, { serverId, conversationId }),
     },

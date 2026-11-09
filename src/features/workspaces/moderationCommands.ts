@@ -20,7 +20,7 @@ export async function runConfirmedModeration(
   const outcome = await runCommandFromClick(
     commandId,
     { server_id: workspaceId, ...args },
-    { confirmed: true, throwOnError: true, successToast: () => null, target: { workspaceId } },
+    { confirmed: true, throwOnError: true, successToast: null, target: { workspaceId } },
   );
   return outcome.ok ? outcome.result : null;
 }

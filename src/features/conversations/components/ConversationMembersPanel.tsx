@@ -210,7 +210,7 @@ function MembersList({
           { server_id: workspaceId, conversation_id: conversation.id, user_ids: inviteIds },
           {
             target: { workspaceId, conversationId: conversation.id },
-            successToast: () => null,
+            successToast: null,
             errorTitle: "Could not add members",
           },
         );
@@ -283,7 +283,7 @@ function MembersList({
         {
           target: { workspaceId, conversationId: conversation.id },
           confirmed: true,
-          successToast: () => null,
+          successToast: null,
           errorTitle: "Could not remove the member",
         },
       );

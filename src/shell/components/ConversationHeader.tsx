@@ -175,7 +175,7 @@ function SelectedConversationHeader() {
             { server_id: workspaceId, conversation_id: conversationId, topic: topicDraft },
             {
               target: { workspaceId, conversationId },
-              successToast: () => null,
+              successToast: null,
               errorTitle: "The topic could not be changed",
               fallback: () => updateConversationTopic(queryClient, vars),
             },

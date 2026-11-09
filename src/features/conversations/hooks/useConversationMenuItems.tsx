@@ -153,7 +153,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
           label: "Join channel",
           onSelect: () =>
             run("chat.join_channel", ids, {
-              successToast: () => null,
+              successToast: null,
               errorTitle: "Could not join the channel",
             }),
         });
@@ -163,7 +163,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
         items.push({
           id: "mark-read",
           label: "Mark as read",
-          onSelect: () => run("chat.mark_as_read", ids, { successToast: () => null }),
+          onSelect: () => run("chat.mark_as_read", ids, { successToast: null }),
         });
       } else if (
         !archived &&

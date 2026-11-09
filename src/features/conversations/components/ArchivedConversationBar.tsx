@@ -32,7 +32,7 @@ export function ArchivedConversationBar({
         {
           target: { workspaceId, conversationId: conversation.id },
           throwOnError: true,
-          successToast: () => null,
+          successToast: null,
         },
       );
     } catch (err) {

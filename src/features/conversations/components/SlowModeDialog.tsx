@@ -37,7 +37,7 @@ export function SlowModeDialog({ workspaceId, conversation, onClose }: SlowModeD
           {
             target: { workspaceId, conversationId: conversation.id },
             throwOnError: true,
-            successToast: () => null,
+            successToast: null,
           },
         );
         return outcome.ok;
