@@ -4,6 +4,8 @@ import { useQueries } from "@tanstack/react-query";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { handleDomain, personName } from "../../../shared/utils/handles";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
+import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
 import { useInboxConversations } from "../../conversations/api/useInboxConversations";
@@ -220,4 +222,19 @@ export function usePipelineTargets(): Targets {
     [data, workspaceId],
   );
   return { items, isPending: Boolean(workspaceId) && isPending };
+}
+
+/** The agents connected on this device, by the name each calls itself. */
+export function useAgentTargets(): Targets {
+  const agents = useConnectedAgentsStore((s) => s.agents);
+  const items = useMemo(
+    () =>
+      agents.map((agent) => ({
+        id: agent.id,
+        serverId: "",
+        label: showInvisibleCharacters(agent.name),
+      })),
+    [agents],
+  );
+  return { items, isPending: false };
 }

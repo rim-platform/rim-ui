@@ -15,6 +15,7 @@ import {
   type ConfirmationProofInput,
 } from "../../../core/graphql/generated/schema-types";
 import { looksLikeId } from "../../commands/runtime/commandArguments";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "../../commands/runtime/appCommands/agentCommandIds";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
@@ -302,17 +303,23 @@ function withIdArguments(args: ReadonlyArray<CommandArgument>, handler: AiToolHa
   };
 }
 
+/**
+ * The agent's tools for the server's AI commands. A command that answers or manages agents is
+ * left out even when listed: approving and granting are the person's own acts.
+ */
 export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
-  return commands.map((cmd) => ({
-    definition: buildAiToolFromCommand(cmd),
-    handler: withIdArguments(
-      cmd.arguments,
-      isUnconfirmedLocalCommand(cmd)
-        ? makeDesktopLocalToolHandler(cmd.id)
-        : makeBackendToolHandler(cmd.id),
-    ),
-    options: buildAiToolRegistrationOptions(cmd),
-  }));
+  return commands
+    .filter((cmd) => !AGENT_MANAGEMENT_COMMAND_IDS.has(cmd.id))
+    .map((cmd) => ({
+      definition: buildAiToolFromCommand(cmd),
+      handler: withIdArguments(
+        cmd.arguments,
+        isUnconfirmedLocalCommand(cmd)
+          ? makeDesktopLocalToolHandler(cmd.id)
+          : makeBackendToolHandler(cmd.id),
+      ),
+      options: buildAiToolRegistrationOptions(cmd),
+    }));
 }
 
 async function fetchAiCommands(): Promise<Command[]> {

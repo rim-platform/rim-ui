@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Commands for answering, connecting and managing agents in the desktop app: approve or refuse an
+  agent's request, connect or turn down a program asking to, disconnect an agent, choose what it
+  can read and its plugin commands, and open the runs and the record of what agents were given.
+  Approving an agent's request or connection from a key, the palette or a quick box always shows a
+  warning first, and none of these commands is ever offered to an agent.
 - New commands for replying, editing, forwarding, attachments, message selection, invitations, lenses, conversation invites, notifications and Unreads, so each can be run from the palette, a keybind or a quick box.
 - New commands for Settings tabs, signing out, updates, the window, status, profiles, macros and
   pipelines, so every one of these can be run from the palette, a keybind or a quick box.

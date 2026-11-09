@@ -6,6 +6,7 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { TargetPickerKind } from "../state/useCommandStore";
 import {
+  useAgentTargets,
   useChannelTargets,
   useDirectTargets,
   useJoinableTargets,
@@ -67,6 +68,11 @@ const TEXT: Record<TargetPickerKind, PickerText> = {
     placeholder: "Search pipelines...",
     empty: "No pipelines in this workspace",
   },
+  agent: {
+    title: "Choose an agent",
+    placeholder: "Search connected agents...",
+    empty: "No agents are connected",
+  },
 };
 
 interface PaletteTargetPickerProps {
@@ -103,6 +109,8 @@ export function PaletteTargetPicker(props: PaletteTargetPickerProps) {
       return <TargetList key={source} {...props} useTargets={useMacroTargets} />;
     case "pipeline":
       return <TargetList key={source} {...props} useTargets={usePipelineTargets} />;
+    case "agent":
+      return <TargetList key={source} {...props} useTargets={useAgentTargets} />;
   }
 }
 

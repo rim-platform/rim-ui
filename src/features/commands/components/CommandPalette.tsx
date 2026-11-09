@@ -437,6 +437,9 @@ function CommandPaletteDialog() {
         case "pipeline":
           await runCommand(command, { pipelineId: target.id });
           break;
+        case "agent":
+          await runCommand(command, { agentId: target.id });
+          break;
         case "joinableChannel":
           await runCommand(
             command,

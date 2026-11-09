@@ -143,6 +143,9 @@ describe("KeybindSettings and plugin commands", () => {
     // The web app has no window to quit and no connected programs.
     expect(within(picker).queryByRole("option", { name: "Quit RIM" })).not.toBeInTheDocument();
     expect(within(picker).queryByRole("option", { name: "Open Agents" })).not.toBeInTheDocument();
+    expect(
+      within(picker).queryByRole("option", { name: "Approve the Agent's Request…" }),
+    ).not.toBeInTheDocument();
     screen.getByRole("textbox", { name: "Keystroke" }).focus();
     await user.keyboard("{Control>}{Alt>}v{/Alt}{/Control}");
     await user.selectOptions(picker, "workspace.toggle_vim_mode");

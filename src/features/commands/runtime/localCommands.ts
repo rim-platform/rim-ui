@@ -1,5 +1,6 @@
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import type { CommandDefinition } from "../types";
+import { AGENT_COMMANDS } from "./appCommands/agents";
 import { CONVERSATION_COMMANDS } from "./appCommands/conversation";
 import { localCommand } from "./appCommands/localCommand";
 import { GENERAL_COMMANDS } from "./appCommands/generalDefinitions";
@@ -197,6 +198,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   localCommand(QUIT_COMMAND_ID, "App", "Quit RIM", "Stop RIM completely, including in the tray"),
   ...CONVERSATION_COMMANDS,
   ...GENERAL_COMMANDS,
+  ...AGENT_COMMANDS,
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));

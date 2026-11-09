@@ -32,6 +32,7 @@ vi.mock("./AgentRunsDialog", () => ({
 
 import { toast } from "../../../shared/toast";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
+import { useAgentsSettingsRequestStore } from "../state/useAgentsSettingsRequestStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentsSettings } from "./AgentsSettings";
@@ -452,5 +453,73 @@ describe("AgentsSettings", () => {
     await renderedSwitch();
     await user.click(screen.getByRole("button", { name: "Open AI Agent" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agent" });
+  });
+
+  describe("opened by a command", () => {
+    const ENTRY = {
+      at: "2026-11-06T10:00:00.000Z",
+      agentId: "agent-1",
+      agentName: "Claude Code",
+      tool: "rim_read_messages",
+      workspaceId: "w1",
+      channelId: "c1",
+      query: false,
+      messageIds: ["m1"],
+      refused: false,
+    };
+
+    afterEach(() => {
+      useAgentsSettingsRequestStore.setState({ request: null });
+      useAgentRecordStore.setState({ entries: [] });
+      vi.mocked(toast.info).mockReset();
+    });
+
+    it("opens the disconnect confirmation of the agent picked", async () => {
+      useConnectedAgentsStore.setState({
+        agents: [AGENT, { ...AGENT, id: "agent-2", name: "Other" }],
+      });
+      useAgentsSettingsRequestStore.getState().open({ kind: "disconnect", agentId: "agent-2" });
+      await renderedSwitch();
+      const dialog = screen.getByRole("dialog", { name: "Disconnect Other?" });
+      expect(within(dialog).getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "Other in detail" })).toBeInTheDocument();
+      expect(useConnectedAgentsStore.getState().agents).toHaveLength(2);
+      expect(useAgentsSettingsRequestStore.getState().request).toBeNull();
+    });
+
+    it("takes a request made while the tab is open", async () => {
+      useConnectedAgentsStore.setState({ agents: [AGENT] });
+      await renderedSwitch();
+      act(() => useAgentsSettingsRequestStore.getState().open({ kind: "allRuns" }));
+      expect(screen.getByRole("heading", { name: "All runs" })).toBeInTheDocument();
+    });
+
+    it("says so when the agent picked is gone", async () => {
+      useAgentsSettingsRequestStore.getState().open({ kind: "chooseReads", agentId: "gone" });
+      await renderedSwitch();
+      expect(toast.info).toHaveBeenCalledWith("That agent is no longer connected");
+    });
+
+    it("opens the clear confirmation, which clears only when confirmed", async () => {
+      const user = userEvent.setup();
+      useAgentRecordStore.setState({ entries: [ENTRY] });
+      useAgentsSettingsRequestStore.getState().open({ kind: "clearRecord" });
+      await renderedSwitch();
+      const dialog = screen.getByRole("dialog", { name: "Clear the whole record?" });
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(useAgentRecordStore.getState().entries).toEqual([ENTRY]);
+
+      act(() => useAgentsSettingsRequestStore.getState().open({ kind: "clearRecord" }));
+      await user.click(
+        within(screen.getByRole("dialog", { name: "Clear the whole record?" })).getByRole(
+          "button",
+          { name: "Clear" },
+        ),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(useAgentRecordStore.getState().entries).toHaveLength(1);
+      expect(useAgentRecordStore.getState().entries[0]!.tool).not.toBe("rim_read_messages");
+    });
   });
 });

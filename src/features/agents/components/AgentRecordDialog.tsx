@@ -94,12 +94,16 @@ function entryLine(
  * those since disconnected, newest first, and the way to clear the whole record.
  *
  * @param agent - The agent to show, or `null` for the whole record.
+ * @param startWithClear - Open on the confirmation that clears the record, and close once it is
+ * answered.
  */
 export function AgentRecordDialog({
   agent,
+  startWithClear = false,
   onClose,
 }: {
   agent: ConnectedAgent | null;
+  startWithClear?: boolean;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -107,7 +111,7 @@ export function AgentRecordDialog({
   const clear = useAgentRecordStore((s) => s.clear);
   const { data: servers } = useMyServers();
   const { data: plugins } = useInstalledPlugins();
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState(startWithClear);
 
   const workspaceName = (id: string) =>
     servers?.find((server) => server.id === id)?.name ?? (id || "an unknown workspace");
@@ -129,9 +133,10 @@ export function AgentRecordDialog({
         danger
         onConfirm={() => {
           clear();
-          setConfirming(false);
+          if (startWithClear) onClose();
+          else setConfirming(false);
         }}
-        onClose={() => setConfirming(false)}
+        onClose={() => (startWithClear ? onClose() : setConfirming(false))}
       />
     );
   }

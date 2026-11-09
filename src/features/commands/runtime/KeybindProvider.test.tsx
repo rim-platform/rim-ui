@@ -7,6 +7,13 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ capabilities: { deviceLocalKeybinds: true } }),
 }));
 
+// The agent's commands are offered as in the desktop app.
+vi.mock("../../agent/agentAvailability", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agent/agentAvailability")>()),
+  agentAvailable: () => true,
+  commandOfferedHere: () => true,
+}));
+
 vi.mock("../api/useKeybinds", () => ({
   useResolvedKeybinds: vi.fn(() => ({ data: [] })),
 }));
@@ -87,6 +94,8 @@ import { toast } from "../../../shared/toast";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
+import { useAgentApprovalWarningStore } from "../../agents/state/useAgentApprovalWarningStore";
 import { OverlayPanel } from "../../../shell/components/OverlayPanel";
 
 const REFRESH = "plugin.chat.rim.k8s-pods.refresh";
@@ -413,6 +422,37 @@ describe("KeybindProvider with the default profile", () => {
     }
     press(document.body, "k", { ctrlKey: true });
     expect(dispatched()).toEqual(["workspace.open_command_palette"]);
+  });
+
+  it("runs a keybind answering the agent the open dialog asks about, and no other", () => {
+    useDeviceKeybindStore.setState({ keybinds: [] });
+    useDeviceKeybindStore
+      .getState()
+      .add({ keystroke: "Ctrl+Alt+A", commandId: "agents.approve_request", context: "GLOBAL" });
+    renderWith(<button>x</button>);
+    void useConfirmationModalStore.getState().open({
+      initiator: "agent",
+      commandId: "chat.post_message",
+      toolName: "send a message",
+      args: {},
+      token: "token-1",
+      argsHash: "",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const release = trackOpenDialog();
+    try {
+      press(document.body, "k", { ctrlKey: true });
+      press(document.body, "a", { ctrlKey: true, altKey: true });
+      expect(dispatched()).toEqual(["agents.approve_request"]);
+      // Once the warning is open, the key waits like every other.
+      useAgentApprovalWarningStore.getState().show({ kind: "request", token: "token-1" });
+      press(document.body, "a", { ctrlKey: true, altKey: true });
+      expect(dispatched()).toEqual(["agents.approve_request"]);
+    } finally {
+      release();
+      useAgentApprovalWarningStore.setState({ warning: null });
+      useConfirmationModalStore.getState().reset();
+    }
   });
 
   it("leaves a key pressed in a host dialog to the dialog", () => {
