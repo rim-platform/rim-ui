@@ -45,10 +45,48 @@ export function recordMacroMoves(userId: string, moves: Readonly<Record<string, 
   }
 }
 
+function doneKey(userId: string): string {
+  return `rim.macroMovesDone.${macroMoveAccount(userId)}`;
+}
+
+/**
+ * The workspaces whose macros the account `userId` has moved, so they are not read again; every
+ * workspace when storage cannot be read, so nothing moves twice.
+ */
+export function movedWorkspaces(userId: string): ReadonlySet<string> | "all" {
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(doneKey(userId));
+  } catch {
+    return "all";
+  }
+  if (!raw) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Records that the macros of the workspace `workspaceId` moved for the account `userId`. */
+export function recordMovedWorkspace(userId: string, workspaceId: string): void {
+  try {
+    const done = movedWorkspaces(userId);
+    if (done === "all" || done.has(workspaceId)) return;
+    localStorage.setItem(doneKey(userId), JSON.stringify([...done, workspaceId]));
+  } catch {
+    // Storage unavailable: movedWorkspaces then reads every workspace as moved.
+  }
+}
+
 /** Forgets which macros the account `userId` moved, an account removed from this device. */
 export function forgetMacroMoves(userId: string): void {
   try {
     localStorage.removeItem(movesKey(userId));
+    localStorage.removeItem(doneKey(userId));
   } catch {
     // Storage unavailable: there is nothing kept to forget.
   }
