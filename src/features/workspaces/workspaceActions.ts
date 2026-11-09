@@ -6,6 +6,7 @@ import { isDirectSpace } from "../relay/state/useRelayStore";
 import type { KnownServerInfo } from "../updater/api/serverInfoApi";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../updater/api/serverCapabilities";
 import { generalCommandOffered } from "../commands/runtime/appCommands/generalAvailability";
+import { manageCommandOffered } from "../commands/runtime/appCommands/manageAvailability";
 import { botsOfferedFor } from "../bots/availability";
 import type { ServerDetail } from "./api/useWorkspace";
 import { isOwner } from "./role";
@@ -73,14 +74,14 @@ export function workspaceActionOffered(
 /**
  * Whether the palette offers `commandId` now: `workspace.leave` and `workspace.rename` for the
  * open workspace when allowed, `workspace.open_bots` to those who can see Settings > Bots,
- * the Settings tab and workspace-settings commands where their page shows, every other command
- * always.
+ * the Settings tab and workspace-settings commands where their page shows, the management
+ * commands where their buttons are shown, every other command always.
  */
 export function workspaceCommandOffered(commandId: string): boolean {
   if (commandId === OPEN_BOTS_COMMAND_ID)
     return botsOfferedFor(useWorkspaceStore.getState().workspaceId);
   if (commandId !== "workspace.leave" && commandId !== "workspace.rename") {
-    return generalCommandOffered(commandId);
+    return generalCommandOffered(commandId) && manageCommandOffered(commandId);
   }
   const action = commandId === "workspace.leave" ? "leave" : "rename";
   return workspaceActionOffered(action, useWorkspaceStore.getState().workspaceId);
