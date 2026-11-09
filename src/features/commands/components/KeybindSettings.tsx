@@ -10,7 +10,7 @@ import {
   ToggleRight,
 } from "lucide-react";
 
-import { errorSentence } from "../../../core/graphql/errors";
+import { errorSentence, graphqlErrorCode, VALIDATION } from "../../../core/graphql/errors";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
   useCreateKeybindMutation,
@@ -146,6 +146,11 @@ function ConflictNote({
         : `Saving moves it here and leaves ${title} without a key.`}
     </p>
   );
+}
+
+/** Whether `err` is a server refusing the keybind to one of this app's own commands. */
+function refusedAppKeybind(commandId: string, err: unknown): boolean {
+  return isLocalCommand(commandId) && graphqlErrorCode(err) === VALIDATION;
 }
 
 export function KeybindSettings() {
@@ -440,7 +445,20 @@ export function KeybindSettings() {
           context: newContext,
           ...(preset.presetArgs !== undefined && { presetArgs: preset.presetArgs }),
         },
-        { onSuccess: resetCreateForm },
+        {
+          onSuccess: resetCreateForm,
+          // A server built before an app command refuses its keybind: keep it on this device.
+          onError: (err) => {
+            if (!refusedAppKeybind(newCommandId, err)) return;
+            addDeviceKeybind({
+              keystroke: newKeystroke,
+              commandId: newCommandId,
+              context: newContext,
+            });
+            createMutation.reset();
+            resetCreateForm();
+          },
+        },
       );
     });
   }
@@ -626,6 +644,20 @@ export function KeybindSettings() {
       },
       {
         onSuccess: () => cancelEditing(),
+        // A server built before an app command refuses its keybind: the binding moves to this
+        // device with the same keys and state.
+        onError: (err) => {
+          if (!refusedAppKeybind(editCommandId, err)) return;
+          addDeviceKeybind({
+            keystroke: kb.keystroke,
+            commandId: editCommandId,
+            context: editContext,
+            isEnabled: kb.isEnabled,
+          });
+          if (kb.source === "USER") deleteMutation.mutate({ keybindId: kb.id });
+          updateMutation.reset();
+          cancelEditing();
+        },
       },
     );
   }

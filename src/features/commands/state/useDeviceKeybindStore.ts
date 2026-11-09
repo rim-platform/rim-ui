@@ -60,6 +60,8 @@ export interface NewDeviceKeybind {
   keystroke: string;
   commandId: string;
   context: KeybindContext;
+  /** Whether the binding is on; defaults to true. */
+  isEnabled?: boolean;
 }
 
 interface DeviceKeybindState {
@@ -80,7 +82,7 @@ export const useDeviceKeybindStore = create<DeviceKeybindState>()(
   persist(
     (set) => ({
       keybinds: [],
-      add: ({ keystroke, commandId, context }) =>
+      add: ({ keystroke, commandId, context, isEnabled = true }) =>
         set((state) => ({
           keybinds: [
             // One binding per keystroke and context: the new one replaces an older one.
@@ -92,7 +94,7 @@ export const useDeviceKeybindStore = create<DeviceKeybindState>()(
               context,
               source: "USER",
               scope: "USER",
-              isEnabled: true,
+              isEnabled,
               presetArgs: null,
             },
           ],
