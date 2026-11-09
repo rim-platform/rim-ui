@@ -587,7 +587,7 @@ function PluginEmptyState({ desktop }: { desktop: boolean }) {
       <p className="text-sm font-medium text-rim-text">No plugins installed</p>
       <p className="max-w-xs text-xs text-rim-text-muted">
         {desktop
-          ? "No plugins yet. Install one from a local folder, a git URL or a link, or from your workspace's plugins."
+          ? "Install from a local folder or git URL to get started, or from a link or your workspace's registry."
           : "Install a web plugin from a link to get started. Plugins that run programs on your computer need the desktop app."}
       </p>
     </div>

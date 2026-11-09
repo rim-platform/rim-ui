@@ -258,7 +258,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.getByText("No plugins installed")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "No plugins yet. Install one from a local folder, a git URL or a link, or from your workspace's plugins.",
+        "Install from a local folder or git URL to get started, or from a link or your workspace's registry.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/marketplace/i)).toBeNull();
