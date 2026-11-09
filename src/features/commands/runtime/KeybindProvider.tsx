@@ -25,6 +25,7 @@ import { useEffectiveKeybinds } from "./effectiveKeybinds";
 import { toast } from "../../../shared/toast";
 import { keybindCommand, keybindCommandTitle } from "./keybindCommand";
 import { installVimLayer } from "./vimLayer";
+import { keybindAnswersWaitingAgent } from "./appCommands/agents";
 
 interface KeybindProviderProps {
   children: ReactNode;
@@ -77,8 +78,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const handleKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   handleKeyDownRef.current = (event: KeyboardEvent) => {
     if (isKeystrokeRecorder(event.target)) return;
-    // A host dialog owns the keyboard: no keybind runs, the palette's included, until it closes.
-    if (hostDialogOpen()) return;
+    // A host dialog owns the keyboard: no keybind runs, the palette's included, until it closes,
+    // except one answering the agent request or connection the dialog asks about.
+    const dialogOpen = hostDialogOpen();
     const isTextInput = isTextEntry(event.target as Element);
 
     const keystroke = parseKeystroke(event);
@@ -107,6 +109,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       : matchKeybind(keystroke, context, resolvedKeybinds);
 
     if (!match) return;
+    if (dialogOpen && !keybindAnswersWaitingAgent(match.commandId)) return;
 
     // If an overlay/dialog is open, let it handle Escape instead of dispatching close_panel
     if (match.commandId === "workspace.close_panel") {

@@ -12,6 +12,7 @@ import { CloseDialogHost } from "../features/desktop-shell/components/CloseDialo
 import { QuitConfirmHost } from "../features/desktop-shell/components/QuitConfirmHost";
 import { DesktopRuntimeHost } from "../features/desktop-shell/components/DesktopRuntimeHost";
 import { AgentPairDialogHost } from "../features/agents/components/AgentPairDialogHost";
+import { AgentApprovalWarningHost } from "../features/agents/components/AgentApprovalWarningDialog";
 
 /**
  * Boot-time side-effects, rendered inside `AppProviders`.
@@ -41,6 +42,7 @@ export default function App() {
         <CloseDialogHost />
         <QuitConfirmHost />
         <AgentPairDialogHost />
+        <AgentApprovalWarningHost />
         <DesktopRuntimeHost />
       </AppProviders>
     </AppErrorBoundary>

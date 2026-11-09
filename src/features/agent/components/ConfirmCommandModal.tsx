@@ -26,7 +26,12 @@ import {
 } from "./ConfirmCommandModal/argIdentity";
 import { detectCrossChannel } from "./ConfirmCommandModal/crossChannelDetector";
 import { IdArgRow } from "./ConfirmCommandModal/IdArgRow";
-import { deriveConfirmationVerb, verbMatches } from "./ConfirmCommandModal/verbDeriver";
+import { verbMatches } from "./ConfirmCommandModal/verbDeriver";
+import {
+  OUTSIDE_AGENT_ARM_MS,
+  shownSensitivity,
+  typedWordFor,
+} from "./ConfirmCommandModal/confirmGuards";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -34,8 +39,6 @@ const FOCUSABLE_SELECTOR =
 const ARG_DISPLAY_LIMIT = 10;
 const ARG_VALUE_TRUNCATE_AT = 200;
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
-/** How long Confirm stays disabled when a program outside RIM asked for the dialog. */
-const OUTSIDE_AGENT_ARM_MS = 1_000;
 
 interface SeverityVisuals {
   borderAccent: string;
@@ -47,8 +50,6 @@ interface SeverityVisuals {
   srLabel: string;
   /** Block accidental dismiss (backdrop click) at MUTATING and above. */
   disableBackdropClose: boolean;
-  /** Always require type-to-confirm at this sensitivity. */
-  requireTypeToConfirm: boolean;
 }
 
 function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
@@ -62,7 +63,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
         confirmLabel: "I understand — execute",
         srLabel: "Restricted action",
         disableBackdropClose: true,
-        requireTypeToConfirm: true,
       };
     case CommandSensitivity.MUTATING:
       return {
@@ -73,7 +73,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
         confirmLabel: "Run anyway",
         srLabel: "Mutating action",
         disableBackdropClose: true,
-        requireTypeToConfirm: false,
       };
     case CommandSensitivity.SENSITIVE:
       return {
@@ -84,7 +83,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
         confirmLabel: "Confirm",
         srLabel: "Sensitive action",
         disableBackdropClose: false,
-        requireTypeToConfirm: false,
       };
     case CommandSensitivity.SAFE:
     default:
@@ -96,7 +94,6 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
         confirmLabel: "Confirm",
         srLabel: "Safe action",
         disableBackdropClose: false,
-        requireTypeToConfirm: false,
       };
   }
 }
@@ -128,21 +125,12 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const byUser = request.initiator === "user";
   const outside = request.outsideAgent;
   const fromOutside = outside !== undefined;
-  // The server holds a user's command only when it is dangerous or stricter, so an unknown
-  // sensitivity is shown as MUTATING.
-  const sensitivity = request.sensitivity ?? (byUser ? CommandSensitivity.MUTATING : undefined);
+  const sensitivity = shownSensitivity(request);
   const visuals = useMemo(() => severityVisuals(sensitivity), [sensitivity]);
   const sameTurn = !!request.sameTurnAfterToolResult;
-  // Type-to-confirm applies to RESTRICTED, and to MUTATING when the challenge
-  // came in the same turn as a tool result; a `null` verb turns it off.
-  const requireType =
-    request.verb !== null &&
-    (visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING));
-
-  const expectedVerb = useMemo(
-    () => request.verb ?? deriveConfirmationVerb(request.commandId),
-    [request.verb, request.commandId],
-  );
+  const typedWord = useMemo(() => typedWordFor(request), [request]);
+  const requireType = typedWord !== null;
+  const expectedVerb = typedWord ?? "";
 
   const crossChannel = useMemo(
     () => detectCrossChannel(request.args, currentConversationId),

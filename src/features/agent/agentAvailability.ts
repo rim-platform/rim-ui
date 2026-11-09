@@ -1,5 +1,6 @@
 import { detectPlatform, getRuntimeCapabilities } from "../../core/runtime/runtime";
 import { generalCommandOfferedHere } from "../commands/runtime/appCommands/generalAvailability";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "../commands/runtime/appCommands/agentCommandIds";
 import { desktopShellAvailable, QUIT_COMMAND_ID } from "../desktop-shell/availability";
 
 /** What the agent's place shows in an app without the agent. */
@@ -10,6 +11,7 @@ const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "workspace.open_agent",
   "workspace.open_agents",
   "agents.allow_in_encrypted_conversation",
+  ...AGENT_MANAGEMENT_COMMAND_IDS,
 ]);
 
 /** Whether this app has the AI agent, which runs in the desktop app only. */

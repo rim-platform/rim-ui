@@ -17,6 +17,7 @@ import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { plural } from "../runtime/runs";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
+import { useAgentsSettingsRequestStore } from "../state/useAgentsSettingsRequestStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentDetail, grantSummary, runCount } from "./AgentDetail";
@@ -40,6 +41,7 @@ export function AgentsSettings() {
   const [viewingAll, setViewingAll] = useState(false);
   const [runsOf, setRunsOf] = useState<ConnectedAgent | null>(null);
   const [allRuns, setAllRuns] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
   const entries = useAgentRecordStore((s) => s.entries);
   const hasRecord = entries.length > 0;
   const setMainSurface = useShellStore((s) => s.setMainSurface);
@@ -62,6 +64,30 @@ export function AgentsSettings() {
     return () => {
       live = false;
     };
+  }, []);
+
+  // Opens what a command asked for: one agent's dialog, the whole record or every run.
+  useEffect(() => {
+    const take = () => {
+      const request = useAgentsSettingsRequestStore.getState().take();
+      if (!request) return;
+      if (request.kind === "allRuns") return setAllRuns(true);
+      if (request.kind === "record") return setViewingAll(true);
+      if (request.kind === "clearRecord") return setClearingAll(true);
+      const agent = useConnectedAgentsStore
+        .getState()
+        .agents.find((candidate) => candidate.id === request.agentId);
+      if (!agent) {
+        toast.info("That agent is no longer connected");
+        return;
+      }
+      setSelectedId(agent.id);
+      if (request.kind === "disconnect") setDisconnecting(agent);
+      else if (request.kind === "chooseReads") setChoosing(agent);
+      else setChoosingPlugins(agent);
+    };
+    take();
+    return useAgentsSettingsRequestStore.subscribe(take);
   }, []);
 
   const change = (enabled: boolean) => {
@@ -212,6 +238,9 @@ export function AgentsSettings() {
       {viewingAll && <AgentRecordDialog agent={null} onClose={() => setViewingAll(false)} />}
       {runsOf && <AgentRunsDialog agent={runsOf} onClose={() => setRunsOf(null)} />}
       {allRuns && <AgentRunsDialog agent={null} onClose={() => setAllRuns(false)} />}
+      {clearingAll && (
+        <AgentRecordDialog agent={null} startWithClear onClose={() => setClearingAll(false)} />
+      )}
 
       {disconnecting && (
         <ConfirmActionDialog

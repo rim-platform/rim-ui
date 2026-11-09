@@ -9,7 +9,8 @@ export type TargetPickerKind =
   | "member"
   | "messageableMember"
   | "macro"
-  | "pipeline";
+  | "pipeline"
+  | "agent";
 
 /**
  * What the search box shows first: `commands`, the command palette's list, or `search`,

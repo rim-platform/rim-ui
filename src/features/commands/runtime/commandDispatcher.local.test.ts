@@ -17,7 +17,8 @@ import { useNotificationsPanelStore } from "../../notifications/state/useNotific
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
-import { dispatchCommand, runDesktopLocalCommand } from "./commandDispatcher";
+import { dispatchCommand, hasLocalHandler, runDesktopLocalCommand } from "./commandDispatcher";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { LOCAL_COMMANDS } from "./localCommands";
 import type { CommandDefinition } from "../types";
 import type { PluginInfo } from "../../plugins/types";
@@ -50,7 +51,13 @@ describe("this app's own commands", () => {
 
   it("each has a handler", () => {
     for (const { id } of LOCAL_COMMANDS) {
-      expect(runDesktopLocalCommand(id), id).toBe(true);
+      // The commands that answer and manage agents never run through the agent's path.
+      if (AGENT_MANAGEMENT_COMMAND_IDS.has(id)) {
+        expect(hasLocalHandler(id), id).toBe(true);
+        expect(runDesktopLocalCommand(id), id).toBe(false);
+      } else {
+        expect(runDesktopLocalCommand(id), id).toBe(true);
+      }
     }
   });
 

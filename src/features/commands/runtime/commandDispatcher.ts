@@ -68,6 +68,8 @@ import {
 } from "./appCommands/messageContext";
 import { CONVERSATION_HANDLERS } from "./appCommands/conversation";
 import { GENERAL_ARGUMENT_PROMPTS, GENERAL_HANDLERS } from "./appCommands/general";
+import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { withClientLabel } from "./localCommands";
 import {
   runWithHumanConfirmation,
@@ -531,6 +533,7 @@ const localHandlers: Record<string, LocalHandler> = {
     void requestQuit();
   },
   ...GENERAL_HANDLERS,
+  ...AGENT_HANDLERS,
 };
 
 /**
@@ -568,6 +571,7 @@ const argumentPrompts: Record<
     picker: "joinableChannel",
   },
   ...GENERAL_ARGUMENT_PROMPTS,
+  ...AGENT_ARGUMENT_PROMPTS,
 };
 
 /** The kind of target the palette asks for before it runs `commandId`, if it asks. */
@@ -614,12 +618,15 @@ function openArgumentPrompt(
 /**
  * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent. The server refuses
  * to execute desktop-local commands, so agent tool calls for them land here instead of
- * `executeCommand`. Returns `false` when no local handler exists. Only meant for
+ * `executeCommand`. Returns `false` when no local handler exists, and for the commands that
+ * answer and manage agents, which run only from the person's own surfaces. Only meant for
  * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
  * dialog for a human, which is not what an agent call should do. The handler gets no selected
  * message: a command on one acts only on the message its arguments name.
  */
 export function runDesktopLocalCommand(commandId: string, args?: Record<string, unknown>): boolean {
+  // Answering and managing agents is the person's own act, never run for an agent.
+  if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return false;
   const handler = localHandlers[commandId];
   if (!handler) return false;
   handler(args, {});

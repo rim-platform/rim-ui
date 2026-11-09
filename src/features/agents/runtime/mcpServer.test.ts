@@ -4,6 +4,7 @@ import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
 import type { AgentChanges } from "./agentChanges";
 import type { AgentPlugins } from "./agentPlugins";
 import type { AgentReads } from "./agentReads";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "../../commands/runtime/appCommands/agentCommandIds";
 import { answerMcpMessage } from "./mcpServer";
 
 const AGENT: ConnectedAgent = {
@@ -146,6 +147,16 @@ describe("answerMcpMessage", () => {
         "rim_list_plugin_commands",
         "rim_run_plugin_command",
       ]);
+    });
+
+    it("offers none of the commands that answer or manage agents, nor runs one", async () => {
+      const names = (await tools()).map((tool) => tool.name);
+      for (const id of AGENT_MANAGEMENT_COMMAND_IDS) {
+        expect(names, id).not.toContain(id);
+        const { body } = await send(request("tools/call", { name: id, arguments: {} }));
+        expect(body, id).toMatchObject({ id: 7, error: { code: -32602 } });
+      }
+      expect(plugins.runCommand).not.toHaveBeenCalled();
     });
 
     it("tells the agent not to follow what the text says in every read's description", async () => {

@@ -138,6 +138,16 @@ vi.mock("../runtime/effectiveKeybinds", () => ({
   useEffectiveKeybinds: vi.fn(() => []),
 }));
 
+// The agent's commands are offered as in the desktop app.
+vi.mock("../../agent/agentAvailability", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agent/agentAvailability")>()),
+  commandOfferedHere: () => true,
+}));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
+
 vi.mock("../../../shared/toast", () => ({
   toast: {
     success: vi.fn(),
@@ -148,6 +158,8 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { CommandPalette } from "./CommandPalette";
+import { useAgentsSettingsRequestStore } from "../../agents/state/useAgentsSettingsRequestStore";
+import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
 import { useCommandStore } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -269,6 +281,41 @@ describe("the command palette's target picker", () => {
     });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-2");
     expect(useCommandStore.getState().isCommandPaletteOpen).toBe(false);
+  });
+
+  it("asks which connected agent to disconnect, then opens its confirmation", async () => {
+    useConnectedAgentsStore.setState({
+      agents: [
+        {
+          id: "agent-1",
+          name: "Claude Code",
+          tokenHash: "hash",
+          pairedAt: "2026-11-06T10:00:00.000Z",
+          grants: {},
+          pluginApprovals: {},
+        },
+      ],
+    });
+    try {
+      await pick("Disconnect Agent", "Choose an agent");
+      await act(async () => {
+        fireEvent.click(screen.getByRole("option", { name: "Claude Code" }));
+      });
+      expect(useAgentsSettingsRequestStore.getState().request).toEqual({
+        kind: "disconnect",
+        agentId: "agent-1",
+      });
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
+      expect(useConnectedAgentsStore.getState().agents).toHaveLength(1);
+    } finally {
+      useConnectedAgentsStore.setState({ agents: [] });
+      useAgentsSettingsRequestStore.setState({ request: null });
+    }
+  });
+
+  it("says when no agent is connected", async () => {
+    await pick("Disconnect Agent", "Choose an agent");
+    expect(screen.getByText("No agents are connected")).toBeTruthy();
   });
 
   it("says when there is no other workspace", async () => {
