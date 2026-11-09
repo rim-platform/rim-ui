@@ -110,26 +110,70 @@ function selectEmptyLabel(argument: CommandArgumentInfo, mode: ArgumentFormMode,
 }
 
 /**
- * The workspace's channels, DMs and groups, as a select. A preset form also offers the public
- * channels the viewer has not joined, so a saved step can join them.
+ * A conversation select: in a preset form also the public channels the viewer has not joined,
+ * else the viewer's own conversations.
  */
 function ConversationSelect(props: ControlProps) {
+  return props.mode === "preset" ? (
+    <PresetConversationSelect {...props} />
+  ) : (
+    <JoinedConversationSelect {...props} />
+  );
+}
+
+/** The workspace's channels, DMs and groups the viewer is in, as a select. */
+function JoinedConversationSelect(props: ControlProps) {
   const { items, isPending } = useChannelTargets(props.workspaceId);
-  const preset = props.mode === "preset";
-  const joinable = useJoinableTargets(props.workspaceId);
-  const own = items.map((item) => ({
-    value: item.id,
-    label: showInvisibleCharacters(item.label),
-    group: preset ? "Your conversations" : undefined,
-  }));
-  const others = preset
-    ? joinable.items.map((item) => ({
+  return (
+    <ConversationChoice
+      props={props}
+      options={items.map((item) => ({
         value: item.id,
         label: showInvisibleCharacters(item.label),
-        group: "Other public channels",
-      }))
-    : [];
-  const options = [...own, ...others];
+      }))}
+      isPending={isPending}
+    />
+  );
+}
+
+/**
+ * The conversations a saved step can name: the viewer's own, then the workspace's public
+ * channels the viewer has not joined, so the step can join them.
+ */
+function PresetConversationSelect(props: ControlProps) {
+  const own = useChannelTargets(props.workspaceId);
+  const joinable = useJoinableTargets(props.workspaceId);
+  const options = [
+    ...own.items.map((item) => ({
+      value: item.id,
+      label: showInvisibleCharacters(item.label),
+      group: "Your conversations",
+    })),
+    ...joinable.items.map((item) => ({
+      value: item.id,
+      label: showInvisibleCharacters(item.label),
+      group: "Other public channels",
+    })),
+  ];
+  return (
+    <ConversationChoice
+      props={props}
+      options={options}
+      isPending={own.isPending || joinable.isPending}
+    />
+  );
+}
+
+/** A conversation select over `options`. */
+function ConversationChoice({
+  props,
+  options,
+  isPending,
+}: {
+  props: ControlProps;
+  options: { value: string; label: string; group?: string }[];
+  isPending: boolean;
+}) {
   return (
     <ChoiceSelect
       {...selectPropsOf(props)}
