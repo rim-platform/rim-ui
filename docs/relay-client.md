@@ -136,7 +136,9 @@ and signs once more.
 Command calls name their workspace only in `commandContext` (`commands`, `executeCommand`): for
 a workspace bound to a host, the person's and the plugins' calls also carry a top-level
 `workspaceId` that the operation does not declare, which routes them to that host, so the palette,
-keybinds, quick boxes, the message box and context menus list and run its commands there.
+keybinds, quick boxes, the message box and context menus list and run its commands there. The
+cached command lists are read again whenever the router is set or cleared, so a list read before
+the relay started routing does not keep this server's answer.
 The keybinds themselves, user commands and macros stay on this server; the agents do not reach
 such a workspace.
 

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 import { RETRY_FIRST_MS, RETRY_MAX_MS } from "../../../shared/utils/retryWithBackoff";
 import { createTestQueryClient } from "../../../test/utils";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { useCommands } from "../../commands/api/useCommands";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useOfflineStore } from "../../offline/state/useOfflineStore";
 import { useBlockedConversations } from "../state/useBlockedConversations";
 import { useRelayStore } from "../state/useRelayStore";
@@ -51,7 +53,7 @@ vi.mock("../../workspaces/state/memberEvents", async (importOriginal) => ({
 }));
 
 import type { WorkspaceEvent } from "../../../core/events/types";
-import { applyRelayEvent, useRelayRuntime } from "./relayRuntime";
+import { applyRelayEvent, routeSpaces, useRelayRuntime } from "./relayRuntime";
 
 describe("useRelayRuntime", () => {
   const qc = createTestQueryClient();
@@ -278,5 +280,61 @@ describe("applyRelayEvent", () => {
       expect(routed.departWorkspace).not.toHaveBeenCalled();
       expect(routed.forgetSpace).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("routeSpaces", () => {
+  const REMOTE = "ws-remote";
+  const HOST = "rims1_host";
+
+  function commandsAnswer(id: string): Response {
+    return new Response(JSON.stringify({ data: { commands: [{ id, title: id }] } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const send = vi.fn(async () => commandsAnswer("host.command"));
+  const fetchSpy = vi.fn(async () => commandsAnswer("home.command"));
+
+  beforeEach(() => {
+    send.mockClear();
+    fetchSpy.mockClear();
+    vi.stubGlobal("fetch", fetchSpy);
+    useRelayStore.setState({
+      spaces: {
+        [REMOTE]: { account: "a", spaceId: REMOTE, hostServerId: HOST, kind: "workspace" },
+      },
+    });
+    useWorkspaceStore.setState({ workspaceId: REMOTE });
+  });
+
+  afterEach(() => {
+    routeSpaces(createTestQueryClient(), null);
+    useRelayStore.getState().reset();
+    useWorkspaceStore.setState({ workspaceId: null });
+    vi.unstubAllGlobals();
+  });
+
+  it("refetches from its host a command list read before the router was set", async () => {
+    const qc = createTestQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+    const { result } = renderHook(() => useCommands("PALETTE"), { wrapper });
+    await waitFor(() => expect(result.current.data?.[0]?.id).toBe("home.command"));
+    expect(send).not.toHaveBeenCalled();
+
+    act(() => routeSpaces(qc, { hostOf: (id) => (id === REMOTE ? HOST : null), send }));
+
+    await waitFor(() => expect(result.current.data?.[0]?.id).toBe("host.command"));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]).toContain(HOST);
+  });
+
+  it("refetches the cached command lists when the router is cleared", async () => {
+    const qc = createTestQueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    routeSpaces(qc, null);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["commands"] });
   });
 });
