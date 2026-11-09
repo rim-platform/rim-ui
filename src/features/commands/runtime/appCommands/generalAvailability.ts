@@ -3,6 +3,7 @@ import { queryKeys } from "../../../../core/query/keys";
 import { queryClient } from "../../../../core/query/queryClient";
 import { detectPlatform, getRuntimeCapabilities } from "../../../../core/runtime/runtime";
 import { useAuthStore } from "../../../auth/state/useAuthStore";
+import { accountMacrosOn } from "../../../macros/api/useAccountMacros";
 import { botsOfferedFor } from "../../../bots/availability";
 import { desktopShellAvailable } from "../../../desktop-shell/availability";
 import { isDirectSpace, useRelayStore } from "../../../relay/state/useRelayStore";
@@ -72,6 +73,7 @@ export function settingsTabOffered(key: SettingsTab): boolean {
     agentAvailable: getRuntimeCapabilities(detectPlatform()).agent,
     desktopShellAvailable: desktopShellAvailable(),
     inDirectSpace: isDirectSpace(workspaceId),
+    accountMacros: accountMacrosOn(),
   });
   return tabs.some((tab) => tab.key === key);
 }

@@ -381,6 +381,14 @@ describe("keybind, macro and pipeline commands", () => {
     }
   });
 
+  it("opens Macros from the Commands tab command where the home server keeps the person's macros", () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    run(settingsTabCommandId("commands"));
+
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "macros" });
+    expect(workspaceCommandOffered(settingsTabCommandId("commands"))).toBe(false);
+  });
+
   it("switches the picked pipeline", async () => {
     mocks.togglePipeline.mockResolvedValue({});
     queryClient.setQueryData(queryKeys.pipelines("ws-1"), [

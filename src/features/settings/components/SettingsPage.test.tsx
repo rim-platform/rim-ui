@@ -56,6 +56,11 @@ vi.mock("../../notifications/components/NotificationSettings", () => ({
   NotificationSettings: () => <div data-testid="notification-settings">Notifications Panel</div>,
 }));
 
+vi.mock("../../macros/components/WorkspaceMacroSettings", () => ({
+  WorkspaceMacroSettings: () => (
+    <div data-testid="workspace-macro-settings">Workspace Macros Panel</div>
+  ),
+}));
 vi.mock("../../macros/components/MacroSettings", () => ({
   MacroSettings: () => <div data-testid="macro-settings">Macros Panel</div>,
 }));
@@ -165,6 +170,8 @@ vi.mock("../../updater/components/AboutServer", () => ({
   AboutServerFeatures: () => <ul aria-label="Server features" />,
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { SettingsPage } from "./SettingsPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
@@ -434,12 +441,26 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("switch", { name: "Show inline media" })).toBeInTheDocument();
   });
 
-  it("Macros tab renders", async () => {
+  it("Macros tab renders the workspace's macros where the home server keeps none", async () => {
     const user = userEvent.setup();
     renderSettings();
 
     await user.click(screen.getByText("Macros"));
-    expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-macro-settings")).toBeInTheDocument();
+    expect(screen.getByText("Commands")).toBeInTheDocument();
+  });
+
+  it("Macros tab renders the person's macros, and Commands opens it, where the home server keeps them", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    try {
+      mockShellState.mainSurface = { kind: "settings", tab: "commands" };
+      renderSettings();
+
+      expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
+      expect(screen.queryByText("Commands")).not.toBeInTheDocument();
+    } finally {
+      queryClient.clear();
+    }
   });
 
   // ── Tab routing via MainSurface ─────────────────────────────────────────────

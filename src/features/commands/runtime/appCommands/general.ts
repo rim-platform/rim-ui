@@ -19,7 +19,11 @@ import { runMacro } from "../../../macros/runtime/runMacro";
 import { useAuthStore } from "../../../auth/state/useAuthStore";
 import { togglePipeline } from "../../../pipelines/api/usePipelines";
 import { useRelayStore } from "../../../relay/state/useRelayStore";
-import { SETTINGS_TABS, settingsTabCommandId } from "../../../settings/settingsTabs";
+import {
+  SETTINGS_TABS,
+  settingsTabCommandId,
+  type SettingsTab,
+} from "../../../settings/settingsTabs";
 
 import { openLogFolder } from "../../../updater/api/logFolderApi";
 import { useUpdaterStore } from "../../../updater/state/useUpdaterStore";
@@ -181,15 +185,24 @@ function openIfModerator(tab: string): void {
   openSettings(tab);
 }
 
+/**
+ * The Settings tab a tab command opens: Macros for Commands where the home server keeps the
+ * person's macros as their own commands, else the tab itself.
+ */
+function settingsTabOpened(key: SettingsTab): SettingsTab {
+  return key === "commands" && accountMacrosOn() ? "macros" : key;
+}
+
 const settingsTabHandlers: Record<string, Handler> = Object.fromEntries(
   SETTINGS_TABS.map((tab) => [
     settingsTabCommandId(tab.key),
     () => {
-      if (!settingsTabOffered(tab.key)) {
+      const opened = settingsTabOpened(tab.key);
+      if (!settingsTabOffered(opened)) {
         toast.info("That Settings page is not available here.");
         return;
       }
-      openSettings(tab.key);
+      openSettings(opened);
     },
   ]),
 );

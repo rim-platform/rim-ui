@@ -36,6 +36,7 @@ const EVERYTHING: SettingsTabAccess = {
   agentAvailable: true,
   desktopShellAvailable: true,
   inDirectSpace: false,
+  accountMacros: false,
 };
 
 const NOTHING: SettingsTabAccess = {
@@ -46,6 +47,7 @@ const NOTHING: SettingsTabAccess = {
   agentAvailable: false,
   desktopShellAvailable: false,
   inDirectSpace: false,
+  accountMacros: false,
 };
 
 /** The command that opens each kind of main surface; a new kind must name one here. */
@@ -105,6 +107,12 @@ describe("every way into the app is reachable", () => {
   it("lists every settings tab for a person who may see it", () => {
     const shown = visibleSettingsTabs(EVERYTHING).map((tab) => tab.key);
     expect(shown).toEqual(SETTINGS_TABS.map((tab) => tab.key));
+  });
+
+  it("leaves Commands out where the home server keeps the person's macros", () => {
+    const shown = visibleSettingsTabs({ ...EVERYTHING, accountMacros: true }).map((tab) => tab.key);
+    expect(shown).not.toContain("commands");
+    expect(shown).toContain("macros");
   });
 
   it("keeps the tabs that need a role out of the list for everyone else", () => {

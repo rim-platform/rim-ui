@@ -11,6 +11,8 @@ import { UserCommandSettings } from "../../commands/components/UserCommandSettin
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
 import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
+import { WorkspaceMacroSettings } from "../../macros/components/WorkspaceMacroSettings";
+import { useAccountMacrosOn } from "../../macros/api/useAccountMacros";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { SurfaceErrorBoundary } from "../../../shared/ui/SurfaceErrorBoundary";
 import { lazyWithRetry } from "../../../shared/lazy/importWithRetry";
@@ -249,6 +251,8 @@ export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const mainSurface = useShellStore((s) => s.mainSurface);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  // Where the home server keeps the person's macros, Macros edits them and Commands is gone.
+  const accountMacros = useAccountMacrosOn();
 
   // Resolve the requested tab from the surface, defaulting to "profile".
   // The requested tab must exist in the tab list, so a
@@ -287,11 +291,14 @@ export function SettingsPage() {
     agentAvailable: agentAvailable(),
     desktopShellAvailable: desktopShellAvailable(),
     inDirectSpace,
+    accountMacros,
   });
   const narrow = useShellWidth() === "narrow";
+  const requestedTab: SettingsTab =
+    activeTab === "commands" && accountMacros ? "macros" : activeTab;
   const shownTab: SettingsTab =
-    activeTab === "moderation" || visibleTabs.some((tab) => tab.key === activeTab)
-      ? activeTab
+    requestedTab === "moderation" || visibleTabs.some((tab) => tab.key === requestedTab)
+      ? requestedTab
       : "profile";
   const sectionLabel = SETTINGS_TABS.find((tab) => tab.key === shownTab)?.label ?? "Settings";
   // Groups with no visible tab are left out, label included.
@@ -420,7 +427,8 @@ export function SettingsPage() {
                 {shownTab === "keybinds" && <KeybindSettings />}
                 {shownTab === "keyboard" && <KeyboardSettings />}
                 {shownTab === "commands" && <UserCommandSettings />}
-                {shownTab === "macros" && <MacroSettings />}
+                {shownTab === "macros" &&
+                  (accountMacros ? <MacroSettings /> : <WorkspaceMacroSettings />)}
                 {shownTab === "pipelines" && <PipelineSettings />}
                 {shownTab === "plugins" && <PluginSettingsPage />}
                 {shownTab === "plugin-ai" && <PluginAiConsentPanel />}

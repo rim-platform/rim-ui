@@ -138,16 +138,25 @@ export interface DeleteKeybindInput {
 export interface UserCommandStepInput {
   commandId: string;
   args?: Record<string, unknown>;
+  /** The arguments asked for when the macro runs; only a server listing `account_macros` takes it. */
+  ask?: string[];
 }
 
-export interface CreateUserCommandInput {
+/** What a server listing `account_macros` also takes for a macro: how the AI agent may use it. */
+export interface MacroAgentFields {
+  aiCallable?: boolean;
+  nlDescription?: string;
+  intentSamples?: string[];
+}
+
+export interface CreateUserCommandInput extends MacroAgentFields {
   commandId: string;
   title: string;
   description: string;
   steps: UserCommandStepInput[];
 }
 
-export interface UpdateUserCommandInput {
+export interface UpdateUserCommandInput extends MacroAgentFields {
   commandId: string;
   title: string;
   description: string;

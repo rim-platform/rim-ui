@@ -1,363 +1,328 @@
-import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
-import { createTestQueryClient } from "../../../test/utils";
-import { limitsQueryClient } from "../../../test/limits";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import {
-  callsTo,
-  graphqlError,
-  routeRequests,
-} from "../../conversations/__fixtures__/conversations";
-
-const requestMock = vi.fn();
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  runMacro: vi.fn(),
+  agent: { available: true },
+}));
 
 vi.mock("../../../core/graphql/client", () => ({
-  graphqlClient: {
-    request: (...args: unknown[]) => requestMock(...args),
-  },
+  graphqlClient: { request: (...args: unknown[]) => mocks.request(...args) },
 }));
-vi.mock("../../../shared/toast", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
+vi.mock("../runtime/runMacro", () => ({ runMacro: mocks.runMacro }));
+vi.mock("./AiMacroBuilder", () => ({ AiMacroBuilder: () => null }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
 }));
-vi.mock("./AiMacroBuilder", () => ({
-  AiMacroBuilder: () => null,
+vi.mock("../../agent/agentAvailability", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agent/agentAvailability")>()),
+  agentAvailable: () => mocks.agent.available,
 }));
 
-import { toast } from "../../../shared/toast";
-import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
-import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
-import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
+import {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
+import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
+import type { AccountMacro, MacroStepCommand } from "../api/useAccountMacros";
 import { MacroSettings } from "./MacroSettings";
 
-const macro = {
-  id: "macro-1",
-  name: "Cleanup",
-  description: null,
-  steps: [{ commandId: "chat.delete_message", args: null }],
-};
+function stepCommand(id: string, title: string, extra: Partial<MacroStepCommand> = {}) {
+  return {
+    id,
+    title,
+    description: `${title} description`,
+    category: "Chat",
+    sourceKind: "BUILT_IN",
+    executionTarget: "BACKEND",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+    sensitivity: CommandSensitivity.MUTATING,
+    aiCallable: true,
+    arguments: [],
+    ...extra,
+  } satisfies MacroStepCommand;
+}
 
-const deleteCommand = {
-  id: "chat.delete_message",
-  title: "Delete Message",
-  description: "",
-  category: "Chat",
-  sourceKind: "BUILT_IN",
-  executionTarget: "BACKEND",
-  requiredContext: [],
-  requiredCapabilities: [],
-  visibleInPalette: false,
-  visibleInContextMenus: true,
-  keybindCapable: true,
-  dangerous: true,
-  sensitivity: CommandSensitivity.RESTRICTED,
-  feature: null,
-};
+const SET_TOPIC = stepCommand("chat.set_topic", "Set Topic", {
+  arguments: [
+    { name: "topic", title: "Topic", argumentType: CommandArgumentType.STRING, required: true },
+  ],
+});
+const MARK_READ = stepCommand("chat.mark_conversation_read", "Mark Read");
+const OPEN_UNREADS = stepCommand("workspace.open_unreads", "Open Unreads", {
+  category: "Workspace",
+  executionTarget: "DESKTOP_LOCAL",
+  aiCallable: false,
+});
+const MANAGE_AGENTS = stepCommand("agents.disconnect", "Disconnect Agent", {
+  category: "Agents",
+  executionTarget: "DESKTOP_LOCAL",
+});
 
-const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
+function macro(overrides: Partial<AccountMacro> & { id: string }): AccountMacro {
+  return {
+    title: overrides.id,
+    description: "",
+    isEnabled: true,
+    aiCallable: false,
+    nlDescription: "",
+    intentSamples: [],
+    steps: [],
+    ...overrides,
+  };
+}
 
-function serve(executeMacro: (variables: Record<string, unknown>) => unknown) {
-  routeRequests(requestMock, {
-    "query MyMacros": () => ({ myMacros: [macro] }),
-    "query Commands": () => ({ commands: [deleteCommand] }),
-    "mutation ExecuteMacro": executeMacro,
+const STANDUP = macro({
+  id: "user.standup",
+  title: "Standup",
+  description: "Start the day",
+  steps: [
+    { commandId: "workspace.open_unreads", args: {}, ask: [] },
+    { commandId: "chat.set_topic", args: {}, ask: ["topic"] },
+  ],
+});
+
+function serve(macros: AccountMacro[]) {
+  queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+  queryClient.setQueryData(queryKeys.macroStepCommands, [
+    SET_TOPIC,
+    MARK_READ,
+    OPEN_UNREADS,
+    MANAGE_AGENTS,
+  ]);
+  queryClient.setQueryData(queryKeys.accountMacros, macros);
+  routeRequests(mocks.request, {
+    "query AccountMacros": () => ({ userCommands: macros }),
+    "mutation CreateUserCommand": () => ({ createUserCommand: { id: "x" } }),
+    "mutation UpdateUserCommand": () => ({ updateUserCommand: { id: "x" } }),
+    "mutation DeleteUserCommand": () => ({ deleteUserCommand: true }),
   });
 }
 
-/** Renders the settings, against a server whose macro cap is `macrosPerWorkspace` when given. */
-function renderSettings(macrosPerWorkspace?: number) {
-  const client =
-    macrosPerWorkspace === undefined
-      ? createTestQueryClient()
-      : limitsQueryClient({ macrosPerWorkspace });
+function renderPage() {
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={queryClient}>
       <MacroSettings />
-      <ConfirmCommandModal />
     </QueryClientProvider>,
   );
 }
 
-async function clickRun() {
-  fireEvent.click(await screen.findByTitle("Run macro"));
+/** Opens the picker of step `n` and picks the command titled `title`. */
+function pickStep(n: number, title: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Step ${n} command` }));
+  const list = screen.getByRole("listbox", { name: `Step ${n} command` });
+  fireEvent.click(within(list).getByText(title));
 }
 
-describe("MacroSettings running a macro", () => {
-  beforeEach(() => {
-    requestMock.mockReset();
-    vi.mocked(toast.success).mockReset();
-    vi.mocked(toast.error).mockReset();
-    useWorkspaceStore.setState({ workspaceId: "ws-1" });
-    useConfirmationModalStore.getState().reset();
-  });
+beforeEach(() => {
+  mocks.agent.available = true;
+});
 
-  it("runs a macro the server does not hold, without confirmedDangerous", async () => {
-    serve(() => ({ executeMacro: { status: "SUCCESS", message: "Done" } }));
-    renderSettings();
+afterEach(() => {
+  queryClient.clear();
+  vi.clearAllMocks();
+});
 
-    await clickRun();
+describe("MacroSettings list", () => {
+  it("lists each macro with its steps, and runs, turns off and deletes it", async () => {
+    serve([STANDUP]);
+    renderPage();
 
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Macro "Cleanup" executed'));
-    expect(callsTo(requestMock, "mutation ExecuteMacro")).toEqual([
-      { input: { macroId: "macro-1", commandContext: { workspaceId: "ws-1" } } },
-    ]);
-  });
+    expect(screen.getByText("Standup")).toBeInTheDocument();
+    expect(screen.getByText("2 steps: Open Unreads → Set Topic")).toBeInTheDocument();
+    expect(screen.getByText("1 of 100 macros")).toBeInTheDocument();
 
-  it("confirms a dangerous macro with the server's challenge", async () => {
-    let calls = 0;
-    serve(() => {
-      calls += 1;
-      return calls === 1
-        ? {
-            executeMacro: {
-              status: "CONFIRMATION_REQUIRED",
-              message: "macro requires confirmation due to sensitivity tier",
-              confirmationRequired: challenge,
-            },
-          }
-        : { executeMacro: { status: "SUCCESS", message: "Done" } };
-    });
-    renderSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Run Standup" }));
+    await waitFor(() => expect(mocks.runMacro).toHaveBeenCalledWith("user.standup"));
 
-    await clickRun();
-    const dialog = await screen.findByRole("dialog", { name: 'Confirm: Run macro "Cleanup"' });
-    expect(within(dialog).getByText("chat.delete_message")).toBeInTheDocument();
-    expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
-
-    // A Restricted step needs its verb typed before the run can be confirmed.
-    const confirm = within(dialog).getByTestId("confirm-button");
-    expect(confirm).toBeDisabled();
-    fireEvent.change(within(dialog).getByTestId("verb-input"), { target: { value: "delete" } });
-    fireEvent.click(confirm);
-
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Macro "Cleanup" executed'));
-    const sent = callsTo(requestMock, "mutation ExecuteMacro");
-    expect(sent).toEqual([
-      { input: { macroId: "macro-1", commandContext: { workspaceId: "ws-1" } } },
-      {
-        input: {
-          macroId: "macro-1",
-          commandContext: { workspaceId: "ws-1" },
-          confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
+    fireEvent.click(screen.getByRole("switch", { name: "Standup is on" }));
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation UpdateUserCommand")).toEqual([
+        {
+          input: {
+            commandId: "user.standup",
+            title: "Standup",
+            description: "Start the day",
+            steps: [
+              { commandId: "workspace.open_unreads", args: {}, ask: [] },
+              { commandId: "chat.set_topic", args: {}, ask: ["topic"] },
+            ],
+            isEnabled: false,
+          },
         },
-      },
-    ]);
-    for (const variables of sent) {
-      expect(variables.input).not.toHaveProperty("confirmedDangerous");
-    }
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("sends nothing more when the user cancels the confirmation", async () => {
-    serve(() => ({
-      executeMacro: {
-        status: "CONFIRMATION_REQUIRED",
-        message: "macro requires confirmation due to sensitivity tier",
-        confirmationRequired: challenge,
-      },
-    }));
-    renderSettings();
-
-    await clickRun();
-    const dialog = await screen.findByRole("dialog", { name: 'Confirm: Run macro "Cleanup"' });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(callsTo(requestMock, "mutation ExecuteMacro")).toHaveLength(1);
-    expect(toast.success).not.toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("shows the server's message when the challenge is missing", async () => {
-    serve(() => ({
-      executeMacro: { status: "CONFIRMATION_REQUIRED", message: "needs a proof" },
-    }));
-    renderSettings();
-
-    await clickRun();
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Macro "Cleanup" failed', {
-        description: "needs a proof",
-      }),
+      ]),
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Standup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation DeleteUserCommand")).toEqual([
+        { input: { commandId: "user.standup" } },
+      ]),
+    );
   });
 
-  it("shows the server's message under a failed macro", async () => {
-    serve(() => ({
-      executeMacro: {
-        status: "ERROR",
-        message: "Step 1 (Delete Message) failed: message not found",
-      },
-    }));
-    renderSettings();
+  it("says when there are no macros yet", () => {
+    serve([]);
+    renderPage();
 
-    await clickRun();
-
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Macro "Cleanup" failed', {
-        description: "Step 1 (Delete Message) failed: message not found",
-      }),
-    );
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.getByText(/No macros yet/)).toBeInTheDocument();
   });
 });
 
-describe("MacroSettings macro cap", () => {
-  beforeEach(() => {
-    requestMock.mockReset();
-    vi.mocked(toast.error).mockReset();
-    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+describe("MacroSettings form", () => {
+  it("offers commands by category, without macros or agent management", () => {
+    serve([STANDUP]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /New macro/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Step 1 command" }));
+
+    const list = screen.getByRole("listbox", { name: "Step 1 command" });
+    expect(within(list).getByText("Workspace")).toBeInTheDocument();
+    expect(within(list).getByText("Set Topic description")).toBeInTheDocument();
+    expect(within(list).queryByText("Disconnect Agent")).not.toBeInTheDocument();
+    expect(within(list).queryByText("Standup")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search commands for step 1 command" }), {
+      target: { value: "topic" },
+    });
+    expect(within(list).queryByText("Mark Read")).not.toBeInTheDocument();
+    expect(within(list).getByText("Set Topic")).toBeInTheDocument();
   });
 
-  it("shows the workspace's cap, which it cannot count", async () => {
-    serve(() => ({}));
-    renderSettings(10);
-    expect(await screen.findByTestId("limit-note")).toHaveTextContent(
-      "Up to 10 macros per workspace",
+  it("keeps a step that lacks a required argument from saving, and saves it asked for", async () => {
+    mocks.agent.available = true;
+    serve([STANDUP]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /New macro/ }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Morning Topic" } });
+    pickStep(1, "Set Topic");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText("Topic needs a value, or ask for it when the macro runs"),
+    ).toBeInTheDocument();
+    expect(callsTo(mocks.request, "mutation CreateUserCommand")).toEqual([]);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Ask for Topic when I run it" }));
+    expect(screen.getByTestId("agent-option-blocker")).toHaveTextContent(
+      "Only commands the AI agent may run, run on RIM's server, with every argument fixed",
     );
-  });
-
-  it("shows no cap on a server without one", async () => {
-    serve(() => ({}));
-    renderSettings();
-    expect(await screen.findByText("Cleanup")).toBeInTheDocument();
-    expect(screen.queryByTestId("limit-note")).not.toBeInTheDocument();
-  });
-
-  it("shows the server's refusal of a macro past the cap", async () => {
-    routeRequests(requestMock, {
-      "query MyMacros": () => ({ myMacros: [macro] }),
-      "query Commands": () => ({ commands: [deleteCommand] }),
-      "mutation CreateMacro": () => {
-        throw graphqlError("VALIDATION", "this instance allows 1 macros per workspace");
-      },
-    });
-    renderSettings(1);
-    fireEvent.click(await screen.findByRole("button", { name: /new macro/i }));
-    fireEvent.change(screen.getByPlaceholderText("My macro"), { target: { value: "Second" } });
-    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
-      target: { value: "chat.delete_message" },
-    });
+    expect(screen.getByRole("checkbox", { name: "The AI agent can run this" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("this instance allows 1 macros per workspace"),
+      expect(callsTo(mocks.request, "mutation CreateUserCommand")).toEqual([
+        {
+          input: {
+            commandId: "user.morning-topic",
+            title: "Morning Topic",
+            description: "",
+            steps: [{ commandId: "chat.set_topic", ask: ["topic"] }],
+            aiCallable: false,
+            nlDescription: "",
+            intentSamples: [],
+          },
+        },
+      ]),
     );
   });
-});
 
-describe("MacroSettings step picker", () => {
-  const openSettings = {
-    ...deleteCommand,
-    id: "workspace.open_settings",
-    title: "Open Settings",
-    category: "Workspace",
-    executionTarget: "DESKTOP_LOCAL",
-    dangerous: false,
-    sensitivity: CommandSensitivity.SAFE,
-  };
+  it("lets the agent run a macro of server commands with every argument fixed", async () => {
+    serve([]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /New macro/ }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Topic" } });
+    pickStep(1, "Set Topic");
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "Launch day" } });
 
-  beforeEach(() => {
-    requestMock.mockReset();
-    vi.mocked(toast.error).mockReset();
-    useWorkspaceStore.setState({ workspaceId: "ws-1" });
-    routeRequests(requestMock, {
-      "query MyMacros": () => ({ myMacros: [macro] }),
-      "query Commands": () => ({ commands: [deleteCommand, openSettings] }),
-    });
+    const option = screen.getByRole("checkbox", { name: "The AI agent can run this" });
+    expect(option).toBeEnabled();
+    fireEvent.click(option);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation CreateUserCommand")[0]).toMatchObject({
+        input: {
+          commandId: "user.topic",
+          steps: [{ commandId: "chat.set_topic", args: { topic: "Launch day" }, ask: [] }],
+          aiCallable: true,
+        },
+      }),
+    );
   });
 
-  async function openEditor() {
-    renderSettings();
-    fireEvent.click(await screen.findByRole("button", { name: /new macro/i }));
-    // The palette's and the keybind picker's registries load after the editor opens.
-    await waitFor(() => expect(callsTo(requestMock, "query Commands")).toHaveLength(2));
-  }
-
-  it("offers server commands as steps and leaves out desktop-local ones", async () => {
-    await openEditor();
-    fireEvent.focus(screen.getByPlaceholderText("Search commands..."));
-
-    expect(await screen.findByText("Delete Message")).toBeInTheDocument();
-    expect(screen.queryByText("Open Settings")).not.toBeInTheDocument();
-  });
-
-  it("warns under a step typed as a desktop-local command", async () => {
-    await openEditor();
-    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
-      target: { value: "workspace.open_settings" },
-    });
+  it("refuses a title another macro has", async () => {
+    serve([STANDUP]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /New macro/ }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: " standup " } });
+    pickStep(1, "Mark Read");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      await screen.findByText("This command only runs in the app, so it fails as a macro step."),
+      await screen.findByText('You already have a macro called "standup".'),
     ).toBeInTheDocument();
+    expect(callsTo(mocks.request, "mutation CreateUserCommand")).toEqual([]);
   });
 
-  it("marks a step typed as a title as an unknown command once the field is left", async () => {
-    await openEditor();
-    const field = screen.getByPlaceholderText("Search commands...");
-    fireEvent.focus(field);
-    fireEvent.change(field, { target: { value: "Post Message" } });
-    expect(screen.queryByText("Unknown command: Post Message")).not.toBeInTheDocument();
-
-    fireEvent.blur(field);
-
-    expect(await screen.findByText("Unknown command: Post Message")).toBeInTheDocument();
-    expect(field).toHaveAttribute("aria-invalid", "true");
-  });
-
-  it("does not save a macro with an unknown step", async () => {
-    await openEditor();
-    fireEvent.change(screen.getByPlaceholderText("My macro"), { target: { value: "Standup" } });
-    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
-      target: { value: "Post Message" },
+  it("edits a saved macro, keeping a step that runs another macro", async () => {
+    const nesting = macro({
+      id: "user.both",
+      title: "Both",
+      steps: [
+        { commandId: "user.standup", args: {}, ask: [] },
+        { commandId: "chat.mark_conversation_read", args: {}, ask: [] },
+      ],
     });
+    serve([STANDUP, nesting]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Both" }));
+
+    expect(screen.getByText("Another macro (kept, no longer offered)")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Fix the steps marked in red before saving."),
-    );
-    expect(callsTo(requestMock, "mutation CreateMacro")).toHaveLength(0);
-  });
-
-  it("marks an unknown step of a saved macro when the editor opens", async () => {
-    routeRequests(requestMock, {
-      "query MyMacros": () => ({
-        myMacros: [{ ...macro, steps: [{ commandId: "Toggle Sidebar", args: null }] }],
+      expect(callsTo(mocks.request, "mutation UpdateUserCommand")[0]).toMatchObject({
+        input: {
+          commandId: "user.both",
+          isEnabled: true,
+          steps: [
+            { commandId: "user.standup", ask: [] },
+            { commandId: "chat.mark_conversation_read", ask: [] },
+          ],
+          aiCallable: false,
+        },
       }),
-      "query Commands": () => ({ commands: [deleteCommand, openSettings] }),
-    });
-    renderSettings();
-    fireEvent.click(await screen.findByTitle("Edit macro"));
-
-    expect(await screen.findByText("Unknown command: Toggle Sidebar")).toBeInTheDocument();
-  });
-});
-
-describe("MacroSettings Build with AI", () => {
-  beforeEach(() => {
-    requestMock.mockReset();
-    useWorkspaceStore.setState({ workspaceId: "ws-1" });
-    serve(() => ({}));
+    );
   });
 
-  afterEach(() => {
-    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-  });
+  it("leaves the agent option out where the agent does not run, keeping the saved choice", async () => {
+    mocks.agent.available = false;
+    serve([macro({ ...STANDUP, aiCallable: true })]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Standup" }));
 
-  it("offers Build with AI only in the desktop app", async () => {
-    renderSettings();
-    expect(await screen.findByText("Cleanup")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /build with ai/i })).not.toBeInTheDocument();
-  });
+    expect(
+      screen.queryByRole("checkbox", { name: "The AI agent can run this" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-  it("offers Build with AI in the desktop app", async () => {
-    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    renderSettings();
-    expect(await screen.findByRole("button", { name: /build with ai/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation UpdateUserCommand")).toHaveLength(1),
+    );
+    expect(callsTo(mocks.request, "mutation UpdateUserCommand")[0].input).not.toHaveProperty(
+      "aiCallable",
+    );
   });
 });
