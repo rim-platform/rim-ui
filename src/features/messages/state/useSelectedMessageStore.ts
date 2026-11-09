@@ -22,7 +22,22 @@ export interface SelectedMessageActions {
   edit: (messageId: string) => boolean;
   /** Opens the report dialog for the message; `false` when it is the person's own. */
   report: (messageId: string) => boolean;
+  /** Opens the forward dialog for the message; `false` when it is not one to forward. */
+  forward: (messageId: string) => boolean;
+  /**
+   * Opens the dialog that deletes the message's failed attachments; `false` when it has none.
+   */
+  deleteAttachment: (messageId: string) => boolean;
+  /**
+   * Moves the selection as the list's keys do; `false` when the list has nothing to move to.
+   */
+  select: (target: MessageSelectionTarget) => boolean;
+  /** Folds or unfolds the message's tall text; `false` when it does not fold. */
+  toggleFold: (messageId: string) => boolean;
 }
+
+/** Where the list's selection moves to. */
+export type MessageSelectionTarget = "next" | "previous" | "first" | "last";
 
 interface SelectedMessageState {
   /** The selected message, while a message list has one. */

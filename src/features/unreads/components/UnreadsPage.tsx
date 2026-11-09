@@ -147,6 +147,11 @@ export function UnreadsPage() {
     });
   };
 
+  const markAllShownRef = useRef(markAllShown);
+  useEffect(() => {
+    markAllShownRef.current = markAllShown;
+  });
+
   // The page's commands, which the palette, keybinds and the keys below all run.
   useEffect(() => {
     const controls: UnreadsPageControls = {
@@ -171,6 +176,8 @@ export function UnreadsPage() {
         actionsRef.current.get(id)?.open(messageId);
       },
       undo: () => void undoLatestDeferredMark(),
+      markAllShown: () => markAllShownRef.current(),
+      toggleMuted: () => setShowMuted((value) => !value),
     };
     useUnreadsPageStore.getState().setControls(controls);
     return () => useUnreadsPageStore.getState().setControls(null);

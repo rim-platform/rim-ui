@@ -29,8 +29,14 @@ vi.mock("../api/useCommands", () => ({
 const createKeybind = vi.fn();
 const updateKeybind = vi.fn();
 const deleteKeybind = vi.fn();
+const resetCreate = vi.fn();
 vi.mock("../api/useKeybindSettings", () => ({
-  useCreateKeybindMutation: () => ({ mutate: createKeybind, isPending: false, isError: false }),
+  useCreateKeybindMutation: () => ({
+    mutate: createKeybind,
+    reset: resetCreate,
+    isPending: false,
+    isError: false,
+  }),
   useUpdateKeybindMutation: () => ({ mutate: updateKeybind, isPending: false }),
   useDeleteKeybindMutation: () => ({ mutate: deleteKeybind }),
 }));
@@ -39,6 +45,7 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+import { graphqlError } from "../../conversations/__fixtures__/conversations";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
@@ -188,6 +195,7 @@ describe("KeybindSettings categories", () => {
 describe("KeybindSettings where the server keeps app command keybinds", () => {
   beforeEach(() => {
     createKeybind.mockReset();
+    resetCreate.mockReset();
     state.plugins = [K8S];
     state.commands = [serverCommand("workspace.open_search", "Open Search", "Search")];
     state.keybinds = [serverKeybind("kb-1", "Ctrl+Shift+F", "workspace.open_search")];
@@ -224,6 +232,37 @@ describe("KeybindSettings where the server keeps app command keybinds", () => {
       }),
       expect.anything(),
     );
+    expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
+  });
+
+  it("keeps a keybind to an app command the server refuses on this device, with no error", async () => {
+    createKeybind.mockImplementation((_vars, options) =>
+      options.onError(graphqlError("VALIDATION", "unknown command")),
+    );
+    await addKeybind("{Control>}{Alt>}z{/Alt}{/Control}", "workspace.toggle_zen_mode");
+
+    expect(useDeviceKeybindStore.getState().keybinds).toMatchObject([
+      { keystroke: "Ctrl+Alt+Z", commandId: "workspace.toggle_zen_mode", isEnabled: true },
+    ]);
+    expect(resetCreate).toHaveBeenCalled();
+  });
+
+  it("leaves a refused keybind to a server command to the error shown", async () => {
+    createKeybind.mockImplementation((_vars, options) =>
+      options.onError(graphqlError("VALIDATION", "unknown command")),
+    );
+    await addKeybind("{Control>}{Alt>}f{/Alt}{/Control}", "workspace.open_search");
+
+    expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
+    expect(resetCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not move an app command keybind to the device on another kind of error", async () => {
+    createKeybind.mockImplementation((_vars, options) =>
+      options.onError(graphqlError("INTERNAL", "boom")),
+    );
+    await addKeybind("{Control>}{Alt>}z{/Alt}{/Control}", "workspace.toggle_zen_mode");
+
     expect(useDeviceKeybindStore.getState().keybinds).toEqual([]);
   });
 

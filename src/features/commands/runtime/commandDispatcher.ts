@@ -54,17 +54,19 @@ import { openWorkspaceAction, workspaceCommandOffered } from "../../workspaces/w
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
-import {
-  useSelectedMessageStore,
-  type SelectedMessageActions,
-} from "../../messages/state/useSelectedMessageStore";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { findCachedConversation } from "../../conversations/api/useConversation";
 import {
   CommandArgumentType,
   ConversationTypeEnum,
 } from "../../../core/graphql/generated/schema-types";
-import { currentCommandContext } from "./commandContext";
+import {
+  OPEN_A_CONVERSATION,
+  SELECT_A_MESSAGE,
+  selectedMessageInList,
+  selectedMessageOf,
+} from "./appCommands/messageContext";
+import { CONVERSATION_HANDLERS } from "./appCommands/conversation";
 import { withClientLabel } from "./localCommands";
 import {
   runWithHumanConfirmation,
@@ -154,41 +156,6 @@ export function argString(
   return undefined;
 }
 
-/** What a command that acts on the selected message tells the person when none is selected. */
-const SELECT_A_MESSAGE = "Select a message first";
-
-/** What a command that acts on the open conversation tells the person when none is open. */
-const OPEN_A_CONVERSATION = "Open a conversation first";
-
-/**
- * The message a command acts on: the context's selected message, else the one selected in the
- * open conversation's message list.
- */
-function selectedMessageOf(
-  commandContext: Record<string, unknown> | undefined,
-): string | undefined {
-  const id = (commandContext ?? currentCommandContext()).selectedMessageId;
-  return typeof id === "string" && id !== "" ? id : undefined;
-}
-
-/**
- * The selected message with the message list on screen that holds it, for the commands that act
- * on it as that list does; `null`, after saying so in a toast, when no message is selected or no
- * list shows its conversation.
- */
-function selectedMessageInList(
-  commandContext: Record<string, unknown> | undefined,
-): { messageId: string; actions: SelectedMessageActions } | null {
-  const ctx = commandContext ?? currentCommandContext();
-  const messageId = selectedMessageOf(ctx);
-  const actions = useSelectedMessageStore.getState().actions;
-  if (!messageId || !actions || actions.conversationId !== ctx.conversationId) {
-    toast.info(SELECT_A_MESSAGE);
-    return null;
-  }
-  return { messageId, actions };
-}
-
 /** Runs one of the Unreads page's commands while the page is open; `false` when it is not. */
 function onUnreadsPage(run: (controls: UnreadsPageControls) => void): boolean {
   const controls = useUnreadsPageStore.getState().controls;
@@ -217,12 +184,13 @@ function focusInConversation(selector: string): void {
  * A command this app runs itself: called with the command's arguments and the context it runs
  * in, it acts and returns nothing, or a result that says what happened.
  */
-type LocalHandler = (
+export type LocalHandler = (
   args: Record<string, unknown> | undefined,
   commandContext: Record<string, unknown> | undefined,
 ) => void | CommandResult;
 
 const localHandlers: Record<string, LocalHandler> = {
+  ...CONVERSATION_HANDLERS,
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },

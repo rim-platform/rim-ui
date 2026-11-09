@@ -1,29 +1,7 @@
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import type { CommandDefinition } from "../types";
-import type { CommandCategory } from "./commandCategories";
-
-function localCommand(
-  id: string,
-  category: CommandCategory,
-  title: string,
-  description: string,
-  keybindCapable = true,
-): CommandDefinition {
-  return {
-    id,
-    title,
-    description,
-    category,
-    sourceKind: "BUILT_IN",
-    executionTarget: "DESKTOP_LOCAL",
-    requiredContext: [],
-    requiredCapabilities: [],
-    visibleInPalette: true,
-    visibleInContextMenus: false,
-    keybindCapable,
-    dangerous: false,
-  };
-}
+import { CONVERSATION_COMMANDS } from "./appCommands/conversation";
+import { localCommand } from "./appCommands/localCommand";
 
 /**
  * Commands that exist only in this app. The server does not list them, so the palette and the
@@ -216,6 +194,7 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Open the place you went back from",
   ),
   localCommand(QUIT_COMMAND_ID, "App", "Quit RIM", "Stop RIM completely, including in the tray"),
+  ...CONVERSATION_COMMANDS,
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));

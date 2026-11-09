@@ -1,9 +1,13 @@
 import type { RefObject } from "react";
 
+import { AttachmentStatusEnum } from "../../../../core/graphql/generated/schema-types";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { isTimelineNotice, type TimelineMessage } from "../../../e2ee/utils/timeline";
 import type { MessageMenuTarget } from "../../hooks/useMessageContextMenu";
-import type { SelectedMessageActions } from "../../state/useSelectedMessageStore";
+import type {
+  MessageSelectionTarget,
+  SelectedMessageActions,
+} from "../../state/useSelectedMessageStore";
 
 /** What the timeline knows when a command acts on one of its messages. */
 export interface SelectedMessageSource {
@@ -13,6 +17,19 @@ export interface SelectedMessageSource {
   onReply?: (messageId: string) => void;
   /** Opens the report dialog, as the message menu's Report message… does. */
   report: (target: MessageMenuTarget) => void;
+  /** Opens the forward dialog for a message. */
+  forward: (messageId: string, text: string) => void;
+  /** Opens the dialog for deleting a message's failed attachments. */
+  deleteAttachment: (messageId: string) => void;
+  /** Moves the list's selection; absent until the list's keys are set up. */
+  select?: (target: MessageSelectionTarget) => boolean;
+  /** Folds or unfolds a message; absent until the list's keys are set up. */
+  toggleFold?: (messageId: string) => boolean;
+}
+
+/** Whether an attachment is one whose Remove button the message shows. */
+export function isDeletableAttachment(attachment: { status: AttachmentStatusEnum }): boolean {
+  return attachment.status === AttachmentStatusEnum.FAILED;
 }
 
 /**
@@ -65,5 +82,19 @@ export function selectedMessageActions(
       });
       return true;
     },
+    forward: (messageId) => {
+      const message = actionable(messageId);
+      if (!message) return false;
+      source.current.forward(messageId, message.text ?? "");
+      return true;
+    },
+    deleteAttachment: (messageId) => {
+      const message = actionable(messageId);
+      if (!message || !message.attachments.some(isDeletableAttachment)) return false;
+      source.current.deleteAttachment(messageId);
+      return true;
+    },
+    select: (target) => source.current.select?.(target) ?? false,
+    toggleFold: (messageId) => source.current.toggleFold?.(messageId) ?? false,
   };
 }

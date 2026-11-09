@@ -7,6 +7,8 @@ export interface UnreadsPageControls {
   markGroup: () => void;
   open: () => void;
   undo: () => void;
+  markAllShown: () => void;
+  toggleMuted: () => void;
 }
 
 interface UnreadsPageState {
