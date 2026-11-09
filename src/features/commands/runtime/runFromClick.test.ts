@@ -302,6 +302,36 @@ describe("an app command a control of another workspace runs", () => {
   });
 });
 
+describe("a command this app handles, for a workspace whose server cannot be read", () => {
+  it("runs here as the home server's definition says, not on that server", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    request.mockImplementation(async (document: unknown) => {
+      const text = typeof document === "string" ? document : JSON.stringify(document);
+      if (text.includes("macroStepCommands")) {
+        return {
+          macroStepCommands: [
+            command("workspace.switch_workspace", { executionTarget: "DESKTOP_LOCAL" }),
+          ],
+        };
+      }
+      throw new Error("unreachable");
+    });
+
+    const outcome = await runCommandFromClick(
+      "workspace.switch_workspace",
+      { workspace_id: "ws-3" },
+      { target: { workspaceId: "ws-3" } },
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-3");
+    const executed = request.mock.calls.filter(
+      ([, variables]) => (variables as { input?: unknown } | undefined)?.input !== undefined,
+    );
+    expect(executed).toEqual([]);
+  });
+});
+
 describe("resolveClickCommand", () => {
   it("finds the server's keybind list before its palette list", () => {
     const keybind = command("chat.set_topic", { title: "From keybinds" });

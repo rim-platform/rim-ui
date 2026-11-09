@@ -9,6 +9,7 @@ import {
   serverHasCapability,
   spaceHasCapability,
 } from "../../updater/api/serverCapabilities";
+import { accountMacrosOn, fetchMacroStepCommands } from "../../macros/api/useAccountMacros";
 import { executeAsPerson, fetchCommandList } from "../api/useCommands";
 import type { CommandDefinition, CommandResult, CommandSurface } from "../types";
 import { currentCommandContext, type CommandContextTarget } from "./commandContext";
@@ -106,6 +107,18 @@ async function loadHostCommands(workspaceId: string): Promise<void> {
 }
 
 /**
+ * Reads the home server's definitions of every command into the cache, which say where each
+ * runs; a failed read leaves the cache as it was.
+ */
+async function loadStepCommands(): Promise<void> {
+  try {
+    await fetchMacroStepCommands();
+  } catch {
+    // The stand-in runs; the server answers for a command it does not know.
+  }
+}
+
+/**
  * Who a click's command is recorded as started by: a menu item's `CONTEXT_MENU`, a key's
  * `KEYBIND`, and a button's `UI` when the server it runs on lists {@link COMMAND_INITIATOR_UI},
  * else none, which the server records as a palette run.
@@ -154,6 +167,12 @@ export async function runCommandFromClick(
   let resolved = resolveClickCommand(commandId, workspaceId);
   if (resolved.unknown && workspaceId && (hasArgs || !hasLocalHandler(commandId))) {
     await loadHostCommands(workspaceId);
+    resolved = resolveClickCommand(commandId, workspaceId);
+  }
+  // A host that could not be read leaves a command this app also handles to the home server's
+  // definitions, so a command the app runs is not sent to a server that refuses it.
+  if (resolved.unknown && hasLocalHandler(commandId) && accountMacrosOn()) {
+    await loadStepCommands();
     resolved = resolveClickCommand(commandId, workspaceId);
   }
   const { command } = resolved;
