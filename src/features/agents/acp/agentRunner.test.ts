@@ -16,7 +16,10 @@ import {
   AGENT_RUN_EXIT_EVENT,
   AGENT_RUN_LINE_EVENT,
   DESKTOP_ONLY_MESSAGE,
+  allowAgentProgram,
+  allowedAgentPrograms,
   findAgentPrograms,
+  forgetAgentProgram,
   listAgentRuns,
   onAgentRunExit,
   onAgentRunLine,
@@ -76,6 +79,29 @@ describe("agentRunner", () => {
     expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_list", undefined);
   });
 
+  it("asks to allow a program and returns the answer", async () => {
+    tauri.invoke.mockResolvedValue({ allowed: false });
+    await expect(allowAgentProgram("gemini", ["--experimental-acp"])).resolves.toBe(false);
+    expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_allow", {
+      program: "gemini",
+      args: ["--experimental-acp"],
+    });
+    tauri.invoke.mockResolvedValue({ allowed: true });
+    await expect(allowAgentProgram("gemini", ["--experimental-acp"])).resolves.toBe(true);
+  });
+
+  it("forgets a program and lists the allowed ones", async () => {
+    await forgetAgentProgram("/usr/bin/gemini", []);
+    expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_forget", {
+      program: "/usr/bin/gemini",
+      args: [],
+    });
+    const allowed = [{ program: "/usr/bin/gemini", args: ["--experimental-acp"] }];
+    tauri.invoke.mockResolvedValueOnce(allowed);
+    await expect(allowedAgentPrograms()).resolves.toEqual(allowed);
+    expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_allowed", undefined);
+  });
+
   it("turns the runner's sentence into an Error", async () => {
     tauri.invoke.mockRejectedValue("That agent is not running.");
     await expect(sendAgentLine("ar_gone", "hi")).rejects.toThrow("That agent is not running.");
@@ -90,6 +116,9 @@ describe("agentRunner", () => {
     await expect(stopAgentRun("ar_a")).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
     await expect(findAgentPrograms(["a"])).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
     await expect(listAgentRuns()).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
+    await expect(allowAgentProgram("a", [])).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
+    await expect(forgetAgentProgram("a", [])).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
+    await expect(allowedAgentPrograms()).rejects.toThrow(DESKTOP_ONLY_MESSAGE);
     expect(() => onAgentRunLine(() => undefined)).toThrow(DESKTOP_ONLY_MESSAGE);
     expect(() => onAgentRunExit(() => undefined)).toThrow(DESKTOP_ONLY_MESSAGE);
     expect(tauri.invoke).not.toHaveBeenCalled();

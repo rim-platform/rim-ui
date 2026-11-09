@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tempfile::TempDir;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::time::Instant;
@@ -24,6 +25,19 @@ impl RunEvents for Recorder {
     }
 }
 
+/// Answers every question with `answer` and records each message it was asked.
+struct Answers {
+    answer: AtomicBool,
+    asked: Mutex<Vec<(String, String)>>,
+}
+
+impl Confirm for Answers {
+    fn confirm(&self, title: &str, message: &str) -> bool {
+        lock(&self.asked).push((title.to_owned(), message.to_owned()));
+        self.answer.load(Ordering::SeqCst)
+    }
+}
+
 /// Short waits, so stops in tests take a fraction of a second.
 fn test_limits() -> Limits {
     Limits {
@@ -42,24 +56,39 @@ fn test_limits() -> Limits {
 struct Harness {
     runner: AgentRunner,
     events: UnboundedReceiver<Event>,
+    answers: Arc<Answers>,
     logs: TempDir,
+    data: TempDir,
     cwd: TempDir,
 }
 
 fn harness(limits: Limits) -> Harness {
     let (tx, events) = unbounded_channel();
     let logs = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    let answers = Arc::new(Answers {
+        answer: AtomicBool::new(true),
+        asked: Mutex::new(Vec::new()),
+    });
     let runner = AgentRunner::new(
         Arc::new(Recorder(tx)),
+        answers.clone(),
+        Some(data.path().join(allow_list::FILE_NAME)),
         Some(logs.path().to_path_buf()),
         limits,
     );
     Harness {
         runner,
         events,
+        answers,
         logs,
+        data,
         cwd: TempDir::new().unwrap(),
     }
+}
+
+fn strings(args: &[&str]) -> Vec<String> {
+    args.iter().map(|arg| (*arg).to_owned()).collect()
 }
 
 /// The full path of a checked-in test agent. Scripts written at test time can be busy for exec
@@ -77,11 +106,17 @@ impl Harness {
         self.cwd.path().to_string_lossy().into_owned()
     }
 
+    /// Allows `script` without arguments, then starts it.
     async fn start(&self, script: &str) -> String {
+        assert!(self.runner.allow(&agent(script), Vec::new()).await.unwrap());
         self.runner
             .start(&agent(script), Vec::new(), &self.cwd())
             .await
             .unwrap()
+    }
+
+    fn questions(&self) -> usize {
+        lock(&self.answers.asked).len()
     }
 
     async fn next_event(&mut self) -> Event {
@@ -439,20 +474,14 @@ mod processes {
     #[tokio::test]
     async fn a_bare_name_is_found_on_path_and_gets_its_arguments() {
         let mut h = harness(test_limits());
-        let run_id = h
-            .runner
-            .start(
-                "sh",
-                vec![
-                    "-c".into(),
-                    "printf '%s|%s\\n' \"$1\" \"$(pwd -P)\"".into(),
-                    "sh".into(),
-                    "two words".into(),
-                ],
-                &h.cwd(),
-            )
-            .await
-            .unwrap();
+        let args = vec![
+            "-c".to_owned(),
+            "printf '%s|%s\\n' \"$1\" \"$(pwd -P)\"".to_owned(),
+            "sh".to_owned(),
+            "two words".to_owned(),
+        ];
+        assert!(h.runner.allow("sh", args.clone()).await.unwrap());
+        let run_id = h.runner.start("sh", args, &h.cwd()).await.unwrap();
         let line = h.next_line().await.line;
         let cwd = std::fs::canonicalize(h.cwd.path()).unwrap();
         assert_eq!(line, format!("two words|{}", cwd.display()));
@@ -495,4 +524,162 @@ mod processes {
         let too_many = vec!["sh".to_owned(); MAX_FIND_NAMES + 1];
         assert!(h.runner.find(&too_many).await.is_err());
     }
+}
+
+#[test]
+fn the_question_names_the_program_each_argument_and_the_risk() {
+    let message = allow_message(
+        "/usr/bin/agent",
+        &strings(&["--acp", "two words", "", "a\nb", "x\u{202e}y", " padded"]),
+    );
+    assert_eq!(
+        message,
+        "/usr/bin/agent\n--acp\ntwo words\n\"\"\n\"a\\nb\"\n\"x\\u{202e}y\"\n\" padded\"\n\n\
+         It runs as you, with access to your files and anything you can do. \
+         RIM doesn't sandbox it."
+    );
+}
+
+#[tokio::test]
+async fn an_unlisted_program_is_refused() {
+    let h = harness(test_limits());
+    let error = h
+        .runner
+        .start(&agent("echo.sh"), Vec::new(), &h.cwd())
+        .await
+        .unwrap_err();
+    assert_eq!(error, NOT_ALLOWED);
+    assert_eq!(h.questions(), 0);
+}
+
+#[tokio::test]
+async fn a_program_with_other_arguments_is_refused() {
+    let h = harness(test_limits());
+    let program = agent("echo.sh");
+    assert!(h.runner.allow(&program, strings(&["--a"])).await.unwrap());
+    for args in [&[][..], &["--b"][..], &["--a", "--b"][..]] {
+        let error = h
+            .runner
+            .start(&program, strings(args), &h.cwd())
+            .await
+            .unwrap_err();
+        assert_eq!(error, NOT_ALLOWED, "{args:?}");
+    }
+}
+
+#[tokio::test]
+async fn allowing_asks_once_and_keeps_the_full_path() {
+    let h = harness(test_limits());
+    let program = agent("echo.sh");
+    assert!(h.runner.allow(&program, strings(&["x"])).await.unwrap());
+    assert!(h.runner.allow(&program, strings(&["x"])).await.unwrap());
+    assert_eq!(h.questions(), 1);
+    let (title, message) = lock(&h.answers.asked)[0].clone();
+    assert_eq!(title, ALLOW_TITLE);
+    assert!(message.starts_with(&format!("{program}\nx\n\n")));
+    assert_eq!(
+        h.runner.allowed(),
+        vec![AllowedProgram {
+            program,
+            args: strings(&["x"]),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_bare_name_is_allowed_as_its_full_path() {
+    let h = harness(test_limits());
+    assert!(h.runner.allow("sh", Vec::new()).await.unwrap());
+    let allowed = h.runner.allowed();
+    assert_eq!(allowed.len(), 1);
+    assert!(Path::new(&allowed[0].program).is_absolute());
+    assert!(allowed[0].program.ends_with("/sh"));
+    h.runner.forget("sh", &[]).await.unwrap();
+    assert!(h.runner.allowed().is_empty());
+}
+
+#[tokio::test]
+async fn cancel_allows_nothing() {
+    let h = harness(test_limits());
+    h.answers.answer.store(false, Ordering::SeqCst);
+    let program = agent("echo.sh");
+    assert!(!h.runner.allow(&program, Vec::new()).await.unwrap());
+    assert!(h.runner.allowed().is_empty());
+    let error = h
+        .runner
+        .start(&program, Vec::new(), &h.cwd())
+        .await
+        .unwrap_err();
+    assert_eq!(error, NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn forgetting_a_program_refuses_it_again() {
+    let h = harness(test_limits());
+    let program = agent("echo.sh");
+    assert!(h.runner.allow(&program, Vec::new()).await.unwrap());
+    h.runner.forget(&program, &[]).await.unwrap();
+    h.runner.forget(&program, &[]).await.unwrap();
+    assert!(h.runner.allowed().is_empty());
+    let error = h
+        .runner
+        .start(&program, Vec::new(), &h.cwd())
+        .await
+        .unwrap_err();
+    assert_eq!(error, NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn the_allow_list_outlives_the_runner() {
+    let h = harness(test_limits());
+    let program = agent("echo.sh");
+    assert!(h.runner.allow(&program, strings(&["--acp"])).await.unwrap());
+    let (tx, _events) = unbounded_channel();
+    let again = AgentRunner::new(
+        Arc::new(Recorder(tx)),
+        h.answers.clone(),
+        Some(h.data.path().join(allow_list::FILE_NAME)),
+        None,
+        test_limits(),
+    );
+    assert_eq!(again.allowed(), h.runner.allowed());
+}
+
+#[tokio::test]
+async fn allowing_refuses_a_bad_program_or_too_many_arguments() {
+    let h = harness(test_limits());
+    let error = h.runner.allow("bin/agent", Vec::new()).await.unwrap_err();
+    assert!(error.contains("not a relative path"), "{error}");
+    let error = h
+        .runner
+        .allow(&agent("echo.sh"), vec!["a".to_owned(); MAX_ALLOW_ARGS + 1])
+        .await
+        .unwrap_err();
+    assert!(error.contains("at most 32 arguments"), "{error}");
+    let error = h
+        .runner
+        .allow(&agent("echo.sh"), vec!["a".repeat(MAX_ALLOW_ARG_LEN + 1)])
+        .await
+        .unwrap_err();
+    assert!(error.contains("at most 512 characters"), "{error}");
+    assert_eq!(h.questions(), 0);
+}
+
+#[tokio::test]
+async fn a_full_list_refuses_without_asking() {
+    let h = harness(test_limits());
+    let program = agent("echo.sh");
+    for i in 0..allow_list::MAX_ENTRIES {
+        assert!(h.runner.allow(&program, vec![i.to_string()]).await.unwrap());
+    }
+    let asked = h.questions();
+    let error = h
+        .runner
+        .allow(&program, strings(&["more"]))
+        .await
+        .unwrap_err();
+    assert!(error.contains("At most 32 programs"), "{error}");
+    assert_eq!(h.questions(), asked);
+    assert!(h.runner.allow(&program, strings(&["0"])).await.unwrap());
 }

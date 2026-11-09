@@ -1,6 +1,10 @@
 //! The agent runner: starts agent programs the page asks for as child processes, passes lines to
 //! their stdin and hands each line of their stdout to the page. It decides nothing about agents.
+//!
+//! A program starts only with arguments the person allowed for it in a native dialog, which a
+//! script in the page can neither draw nor answer.
 
+mod allow_list;
 mod lookup;
 mod process;
 mod stderr_log;
@@ -16,11 +20,14 @@ use std::time::Duration;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, Webview};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::process::{Child, ChildStderr, ChildStdout};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 
 use crate::desktop_shell::MAIN_WINDOW;
+use allow_list::AllowList;
+pub use allow_list::AllowedProgram;
 use process::{StdoutEnd, StopGraces, WriteRequest};
 use stderr_log::StderrLog;
 
@@ -56,6 +63,18 @@ const WRITE_QUEUE: usize = 8;
 const MAX_FIND_NAMES: usize = 64;
 /// The folder in the app's log directory that holds each run's stderr.
 const LOG_FOLDER: &str = "agent-runs";
+
+/// Most arguments a program can be allowed with.
+const MAX_ALLOW_ARGS: usize = 32;
+/// Longest argument a program can be allowed with, in bytes.
+const MAX_ALLOW_ARG_LEN: usize = 512;
+/// The title of the dialog that asks whether a program may be started.
+const ALLOW_TITLE: &str = "Allow RIM to start this program?";
+/// The last paragraph of that dialog.
+const ALLOW_WARNING: &str =
+    "It runs as you, with access to your files and anything you can do. RIM doesn't sandbox it.";
+/// The refusal to start a program with arguments that were not allowed.
+pub(crate) const NOT_ALLOWED: &str = "Allow this program first.";
 
 /// The answer when a run is not, or no longer, running.
 pub(crate) const NOT_RUNNING: &str = "That agent is not running.";
@@ -125,6 +144,46 @@ impl<R: Runtime> RunEvents for PageEvents<R> {
     }
 }
 
+/// Whether the person allowed a program.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllowAnswer {
+    allowed: bool,
+}
+
+/// Asks the person whether a program may be started, in a dialog the page cannot draw or answer.
+pub(crate) trait Confirm: Send + Sync + 'static {
+    /// Shows `message` under `title` with the buttons Allow and Cancel, and blocks until the
+    /// person answers.
+    ///
+    /// # Returns
+    ///
+    /// Whether Allow was chosen.
+    fn confirm(&self, title: &str, message: &str) -> bool;
+}
+
+/// The native message dialog of the real app, over the main window.
+struct NativeConfirm<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> Confirm for NativeConfirm<R> {
+    fn confirm(&self, title: &str, message: &str) -> bool {
+        let mut dialog = self
+            .0
+            .dialog()
+            .message(message)
+            .title(title)
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Allow".to_owned(),
+                "Cancel".to_owned(),
+            ));
+        if let Some(window) = self.0.get_webview_window(MAIN_WINDOW) {
+            dialog = dialog.parent(&window);
+        }
+        dialog.blocking_show()
+    }
+}
+
 /// The runner's limits and waits.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Limits {
@@ -155,6 +214,10 @@ pub struct AgentRunner {
 struct Inner {
     runs: Mutex<Runs>,
     events: Arc<dyn RunEvents>,
+    allowed: Mutex<AllowList>,
+    confirm: Arc<dyn Confirm>,
+    /// Held while a dialog is open, so one question is asked at a time.
+    asking: tokio::sync::Mutex<()>,
     log_dir: Option<PathBuf>,
     limits: Limits,
 }
@@ -192,9 +255,12 @@ impl Drop for Slot<'_> {
 }
 
 impl AgentRunner {
-    /// A runner that sends its events to `events` and writes stderr logs to `log_dir`.
+    /// A runner that sends its events to `events`, asks through `confirm`, keeps its allow list in
+    /// `allow_file` and writes stderr logs to `log_dir`.
     pub(crate) fn new(
         events: Arc<dyn RunEvents>,
+        confirm: Arc<dyn Confirm>,
+        allow_file: Option<PathBuf>,
         log_dir: Option<PathBuf>,
         limits: Limits,
     ) -> Self {
@@ -202,18 +268,81 @@ impl AgentRunner {
             inner: Arc::new(Inner {
                 runs: Mutex::new(Runs::default()),
                 events,
+                allowed: Mutex::new(AllowList::open(allow_file)),
+                confirm,
+                asking: tokio::sync::Mutex::new(()),
                 log_dir,
                 limits,
             }),
         }
     }
 
-    /// Starts `program` with `args` in `cwd`.
+    /// Asks the person whether `program` may be started with exactly `args`, and remembers the
+    /// answer Allow. A pair already allowed is allowed without asking.
     ///
     /// # Errors
     ///
-    /// A sentence for the page when the program or the folder is not valid, too many runs are
-    /// running, or the program could not be started.
+    /// A sentence for the page when the program is not valid, the arguments are too many or too
+    /// long, the list is full or could not be saved, or the question could not be shown.
+    pub(crate) async fn allow(&self, program: &str, args: Vec<String>) -> Result<bool, String> {
+        let dirs = lookup::search_dirs().await;
+        let program = program_text(&resolve_program(program, &dirs)?)?;
+        if args.len() > MAX_ALLOW_ARGS || args.iter().any(|arg| arg.len() > MAX_ALLOW_ARG_LEN) {
+            return Err(format!(
+                "A program can be allowed with at most {MAX_ALLOW_ARGS} arguments of at most \
+                 {MAX_ALLOW_ARG_LEN} characters each."
+            ));
+        }
+        let _asking = self.inner.asking.lock().await;
+        {
+            let list = lock(&self.inner.allowed);
+            if list.contains(&program, &args) {
+                return Ok(true);
+            }
+            if list.is_full() {
+                return Err(allow_list::full_message());
+            }
+        }
+        let message = allow_message(&program, &args);
+        let confirm = self.inner.confirm.clone();
+        let allowed = tokio::task::spawn_blocking(move || confirm.confirm(ALLOW_TITLE, &message))
+            .await
+            .map_err(|_| "The question could not be shown.".to_owned())?;
+        if !allowed {
+            return Ok(false);
+        }
+        lock(&self.inner.allowed).add(AllowedProgram { program, args })?;
+        log::info!("[agent_runner] a program was allowed");
+        Ok(true)
+    }
+
+    /// Removes `program` with exactly `args` from the allow list, without asking. A bare name is
+    /// looked up first; a pair that is not on the list is left alone.
+    ///
+    /// # Errors
+    ///
+    /// A sentence for the page when a bare name is not found or the list could not be saved.
+    pub(crate) async fn forget(&self, program: &str, args: &[String]) -> Result<(), String> {
+        let program = if Path::new(program).is_absolute() {
+            program.to_owned()
+        } else {
+            program_text(&resolve_program(program, &lookup::search_dirs().await)?)?
+        };
+        lock(&self.inner.allowed).remove(&program, args)
+    }
+
+    /// The allowed programs and their arguments, in the order they were allowed.
+    pub(crate) fn allowed(&self) -> Vec<AllowedProgram> {
+        lock(&self.inner.allowed).entries()
+    }
+
+    /// Starts `program` with `args` in `cwd`, when that program and exactly those arguments were
+    /// allowed.
+    ///
+    /// # Errors
+    ///
+    /// A sentence for the page when the program or the folder is not valid, the pair was not
+    /// allowed, too many runs are running, or the program could not be started.
     pub(crate) async fn start(
         &self,
         program: &str,
@@ -223,6 +352,9 @@ impl AgentRunner {
         let cwd = check_cwd(cwd)?;
         let dirs = lookup::search_dirs().await;
         let program = resolve_program(program, &dirs)?;
+        if !lock(&self.inner.allowed).contains(&program_text(&program)?, &args) {
+            return Err(NOT_ALLOWED.to_owned());
+        }
         let _slot = self.reserve()?;
         let run_id = new_run_id()?;
         let spawned = process::spawn(&program, &args, &cwd, child_path(&dirs))
@@ -557,6 +689,36 @@ fn resolve_program(program: &str, dirs: &[PathBuf]) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("No program named {program} was found on PATH."))
 }
 
+/// `path` as text, for the allow list.
+fn program_text(path: &Path) -> Result<String, String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "The program's path is not valid text.".to_owned())
+}
+
+/// The allow dialog's message: the program's full path, each argument on its own line, then
+/// [`ALLOW_WARNING`].
+fn allow_message(program: &str, args: &[String]) -> String {
+    let mut lines = vec![shown(program)];
+    lines.extend(args.iter().map(|arg| shown(arg)));
+    format!("{}\n\n{ALLOW_WARNING}", lines.join("\n"))
+}
+
+/// `text` as it is when it is plain, otherwise quoted with its line breaks, control and
+/// formatting characters escaped, so it cannot pass for other lines of the dialog.
+fn shown(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text.trim() == text
+        && text
+            .chars()
+            .all(|c| matches!(c, '"' | '\'' | '\\') || c.escape_debug().count() == 1);
+    if plain {
+        text.to_owned()
+    } else {
+        format!("{text:?}")
+    }
+}
+
 /// The `PATH` a run gets when it differs from the app's: on macOS, the lookup's directories, so
 /// a program found through the login shell finds what it runs the same way.
 fn child_path(dirs: &[PathBuf]) -> Option<std::ffi::OsString> {
@@ -596,7 +758,8 @@ fn from_main_window<R: Runtime>(webview: &Webview<R>) -> Result<(), String> {
     }
 }
 
-/// Puts the runner in the app's state, with its logs in the app's log directory.
+/// Puts the runner in the app's state, with its allow list in the app's data directory and its
+/// logs in the app's log directory.
 pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
     let log_dir = match app.path().app_log_dir() {
         Ok(dir) => Some(dir.join(LOG_FOLDER)),
@@ -605,8 +768,17 @@ pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
             None
         }
     };
+    let allow_file = match app.path().app_data_dir() {
+        Ok(dir) => Some(dir.join(allow_list::FILE_NAME)),
+        Err(error) => {
+            log::warn!("[agent_runner] no data directory, allowed programs are not kept: {error}");
+            None
+        }
+    };
     app.manage(AgentRunner::new(
         Arc::new(PageEvents(app.clone())),
+        Arc::new(NativeConfirm(app.clone())),
+        allow_file,
         log_dir,
         Limits::default(),
     ));
@@ -689,4 +861,51 @@ pub fn agent_runner_list<R: Runtime>(
 ) -> Result<Vec<RunInfo>, String> {
     from_main_window(&webview)?;
     Ok(runner.list())
+}
+
+/// Asks the person, in a native dialog, whether `program` may be started with exactly `args`.
+///
+/// # Errors
+///
+/// A sentence for the page saying why the question was not asked or the answer not kept.
+#[tauri::command]
+pub async fn agent_runner_allow<R: Runtime>(
+    webview: Webview<R>,
+    runner: State<'_, AgentRunner>,
+    program: String,
+    args: Vec<String>,
+) -> Result<AllowAnswer, String> {
+    from_main_window(&webview)?;
+    let allowed = runner.allow(&program, args).await?;
+    Ok(AllowAnswer { allowed })
+}
+
+/// Removes `program` with exactly `args` from the allow list, without asking.
+///
+/// # Errors
+///
+/// A sentence for the page saying why the list did not change.
+#[tauri::command]
+pub async fn agent_runner_forget<R: Runtime>(
+    webview: Webview<R>,
+    runner: State<'_, AgentRunner>,
+    program: String,
+    args: Vec<String>,
+) -> Result<(), String> {
+    from_main_window(&webview)?;
+    runner.forget(&program, &args).await
+}
+
+/// The allowed programs and their arguments.
+///
+/// # Errors
+///
+/// A sentence for the page when the call does not come from the main window.
+#[tauri::command]
+pub fn agent_runner_allowed<R: Runtime>(
+    webview: Webview<R>,
+    runner: State<'_, AgentRunner>,
+) -> Result<Vec<AllowedProgram>, String> {
+    from_main_window(&webview)?;
+    Ok(runner.allowed())
 }

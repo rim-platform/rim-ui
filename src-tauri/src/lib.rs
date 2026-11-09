@@ -287,6 +287,9 @@ pub fn run() {
             agent_runner::agent_runner_stop,
             agent_runner::agent_runner_find,
             agent_runner::agent_runner_list,
+            agent_runner::agent_runner_allow,
+            agent_runner::agent_runner_forget,
+            agent_runner::agent_runner_allowed,
         ])
         .build(context)
         .expect("error while building tauri application")

@@ -57,6 +57,13 @@ export interface StartAgentRunOptions {
   cwd: string;
 }
 
+/** A program the person allowed, with the exact arguments it may be started with. */
+export interface AllowedAgentProgram {
+  /** The program's full path. */
+  program: string;
+  args: string[];
+}
+
 /** Throws the off-desktop error when there is no desktop app to ask. */
 function requireDesktop(): void {
   if (!isTauri()) throw new Error(DESKTOP_ONLY_MESSAGE);
@@ -73,7 +80,37 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 }
 
 /**
- * Starts an agent program, without a shell.
+ * Asks the person, in a native dialog the page cannot draw or answer, whether a program may be
+ * started with exactly these arguments, and remembers the answer Allow. A pair already allowed is
+ * allowed without asking.
+ *
+ * @param program - A full path, or a bare name looked up on the computer's `PATH`.
+ * @param args - The exact arguments.
+ * @returns Whether the person allowed it.
+ */
+export async function allowAgentProgram(program: string, args: string[]): Promise<boolean> {
+  const answer = await call<{ allowed: boolean }>("agent_runner_allow", { program, args });
+  return answer.allowed;
+}
+
+/**
+ * Removes a program and its exact arguments from the allowed ones, without asking.
+ *
+ * @param program - The full path, or a bare name looked up on the computer's `PATH`.
+ * @param args - The exact arguments.
+ */
+export async function forgetAgentProgram(program: string, args: string[]): Promise<void> {
+  await call<null>("agent_runner_forget", { program, args });
+}
+
+/** @returns The allowed programs and their arguments, in the order they were allowed. */
+export function allowedAgentPrograms(): Promise<AllowedAgentProgram[]> {
+  return call("agent_runner_allowed");
+}
+
+/**
+ * Starts an agent program, without a shell. The program and exactly these arguments must have
+ * been allowed with {@link allowAgentProgram}.
  *
  * @param options - The program, its arguments and its working folder.
  * @returns The new run's id.
