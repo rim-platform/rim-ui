@@ -373,9 +373,10 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   );
 
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
+  // The list's delete key runs the delete command on the selected message.
   const handleDeleteMessage = useCallback(
     async (msg: { id: string }) => {
-      await deleteMessageFn(msg.id);
+      await deleteMessageFn(msg.id, { source: "key" });
     },
     [deleteMessageFn],
   );

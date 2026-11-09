@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Loader2, Pencil, Play, Plus, Trash2, Wand2 } from "lucide-react";
+import { Pencil, Play, Plus, Trash2, Wand2 } from "lucide-react";
 
 import { errorSentence } from "../../../core/graphql/errors";
 import { cn } from "../../../shared/ui/cn";
@@ -16,7 +16,7 @@ import { useMacroRegistry } from "../api/useMacroCommands";
 import { useStepCommandChoices } from "../api/useStepCommandChoices";
 import { stepTitle } from "../runtime/macroCommands";
 import { MAX_MACROS } from "../runtime/macroSteps";
-import { runMacro } from "../runtime/runMacro";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { deleteStayedMacro, retryWorkspaceMove, useStayedMacros } from "../runtime/macroMove";
 import type { StayedMacro } from "../runtime/macroMoves";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -44,7 +44,6 @@ export function MacroSettings() {
   const [prefill, setPrefill] = useState<MacroPrefill | undefined>(undefined);
   const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [runningId, setRunningId] = useState<string | null>(null);
 
   const count = macros?.length ?? 0;
   const limit = limitView(MAX_MACROS, macros ? count : undefined, ["macro", "macros"], "macros");
@@ -59,13 +58,9 @@ export function MacroSettings() {
     setEditing("new");
   }, []);
 
-  async function run(macro: AccountMacro) {
-    setRunningId(macro.id);
-    try {
-      await runMacro(macro.id);
-    } finally {
-      setRunningId(null);
-    }
+  /** Runs `app.run_macro` on the macro, as the palette's Run Macro… does. */
+  function run(macro: AccountMacro) {
+    void runCommandFromClick("app.run_macro", { macro_id: macro.id });
   }
 
   function toggle(macro: AccountMacro) {
@@ -235,17 +230,13 @@ export function MacroSettings() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void run(macro)}
-                    disabled={!macro.isEnabled || runningId === macro.id}
+                    onClick={() => run(macro)}
+                    disabled={!macro.isEnabled}
                     title="Run macro"
                     aria-label={`Run ${title}`}
                     className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-accent/10 hover:text-rim-accent disabled:opacity-50"
                   >
-                    {runningId === macro.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
+                    <Play className="h-4 w-4" />
                   </button>
                   <button
                     type="button"

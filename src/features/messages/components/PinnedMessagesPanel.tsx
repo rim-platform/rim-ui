@@ -15,7 +15,7 @@ import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessageItem, MessagesPage } from "../../../core/types/messages";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { useUnpinMessageMutation } from "../api/usePinMessage";
+import { runPinCommand } from "../api/messageCommands";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
 
 interface PinnedMessagesPanelProps {
@@ -61,7 +61,6 @@ export function PinnedMessagesPanel({
   }, []);
 
   const qc = useQueryClient();
-  const unpinMessage = useUnpinMessageMutation();
   const canUnpin = usePostingRights(workspaceId, conversationId).pin;
   const contextMenu = useContextMenu();
 
@@ -92,9 +91,15 @@ export function PinnedMessagesPanel({
             label: "Unpin message",
             separatorBefore: true,
             onSelect: () =>
-              unpinMessage.mutate(
-                { serverId: workspaceId, conversationId, messageId: msg.id },
-                { onError: () => toast.error("Could not unpin the message") },
+              void runPinCommand(
+                {
+                  workspaceId,
+                  conversationId,
+                  selectedMessageId: msg.id,
+                  ...(msg.threadId && { threadId: msg.threadId }),
+                },
+                false,
+                { source: "menu" },
               ),
           },
         ]

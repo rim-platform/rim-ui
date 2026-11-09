@@ -2,17 +2,15 @@ import { useCallback, useState, type ReactNode } from "react";
 
 import type { MessageItem } from "../../../core/types/messages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { toast } from "../../../shared/toast";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
-import { markAsUnread, useSpaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
+import { useSpaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
 import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
-import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { showCommandRefusal } from "../../commands/runtime/refusal";
-import { useShellStore } from "../../../shell/state/useShellStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useDeleteMessage } from "./useDeleteMessage";
-import { useToggleReactionMutation } from "../api/useToggleReaction";
+import { runPinCommand, runReactionCommand, type MessageTarget } from "../api/messageCommands";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
@@ -32,12 +30,19 @@ export interface MessageMenuTarget {
 interface UseMessageContextMenuOptions {
   workspaceId: string | null;
   conversationId: string | null;
+  /**
+   * Forward… is offered with it. The main timeline runs `chat.forward_message`, which opens its
+   * forward dialog; the thread panel, whose replies that dialog does not hold, calls it.
+   */
   onForward?: (messageId: string, messageText: string) => void;
-  /** Starts a timeline reply to a message; absent where the viewer cannot post or in the thread panel. */
+  /**
+   * Reply is offered with it, in the main timeline only, where it runs `chat.start_reply`;
+   * absent where the viewer cannot post.
+   */
   onReply?: (messageId: string) => void;
   /**
-   * Starts editing a message in place; the timeline's edit state when absent. In the thread
-   * panel Edit is offered only with it.
+   * Starts editing a message in place in the thread panel, where Edit is offered only with it.
+   * The main timeline runs `chat.start_edit`.
    */
   onEdit?: (messageId: string) => void;
   /**
@@ -72,7 +77,10 @@ function selectedTextIn(messageId: string): string | null {
  * markers); then Edit and Delete on the viewer's own message, Report on someone else's; a
  * Moderation section with Delete for an Owner or Moderator; then the plugins' message actions.
  * Add reaction, Reply in thread and Pin or Unpin are left out where the channel's posting policy
- * keeps the viewer from them.
+ * keeps the viewer from them. Each item runs its command as a context-menu run on the message it
+ * was opened on, in that message's thread: the reaction, pin, unpin, mark-unread and delete
+ * commands everywhere, and copy, reply, reply in thread, forward and edit in the main timeline,
+ * whose message list those commands act through.
  *
  * @returns `getItems`, the menu's items for a message (none without a workspace and a
  *   conversation), `report`, which opens the report dialog for a message as Report message…
@@ -92,9 +100,6 @@ export function useMessageContextMenu({
 } {
   const executeCommandMutation = useExecuteCommandMutation();
   const pluginContextMenuCommands = usePluginContextMenuCommands("message");
-  const pinMessage = usePinMessageMutation();
-  const unpinMessage = useUnpinMessageMutation();
-  const toggleReaction = useToggleReactionMutation();
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
   // Anyone can report someone else's message; Owner/Moderator can delete it.
   const [pendingReport, setPendingReport] = useState<MessageMenuTarget | null>(null);
@@ -107,6 +112,17 @@ export function useMessageContextMenu({
       if (!workspaceId || !conversationId) return [];
       const { messageId, messageText, isOwnMessage, isPinned, hasThread, message } = target;
       const selectedText = selectedTextIn(messageId);
+      const messageThreadId = threadId ?? message?.threadId ?? undefined;
+      const menuTarget: MessageTarget = {
+        workspaceId,
+        conversationId,
+        selectedMessageId: messageId,
+        ...(messageThreadId && { threadId: messageThreadId }),
+      };
+      /** Runs `commandId` on this message as a context-menu item. */
+      const run = (commandId: string, args?: Record<string, unknown>) =>
+        void runCommandFromClick(commandId, args, { source: "menu", target: menuTarget });
+      const inTimeline = !threadId;
 
       const result: DropdownMenuItem[] = [];
 
@@ -117,8 +133,7 @@ export function useMessageContextMenu({
           submenu: QUICK_REACTIONS.map((emoji) => ({
             id: `react-${emoji}`,
             label: emoji,
-            onSelect: () =>
-              toggleReaction.mutate({ serverId: workspaceId, conversationId, messageId, emoji }),
+            onSelect: () => void runReactionCommand(menuTarget, emoji, "menu"),
           })),
         });
       }
@@ -134,18 +149,19 @@ export function useMessageContextMenu({
       result.push({
         id: "copy-text",
         label: "Copy text",
-        onSelect: () => copyToClipboard(messageText),
+        onSelect: () => (inTimeline ? run("chat.copy_message_text") : copyToClipboard(messageText)),
       });
 
-      if (onReply && !threadId) {
-        result.push({ id: "reply", label: "Reply", onSelect: () => onReply(messageId) });
+      if (onReply && inTimeline) {
+        result.push({ id: "reply", label: "Reply", onSelect: () => run("chat.start_reply") });
       }
 
-      if (!hasThread && !threadId && rights.thread) {
+      if (!hasThread && inTimeline && rights.thread) {
         result.push({
           id: "reply-in-thread",
           label: "Reply in thread",
-          onSelect: () => useShellStore.getState().openThreadForMessage(messageId),
+          // The command opens the thread of the message in its context.
+          onSelect: () => run("chat.open_thread"),
         });
       }
 
@@ -153,7 +169,8 @@ export function useMessageContextMenu({
         result.push({
           id: "forward-message",
           label: "Forward…",
-          onSelect: () => onForward(messageId, messageText),
+          onSelect: () =>
+            inTimeline ? run("chat.forward_message") : onForward(messageId, messageText),
         });
       }
 
@@ -161,14 +178,7 @@ export function useMessageContextMenu({
         result.push({
           id: "pin-message",
           label: isPinned ? "Unpin message" : "Pin message",
-          onSelect: () => {
-            const vars = { serverId: workspaceId, conversationId, messageId };
-            if (isPinned) {
-              unpinMessage.mutate(vars);
-            } else {
-              pinMessage.mutate(vars);
-            }
-          },
+          onSelect: () => void runPinCommand(menuTarget, !isPinned, { source: "menu" }),
         });
       }
 
@@ -176,20 +186,22 @@ export function useMessageContextMenu({
         result.push({
           id: "mark-unread-from-here",
           label: "Mark unread from here",
-          onSelect: () => void markAsUnread({ workspaceId, conversationId, messageId }),
+          onSelect: () => run("chat.mark_as_unread", { message_id: messageId }),
         });
       }
 
       if (isOwnMessage) {
-        const edit =
-          onEdit ??
-          (threadId ? undefined : (id: string) => useShellStore.getState().setEditingMessageId(id));
+        const edit = onEdit
+          ? () => onEdit(messageId)
+          : inTimeline
+            ? () => run("chat.start_edit")
+            : undefined;
         if (edit) {
           result.push({
             id: "edit-message",
             label: "Edit message",
             separatorBefore: true,
-            onSelect: () => edit(messageId),
+            onSelect: edit,
           });
         }
 
@@ -199,7 +211,7 @@ export function useMessageContextMenu({
           label: "Delete message…",
           danger: true,
           separatorBefore: !edit,
-          onSelect: () => void deleteMessageFn(messageId),
+          onSelect: () => void deleteMessageFn(messageId, { threadId: messageThreadId }),
         });
       } else {
         result.push({
@@ -218,9 +230,7 @@ export function useMessageContextMenu({
           separatorBefore: true,
           sectionBefore: "Moderation",
           onSelect: () =>
-            void deleteMessageFn(messageId, { asModerator: true }).then((deleted) => {
-              if (deleted) toast.success("Message deleted");
-            }),
+            void deleteMessageFn(messageId, { asModerator: true, threadId: messageThreadId }),
         });
       }
 
@@ -231,12 +241,7 @@ export function useMessageContextMenu({
           separatorBefore: index === 0,
           onSelect: () => {
             dispatchCommand(cmd, (input) => executeCommandMutation.mutateAsync(input), {
-              commandContext: currentCommandContext({
-                workspaceId,
-                conversationId,
-                selectedMessageId: messageId,
-                threadId: threadId ?? message?.threadId ?? undefined,
-              }),
+              commandContext: currentCommandContext(menuTarget),
             }).catch((err: unknown) => showCommandRefusal(cmd.title, err));
           },
         });
@@ -257,9 +262,6 @@ export function useMessageContextMenu({
       rights.thread,
       rights.pin,
       deleteMessageFn,
-      pinMessage,
-      unpinMessage,
-      toggleReaction,
       pluginContextMenuCommands,
       executeCommandMutation,
     ],
@@ -271,6 +273,7 @@ export function useMessageContextMenu({
         workspaceId={workspaceId}
         conversationId={conversationId}
         messageId={pendingReport.messageId}
+        threadId={threadId ?? pendingReport.message?.threadId}
         message={pendingReport.message}
         onClose={() => setPendingReport(null)}
       />

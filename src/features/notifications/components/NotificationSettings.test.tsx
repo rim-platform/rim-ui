@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { queryClient } from "../../../core/query/queryClient";
+import { backendCommand, paletteInput, serveHostCommands } from "../../../test/clickCommands";
 import {
   DigestFrequency,
   NotificationLevel,
@@ -51,19 +53,49 @@ function serve(
       const input = vars.input as Omit<NotificationSettingsData, "serverId">;
       return { updateNotificationSettings: { ...settings, ...input } };
     },
-    "mutation SetDoNotDisturb": (vars) => ({
-      setDoNotDisturb: {
-        ...settings,
-        dndPaused: vars.paused,
-        dndPausedUntil: vars.paused ? (vars.until ?? null) : null,
-      },
-    }),
     ...overrides,
   });
 }
 
-async function renderSettings(features?: FakeFeatures) {
-  const qc = createTestQueryClient();
+const DND = backendCommand("notifications.dnd", { title: "Do Not Disturb" });
+
+/**
+ * Serves the settings and runs `notifications.dnd` on them, as the server does, unless `run`
+ * answers it.
+ */
+function servePauses(settings: NotificationSettingsData = defaults, run?: () => unknown) {
+  serveHostCommands("ws-1", [DND]);
+  let current = settings;
+  serve(settings, {
+    "query MyNotificationSettings": () => ({ myNotificationSettings: current }),
+    "mutation ExecuteCommand": (vars) => {
+      if (run) return run();
+      const args = (vars.input as { args: { mode: string; until?: string } }).args;
+      current = {
+        ...current,
+        dndPaused: args.mode !== "off",
+        dndPausedUntil: args.mode === "until" ? (args.until ?? null) : null,
+      };
+      return {
+        executeCommand: { status: "SUCCESS", message: "", payload: null, followUpCommands: [] },
+      };
+    },
+  });
+}
+
+/** The `notifications.dnd` runs sent. */
+function dndRuns(): Record<string, unknown>[] {
+  return callsTo(requestMock, "mutation ExecuteCommand").map(
+    (vars) => vars.input as Record<string, unknown>,
+  );
+}
+
+/**
+ * Renders the settings with a test query client, or with `appClient` the app's own, whose
+ * cache a command's effects refresh.
+ */
+async function renderSettings(features?: FakeFeatures, appClient = false) {
+  const qc = appClient ? queryClient : createTestQueryClient();
   if (features) {
     // The test client drops unobserved data at once; the form mounts after its settings load.
     qc.setQueryDefaults(queryKeys.serverInfo, { gcTime: Infinity });
@@ -97,6 +129,7 @@ describe("NotificationSettings", () => {
 
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
+    queryClient.clear();
   });
 
   it("says email is not set up in place of the digest choice while the server sends none", async () => {
@@ -228,21 +261,38 @@ describe("NotificationSettings", () => {
     expect(callsTo(requestMock, "mutation UpdateNotificationSettings")).toEqual([]);
   });
 
-  it("pauses for one hour at once, without Save", async () => {
-    serve();
-    await renderSettings();
+  it("pauses for one hour at once with notifications.dnd, without Save", async () => {
+    servePauses();
+    await renderSettings(undefined, true);
 
     const before = Date.now();
     fireEvent.click(screen.getByRole("button", { name: "For 1 hour" }));
 
-    await waitFor(() => expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toHaveLength(1));
-    const vars = callsTo(requestMock, "mutation SetDoNotDisturb")[0];
-    expect(vars).toMatchObject({ serverId: "ws-1", paused: true });
-    const until = Date.parse(vars.until as string);
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    const sent = dndRuns()[0];
+    expect(sent).toMatchObject({
+      commandId: "notifications.dnd",
+      args: { mode: "until" },
+      commandContext: { workspaceId: "ws-1" },
+    });
+    const args = sent.args as { until: string };
+    const until = Date.parse(args.until);
     expect(until - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
     expect(until - before).toBeLessThanOrEqual(61 * 60 * 1000);
+    expect(sent).toEqual(await paletteInput(DND, { workspaceId: "ws-1" }, args));
     expect(await screen.findByTestId("pause-status")).toHaveTextContent("Paused until");
     expect(callsTo(requestMock, "mutation UpdateNotificationSettings")).toEqual([]);
+  });
+
+  it("shows a refused pause under the buttons", async () => {
+    servePauses(defaults, () => {
+      throw graphqlError("VALIDATION", "the pause must end within a week");
+    });
+    await renderSettings(undefined, true);
+
+    fireEvent.click(screen.getByRole("button", { name: "For 1 hour" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("the pause must end within a week");
   });
 
   it("treats a timed pause that has ended as off", async () => {
@@ -253,18 +303,15 @@ describe("NotificationSettings", () => {
   });
 
   it("pauses until a custom time and turns the pause off", async () => {
-    serve({ ...defaults, dndPaused: true, dndPausedUntil: null });
-    await renderSettings();
+    servePauses({ ...defaults, dndPaused: true, dndPausedUntil: null });
+    await renderSettings(undefined, true);
 
     expect(screen.getByTestId("pause-status")).toHaveTextContent(
       "Paused until you turn it back on",
     );
     fireEvent.click(screen.getByRole("button", { name: "Turn off pause" }));
-    await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toEqual([
-        { serverId: "ws-1", paused: false, until: null },
-      ]),
-    );
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    expect(dndRuns()[0]).toMatchObject({ args: { mode: "off" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Custom…" }));
     fireEvent.change(screen.getByLabelText("Pause until"), {
@@ -277,11 +324,9 @@ describe("NotificationSettings", () => {
       target: { value: "2999-01-01T10:00" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
-    await waitFor(() => expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toHaveLength(2));
-    expect(callsTo(requestMock, "mutation SetDoNotDisturb")[1]).toEqual({
-      serverId: "ws-1",
-      paused: true,
-      until: new Date("2999-01-01T10:00").toISOString(),
+    await waitFor(() => expect(dndRuns()).toHaveLength(2));
+    expect(dndRuns()[1]).toMatchObject({
+      args: { mode: "until", until: new Date("2999-01-01T10:00").toISOString() },
     });
   });
 

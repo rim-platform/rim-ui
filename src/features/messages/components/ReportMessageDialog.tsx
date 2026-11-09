@@ -5,10 +5,8 @@ import type { MessageItem } from "../../../core/types/messages";
 import { toast } from "../../../shared/toast";
 import { encryptedReport } from "../../e2ee/utils/report";
 import { useDirectSpaceIds } from "../../relay/api/useDirectInbox";
-import {
-  useReportEncryptedMessageMutation,
-  useReportMessageMutation,
-} from "../../workspaces/api/useModeration";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useReportEncryptedMessageMutation } from "../../workspaces/api/useModeration";
 import { useMyServers } from "../../workspaces/api/useMyServers";
 import { ModerationDialog, ReasonField } from "../../workspaces/components/ModerationDialog";
 
@@ -16,6 +14,8 @@ interface ReportMessageDialogProps {
   workspaceId: string;
   conversationId: string;
   messageId: string;
+  /** The thread the message is a reply in, if any. */
+  threadId?: string | null;
   /** The message as this device holds it; an encrypted one is reported with its content. */
   message?: MessageItem | null;
   onClose: () => void;
@@ -44,19 +44,20 @@ function description(direct: boolean, encrypted: boolean): string {
  * (a direct space, which has no moderators) to the people who run its server. An encrypted
  * message is reported by revealing its content with the proof that its sender's device sent
  * it; a message this device could not read or verify cannot be reported. A message the viewer
- * already reported says so and closes.
+ * already reported says so and closes. A plaintext report runs `chat.report_message` on the
+ * message, confirmed by this dialog; an encrypted one is sent with its revealed content.
  */
 export function ReportMessageDialog({
   workspaceId,
   conversationId,
   messageId,
+  threadId,
   message,
   onClose,
 }: ReportMessageDialogProps) {
   const { data: workspaces } = useMyServers(false);
   const workspaceName = workspaces?.find((workspace) => workspace.id === workspaceId)?.name;
   const [reason, setReason] = useState("");
-  const reportMessage = useReportMessageMutation();
   const reportEncrypted = useReportEncryptedMessageMutation();
   const direct = useDirectSpaceIds().includes(workspaceId);
   const trimmed = reason.trim();
@@ -66,9 +67,13 @@ export function ReportMessageDialog({
   // Set when the server answered that the viewer already reported this message.
   const alreadyReported = useRef(false);
 
-  /** Takes the server's "already reported" answer as done; any other failure goes on. */
+  /**
+   * Takes the server's "already reported" answer as done; any other failure goes on. A command's
+   * failure carries the request's error as its `cause`.
+   */
   function noteAlreadyReported(err: unknown) {
-    if (graphqlErrorCode(err) === CONFLICT) {
+    const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+    if (graphqlErrorCode(cause) === CONFLICT) {
       alreadyReported.current = true;
       return;
     }
@@ -80,12 +85,24 @@ export function ReportMessageDialog({
       if ("refusal" in report) return Promise.reject(new Error(report.refusal));
       return reportEncrypted.mutateAsync({ input: report.input }).catch(noteAlreadyReported);
     }
-    return reportMessage
-      .mutateAsync({
-        serverId: workspaceId,
-        conversationId,
-        messageId,
-        reason: trimmed,
+    return runCommandFromClick(
+      "chat.report_message",
+      { reason: trimmed },
+      {
+        target: {
+          workspaceId,
+          conversationId,
+          selectedMessageId: messageId,
+          ...(threadId && { threadId }),
+        },
+        confirmed: true,
+        throwOnError: true,
+        successToast: null,
+      },
+    )
+      .then((outcome) => {
+        // A failure throws; a confirmation the person cancelled leaves the dialog open.
+        if (!outcome.ok) throw new Error("The report was not sent");
       })
       .catch(noteAlreadyReported);
   }

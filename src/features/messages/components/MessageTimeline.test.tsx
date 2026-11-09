@@ -42,10 +42,10 @@ vi.mock("../api/useEditMessage", () => ({
   useEditMessageMutation: () => editMutation,
 }));
 
-const toggleMutate = vi.fn();
-const toggleMutation = { mutate: toggleMutate };
-vi.mock("../api/useToggleReaction", () => ({
-  useToggleReactionMutation: () => toggleMutation,
+const runReaction = vi.hoisted(() => vi.fn());
+vi.mock("../api/messageCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/messageCommands")>()),
+  runReactionCommand: runReaction,
 }));
 
 const deleteMessage = vi.fn();
@@ -578,6 +578,23 @@ describe("MessageTimeline handler stability", () => {
     for (const id of ["m-000", "m-001", "m-002"]) {
       expect(renderCounts.get(id) ?? 0).toBe(0);
     }
+  });
+});
+
+describe("MessageTimeline — reaction chips", () => {
+  it("toggles a reaction with the reaction command on the chip's own message", () => {
+    runReaction.mockReset();
+    setMessages([0, 1].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const handlers = seenHandlers[0] as { onToggleReaction: (id: string, emoji: string) => void };
+
+    handlers.onToggleReaction("m-000", "👍");
+
+    expect(runReaction).toHaveBeenCalledWith(
+      { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "m-000" },
+      "👍",
+      "button",
+    );
   });
 });
 

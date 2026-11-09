@@ -8,6 +8,8 @@ import {
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { useToastStore } from "../../../shared/toast";
+import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { makeConversation } from "../../conversations/__fixtures__/conversations";
@@ -502,10 +504,12 @@ describe("PipelineSettings edit, toggle and delete", () => {
     expect((callsTo("UpdatePipeline")[0].input as Record<string, unknown>).filter).toBeUndefined();
   });
 
-  it("toggles a pipeline to the opposite state", async () => {
+  it("toggles a pipeline to the opposite state with app.toggle_pipeline", async () => {
     handlers.TogglePipeline = (vars) => ({
       togglePipeline: { ...basePipeline, enabled: vars.enabled },
     });
+    // The command reads the workspace's pipelines from the app's cache.
+    queryClient.setQueryData(queryKeys.pipelines("ws-1"), [basePipeline, disabledPipeline]);
     render(<PipelineSettings />);
     await screen.findByText("Escalate urgent");
 
@@ -518,6 +522,8 @@ describe("PipelineSettings edit, toggle and delete", () => {
     await waitFor(() =>
       expect(callsTo("TogglePipeline")[1]).toEqual({ pipelineId: "p-2", enabled: true }),
     );
+    await waitFor(() => expect(toastTitles()).toContain('Pipeline "Welcome" turned on'));
+    queryClient.clear();
   });
 
   it("deletes after confirmation and refreshes the list", async () => {

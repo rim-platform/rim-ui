@@ -1,20 +1,12 @@
 import { useCallback } from "react";
 
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { toast } from "../../../shared/toast";
 import { formatTime } from "../../../shared/utils/formatTime";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { useShellStore } from "../../../shell/state/useShellStore";
-import {
-  QUICK_ACCESS_SHORTCUT,
-  useQuickAccessStore,
-} from "../../commands/state/useQuickAccessStore";
-import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { QUICK_ACCESS_SHORTCUT } from "../../commands/state/useQuickAccessStore";
 import { unreadTotal, useUnreadStore } from "../../conversations/state/useUnreadStore";
-import {
-  useNotificationSettings,
-  useSetDoNotDisturb,
-} from "../../notifications/api/useNotificationSettings";
+import { useNotificationSettings } from "../../notifications/api/useNotificationSettings";
+import { pauseArguments } from "../../notifications/pauseCommand";
 import { inOneHour, isPauseActive, tomorrowMorning } from "../../notifications/rules";
 import { joinRequestBadge, useJoinRequestCount } from "../api/publicJoinLink";
 import { useCanHavePublicLink } from "./useCanHavePublicLink";
@@ -23,12 +15,7 @@ import { useMyServerRole } from "../api/useMyServerRole";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { canCreateChannel, canModerate, isGuest, isOwner } from "../role";
-import { useWorkspaceActionStore } from "../state/useWorkspaceActionStore";
-import { useWorkspaceStore } from "../state/useWorkspaceStore";
 import { canLeaveWorkspace, canRenameWorkspace } from "../workspaceActions";
-
-/** A dialog a workspace's menu opens for that workspace. */
-export type WorkspaceMenuDialog = "invite" | "browse-channels" | "create-channel";
 
 const PAUSES: { id: string; label: string; until: () => Date }[] = [
   { id: "pause-1h", label: "For 1 hour", until: () => inOneHour() },
@@ -42,14 +29,11 @@ const PAUSES: { id: string; label: string; until: () => Date }[] = [
 
 interface UseWorkspaceMenuItemsOptions {
   workspaceId: string;
-  /** The workspace's name as the rail shows it, for the keybind assigner. */
-  label: string;
   /**
    * Whether to load the viewer's role and notification settings in the workspace, which the
    * menu needs; until then the items that depend on them are left out.
    */
   enabled: boolean;
-  onOpenDialog: (dialog: WorkspaceMenuDialog) => void;
 }
 
 /**
@@ -61,19 +45,17 @@ interface UseWorkspaceMenuItemsOptions {
  * people… (the Owner), Create channel… (not for guests, and in the server's default workspace
  * only for its Owner and Moderators), Rename workspace… (the Owner), Assign keybind… and
  * Leave workspace… (anyone but the Owner, not in the server's default workspace), the last two
- * on a server that supports them.
+ * on a server that supports them. Each item runs its command as a context-menu run on that
+ * workspace.
  *
  * @returns A function that gives the items when the menu opens.
  */
 export function useWorkspaceMenuItems({
   workspaceId,
-  label,
   enabled,
-  onOpenDialog,
 }: UseWorkspaceMenuItemsOptions): () => DropdownMenuItem[] {
   const role = useMyServerRole(enabled ? workspaceId : undefined);
   const { data: settings } = useNotificationSettings(enabled ? workspaceId : null);
-  const { mutate: setDnd } = useSetDoNotDisturb();
   const canHaveLink = useCanHavePublicLink(workspaceId, enabled);
   const inDefault = useIsDefaultWorkspace(workspaceId);
   const { info } = useServerInfo();
@@ -85,29 +67,28 @@ export function useWorkspaceMenuItems({
   const requestBadge = joinRequestBadge(requestCount);
 
   return useCallback(() => {
+    /** Runs `commandId` on this workspace as a context-menu item. */
+    const run = (commandId: string, args?: Record<string, unknown>) =>
+      void runCommandFromClick(commandId, args, { source: "menu", target: { workspaceId } });
     const items: DropdownMenuItem[] = [];
     const { counts, spaceOf } = useUnreadStore.getState();
     if (unreadTotal(counts, spaceOf, (space) => space === workspaceId) > 0) {
       items.push({
         id: "mark-all-read",
         label: "Mark all as read",
-        onSelect: () => markWorkspaceRead(workspaceId),
+        onSelect: () => run("chat.mark_all_as_read"),
       });
     }
 
-    const pause = (paused: boolean, until: Date | null) =>
-      setDnd(
-        { serverId: workspaceId, paused, until: until ? until.toISOString() : null },
-        {
-          onSuccess: () =>
-            toast.success(
-              until
-                ? `Notifications paused until ${formatTime(until.toISOString())}`
-                : "Notifications resumed",
-            ),
-          onError: (err) => toast.error(graphqlErrorMessage(err, "Could not change the pause")),
-        },
-      );
+    const pause = (until: Date | null) =>
+      void runCommandFromClick("notifications.dnd", pauseArguments(until), {
+        source: "menu",
+        target: { workspaceId },
+        successToast: until
+          ? `Notifications paused until ${formatTime(until.toISOString())}`
+          : "Notifications resumed",
+        errorTitle: "Pause notifications",
+      });
     const paused = settings ? isPauseActive(settings) : false;
     items.push({
       id: "pause-notifications",
@@ -121,14 +102,14 @@ export function useWorkspaceMenuItems({
       submenu: PAUSES.map((p) => ({
         id: p.id,
         label: p.label,
-        onSelect: () => pause(true, p.until()),
+        onSelect: () => pause(p.until()),
       })),
     });
     if (paused) {
       items.push({
         id: "resume-notifications",
         label: "Resume notifications",
-        onSelect: () => pause(false, null),
+        onSelect: () => pause(null),
       });
     }
 
@@ -138,31 +119,21 @@ export function useWorkspaceMenuItems({
       items.push({
         id: "browse-channels",
         label: "Browse channels…",
-        onSelect: () => onOpenDialog("browse-channels"),
+        onSelect: () => run("chat.browse_channels"),
       });
     }
     if (canModerate(role)) {
       items.push({
         id: "workspace-settings",
         label: "Workspace settings",
-        onSelect: () => {
-          const workspaces = useWorkspaceStore.getState();
-          if (workspaces.workspaceId !== workspaceId) workspaces.setWorkspaceId(workspaceId);
-          useShellStore.getState().setMainSurface({ kind: "settings", tab: "workspace" });
-        },
+        onSelect: () => run("workspace.open_workspace_settings"),
       });
     }
     if (canModerate(role)) {
       items.push({
         id: "reports",
         label: "Reports…",
-        onSelect: () => {
-          const workspaces = useWorkspaceStore.getState();
-          if (workspaces.workspaceId !== workspaceId) workspaces.setWorkspaceId(workspaceId);
-          useShellStore
-            .getState()
-            .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
-        },
+        onSelect: () => run("moderation.open_reports"),
       });
     }
     if (canModerate(role) && requestBadge) {
@@ -170,27 +141,21 @@ export function useWorkspaceMenuItems({
         id: "join-requests",
         label: "Join requests…",
         detail: `${requestBadge} waiting`,
-        onSelect: () => {
-          const workspaces = useWorkspaceStore.getState();
-          if (workspaces.workspaceId !== workspaceId) workspaces.setWorkspaceId(workspaceId);
-          useShellStore
-            .getState()
-            .setMainSurface({ kind: "settings", tab: "workspace-moderation" });
-        },
+        onSelect: () => run("workspace.open_join_requests"),
       });
     }
     if (isOwner(role)) {
       items.push({
         id: "invite",
         label: "Invite people…",
-        onSelect: () => onOpenDialog("invite"),
+        onSelect: () => run("admin.invite_member"),
       });
     }
     if (canCreateChannel(role, inDefault)) {
       items.push({
         id: "create-channel",
         label: "Create channel…",
-        onSelect: () => onOpenDialog("create-channel"),
+        onSelect: () => run("chat.create_channel"),
       });
     }
     const facts = {
@@ -203,15 +168,14 @@ export function useWorkspaceMenuItems({
       items.push({
         id: "rename-workspace",
         label: "Rename workspace…",
-        onSelect: () => useWorkspaceActionStore.getState().open("rename", workspaceId),
+        onSelect: () => run("workspace.rename"),
       });
     }
     items.push({
       id: "assign-keybind",
       label: "Assign keybind…",
       shortcut: QUICK_ACCESS_SHORTCUT,
-      onSelect: () =>
-        useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label }),
+      onSelect: () => run("settings.assign_keybind"),
     });
     if (canLeaveWorkspace(facts)) {
       items.push({
@@ -219,20 +183,9 @@ export function useWorkspaceMenuItems({
         label: "Leave workspace…",
         danger: true,
         separatorBefore: true,
-        onSelect: () => useWorkspaceActionStore.getState().open("leave", workspaceId),
+        onSelect: () => run("workspace.leave"),
       });
     }
     return items;
-  }, [
-    workspaceId,
-    label,
-    role,
-    settings,
-    setDnd,
-    onOpenDialog,
-    requestBadge,
-    inDefault,
-    info,
-    inDirectSpace,
-  ]);
+  }, [workspaceId, role, settings, requestBadge, inDefault, info, inDirectSpace]);
 }

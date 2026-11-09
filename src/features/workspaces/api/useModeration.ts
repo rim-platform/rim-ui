@@ -17,7 +17,6 @@ import {
   type MutationClearTimeoutArgs,
   type MutationDeleteMessageArgs,
   type MutationReportEncryptedMessageArgs,
-  type MutationReportMessageArgs,
   type MutationResolveReportArgs,
   type QueryMemberMessageCountsArgs,
 } from "../../../core/graphql/generated/schema-types";
@@ -54,19 +53,6 @@ const SERVER_BANS = gql`
         displayName
         avatarUrl
       }
-    }
-  }
-`;
-
-const REPORT_MESSAGE = gql`
-  mutation ReportMessage($serverId: ID!, $conversationId: ID!, $messageId: ID!, $reason: String!) {
-    reportMessage(
-      serverId: $serverId
-      conversationId: $conversationId
-      messageId: $messageId
-      reason: $reason
-    ) {
-      id
     }
   }
 `;
@@ -343,15 +329,9 @@ export function useServerBans(serverId: string | null | undefined, enabled = tru
   });
 }
 
-/** Any member reports a message they can read to the workspace moderators. */
-export function useReportMessageMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: MutationReportMessageArgs) =>
-      graphqlClient.request<{ reportMessage: { id: string } }>(REPORT_MESSAGE, vars),
-    onSuccess: (_data, vars) =>
-      qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
-  });
+/** Refreshes a workspace's lists of message reports once a member reported a message there. */
+export function invalidateMessageReports(qc: QueryClient, serverId: string): void {
+  void qc.invalidateQueries({ queryKey: ["messageReports", serverId] });
 }
 
 /** A member reports an encrypted message by revealing its content, franking key and receipt. */
@@ -360,8 +340,7 @@ export function useReportEncryptedMessageMutation() {
   return useMutation({
     mutationFn: (vars: MutationReportEncryptedMessageArgs) =>
       graphqlClient.request<{ reportEncryptedMessage: boolean }>(REPORT_ENCRYPTED_MESSAGE, vars),
-    onSuccess: (_data, vars) =>
-      qc.invalidateQueries({ queryKey: ["messageReports", vars.input.serverId] }),
+    onSuccess: (_data, vars) => invalidateMessageReports(qc, vars.input.serverId),
   });
 }
 

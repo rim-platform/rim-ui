@@ -1,32 +1,15 @@
-import {
-  useMutation,
-  useQueryClient,
-  type InfiniteData,
-  type QueryClient,
-} from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import type { MessagesPage } from "../../../core/types/messages";
 
-const PIN_MESSAGE = gql`
-  mutation PinMessage($input: PinMessageInput!) {
-    pinMessage(input: $input)
-  }
-`;
-
 const UNPIN_MESSAGE = gql`
   mutation UnpinMessage($input: UnpinMessageInput!) {
     unpinMessage(input: $input)
   }
 `;
-
-interface PinMessageVars {
-  serverId: string;
-  conversationId: string;
-  messageId: string;
-}
 
 /**
  * Shows a message as pinned or unpinned in its conversation's cached timeline at once, before
@@ -69,40 +52,30 @@ export function invalidatePinQueries(
   qc.invalidateQueries({ queryKey: queryKeys.pinnedMessages(serverId, conversationId) });
 }
 
-function usePinMutation(document: string, pinned: boolean) {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: (vars: PinMessageVars) =>
-      graphqlClient.request(document, {
-        input: {
-          serverId: vars.serverId,
-          conversationId: vars.conversationId,
-          messageId: vars.messageId,
-        },
-      }),
-    onMutate: async (vars) => ({
-      rollback: await setPinnedInCache(
-        qc,
-        vars.serverId,
-        vars.conversationId,
-        vars.messageId,
-        pinned,
-      ),
-    }),
-    onError: (_err, _vars, context) => {
-      context?.rollback();
-    },
-    onSettled: (_data, _err, vars) => {
-      invalidatePinQueries(qc, vars.serverId, vars.conversationId);
-    },
-  });
-}
-
-export function usePinMessageMutation() {
-  return usePinMutation(PIN_MESSAGE, true);
-}
-
-export function useUnpinMessageMutation() {
-  return usePinMutation(UNPIN_MESSAGE, false);
+/**
+ * Unpins a message with the `unpinMessage` mutation, for a server that does not list
+ * `chat.unpin_message`: the timeline shows it unpinned at once, goes back on a failure, and the
+ * pinned list is refreshed once the server answered.
+ *
+ * @throws The request's error when the server refused the unpin.
+ */
+export async function unpinWithMutation(
+  qc: QueryClient,
+  vars: { serverId: string; conversationId: string; messageId: string },
+): Promise<void> {
+  const rollback = await setPinnedInCache(
+    qc,
+    vars.serverId,
+    vars.conversationId,
+    vars.messageId,
+    false,
+  );
+  try {
+    await graphqlClient.request(UNPIN_MESSAGE, { input: vars });
+  } catch (err) {
+    rollback();
+    throw err;
+  } finally {
+    invalidatePinQueries(qc, vars.serverId, vars.conversationId);
+  }
 }

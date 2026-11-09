@@ -4,7 +4,9 @@ import { BellOff } from "lucide-react";
 import { Button } from "../../../shared/ui/Button";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import { useSetDoNotDisturb, type NotificationSettingsData } from "../api/useNotificationSettings";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import type { NotificationSettingsData } from "../api/useNotificationSettings";
+import { pauseArguments } from "../pauseCommand";
 import { inOneHour, isPauseActive, parseLocalDateTime, tomorrowMorning } from "../rules";
 
 interface PauseNotificationsControlProps {
@@ -15,26 +17,33 @@ interface PauseNotificationsControlProps {
 /**
  * "Pause notifications" quick control (the manual do-not-disturb pause). Applies at once,
  * separately from the Save button: while paused, notifications still reach the inbox but
- * arrive quiet (no toast, no sound).
+ * arrive quiet (no toast, no sound). Each button runs `notifications.dnd` on the workspace and
+ * shows a failure inline.
  */
 export function PauseNotificationsControl({ serverId, settings }: PauseNotificationsControlProps) {
-  const setDnd = useSetDoNotDisturb();
+  const [pending, setPending] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [customValue, setCustomValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function pause(paused: boolean, until: Date | null) {
+  async function pause(until: Date | null) {
     setError(null);
-    setDnd.mutate(
-      { serverId, paused, until: until ? until.toISOString() : null },
-      {
-        onSuccess: () => {
-          setCustomOpen(false);
-          setCustomValue("");
-        },
-        onError: (err) => setError(graphqlErrorMessage(err, "Could not change the pause.")),
-      },
-    );
+    setPending(true);
+    try {
+      const outcome = await runCommandFromClick("notifications.dnd", pauseArguments(until), {
+        target: { workspaceId: serverId },
+        throwOnError: true,
+        successToast: null,
+      });
+      if (outcome.ok) {
+        setCustomOpen(false);
+        setCustomValue("");
+      }
+    } catch (err) {
+      setError(graphqlErrorMessage(err, "Could not change the pause."));
+    } finally {
+      setPending(false);
+    }
   }
 
   function handleCustom() {
@@ -43,7 +52,7 @@ export function PauseNotificationsControl({ serverId, settings }: PauseNotificat
       setError("Pick a time in the future.");
       return;
     }
-    pause(true, until);
+    void pause(until);
   }
 
   const paused = isPauseActive(settings);
@@ -70,35 +79,30 @@ export function PauseNotificationsControl({ serverId, settings }: PauseNotificat
         <Button
           variant="secondary"
           size="sm"
-          disabled={setDnd.isPending}
-          onClick={() => pause(true, inOneHour())}
+          disabled={pending}
+          onClick={() => void pause(inOneHour())}
         >
           For 1 hour
         </Button>
         <Button
           variant="secondary"
           size="sm"
-          disabled={setDnd.isPending}
-          onClick={() => pause(true, tomorrowMorning())}
+          disabled={pending}
+          onClick={() => void pause(tomorrowMorning())}
         >
           Until tomorrow
         </Button>
         <Button
           variant="secondary"
           size="sm"
-          disabled={setDnd.isPending}
+          disabled={pending}
           aria-expanded={customOpen}
           onClick={() => setCustomOpen((v) => !v)}
         >
           Custom…
         </Button>
         {paused && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={setDnd.isPending}
-            onClick={() => pause(false, null)}
-          >
+          <Button variant="ghost" size="sm" disabled={pending} onClick={() => void pause(null)}>
             Turn off pause
           </Button>
         )}
@@ -112,7 +116,7 @@ export function PauseNotificationsControl({ serverId, settings }: PauseNotificat
             onChange={(e) => setCustomValue(e.target.value)}
             className="rounded-md border border-rim-line bg-rim-void px-2 py-1 text-sm text-rim-text outline-none focus:border-rim-accent/40"
           />
-          <Button size="sm" disabled={setDnd.isPending} onClick={handleCustom}>
+          <Button size="sm" disabled={pending} onClick={handleCustom}>
             Pause
           </Button>
         </div>

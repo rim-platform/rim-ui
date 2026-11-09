@@ -1,22 +1,20 @@
-import { useState } from "react";
-
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
-import { SignOutDialog } from "../../auth/components/SignOutDialog";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { SignOutOtherSessions } from "../../auth/components/SignOutOtherSessions";
 import { AccountDeletionSection } from "../../account-deletion/components/AccountDeletionSection";
 
 interface AccountSettingsProps {
-  onNavigateToProfile: () => void;
   /** Opens Settings → Workspace, where an owned workspace is handed over or deleted. */
   onNavigateToWorkspace: () => void;
 }
 
-export function AccountSettings({
-  onNavigateToProfile,
-  onNavigateToWorkspace,
-}: AccountSettingsProps) {
+/**
+ * Settings → Account: the person's status, this session, signing out and deleting the account.
+ * Set status runs `people.set_status` and Sign out… runs `app.sign_out`, as the palette does.
+ */
+export function AccountSettings({ onNavigateToWorkspace }: AccountSettingsProps) {
   const { data: user, isPending: userLoading } = useCurrentUser();
-  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+  const setStatus = () => void runCommandFromClick("people.set_status");
 
   if (userLoading) {
     return <p className="text-sm text-rim-text-muted">Loading account...</p>;
@@ -34,7 +32,7 @@ export function AccountSettings({
             <p className="text-sm text-rim-text">{user.statusText}</p>
             <button
               type="button"
-              onClick={onNavigateToProfile}
+              onClick={setStatus}
               className="text-xs text-rim-accent hover:underline"
             >
               Change
@@ -45,7 +43,7 @@ export function AccountSettings({
             <p className="text-sm text-rim-text-muted">No status set</p>
             <button
               type="button"
-              onClick={onNavigateToProfile}
+              onClick={setStatus}
               className="rounded-lg border border-rim-line bg-rim-void px-3 py-1 text-xs text-rim-text-muted transition hover:text-rim-text"
             >
               Set status
@@ -87,7 +85,7 @@ export function AccountSettings({
         <h3 className="text-sm font-medium text-rim-text mb-2">Sign out</h3>
         <button
           type="button"
-          onClick={() => setShowSignOutDialog(true)}
+          onClick={() => void runCommandFromClick("app.sign_out")}
           className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-4 py-2 text-sm font-medium text-rim-danger transition hover:bg-rim-danger/20"
         >
           Sign out...
@@ -103,8 +101,6 @@ export function AccountSettings({
           />
         </>
       )}
-
-      <SignOutDialog open={showSignOutDialog} onClose={() => setShowSignOutDialog(false)} />
     </div>
   );
 }

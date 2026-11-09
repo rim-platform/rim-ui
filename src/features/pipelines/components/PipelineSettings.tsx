@@ -9,7 +9,6 @@ import {
   useCreatePipelineMutation,
   useUpdatePipelineMutation,
   useDeletePipelineMutation,
-  useTogglePipelineMutation,
 } from "../api/usePipelines";
 import type { Pipeline, CreatePipelineInput, UpdatePipelineInput } from "../api/usePipelines";
 import { useCommands } from "../../commands/api/useCommands";
@@ -26,6 +25,7 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { toast } from "../../../shared/toast";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
@@ -652,7 +652,6 @@ export function PipelineSettings() {
   const canModerate = useCanModerate(workspaceId ?? undefined);
   const { data: pipelines, isLoading, isError } = usePipelines(workspaceId ?? undefined);
   const deletePipeline = useDeletePipelineMutation();
-  const togglePipeline = useTogglePipelineMutation();
   const hasPostAsBot = useSpaceHasCapability(workspaceId, PIPELINE_POST_AS_BOT);
   const pipelineLimit = limitView(
     useServerInfo().limits?.pipelinesPerWorkspace,
@@ -677,17 +676,10 @@ export function PipelineSettings() {
     [deletePipeline, workspaceId],
   );
 
-  const handleToggle = useCallback(
-    async (pipelineId: string, enabled: boolean) => {
-      if (!workspaceId) return;
-      try {
-        await togglePipeline.mutateAsync({ pipelineId, enabled, serverId: workspaceId });
-      } catch (err: unknown) {
-        toast.error(graphqlErrorMessage(err, "Failed to toggle pipeline"));
-      }
-    },
-    [togglePipeline, workspaceId],
-  );
+  /** Runs `app.toggle_pipeline` on a pipeline, as the palette's command does. */
+  const handleToggle = useCallback((pipelineId: string) => {
+    void runCommandFromClick("app.toggle_pipeline", { pipeline_id: pipelineId });
+  }, []);
 
   if (editing !== null) {
     const isNew = editing === "new";
@@ -778,7 +770,7 @@ export function PipelineSettings() {
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => handleToggle(pipeline.id, !pipeline.enabled)}
+                    onClick={() => handleToggle(pipeline.id)}
                     title={pipeline.enabled ? "Disable pipeline" : "Enable pipeline"}
                     className={cn(
                       "rounded-md p-1.5 transition",

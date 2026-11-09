@@ -34,11 +34,11 @@ import type { KnownServerInfo } from "../../../updater/api/serverInfoApi";
 import { useUnreadsPageStore } from "../../../unreads/state/useUnreadsPageStore";
 import type { ServerDetail } from "../../../workspaces/api/useWorkspace";
 import { isGuest } from "../../../workspaces/role";
-import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
 import type { CommandDefinition } from "../../types";
 import { currentCommandContext } from "../commandContext";
 import type { LocalHandler } from "../commandDispatcher";
 import { localCommand, PLUGIN_RUNNABLE } from "./localCommand";
+import { targetWorkspaceOf } from "./targetWorkspace";
 import { OPEN_A_CONVERSATION, openMessageList, selectedMessageInList } from "./messageContext";
 
 const OPEN_AN_INVITATION = "Open an invitation first";
@@ -336,8 +336,8 @@ export const CONVERSATION_HANDLERS: Record<string, LocalHandler> = {
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useMembersPanelStore.getState().openInvite(conversationId);
   },
-  "chat.browse_channels": () => {
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
+  "chat.browse_channels": (args, commandContext) => {
+    const workspaceId = targetWorkspaceOf(args, commandContext);
     if (!workspaceId || isDirectSpace(workspaceId)) {
       toast.info("Open a workspace first");
       return;
