@@ -135,8 +135,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
-- A plugin manifest listing `agents.connect_agent` in `runs_commands` is refused at install, and
-  by the plugin SDK's `validateManifest`, like the other commands that answer and manage agents.
+- A plugin manifest listing `agents.connect_agent`, `agents.start_session`, `agents.stop_session`,
+  `agents.ask_about_message`, `agents.ask_about_conversation` or `workspace.open_agent_sessions`
+  in `runs_commands` is refused at install, and by the plugin SDK's `validateManifest`, like the
+  other commands that answer and manage agents.
 - The buttons of the rail, the top bar, the side panels, the conversation header and list, Home
   and Unreads run the same commands as the palette and keybinds, so a click does what the
   command does. Open Direct Messages from the palette or a key now leaves Home and Unreads, as
