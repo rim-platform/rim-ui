@@ -18,6 +18,10 @@ vi.mock("../../../core/graphql/client", () => ({
     request: (...args: unknown[]) => requestMock(...args),
   },
 }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
+}));
 vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: () => {} }),
 }));

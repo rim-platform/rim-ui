@@ -150,12 +150,33 @@ export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
     "Toggle Workspace Members",
     "Show or hide the workspace's member directory",
   ),
+  localCommand(
+    "workspace.toggle_lens_picker",
+    "Toggle Channel Lenses",
+    "Show or hide the open channel's lenses",
+  ),
   localCommand("workspace.go_back", "Go Back", "Open the place you were before this one"),
   localCommand("workspace.go_forward", "Go Forward", "Open the place you went back from"),
   localCommand(QUIT_COMMAND_ID, "Quit RIM", "Stop RIM completely, including in the tray"),
 ];
 
 const LOCAL_COMMAND_IDS = new Set(LOCAL_COMMANDS.map((command) => command.id));
+
+/**
+ * The id prefixes of commands this app runs itself. A keybind to an id under one of them runs
+ * here, not on the server, while the command lists have not loaded.
+ */
+export const LOCAL_COMMAND_NAMESPACES: readonly string[] = [
+  "workspace.",
+  "chat.",
+  "admin.",
+  "plugin.",
+];
+
+/** Whether `commandId` is under one of {@link LOCAL_COMMAND_NAMESPACES}. */
+export function inLocalCommandNamespace(commandId: string): boolean {
+  return LOCAL_COMMAND_NAMESPACES.some((prefix) => commandId.startsWith(prefix));
+}
 
 /** Whether `commandId` is one of this app's own commands. */
 export function isLocalCommand(commandId: string): boolean {
@@ -200,28 +221,42 @@ export function withClientLabel<T extends { id: string; title: string; descripti
 }
 
 /**
+ * The server's titles of the built-in commands a keybind can name, as its registry declares
+ * them.
+ */
+const SERVER_COMMAND_TITLES: Readonly<Record<string, string>> = {
+  "workspace.open_command_palette": "Open Command Palette",
+  "workspace.open_settings": "Open Settings",
+  "workspace.search_in_channel": "Search in Channel",
+  "workspace.open_search": "Open Search",
+  "workspace.open_marketplace": "Open Marketplace",
+  "workspace.open_agent": "Open AI Agent",
+  "workspace.cycle_recent_activity": "Cycle Recent Activity",
+  "workspace.toggle_sidebar": "Toggle Sidebar",
+  "workspace.reopen_last_thread": "Reopen Last Thread",
+  "workspace.focus_composer": "Focus Composer",
+  "workspace.focus_message_list": "Focus Message List",
+  "workspace.navigate_to_channel": "Navigate to Channel",
+  "workspace.previous_channel": "Previous Channel",
+  "workspace.next_channel": "Next Channel",
+  "workspace.next_unread_channel": "Next Unread Channel",
+  "workspace.close_panel": "Close Panel",
+  "chat.create_channel": "Create Channel",
+  "chat.create_group": "Create Group",
+  "chat.mark_all_as_read": "Mark All as Read",
+};
+
+/**
  * Titles of the built-in commands a keybind can name without the server's command list, for
- * showing a binding when the list has not loaded or the server is out of reach.
+ * showing a binding when the list has not loaded or the server is out of reach. Each is the
+ * title the loaded list shows for it: this app's own, else the server's.
  */
 export const BUILT_IN_COMMAND_TITLES: Readonly<Record<string, string>> = {
   ...Object.fromEntries(LOCAL_COMMANDS.map((command) => [command.id, command.title])),
-  "workspace.open_command_palette": "Open command palette",
-  "workspace.open_settings": "Open settings",
-  "workspace.search_in_channel": "Search in this conversation",
-  "workspace.open_search": "Search the workspace",
-  "workspace.open_marketplace": "Open the plugin marketplace",
-  "workspace.open_agent": "Open the AI agent",
-  "workspace.cycle_recent_activity": "Jump to where someone last posted",
-  "workspace.toggle_sidebar": "Toggle the conversation list or navigation drawer",
-  "workspace.reopen_last_thread": "Reopen the last thread",
-  "workspace.focus_composer": "Focus the composer",
-  "workspace.focus_message_list": "Focus the message list",
-  "workspace.navigate_to_channel": "Jump to a conversation",
-  "workspace.previous_channel": "Previous conversation",
-  "workspace.next_channel": "Next conversation",
-  "workspace.next_unread_channel": "Next unread conversation",
-  "workspace.close_panel": "Close the open panel",
-  "chat.create_channel": "Create a channel",
-  "chat.create_group": CLIENT_COMMAND_LABELS["chat.create_group"].title,
-  "chat.mark_all_as_read": "Mark everything as read",
+  ...Object.fromEntries(
+    Object.entries(SERVER_COMMAND_TITLES).map(([id, title]) => [
+      id,
+      withClientLabel({ id, title, description: "" }).title,
+    ]),
+  ),
 };

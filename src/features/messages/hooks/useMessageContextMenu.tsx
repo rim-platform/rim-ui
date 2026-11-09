@@ -75,7 +75,8 @@ function selectedTextIn(messageId: string): string | null {
  * keeps the viewer from them.
  *
  * @returns `getItems`, the menu's items for a message (none without a workspace and a
- *   conversation), and `dialog`, the report dialog to render beside the timeline.
+ *   conversation), `report`, which opens the report dialog for a message as Report message…
+ *   does, and `dialog`, the report dialog to render beside the timeline.
  */
 export function useMessageContextMenu({
   workspaceId,
@@ -86,6 +87,7 @@ export function useMessageContextMenu({
   threadId = null,
 }: UseMessageContextMenuOptions): {
   getItems: (target: MessageMenuTarget) => DropdownMenuItem[];
+  report: (target: MessageMenuTarget) => void;
   dialog: ReactNode;
 } {
   const executeCommandMutation = useExecuteCommandMutation();
@@ -274,5 +276,5 @@ export function useMessageContextMenu({
       />
     ) : null;
 
-  return { getItems, dialog };
+  return { getItems, report: setPendingReport, dialog };
 }

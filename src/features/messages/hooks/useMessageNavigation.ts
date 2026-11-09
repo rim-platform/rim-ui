@@ -5,6 +5,7 @@ import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
+import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
 
 interface MessageNavItem {
   id: string;
@@ -75,9 +76,25 @@ export function useMessageNavigation({
   scrollToIndex,
   pointerEntryRef,
 }: UseMessageNavigationOptions) {
-  // Selection is tracked by message id so it stays on the same message when
-  // older pages are prepended (which shifts every index).
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  // Selection is tracked by message id so it stays on the same message when older pages are
+  // prepended (which shifts every index). It lives in the shared store, so commands run from
+  // keybinds and other surfaces act on the same message.
+  const selectedMessageId = useSelectedMessageStore((s) =>
+    s.selection &&
+    s.selection.workspaceId === workspaceId &&
+    s.selection.conversationId === conversationId
+      ? s.selection.messageId
+      : null,
+  );
+  const setSelectedMessageId = useCallback(
+    (messageId: string | null) => {
+      if (!conversationId) return;
+      const store = useSelectedMessageStore.getState();
+      if (messageId === null || !workspaceId) store.clear(conversationId);
+      else store.select({ workspaceId, conversationId, messageId });
+    },
+    [workspaceId, conversationId],
+  );
   const selectedMessageIndex = useMemo(
     () => (selectedMessageId ? items.findIndex((m) => m.id === selectedMessageId) : -1),
     [items, selectedMessageId],
@@ -105,17 +122,21 @@ export function useMessageNavigation({
       setSelectedMessageId(msg.id);
       scrollToIndex(index);
     },
-    [items, scrollToIndex],
+    [items, scrollToIndex, setSelectedMessageId],
   );
 
-  // Reset the selection and the pending delete when the conversation changes, while rendering
-  // it, and the editing state and the delete timer once it is shown.
+  // Reset the pending delete when the conversation changes, while rendering it, and the
+  // editing state and the delete timer once it is shown. The selection of a conversation is
+  // dropped when the list leaves it or unmounts.
   const [selectionConversationId, setSelectionConversationId] = useState(conversationId);
   if (selectionConversationId !== conversationId) {
     setSelectionConversationId(conversationId);
-    setSelectedMessageId(null);
     setDeleteConfirmMessageId(null);
   }
+  useEffect(() => {
+    if (!conversationId) return;
+    return () => useSelectedMessageStore.getState().clear(conversationId);
+  }, [conversationId]);
   useEffect(() => {
     setEditingMessageId(null);
     if (deleteConfirmTimerRef.current) {
@@ -130,7 +151,7 @@ export function useMessageNavigation({
       setSelectedMessageId(messageId);
       setDeleteConfirmMessageId(null);
     },
-    [items],
+    [items, setSelectedMessageId],
   );
 
   // Select the newest message when entering navigation mode with nothing selected; a pointer
@@ -147,7 +168,7 @@ export function useMessageNavigation({
       }
     });
     return unsub;
-  }, [selectedMessageIndex, items, selectIndex, pointerEntryRef]);
+  }, [selectedMessageIndex, items, selectIndex, setSelectedMessageId, pointerEntryRef]);
 
   // Clean up delete confirmation timer on unmount
   useEffect(() => {
@@ -361,6 +382,7 @@ export function useMessageNavigation({
       conversationId,
       firstNewIndex,
       selectIndex,
+      setSelectedMessageId,
     ],
   );
 

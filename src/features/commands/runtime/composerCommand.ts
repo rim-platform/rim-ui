@@ -86,7 +86,11 @@ export async function runComposerCommand(
   if (await refusedForEncryption(command, args, commandContext)) return;
   const run = async (): Promise<void> => {
     try {
-      const result = await dispatchCommand(command, executeBackend, { args, commandContext });
+      const result = await dispatchCommand(command, executeBackend, {
+        args,
+        commandContext,
+        typedArgs: true,
+      });
       await showCommandOutcome(command, result, args, commandContext);
     } catch (err: unknown) {
       showCommandRefusal(command.title, err, () => void run());

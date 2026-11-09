@@ -526,6 +526,36 @@ describe("Home's new boxes", () => {
       expect(buttons[2]).toHaveAccessibleDescription("Editing Home can't be a quick action");
     });
 
+    it("offers only commands it can run, and marks a saved one that needs arguments", async () => {
+      const userArgument = [{ name: "user_id", argumentType: "USER_ID", required: true }];
+      state.commands = [
+        command("chat.mark_all_as_read", "Mark Everything Read"),
+        command("admin.kick", "Kick Member", { arguments: userArgument }),
+      ];
+      stored(box("q", "quick", { actions: [{ commandId: "admin.kick" }] }));
+      serve();
+      const user = userEvent.setup();
+      renderHome();
+      const list = await screen.findByRole("list", { name: "Quick actions" });
+      const action = await within(list).findByRole("button", { name: "Kick Member" });
+      expect(action).toBeDisabled();
+      expect(action).toHaveAccessibleDescription("Needs arguments this can't supply yet");
+
+      await startEditing(user);
+      await user.click(screen.getByRole("button", { name: "More for Quick actions" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+      const dialog = await screen.findByRole("dialog", { name: "Settings of Quick actions" });
+      await within(dialog).findByRole("option", { name: "Mark Everything Read" });
+      const picker = within(dialog).getByLabelText("Action 1");
+      expect(picker).toHaveValue("admin.kick");
+      expect(within(dialog).getAllByRole("option", { name: "Kick Member" })).toHaveLength(1);
+      expect(picker).toHaveAccessibleDescription("Needs arguments this can't supply yet");
+
+      await user.selectOptions(picker, "chat.mark_all_as_read");
+      expect(within(dialog).queryByRole("option", { name: "Kick Member" })).toBeNull();
+      expect(within(dialog).queryByText("Needs arguments this can't supply yet")).toBeNull();
+    });
+
     it("picks keybind-capable commands only, never Edit Home, with arguments under 4096 bytes", async () => {
       state.commands = [
         command("chat.mark_all_as_read", "Mark Everything Read"),

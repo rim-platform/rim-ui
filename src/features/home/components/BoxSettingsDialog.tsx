@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useKeybindableCommands } from "../../commands/api/useKeybindableCommands";
+import { NEEDS_ARGUMENTS_NOTE } from "../../commands/runtime/commandRunnable";
 import { useChannels } from "../../conversations/api/useChannels";
 import { useHomeWorkspaces } from "../api/useHomeWorkspaces";
 import {
@@ -254,7 +255,7 @@ function QuickForm({
   onSave: (settings: Settings) => void;
   onCancel: () => void;
 }) {
-  const { all } = useKeybindableCommands();
+  const { all, unrunnable, needsArguments } = useKeybindableCommands();
   const commands = all.filter((command) => command.id !== EDIT_HOME_COMMAND);
   const [drafts, setDrafts] = useState<ActionDraft[]>(() => draftsOf(initial));
   const [tried, setTried] = useState(false);
@@ -287,6 +288,10 @@ function QuickForm({
           const entry = read[index];
           const problem = tried && "problem" in entry ? entry.problem : null;
           const known = commands.some((command) => command.id === draft.commandId);
+          const savedTitle = unrunnable.find((command) => command.id === draft.commandId)?.title;
+          const presetArgs = "action" in entry ? entry.action.presetArgs : undefined;
+          const unsupplied = needsArguments(draft.commandId, presetArgs);
+          const noteId = `${baseId}-note-${index}`;
           return (
             <li key={index} className="space-y-1.5 rounded-lg border border-rim-line p-2.5">
               <div className="flex items-center gap-2">
@@ -308,13 +313,19 @@ function QuickForm({
                 id={commandField}
                 value={draft.commandId}
                 onChange={(e) => change(index, { commandId: e.target.value })}
-                aria-describedby={problem ? problemId : undefined}
+                aria-describedby={
+                  [problem ? problemId : null, unsupplied ? noteId : null]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
                 aria-invalid={problem ? true : undefined}
                 className={INPUT_CLASS}
               >
                 <option value="">Choose a command</option>
                 {draft.commandId && !known && (
-                  <option value={draft.commandId}>{draft.commandId}</option>
+                  <option value={draft.commandId}>
+                    {showInvisibleCharacters(savedTitle || draft.commandId)}
+                  </option>
                 )}
                 {commands.map((command) => (
                   <option key={command.id} value={command.id}>
@@ -322,6 +333,11 @@ function QuickForm({
                   </option>
                 ))}
               </select>
+              {unsupplied && (
+                <p id={noteId} className="text-xs text-rim-text-muted">
+                  {NEEDS_ARGUMENTS_NOTE}
+                </p>
+              )}
               <label htmlFor={argsField} className="block text-xs text-rim-text-muted">
                 Arguments (optional JSON)
               </label>

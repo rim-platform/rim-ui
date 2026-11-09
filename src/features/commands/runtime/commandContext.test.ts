@@ -5,6 +5,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { getCurrentCommandContext } from "../../agent/tools/commandContext";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useSelectedMessageStore } from "../../messages/state/useSelectedMessageStore";
 import { currentCommandContext } from "./commandContext";
 
 /** Opens the thread rooted at `rootId` in `conversationId`, with its query loaded as `threadId`. */
@@ -17,6 +18,7 @@ function openLoadedThread(conversationId: string, rootId: string, threadId: stri
 }
 
 afterEach(() => {
+  useSelectedMessageStore.getState().clear();
   useWorkspaceStore.getState().clearWorkspaceId();
   useShellStore.getState().reset();
   queryClient.clear();
@@ -84,5 +86,66 @@ describe("currentCommandContext", () => {
     openLoadedThread("conv-9", "msg-root-1", "thread-1");
     useShellStore.getState().setFocusedSurface("composer");
     expect(getCurrentCommandContext()).toEqual(currentCommandContext());
+  });
+
+  it("holds the message selected in the open conversation's list", () => {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "conv-9", messageId: "msg-4" });
+
+    expect(currentCommandContext()).toMatchObject({
+      conversationId: "conv-9",
+      selectedMessageId: "msg-4",
+    });
+  });
+
+  it("leaves out a message selected in another conversation or workspace", () => {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    const select = useSelectedMessageStore.getState().select;
+
+    select({ workspaceId: "ws-1", conversationId: "conv-2", messageId: "msg-4" });
+    expect(currentCommandContext().selectedMessageId).toBeUndefined();
+    select({ workspaceId: "ws-2", conversationId: "conv-9", messageId: "msg-4" });
+    expect(currentCommandContext().selectedMessageId).toBeUndefined();
+  });
+
+  it("takes a target's message in place of the list's", () => {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "conv-9", messageId: "msg-4" });
+
+    expect(
+      currentCommandContext({ workspaceId: "ws-1", conversationId: "conv-9" }).selectedMessageId,
+    ).toBeUndefined();
+  });
+
+  it("never gives the agent the selected message", () => {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "conv-9", messageId: "msg-4" });
+
+    expect(currentCommandContext().selectedMessageId).toBe("msg-4");
+    expect(getCurrentCommandContext()).toEqual({ workspaceId: "ws-1", conversationId: "conv-9" });
+  });
+});
+
+describe("useSelectedMessageStore", () => {
+  afterEach(() => useSelectedMessageStore.getState().clear());
+
+  it("clears a conversation's selection only for that conversation", () => {
+    const store = useSelectedMessageStore.getState();
+    store.select({ workspaceId: "ws-1", conversationId: "conv-9", messageId: "msg-4" });
+
+    store.clear("conv-2");
+    expect(useSelectedMessageStore.getState().selection).not.toBeNull();
+    store.clear("conv-9");
+    expect(useSelectedMessageStore.getState().selection).toBeNull();
   });
 });

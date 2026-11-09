@@ -125,6 +125,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- Keybinds, quick boxes and the message box now run every command they offer, including ones that act on the selected message: Delete, Edit, Report, Reply, Copy Message Text and Open Thread work from a key on the message selected in the list, and say so when none is selected. The keybind and quick box pickers leave out commands that need arguments they cannot supply, and mark a saved one; the message box lists the app's own and the plugins' commands, and sends arguments typed after a command such as `/chat.create_channel name=ops` to it. Unreads, focus and the new Toggle Channel Lenses commands say where they work instead of doing nothing.
 - Commands run from the message box now show their result, as they do from the palette; a command runs when picked from the open list, with the arguments typed after its name, and Esc sends the line as text.
 - On a desktop with no tray, closing RIM asks what to do instead of hiding it with no way back.
 - The built-in agent finds channels by name and no longer asks for ids.
