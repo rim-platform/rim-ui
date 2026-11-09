@@ -161,7 +161,9 @@ export function executeAsPerson(
 ): (input: ExecuteCommandRequest) => Promise<{ executeCommand: CommandResult }> {
   return async (input) => {
     try {
-      return await executeCommandAt(initiator ? { ...input, initiator } : input);
+      return await executeCommandAt(
+        initiator && !input.initiator ? { ...input, initiator } : input,
+      );
     } catch (err) {
       noteTimedOutError(
         input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,
