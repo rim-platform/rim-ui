@@ -51,6 +51,7 @@ import { PluginSlotContainer } from "../../features/plugins/components/PluginSlo
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
 import { CommandArgumentsDialog } from "../../features/commands/components/CommandArgumentsDialog";
 import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
+import { AppCommandDialogs } from "../../features/commands/components/AppCommandDialogs";
 import { WorkspaceActionDialogs } from "../../features/workspaces/components/WorkspaceActionDialogs";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
 import { RegistryHost } from "../../features/plugins/registry/components/RegistryHost";
@@ -752,6 +753,7 @@ function WorkspaceShell() {
           <CommandArgumentsDialog />
           <ConversationActionConfirmHost />
           <WorkspaceActionDialogs />
+          <AppCommandDialogs />
           <PluginSettingsDialogHost />
           <RegistryHost />
           <QuickAccessAssigner />

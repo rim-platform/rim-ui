@@ -1,4 +1,5 @@
 import { detectPlatform, getRuntimeCapabilities } from "../../core/runtime/runtime";
+import { generalCommandOfferedHere } from "../commands/runtime/appCommands/generalAvailability";
 import { desktopShellAvailable, QUIT_COMMAND_ID } from "../desktop-shell/availability";
 
 /** What the agent's place shows in an app without the agent. */
@@ -22,5 +23,6 @@ export function agentAvailable(): boolean {
  */
 export function commandOfferedHere(commandId: string): boolean {
   if (commandId === QUIT_COMMAND_ID) return desktopShellAvailable();
+  if (!generalCommandOfferedHere(commandId)) return false;
   return !AGENT_COMMAND_IDS.has(commandId) || agentAvailable();
 }

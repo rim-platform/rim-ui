@@ -77,6 +77,11 @@ export function StatusDropdown({ position, onClose }: StatusDropdownProps) {
 
   const hasStatus = !!user?.statusText;
 
+  // The first preset takes the focus, so the menu works from the keyboard as it opens.
+  useEffect(() => {
+    menuRef.current?.querySelector("button")?.focus();
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
