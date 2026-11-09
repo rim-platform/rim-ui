@@ -260,7 +260,8 @@ await host.commands.execute("chat.post_message", { conversation_id: conversation
 ```
 
 It resolves with `{ status, code?, message? }` and never the command's output: `success`,
-`error` (it ran and failed, or its confirmation expired) or `refused` with `code`
+`error` (it ran and failed, with the command's own `code` such as `VALIDATION` when it has one,
+or its confirmation expired) or `refused` with `code`
 `NOT_ALLOWED`, `NOT_GRANTED`, `UNAVAILABLE`, `RATE_LIMITED`, `COOLING_DOWN`, `BUSY` or
 `CONFIRMATION_DISMISSED`. A command that changes something asks the person first in a card
 naming the plugin, so the promise may wait up to two minutes. A `workspace_id`,

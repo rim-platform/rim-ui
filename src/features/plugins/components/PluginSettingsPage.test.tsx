@@ -249,14 +249,19 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.getByRole("button", { name: /install from link/i })).toBeInTheDocument();
   });
 
-  it("renders empty state with marketplace copy when no plugins installed", () => {
+  it("renders the empty state with the ways to install when no plugins are installed", () => {
     vi.mocked(usePluginList).mockReturnValue({ data: [], isLoading: false } as ReturnType<
       typeof usePluginList
     >);
     render(<PluginSettingsPage />);
 
     expect(screen.getByText("No plugins installed")).toBeInTheDocument();
-    expect(screen.getByText(/marketplace coming soon/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No plugins yet. Install one from a local folder, a git URL or a link, or from your workspace's plugins.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/marketplace/i)).toBeNull();
     // Normal plugin list heading must NOT be present
     expect(screen.queryByText("Installed Plugins")).not.toBeInTheDocument();
   });

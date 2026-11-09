@@ -4,7 +4,7 @@
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { graphqlErrorCode } from "../../../core/graphql/errors";
+import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import {
   CommandInitiator,
   CommandSensitivity,
@@ -48,8 +48,11 @@ export type PluginRunRefusal =
 /** What a plugin hears about a run it asked for: how it ended, never the command's output. */
 export interface PluginRunResult {
   status: "success" | "error" | "refused";
-  /** Set on a refusal. */
-  code?: PluginRunRefusal;
+  /**
+   * On a refusal, why it did not run; on an error, the command's own error code, such as
+   * `VALIDATION`, when the server gave one.
+   */
+  code?: PluginRunRefusal | (string & {});
   message?: string;
 }
 
@@ -289,7 +292,7 @@ export function createPluginCommandRunner(deps: RunnerDeps) {
     try {
       answer = await send();
     } catch (error) {
-      return { status: "error", message: errorMessage(error) };
+      return serverError(error);
     }
     if (answer.status === "CONFIRMATION_REQUIRED") {
       const challenge = answer.confirmationRequired;
@@ -321,7 +324,7 @@ export function createPluginCommandRunner(deps: RunnerDeps) {
         if (graphqlErrorCode(error) === CONFIRMATION_STALE) {
           return { status: "error", message: "the confirmation expired" };
         }
-        return { status: "error", message: errorMessage(error) };
+        return serverError(error);
       }
       if (answer.status === "CONFIRMATION_REQUIRED") {
         return { status: "error", message: "the server did not accept the confirmation" };
@@ -360,7 +363,8 @@ export function createPluginCommandRunner(deps: RunnerDeps) {
         result = { status: "error", message: "the command failed" };
       }
       if (result.code !== "RATE_LIMITED" && plugin) {
-        const failed = await deps.record(pluginId, id, result.status, result.code);
+        const code = result.code && ERROR_CODE.test(result.code) ? result.code : undefined;
+        const failed = await deps.record(pluginId, id, result.status, code);
         if (failed) logger.warn(`[RIM:Plugin] run of ${id} by ${pluginId} not recorded`, failed);
       }
       return result;
@@ -372,8 +376,18 @@ function camelCase(name: string): string {
   return name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : "the command failed";
+/** The shape of an error code a run passes on: capital letters and underscores, as the server's. */
+const ERROR_CODE = /^[A-Z_]{1,32}$/;
+
+/** A command the server refused with an error, with its error code when it gave one. */
+function serverError(error: unknown): PluginRunResult {
+  const code = graphqlErrorCode(error);
+  const message = graphqlErrorMessage(error, "the command failed");
+  return {
+    status: "error",
+    ...(code && ERROR_CODE.test(code) ? { code } : {}),
+    message,
+  };
 }
 
 /** The conversation a run acts in, by its name where this app knows it. */

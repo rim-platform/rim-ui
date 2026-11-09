@@ -218,6 +218,39 @@ describe("createPluginBridge", () => {
     bridge.destroy();
   });
 
+  it("marks a declined confirmation of an app command as cancelled", async () => {
+    vi.mocked(runCommandForPlugin).mockResolvedValueOnce({
+      status: "refused",
+      code: "CONFIRMATION_DISMISSED",
+      message: "the person did not let it run",
+    });
+    const posted: unknown[] = [];
+    vi.spyOn(iframe.contentWindow as Window, "postMessage").mockImplementation(
+      (message: unknown) => {
+        posted.push(message);
+      },
+    );
+    const bridge = createPluginBridge({ pluginId: "my-plugin", approvedCapabilities: [], iframe });
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "null",
+        source: iframe.contentWindow,
+        data: { type: "rim.command.execute", commandId: "chat.post_message", requestId: "r-1" },
+      }),
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({
+      type: "rim.command.result",
+      requestId: "r-1",
+      ok: false,
+      payload: null,
+      cancelled: true,
+      status: "refused",
+      code: "CONFIRMATION_DISMISSED",
+    });
+    bridge.destroy();
+  });
+
   it("never forwards a confirmation a panel claims for itself", () => {
     vi.mocked(dispatchCommand).mockClear();
     const bridge = createPluginBridge({

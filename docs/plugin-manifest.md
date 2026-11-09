@@ -235,7 +235,8 @@ in their current workspace, conversation and thread, never on their selected mes
 checks every permission as the person. A built-in that changes something shows a card, "<plugin>
 wants to run <command>", with the arguments and the conversation; dismissing it holds the
 plugin's requests for a minute. The plugin hears only `{ status, code?, message? }`, never the
-command's output, and every run is recorded in its audit.
+command's output: `code` is why a refused run did not run, or the command's own error code on an
+error. Every run is recorded in its audit, except calls over the per-minute limit.
 
 ## The content hash
 

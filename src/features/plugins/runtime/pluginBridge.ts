@@ -41,7 +41,7 @@ export type HostToPluginMessage =
       ok: boolean;
       message: string;
       payload: unknown;
-      /** The user declined to confirm a dangerous command, so nothing ran. */
+      /** The user declined a confirmation, so nothing ran. */
       cancelled?: boolean;
       /** For one of the app's own commands: how the run ended. */
       status?: PluginRunResult["status"];
@@ -141,6 +141,7 @@ export function createPluginBridge(config: BridgeConfig) {
               ok: run.status === "success",
               message: run.message ?? "",
               payload: null,
+              ...(run.code === "CONFIRMATION_DISMISSED" ? { cancelled: true } : {}),
               status: run.status,
               ...(run.code ? { code: run.code } : {}),
             });

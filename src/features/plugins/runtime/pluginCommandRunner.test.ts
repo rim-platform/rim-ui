@@ -251,6 +251,23 @@ describe("runCommandForPlugin", () => {
     });
   });
 
+  it("passes the command's own error code on with an error", async () => {
+    const refusal = Object.assign(new Error("long serialized response"), {
+      response: { errors: [{ message: "text is empty", extensions: { code: "VALIDATION" } }] },
+    });
+    const t = setup({
+      execute: async () => {
+        throw refusal;
+      },
+    });
+    expect(await t.run("chat.list_channels")).toEqual({
+      status: "error",
+      code: "VALIDATION",
+      message: "text is empty",
+    });
+    expect(t.record).toHaveBeenLastCalledWith(PLUGIN, "chat.list_channels", "error", "VALIDATION");
+  });
+
   it("never hands the plugin the command's output", async () => {
     const t = setup({
       execute: async () =>

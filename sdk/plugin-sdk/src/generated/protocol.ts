@@ -216,13 +216,13 @@ export interface RunCommandRequest {
 export interface RunCommandResult {
   /** success: it ran. error: it ran and failed, or the confirmation expired. refused: it did not run; code says why. */
   status: "success" | "error" | "refused";
-  /** Why a refused run did not run: NOT_ALLOWED (no plugin may run it), NOT_GRANTED (not granted, or the plugin is off), UNAVAILABLE (not offered here), RATE_LIMITED (over 20 a minute), COOLING_DOWN (the person dismissed this plugin's card in the last minute), BUSY (another confirmation is open), CONFIRMATION_DISMISSED (the person dismissed the card). */
+  /** On error, the command's own error code when it has one, such as VALIDATION. On refused, why it did not run: NOT_ALLOWED (no plugin may run it), NOT_GRANTED (not granted, or the plugin is off), UNAVAILABLE (not offered here), RATE_LIMITED (over 20 a minute), COOLING_DOWN (the person dismissed this plugin's card in the last minute), BUSY (another confirmation is open), CONFIRMATION_DISMISSED (the person dismissed the card). */
   code?: string;
   /** One line for a log, not for the person. */
   message?: string;
 }
 
-/** Host to plugin: the answer to rim.command.execute. A refusal is a result too, never an error; INVALID_PARAMS answers a request without a string commandId or with args that are not an object. */
+/** Host to plugin: the answer to rim.command.execute. A refusal is a result too, never an error; INVALID_PARAMS answers a request without a string commandId or with args that are not an object. Missing args count as {}. */
 export interface RunCommandResponse {
   jsonrpc: JsonRpcVersion;
   id: Id;
