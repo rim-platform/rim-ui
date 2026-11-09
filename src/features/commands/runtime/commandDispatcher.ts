@@ -72,6 +72,7 @@ import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { MANAGE_HANDLERS } from "./appCommands/manage";
 import { withClientLabel } from "./localCommands";
+import { tomorrowMorning } from "../../notifications/rules";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -659,6 +660,23 @@ export function typedArgumentsGoToServer(
   );
 }
 
+const MUTE_CONVERSATION_COMMAND_ID = "notifications.mute_conversation";
+
+/**
+ * Turns a person's "mute until tomorrow" into an explicit end at 09:00 on this device's clock,
+ * because the server does not know the person's timezone. Other commands and durations are
+ * returned unchanged.
+ */
+export function withLocalTomorrowMorning(
+  commandId: string,
+  args: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (commandId !== MUTE_CONVERSATION_COMMAND_ID || args?.duration !== "until_tomorrow") {
+    return args;
+  }
+  return { ...args, duration: "until", until: tomorrowMorning().toISOString() };
+}
+
 export async function dispatchCommand(
   command: CommandDefinition,
   executeBackend: ExecuteBackendCommand,
@@ -778,15 +796,19 @@ export async function dispatchCommand(
       context.onArguments?.(asked.args);
       return dispatchCommand(command, executeBackend, {
         ...context,
-        args: asked.args,
+        args: withLocalTomorrowMorning(command.id, asked.args),
         askForArguments: false,
       });
     }
   }
+  const args =
+    context?.askForArguments && !context.isPipe && !context.callerPluginId
+      ? withLocalTomorrowMorning(command.id, context.args)
+      : context?.args;
 
   if (
     !context?.isPipe &&
-    !(await confirmConversationCommand(command.id, context?.args, context?.commandContext))
+    !(await confirmConversationCommand(command.id, args, context?.commandContext))
   ) {
     return {
       status: "ERROR",
@@ -801,7 +823,7 @@ export async function dispatchCommand(
     async (confirmation) => {
       const result = await executeBackend({
         commandId: command.id,
-        args: context?.args,
+        args,
         commandContext: context?.commandContext,
         isPipe: context?.isPipe,
         ...(confirmation && { confirmation }),
@@ -812,7 +834,7 @@ export async function dispatchCommand(
       commandId: command.id,
       title: withClientLabel(command).title || command.id,
       description: withClientLabel(command).description || undefined,
-      args: context?.args,
+      args,
       argumentTypes: argumentTypesOf(command.arguments),
       sensitivity: command.sensitivity,
       dangerous: command.dangerous,
