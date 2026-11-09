@@ -38,6 +38,7 @@ pub const AGENT_MANAGEMENT_COMMAND_IDS: &[&str] = &[
     "agents.open_runs",
     "agents.open_record",
     "agents.clear_record",
+    "agents.connect_agent",
 ];
 /// The context kinds a command's `required_context` can name, and the arguments
 /// the host adds to the command's `args` for each.

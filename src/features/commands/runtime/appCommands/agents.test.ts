@@ -28,7 +28,7 @@ import { useCommandStore } from "../../state/useCommandStore";
 import { dispatchCommand, hasLocalHandler, runDesktopLocalCommand } from "../commandDispatcher";
 import { LOCAL_COMMANDS } from "../localCommands";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./agentCommandIds";
-import { AGENT_COMMANDS, keybindAnswersWaitingAgent } from "./agents";
+import { AGENT_COMMANDS, CONNECT_DESKTOP_ONLY_MESSAGE, keybindAnswersWaitingAgent } from "./agents";
 
 const IDS = [
   "agents.approve_request",
@@ -41,6 +41,7 @@ const IDS = [
   "agents.open_runs",
   "agents.open_record",
   "agents.clear_record",
+  "agents.connect_agent",
 ];
 
 const executeBackend = vi.fn();
@@ -123,6 +124,27 @@ describe("agent commands", () => {
     await run("agents.approve_request");
     expect(toast.info).toHaveBeenCalledWith(AGENT_DESKTOP_ONLY_MESSAGE);
     expect(useAgentApprovalWarningStore.getState().warning).toBeNull();
+  });
+
+  describe("connect_agent", () => {
+    it("opens connecting an agent in Settings > Agents", async () => {
+      await run("agents.connect_agent");
+      expect(useAgentsSettingsRequestStore.getState().request).toEqual({ kind: "connect" });
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
+    });
+
+    it("refuses outside the desktop app", async () => {
+      vi.mocked(detectPlatform).mockReturnValue("web");
+      await run("agents.connect_agent");
+      expect(toast.info).toHaveBeenCalledWith(CONNECT_DESKTOP_ONLY_MESSAGE);
+      expect(CONNECT_DESKTOP_ONLY_MESSAGE).toBe("Connecting agents needs the desktop app");
+      expect(useAgentsSettingsRequestStore.getState().request).toBeNull();
+    });
+
+    it("is never run for the AI agent or another caller", () => {
+      expect(runDesktopLocalCommand("agents.connect_agent")).toBe(false);
+      expect(useAgentsSettingsRequestStore.getState().request).toBeNull();
+    });
   });
 
   describe("approve_request", () => {

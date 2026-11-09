@@ -60,9 +60,110 @@ tells you it's the program you started.
 Claude Code keeps its token in `~/.claude.json`, which any program running as you can read. The
 [plugin's README](../integrations/claude-code/README.md) has the details.
 
-**Other agents.** Any program that speaks the Model Context Protocol over HTTP can connect the same
-way, but RIM has a ready-made setup only for Claude Code. The plugin's `scripts/pair.sh` shows the
-steps.
+**Other agents.** Any other program that speaks the Model Context Protocol connects from RIM
+instead: see the next section.
+
+## Connect another agent
+
+Codex, opencode, Gemini CLI, Cursor, VS Code and other MCP tools connect from inside RIM. Claude
+Code can too, if you'd rather not use the plugin.
+
+1. Open **Settings > Agents** and choose **Connect an agent**. The command palette's **Connect an
+   Agent…** opens the same dialog.
+2. Type a name: what you'll call it in RIM, for example "Codex on laptop". Choose **Connect**.
+3. RIM adds the agent, with nothing granted, and shows its setup **once**:
+   - the address, `http://127.0.0.1:47821/mcp`;
+   - the token, hidden until you choose **Show**, with **Copy**;
+   - a tab for each tool, with the setup to paste, the token already in it, and where it goes.
+4. Paste the setup into the tool, then choose **Done**. The agent is in the list like one that
+   paired, and can read nothing until you choose what.
+
+There is no code to compare: you started it inside RIM. While **Let agents on this computer
+connect** is off, the dialog says so and offers the switch, and connects nothing.
+
+The setup each tab gives, with your token in place of `TOKEN`:
+
+| Tool | Where it goes | What it adds |
+|---|---|---|
+| Claude Code | a terminal, in the folder you use Claude Code in; it saves to `~/.claude.json` | `claude mcp add --transport http rim http://127.0.0.1:47821/mcp --header "Authorization: Bearer TOKEN"` |
+| Codex | `~/.codex/config.toml` | a `[mcp_servers.rim]` table with `url` and `http_headers = { Authorization = "Bearer TOKEN" }` |
+| opencode | `~/.config/opencode/opencode.json` | `mcp.rim` with `"type": "remote"`, `url`, `"enabled": true` and `headers` |
+| Gemini CLI | `~/.gemini/settings.json` | `mcpServers.rim` with `httpUrl` and `headers` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.rim` with `url` and `headers` |
+| VS Code | your user `mcp.json` (**MCP: Open User Configuration**) | `servers.rim` with `"type": "http"`, `url` and `headers` |
+| Generic | any MCP client that speaks streamable HTTP | the address, and the header `Authorization: Bearer TOKEN` on every request |
+
+Merge a JSON setup with what the file already holds. Use the file in your home folder, not one
+inside a project, so the token isn't shared or committed with the project.
+
+**Keep the token safe.** The token is saved in that tool's settings file. Any program running as
+you can read it. RIM won't show it again. If you lose it, disconnect this agent and connect again.
+
+**If it doesn't connect:**
+
+- The tool must use the streamable HTTP transport. RIM doesn't serve the older SSE transport, and
+  answers anything but a `POST` with 405.
+- VS Code and Gemini CLI fall back to SSE when streamable HTTP fails, so an error about SSE means
+  the first attempt failed: check the address, the token and that the switch is on. In Gemini CLI,
+  the key is `httpUrl`; `url` there means SSE.
+- A wrong or disconnected token gets 401. opencode then starts its sign-in flow, which can't work
+  with RIM: connect again and paste the new token.
+- RIM must be running and unlocked. A locked account answers 423.
+
+## For tool authors: the pairing protocol
+
+A program can also ask to connect itself, the way RIM's Claude Code plugin does. The person
+compares a code and approves in RIM, and the program collects its token once.
+[`pair.sh`](../integrations/claude-code/scripts/pair.sh) is a working example.
+
+Every request is a `POST` to `http://127.0.0.1:47821` with `Content-Type: application/json`, a
+`Host` of `127.0.0.1:47821` or `localhost:47821`, no `Origin` header, and a body of at most 1 MiB.
+Answers are JSON.
+
+**1. Ask.** `POST /pair` with `{"name": "<what the program calls itself>"}`. RIM removes control
+and invisible characters from the name, collapses spaces and keeps the first 64 characters.
+
+- `200 {"requestId": "...", "pollSecret": "...", "code": "123456", "expiresIn": 120}`: RIM shows
+  the person the name and the code. Show the same six-digit code to the person, and keep the poll
+  secret to yourself.
+- `400 {"error": "bad_name"}`: nothing visible is left of the name.
+- `409 {"error": "pairing_in_progress"}`: another request is waiting for the person.
+- `429 {"error": "try_later"}`: a request was refused or expired less than 10 seconds ago.
+
+**2. Poll.** `POST /pair/poll` with `{"requestId": "...", "pollSecret": "..."}`, every couple of
+seconds:
+
+- `200 {"status": "pending"}`: the person hasn't answered yet.
+- `200 {"status": "approved", "token": "rimagent_..."}`: the person approved. This answer comes
+  once; the token is never handed over again.
+- `200 {"status": "refused"}` or `200 {"status": "expired"}`: it's over. A request expires 120
+  seconds after it started, and an approved token not collected within 120 seconds is thrown away.
+- `404 {"error": "unknown_request"}`: no such request, or a wrong poll secret. The two are answered
+  alike.
+
+**3. Use the token.** Send MCP JSON-RPC messages as `POST /mcp` with `Authorization: Bearer
+<token>`. A token RIM doesn't know, or one whose agent was disconnected, gets
+`401 {"error": "not_paired"}`.
+
+**Answers from any path:**
+
+| Status | `error` | Why |
+|---|---|---|
+| 400 | `bad_body` | the body isn't a JSON object (`/pair` and `/pair/poll`) |
+| 403 | `bad_host`, `has_origin` | the `Host` isn't local, or an `Origin` header was sent |
+| 404 | `not_found` | another path |
+| 405 | `method_not_allowed` | not a `POST` |
+| 408 | `slow_body` | the body didn't arrive within 10 seconds |
+| 413 | `too_large` | the body is over 1 MiB |
+| 415 | `bad_content_type` | not `application/json` |
+| 423 | `locked` | the person's account is locked |
+| 429 | `busy` | too many requests at once |
+| 503 | `not_ready` | the app didn't take the request in time |
+| 504 | `timed_out` | the app took it but didn't answer within 120 seconds |
+| 500 | `internal` | answering failed |
+
+Store the token where only the person can read it, and never print it or put it in a model's
+context.
 
 ## Choose what it can read
 
@@ -196,7 +297,7 @@ Pick the agent in **Settings > Agents** and choose **Disconnect**. From then on 
 
 Disconnecting can't take anything back. What the agent already read stays with it.
 
-Removing RIM from Claude Code doesn't end its access, and neither does connecting it again: the
+Removing RIM from Claude Code, or the setup from any other tool, doesn't end its access, and neither does connecting it again: the
 older entry keeps working. **Disconnect** in RIM is what ends it.
 
 ## What RIM can't promise

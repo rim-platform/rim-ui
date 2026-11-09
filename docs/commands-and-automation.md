@@ -274,7 +274,8 @@ kept on your home server for your account, and nobody else sees or runs them.
 share one), a **Description** and up to 20 **Steps**. Each step has a command, picked from a
 list you can search, grouped by category, with each command's description: the built-ins, the
 app's own commands and the commands of the plugins installed on this device. Macros, the
-commands that answer and manage agents, and Edit Home are not offered. Under the command is a
+commands that connect, answer and manage agents (**Connect an Agent…** among them), and Edit Home
+are not offered. Under the command is a
 field for each of its arguments. Fill one in to fix it, or tick **Ask when I run it** to be
 asked each time. A step that takes a channel also offers the workspace's public channels you
 have not joined, so a macro can join them and set their notifications, and message text can

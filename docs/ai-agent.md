@@ -233,6 +233,13 @@ which is off by default. It is optional, and RIM works the same without it. The 
   nobody answers expires after two minutes. After a refusal or an expiry, a new request is turned
   away for ten seconds. An account has to be unlocked for any of this, and locking it closes the
   dialog.
+- **Connecting from the app.** **Connect an agent** in the tab, or the **Connect an Agent…**
+  command, connects a program without a code: you name it, RIM adds it with nothing granted, and
+  shows the address, its token behind **Show**, and the setup for Claude Code, Codex, opencode,
+  Gemini CLI, Cursor, VS Code or any other MCP client, once. **Done** closes it and RIM forgets the
+  token. While the switch is off, the dialog says so and connects nothing. No macro step, plugin or
+  agent can run the command, and the web app does not have it
+  ([Connect another agent](agents.md#connect-another-agent)).
 - **What a connected program gets.** A token, once, which works for this account on this device
   only. It is listed as connected when it collects that token, and a program that doesn't within
   two minutes of your approval is not connected. RIM keeps only the token's hash. A server knows nothing about connected programs, and the

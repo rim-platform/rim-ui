@@ -5,6 +5,7 @@ import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
+import { CONNECT_AGENT } from "../../commands/runtime/appCommands/agentCommandIds";
 import { settingsTabCommandId } from "../../settings/settingsTabs";
 import { rejectOutsideAgentConfirmation } from "../../agent/state/confirmationModalStore";
 import { ToggleSwitch } from "../../settings/components/ToggleSwitch";
@@ -26,8 +27,7 @@ import { AgentGrantsDialog } from "./AgentGrantsDialog";
 import { AgentPluginsDialog } from "./AgentPluginsDialog";
 import { AgentRecordDialog } from "./AgentRecordDialog";
 import { AgentRunsDialog } from "./AgentRunsDialog";
-
-const SWITCH_LABEL = "Let agents on this computer connect";
+import { BRIDGE_SWITCH_LABEL, ConnectAgentDialog } from "./ConnectAgentDialog";
 
 /** The Agents tab of the settings: whether agents may connect, and the ones that are. */
 export function AgentsSettings() {
@@ -43,6 +43,7 @@ export function AgentsSettings() {
   const [runsOf, setRunsOf] = useState<ConnectedAgent | null>(null);
   const [allRuns, setAllRuns] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
+  const [connectingNew, setConnectingNew] = useState(false);
   const entries = useAgentRecordStore((s) => s.entries);
   const hasRecord = entries.length > 0;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -74,6 +75,7 @@ export function AgentsSettings() {
       if (request.kind === "allRuns") return setAllRuns(true);
       if (request.kind === "record" && request.agentId === undefined) return setViewingAll(true);
       if (request.kind === "clearRecord") return setClearingAll(true);
+      if (request.kind === "connect") return setConnectingNew(true);
       const agent = useConnectedAgentsStore
         .getState()
         .agents.find((candidate) => candidate.id === request.agentId);
@@ -116,17 +118,27 @@ export function AgentsSettings() {
 
   return (
     <div ref={rootRef} className="space-y-6">
-      <div>
-        <h2 className="text-base font-semibold text-rim-text">Agents on this computer</h2>
-        <p className="mt-1 text-sm text-rim-text-muted">
-          Optional. RIM works the same without them.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-rim-text">Agents on this computer</h2>
+          <p className="mt-1 text-sm text-rim-text-muted">
+            Optional. RIM works the same without them.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => void runCommandFromClick(CONNECT_AGENT)}
+        >
+          Connect an agent
+        </Button>
       </div>
 
       <div className="rounded-lg border border-rim-line bg-rim-panel px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 flex-1 basis-48">
-            <div className="text-sm font-medium text-rim-text">{SWITCH_LABEL}</div>
+            <div className="text-sm font-medium text-rim-text">{BRIDGE_SWITCH_LABEL}</div>
             <div className="text-xs text-rim-text-muted">
               An agent runs on your computer with its own model provider. What it reads goes to that
               provider, and RIM can&apos;t see or limit where it goes after that. Nothing can read
@@ -136,7 +148,7 @@ export function AgentsSettings() {
           <ToggleSwitch
             checked={status?.enabled ?? false}
             onChange={change}
-            label={SWITCH_LABEL}
+            label={BRIDGE_SWITCH_LABEL}
             disabled={status === null}
           />
         </div>
@@ -154,7 +166,13 @@ export function AgentsSettings() {
       </div>
 
       {agents.length === 0 ? (
-        <p className="text-sm text-rim-text-muted">Nothing is connected.</p>
+        <div className="space-y-1">
+          <p className="text-sm text-rim-text-muted">Nothing is connected.</p>
+          <p className="text-sm text-rim-text-muted">
+            Use <strong>Connect an agent</strong> for Codex, opencode, Gemini CLI, Cursor, VS Code
+            or any other MCP tool. Claude Code can also connect itself with RIM&apos;s plugin.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {status && !status.enabled && (
@@ -243,6 +261,14 @@ export function AgentsSettings() {
       {allRuns && <AgentRunsDialog agent={null} onClose={() => setAllRuns(false)} />}
       {clearingAll && (
         <AgentRecordDialog agent={null} startWithClear onClose={() => setClearingAll(false)} />
+      )}
+
+      {connectingNew && (
+        <ConnectAgentDialog
+          status={status}
+          onTurnOn={change}
+          onClose={() => setConnectingNew(false)}
+        />
       )}
 
       {disconnecting && (

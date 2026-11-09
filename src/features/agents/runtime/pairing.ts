@@ -8,7 +8,13 @@
  */
 
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
-import { randomToken, sha256Base64Url, sixDigitCode, type RandomFill } from "./agentCrypto";
+import {
+  randomToken,
+  sha256Base64Url,
+  secureRandom,
+  sixDigitCode,
+  type RandomFill,
+} from "./agentCrypto";
 
 const LIFETIME_S = 120;
 const LIFETIME_MS = LIFETIME_S * 1000;
@@ -87,11 +93,58 @@ function statusAnswer(status: string, extra: Record<string, unknown> = {}): Pair
  *
  * @returns The name, or `null` when it is not a string or nothing is left.
  */
-function cleanName(raw: unknown): string | null {
+export function cleanName(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const collapsed = raw.replace(/\s+/gu, " ").replace(/\p{C}/gu, "").replace(/\s+/gu, " ").trim();
   const name = Array.from(collapsed).slice(0, NAME_LIMIT).join("").trim();
   return name === "" ? null : name;
+}
+
+/** What a name must be, as the person reads it when theirs is refused. */
+export const NAME_RULE = `A name needs at least one visible character. RIM removes control and invisible characters and keeps the first ${NAME_LIMIT}.`;
+
+/** A newly connected agent and the token it reaches RIM with. */
+export interface MintedAgent {
+  /** The plain token. RIM keeps only its hash, in `agent`. */
+  token: string;
+  agent: ConnectedAgent;
+}
+
+/** The clock and randomness minting uses; both default to the platform's own. */
+export interface MintDeps {
+  now?: () => number;
+  random?: RandomFill;
+}
+
+/**
+ * Mints a token and the agent entry that goes with it, with nothing granted. Pairing and
+ * connecting from the app both make agents this way.
+ *
+ * @param rawName - What the agent is called; cleaned as a pairing program's name is.
+ * @param deps - The clock and the randomness.
+ * @returns The token and the agent, or `null` when nothing is left of the name.
+ */
+export async function mintAgent(
+  rawName: unknown,
+  deps: MintDeps = {},
+): Promise<MintedAgent | null> {
+  const name = cleanName(rawName);
+  if (name === null) return null;
+  const { now = Date.now, random = secureRandom } = deps;
+  const token = TOKEN_PREFIX + randomToken(SECRET_BYTES, random);
+  const tokenHash = await sha256Base64Url(token);
+  return {
+    token,
+    agent: {
+      id: crypto.randomUUID(),
+      name,
+      tokenHash,
+      pairedAt: new Date(now()).toISOString(),
+      grants: {},
+      pluginApprovals: {},
+      commandApprovals: [],
+    },
+  };
 }
 
 /**
@@ -210,22 +263,10 @@ export function createPairing(deps: PairingDeps): Pairing {
       if (!request || request.view.requestId !== requestId || request.phase !== "pending") return;
       request.phase = "approving";
       onPendingChanged(null);
-      const token = TOKEN_PREFIX + randomToken(SECRET_BYTES, random);
-      const tokenHash = await sha256Base64Url(token);
-      if (current !== request || request.phase !== "approving") return;
+      const minted = await mintAgent(request.view.name, { now, random });
+      if (current !== request || request.phase !== "approving" || minted === null) return;
       request.phase = "approved";
-      request.approved = {
-        token,
-        agent: {
-          id: crypto.randomUUID(),
-          name: request.view.name,
-          tokenHash,
-          pairedAt: new Date(now()).toISOString(),
-          grants: {},
-          pluginApprovals: {},
-          commandApprovals: [],
-        },
-      };
+      request.approved = minted;
       request.deadline = now() + LIFETIME_MS;
       arm();
     },

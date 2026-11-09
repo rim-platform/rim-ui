@@ -58,6 +58,7 @@ export const AGENT_MANAGEMENT_COMMAND_IDS: readonly string[] = Object.freeze([
   "agents.open_runs",
   "agents.open_record",
   "agents.clear_record",
+  "agents.connect_agent",
 ]);
 
 /**

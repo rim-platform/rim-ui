@@ -341,6 +341,14 @@ describe("runCommand", () => {
       expect(deps.execute).not.toHaveBeenCalled();
     });
 
+    it("never runs connecting an agent, even approved and listed", async () => {
+      agent = agentWith(["agents.connect_agent"]);
+      deps.commands.mockResolvedValue([command("agents.connect_agent"), ...COMMANDS]);
+      expect(await run("agents.connect_agent")).toEqual(NOT_APPROVED);
+      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.execute).not.toHaveBeenCalled();
+    });
+
     it("never runs an approved command that names agent management or sending", async () => {
       agent = agentWith(["agents.disconnect", "chat.post_message"]);
       deps.commands.mockResolvedValue([command("agents.disconnect"), ...COMMANDS]);
