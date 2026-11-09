@@ -3,7 +3,7 @@ import { useShellStore } from "../state/useShellStore";
 
 /**
  * Auto-focus composer when entering a conversation view (returning from
- * settings, plugin, marketplace, or on initial load).  This ensures every
+ * settings, a plugin page, or on initial load).  This ensures every
  * conversation entry starts in COMPOSE mode with the composer focused.
  */
 export function useAutoFocusComposer(mainSurfaceKind: string) {

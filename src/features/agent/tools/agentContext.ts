@@ -68,8 +68,6 @@ function surfaceInWords(
       return "Settings";
     case "plugin":
       return "a plugin's page";
-    case "marketplace":
-      return "the plugin marketplace";
     case "audit-log":
       return "the audit log";
     case "home":

@@ -54,9 +54,8 @@ gestures and no bottom bar.
 | Place | Control | Command |
 |---|---|---|
 | A conversation | Conversation list | `workspace.navigate_to_channel`, `workspace.next_channel`, `workspace.previous_channel`, `workspace.next_unread_channel`, `workspace.previous_unread_channel` |
-| Settings and its tabs | Settings at the foot of the workspace rail; the account menu; in a narrow window the sections menu | `workspace.open_settings` |
+| Settings and its tabs | Settings at the foot of the workspace rail; the account menu; in a narrow window the sections menu | `workspace.open_settings`; Browse Plugins opens Settings > Plugins: `workspace.open_marketplace` |
 | Plugin panels | Plugins in the top bar | `workspace.open_plugin_panel.<plugin>/<panel>` for each panel |
-| Marketplace | none yet | `workspace.open_marketplace` |
 | Home | Home at the top of the workspace rail | `workspace.open_home` |
 | Editing Home | Edit Home on Home, where the server keeps Home layouts | `workspace.edit_home`, from the command palette only |
 | Unreads | See all unread on Home; Unreads above the channels in the conversation list, while something is unread | `workspace.open_unreads` |

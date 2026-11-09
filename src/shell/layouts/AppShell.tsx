@@ -734,14 +734,6 @@ function WorkspaceShell() {
                     </main>
                   );
                 })()}
-
-              {mainSurface.kind === "marketplace" && (
-                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
-                  <div className="flex flex-1 items-center justify-center">
-                    <p className="text-sm text-rim-text-muted">Marketplace coming soon!</p>
-                  </div>
-                </main>
-              )}
             </div>
           </div>
 

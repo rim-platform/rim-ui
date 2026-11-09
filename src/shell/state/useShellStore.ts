@@ -19,7 +19,6 @@ export type MainSurface =
    */
   | { kind: "settings"; tab?: string; plugin?: string }
   | { kind: "plugin"; pluginId: string }
-  | { kind: "marketplace" }
   | { kind: "audit-log" }
   /** The page across every workspace of what needs the person: requests, mentions, unread counts. */
   | { kind: "home" }
