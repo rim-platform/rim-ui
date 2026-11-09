@@ -703,8 +703,12 @@ export function runLocalCommandForCaller(
   if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return null;
   if (!Object.prototype.hasOwnProperty.call(localHandlers, commandId)) return null;
   const result = localHandlers[commandId](args, commandContext);
-  // A handler that works on says how it went itself.
-  if (!result || result instanceof Promise) return { ok: true, message: "" };
+  // A handler that works on says how it went itself; a failure it did not report is logged.
+  if (result instanceof Promise) {
+    result.catch((err: unknown) => logger.warn(`[RIM] ${commandId} failed`, err));
+    return { ok: true, message: "" };
+  }
+  if (!result) return { ok: true, message: "" };
   return { ok: result.status !== "ERROR", message: result.message };
 }
 
