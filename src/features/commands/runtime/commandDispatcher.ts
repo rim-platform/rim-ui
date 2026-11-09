@@ -1,5 +1,13 @@
 import type { CommandDefinition, CommandResult } from "../types";
-import { argumentTypesOf } from "./commandArguments";
+import {
+  argumentGiven,
+  argumentTypesOf,
+  camelCaseName,
+  contextOnlyArgumentMessage,
+  contextSuppliesArgument,
+  formAsksFor,
+} from "./commandArguments";
+import { useCommandArgumentsStore } from "../state/useCommandArgumentsStore";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { useCommandStore, type TargetPickerKind } from "../state/useCommandStore";
@@ -52,7 +60,10 @@ import {
 } from "../../messages/state/useSelectedMessageStore";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { findCachedConversation } from "../../conversations/api/useConversation";
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
+import {
+  CommandArgumentType,
+  ConversationTypeEnum,
+} from "../../../core/graphql/generated/schema-types";
 import { currentCommandContext } from "./commandContext";
 import { withClientLabel } from "./localCommands";
 import {
@@ -684,6 +695,14 @@ export async function dispatchCommand(
      * with them, even when this app has a handler that would run it without them.
      */
     typedArgs?: boolean;
+    /**
+     * Set by the surfaces a person runs commands from (the palette, keybinds, quick boxes): a
+     * backend command lacking required arguments opens the argument form instead of failing,
+     * and runs with what is filled in there.
+     */
+    askForArguments?: boolean;
+    /** Called with the arguments a command runs with once the argument form has added to them. */
+    onArguments?: (args: Record<string, unknown>) => void;
   },
 ): Promise<CommandResult | null> {
   // A command that lacks the argument a surface asks for opens that surface instead.
@@ -761,6 +780,30 @@ export async function dispatchCommand(
     return { status: "ERROR", message: SELECT_A_MESSAGE, payload: null, followUpCommands: [] };
   }
 
+  // A person's surface asks for the arguments it lacks, then runs the command with them.
+  if (context?.askForArguments && !context.isPipe && !context.callerPluginId) {
+    const asked = await askForMissingArguments(command, context.args, context.commandContext);
+    if (asked.kind === "refused") {
+      return { status: "ERROR", message: asked.message, payload: null, followUpCommands: [] };
+    }
+    if (asked.kind === "cancelled") {
+      return {
+        status: "ERROR",
+        message: "Cancelled",
+        payload: CANCELLED_PAYLOAD,
+        followUpCommands: [],
+      };
+    }
+    if (asked.kind === "filled") {
+      context.onArguments?.(asked.args);
+      return dispatchCommand(command, executeBackend, {
+        ...context,
+        args: asked.args,
+        askForArguments: false,
+      });
+    }
+  }
+
   if (
     !context?.isPipe &&
     !(await confirmConversationCommand(command.id, context?.args, context?.commandContext))
@@ -796,6 +839,63 @@ export async function dispatchCommand(
     },
   );
   return commandResultOf(outcome);
+}
+
+/** How asking for a command's missing arguments ended. */
+type AskedArguments =
+  | { kind: "complete" }
+  | { kind: "filled"; args: Record<string, unknown> }
+  | { kind: "cancelled" }
+  | { kind: "refused"; message: string };
+
+function contextString(context: Record<string, unknown> | undefined, key: string) {
+  const value = context?.[key];
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * Asks for the required arguments of `command` that neither `args`, `commandContext` nor an
+ * argument prompt supplies. One that only the context can supply (a message, a thread, selected
+ * text) is never asked for: the command is refused with what to select first.
+ *
+ * @returns `complete` when nothing is missing, `filled` with `args` and the submitted values,
+ *   `cancelled` when the person dismissed the form, or `refused` with the reason.
+ */
+async function askForMissingArguments(
+  command: CommandDefinition,
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+): Promise<AskedArguments> {
+  const argumentContext = {
+    workspaceId: contextString(commandContext, "workspaceId"),
+    conversationId: contextString(commandContext, "conversationId"),
+    selectedMessageId: contextString(commandContext, "selectedMessageId"),
+  };
+  const prompted = argumentPromptName(command.id);
+  const missing = (command.arguments ?? []).filter(
+    (argument) =>
+      argument.required &&
+      argument.name !== prompted &&
+      !argumentGiven(args, argument.name) &&
+      !contextSuppliesArgument(argument, argumentContext),
+  );
+  if (missing.length === 0) return { kind: "complete" };
+  const contextOnly = missing.find((argument) => !formAsksFor(argument));
+  if (contextOnly) {
+    return { kind: "refused", message: contextOnlyArgumentMessage(contextOnly.argumentType) };
+  }
+  // The members and conversations offered are those of the workspace the command runs in.
+  const givenWorkspace = (command.arguments ?? [])
+    .filter((argument) => argument.argumentType === CommandArgumentType.WORKSPACE_ID)
+    .map((argument) => argString(args, argument.name, camelCaseName(argument.name)))
+    .find((value) => value !== undefined);
+  const values = await useCommandArgumentsStore.getState().ask({
+    title: withClientLabel(command).title || command.id,
+    arguments: missing,
+    workspaceId: givenWorkspace ?? argumentContext.workspaceId,
+  });
+  if (values === null) return { kind: "cancelled" };
+  return { kind: "filled", args: { ...args, ...values } };
 }
 
 /** Opens the plugin panel an open-panel command names, when its plugin is running. */

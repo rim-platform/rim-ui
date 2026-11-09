@@ -131,6 +131,40 @@ const KICK: CommandDefinition = {
   arguments: [SERVER_ID, requiredArgument("user_id", CommandArgumentType.USER_ID)],
 };
 
+const PIN: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "chat.pin_message",
+  title: "Pin Message",
+  description: "Pins a message",
+  category: "Chat",
+  arguments: [SERVER_ID, requiredArgument("message_id", CommandArgumentType.MESSAGE_ID)],
+};
+
+const DND: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "notifications.dnd",
+  title: "Do Not Disturb",
+  description: "Pause notification toasts and sounds",
+  category: "Notifications",
+  arguments: [
+    SERVER_ID,
+    { ...requiredArgument("mode", CommandArgumentType.ENUM), allowedValues: ["on", "off"] },
+  ],
+};
+
+const TIMEOUT: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "admin.timeout",
+  title: "Timeout Member",
+  description: "Mute a member for a number of minutes",
+  category: "Moderation",
+  arguments: [
+    SERVER_ID,
+    requiredArgument("user_id", CommandArgumentType.USER_ID),
+    requiredArgument("minutes", CommandArgumentType.INTEGER),
+  ],
+};
+
 const CREATE_CHANNEL: CommandDefinition = {
   ...BASE_COMMAND,
   id: "chat.create_channel",
@@ -203,6 +237,8 @@ describe("CommandPalette command context", () => {
         threadId: "thread-1",
         focusedSurface: "commandPalette",
       },
+      askForArguments: true,
+      onArguments: expect.any(Function),
     });
   });
 
@@ -213,6 +249,8 @@ describe("CommandPalette command context", () => {
 
     expect(vi.mocked(dispatchCommand).mock.calls[0][2]).toEqual({
       commandContext: { workspaceId: "ws-1", focusedSurface: "commandPalette" },
+      askForArguments: true,
+      onArguments: expect.any(Function),
     });
   });
 
@@ -338,7 +376,7 @@ describe("CommandPalette search", () => {
 /** Serves the commands the argument filter and pipe tests choose among. */
 function serveFilterCommands() {
   vi.mocked(useCommands).mockReturnValue({
-    data: [MARK_AS_READ, KICK, CREATE_CHANNEL, SEARCH, LIST_STATE],
+    data: [MARK_AS_READ, KICK, PIN, DND, TIMEOUT, CREATE_CHANNEL, SEARCH, LIST_STATE],
     isLoading: false,
   } as ReturnType<typeof useCommands>);
 }
@@ -370,16 +408,30 @@ describe("CommandPalette argument filter", () => {
     } as ReturnType<typeof useCommands>);
   });
 
-  it("leaves out a command whose required argument nothing supplies", () => {
+  it("lists a command whose required argument the argument form asks for", () => {
     useShellStore.getState().setSelectedConversationId("conv-9");
     openPalette();
 
-    expect(screen.queryByText("Kick Member")).not.toBeInTheDocument();
+    expect(screen.getByText("Kick Member")).toBeInTheDocument();
   });
 
-  it("lists a conversation's command only while a conversation is open", () => {
+  it("lists Do Not Disturb and Timeout Member, whose arguments the form asks for", () => {
     openPalette();
-    expect(screen.queryByText("Mark as read")).not.toBeInTheDocument();
+
+    expect(screen.getByText("Do Not Disturb")).toBeInTheDocument();
+    expect(screen.getByText("Timeout Member")).toBeInTheDocument();
+  });
+
+  it("leaves out a command whose required argument only a selected message supplies", () => {
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    openPalette();
+
+    expect(screen.queryByText("Pin Message")).not.toBeInTheDocument();
+  });
+
+  it("lists a conversation's command with no conversation open, to ask for one", () => {
+    openPalette();
+    expect(screen.getByText("Mark as read")).toBeInTheDocument();
 
     act(() => useShellStore.getState().setSelectedConversationId("conv-9"));
     expect(screen.getByText("Mark as read")).toBeInTheDocument();

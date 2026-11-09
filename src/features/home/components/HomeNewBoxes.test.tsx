@@ -527,17 +527,17 @@ describe("Home's new boxes", () => {
     });
 
     it("offers only commands it can run, and marks a saved one that needs arguments", async () => {
-      const userArgument = [{ name: "user_id", argumentType: "USER_ID", required: true }];
+      const textArgument = [{ name: "text", argumentType: "SELECTION_TEXT", required: true }];
       state.commands = [
         command("chat.mark_all_as_read", "Mark Everything Read"),
-        command("admin.kick", "Kick Member", { arguments: userArgument }),
+        command("chat.quote_selection", "Quote Selection", { arguments: textArgument }),
       ];
-      stored(box("q", "quick", { actions: [{ commandId: "admin.kick" }] }));
+      stored(box("q", "quick", { actions: [{ commandId: "chat.quote_selection" }] }));
       serve();
       const user = userEvent.setup();
       renderHome();
       const list = await screen.findByRole("list", { name: "Quick actions" });
-      const action = await within(list).findByRole("button", { name: "Kick Member" });
+      const action = await within(list).findByRole("button", { name: "Quote Selection" });
       expect(action).toBeDisabled();
       expect(action).toHaveAccessibleDescription("Needs arguments this can't supply yet");
 
@@ -547,12 +547,12 @@ describe("Home's new boxes", () => {
       const dialog = await screen.findByRole("dialog", { name: "Settings of Quick actions" });
       await within(dialog).findByRole("option", { name: "Mark Everything Read" });
       const picker = within(dialog).getByLabelText("Action 1");
-      expect(picker).toHaveValue("admin.kick");
-      expect(within(dialog).getAllByRole("option", { name: "Kick Member" })).toHaveLength(1);
+      expect(picker).toHaveValue("chat.quote_selection");
+      expect(within(dialog).getAllByRole("option", { name: "Quote Selection" })).toHaveLength(1);
       expect(picker).toHaveAccessibleDescription("Needs arguments this can't supply yet");
 
       await user.selectOptions(picker, "chat.mark_all_as_read");
-      expect(within(dialog).queryByRole("option", { name: "Kick Member" })).toBeNull();
+      expect(within(dialog).queryByRole("option", { name: "Quote Selection" })).toBeNull();
       expect(within(dialog).queryByText("Needs arguments this can't supply yet")).toBeNull();
     });
 

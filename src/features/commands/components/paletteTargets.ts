@@ -89,9 +89,15 @@ export function useNamed(conversations: readonly ConversationSummary[]): PickerT
   );
 }
 
-/** The open workspace's channels the viewer is in, and its DMs and groups, as the sidebar lists them. */
-export function useChannelTargets(): Targets {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+/**
+ * The channels the viewer is in, and the DMs and groups, of a workspace, as the sidebar lists
+ * them.
+ *
+ * @param inWorkspace - The workspace to list; the open one when left out.
+ */
+export function useChannelTargets(inWorkspace?: string): Targets {
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const workspaceId = inWorkspace ?? openWorkspaceId;
   const joined = useJoinedChannels(workspaceId);
   const inbox = useInboxConversations(workspaceId);
   const conversations = useMemo(

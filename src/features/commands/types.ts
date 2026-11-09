@@ -29,8 +29,12 @@ export type KeybindSource = "DEFAULT" | "USER" | "WORKSPACE";
 
 export type CommandResultStatus = "SUCCESS" | "ERROR" | "CONFIRMATION_REQUIRED";
 
-/** What the client reads of an argument a command declares. */
-export type CommandArgumentInfo = Pick<CommandArgument, "name" | "argumentType" | "required">;
+/**
+ * What the client reads of an argument a command declares. The fields past `required` are
+ * absent on arguments the client describes itself.
+ */
+export type CommandArgumentInfo = Pick<CommandArgument, "name" | "argumentType" | "required"> &
+  Partial<Pick<CommandArgument, "title" | "description" | "defaultValue" | "allowedValues">>;
 
 export interface CommandDefinition {
   id: string;

@@ -47,6 +47,7 @@ import { useNotificationEvents } from "../../features/notifications/runtime/useN
 import { useNotificationEventHandler } from "../../features/notifications/runtime/useNotificationEventHandler";
 import { PluginSlotContainer } from "../../features/plugins/components/PluginSlotContainer";
 import { PluginCommandConfirmDialog } from "../../features/plugins/components/PluginCommandConfirmDialog";
+import { CommandArgumentsDialog } from "../../features/commands/components/CommandArgumentsDialog";
 import { ConversationActionConfirmHost } from "../../features/conversations/components/ConversationActionConfirmHost";
 import { WorkspaceActionDialogs } from "../../features/workspaces/components/WorkspaceActionDialogs";
 import { PluginSettingsDialogHost } from "../../features/plugins/components/PluginSettingsDialogHost";
@@ -745,6 +746,7 @@ function WorkspaceShell() {
           <AgentOverlay />
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
+          <CommandArgumentsDialog />
           <ConversationActionConfirmHost />
           <WorkspaceActionDialogs />
           <PluginSettingsDialogHost />
