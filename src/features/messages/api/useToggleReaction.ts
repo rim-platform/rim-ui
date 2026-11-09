@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -23,6 +23,15 @@ interface ToggleReactionVars {
   emoji: string;
 }
 
+/** Refreshes a conversation's timeline once a reaction in it changed. */
+export function invalidateAfterReaction(
+  qc: QueryClient,
+  serverId: string,
+  conversationId: string,
+): void {
+  qc.invalidateQueries({ queryKey: queryKeys.messages(serverId, conversationId) });
+}
+
 export function useToggleReactionMutation() {
   const qc = useQueryClient();
 
@@ -37,7 +46,7 @@ export function useToggleReactionMutation() {
         },
       }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.messages(vars.serverId, vars.conversationId) });
+      invalidateAfterReaction(qc, vars.serverId, vars.conversationId);
     },
     onError: (err) => {
       toast.error("The reaction could not be changed", {

@@ -60,9 +60,10 @@ const PEOPLE_COMMANDS: ReadonlySet<string> = new Set([
   "people.read_request_first",
 ]);
 
-function openRole() {
-  const id = useWorkspaceStore.getState().workspaceId;
-  return id ? queryClient.getQueryData<ServerDetail>(queryKeys.server(id))?.viewerRole : undefined;
+function roleIn(workspaceId: string | null) {
+  return workspaceId
+    ? queryClient.getQueryData<ServerDetail>(queryKeys.server(workspaceId))?.viewerRole
+    : undefined;
 }
 
 /** Whether the signed-in account is known to be an instance operator. */
@@ -74,12 +75,18 @@ function isInstanceOperator(): boolean {
 /**
  * Why `commandId` is refused to this person now, in the words a click would meet, or `null`
  * when it is offered. Commands outside the management set are always offered.
+ *
+ * @param workspaceId - The workspace the command acts in; the open one when left out.
  */
-export function manageRefusal(commandId: string): string | null {
-  if (MODERATOR_COMMANDS.has(commandId)) return canModerate(openRole()) ? null : MODERATORS;
-  if (commandId === "workspace.revoke_invite") return isOwner(openRole()) ? null : OWNERS;
+export function manageRefusal(
+  commandId: string,
+  workspaceId: string | null = useWorkspaceStore.getState().workspaceId,
+): string | null {
+  if (MODERATOR_COMMANDS.has(commandId)) {
+    return canModerate(roleIn(workspaceId)) ? null : MODERATORS;
+  }
+  if (commandId === "workspace.revoke_invite") return isOwner(roleIn(workspaceId)) ? null : OWNERS;
   if (OPERATOR_COMMANDS.has(commandId)) return isInstanceOperator() ? null : OPERATORS;
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
   if (BOT_COMMANDS.has(commandId)) return botsOfferedFor(workspaceId) ? null : BOTS;
   if (WEBHOOK_COMMANDS.has(commandId)) {
     const info = queryClient.getQueryData<KnownServerInfo>(queryKeys.serverInfo);
@@ -104,9 +111,16 @@ export function manageCommandOffered(commandId: string): boolean {
   return manageRefusal(commandId) === null;
 }
 
-/** Says why `commandId` is refused in a toast and returns true, or returns false when offered. */
-export function refuseManage(commandId: string): boolean {
-  const refusal = manageRefusal(commandId);
+/**
+ * Says why `commandId` is refused in a toast and returns true, or returns false when offered.
+ *
+ * @param workspaceId - The workspace the command acts in; the open one when left out.
+ */
+export function refuseManage(
+  commandId: string,
+  workspaceId: string | null = useWorkspaceStore.getState().workspaceId,
+): boolean {
+  const refusal = manageRefusal(commandId, workspaceId);
   if (refusal) toast.info(refusal);
   return refusal !== null;
 }

@@ -72,6 +72,7 @@ import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { MANAGE_HANDLERS } from "./appCommands/manage";
 import { withClientLabel } from "./localCommands";
+import { showWorkspace, targetWorkspaceOf } from "./appCommands/targetWorkspace";
 import { tomorrowMorning } from "../../notifications/rules";
 import { accountMacrosOn } from "../../macros/api/useAccountMacros";
 import { isMacroId } from "../../macros/runtime/macroCommands";
@@ -79,8 +80,10 @@ import { runMacro } from "../../macros/runtime/runMacro";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
+  type ConfirmationSubject,
   type HumanConfirmationOutcome,
 } from "./humanConfirmation";
+import { withCommandEffect } from "./commandEffects";
 
 interface ConversationItem {
   id: string;
@@ -338,8 +341,10 @@ const localHandlers: Record<string, LocalHandler> = {
     }
     useShellStore.getState().setMainSurface({ kind: "settings", tab: "bots" });
   },
-  "workspace.leave": () => openWorkspaceAction("leave"),
-  "workspace.rename": () => openWorkspaceAction("rename"),
+  "workspace.leave": (args, commandContext) =>
+    openWorkspaceAction("leave", targetWorkspaceOf(args, commandContext)),
+  "workspace.rename": (args, commandContext) =>
+    openWorkspaceAction("rename", targetWorkspaceOf(args, commandContext)),
   "workspace.previous_channel": () => {
     const ids = getCachedConversationIds();
     if (ids.length === 0) return;
@@ -469,8 +474,8 @@ const localHandlers: Record<string, LocalHandler> = {
       toast.info("Your own messages can't be reported");
     }
   },
-  "chat.mark_all_as_read": () => {
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
+  "chat.mark_all_as_read": (args, commandContext) => {
+    const workspaceId = targetWorkspaceOf(args, commandContext);
     if (!workspaceId) return;
     markWorkspaceRead(workspaceId);
   },
@@ -495,8 +500,15 @@ const localHandlers: Record<string, LocalHandler> = {
     reloadCommands();
     return resultText("Commands reloaded");
   },
-  "admin.invite_member": () => {
-    useShellStore.getState().setShowInviteDialog(true);
+  "admin.invite_member": (args, commandContext) => {
+    // The invite dialog belongs to the open workspace: another one is opened first.
+    const workspaceId = targetWorkspaceOf(args, commandContext);
+    const shell = useShellStore.getState();
+    if (workspaceId && workspaceId !== useWorkspaceStore.getState().workspaceId) {
+      showWorkspace(workspaceId);
+      shell.setMainSurface({ kind: "conversation" });
+    }
+    shell.setShowInviteDialog(true);
   },
   "workspace.toggle_lens_picker": () => {
     const shell = useShellStore.getState();
@@ -724,6 +736,14 @@ export async function dispatchCommand(
     askForArguments?: boolean;
     /** Called with the arguments a command runs with once the argument form has added to them. */
     onArguments?: (args: Record<string, unknown>) => void;
+    /**
+     * Set by a control whose own dialog was the person's confirmation: a held backend command
+     * runs without the confirmation dialog, except a `RESTRICTED` one, and leaving or archiving
+     * a conversation is not asked about again.
+     */
+    confirmedByCaller?: boolean;
+    /** What the confirmation dialog shows in place of the command's own title and description. */
+    confirmationSubject?: Partial<ConfirmationSubject>;
   },
 ): Promise<CommandResult | null> {
   // One of the person's macros runs here, step by step; a plugin never runs it.
@@ -845,6 +865,7 @@ export async function dispatchCommand(
 
   if (
     !context?.isPipe &&
+    !context?.confirmedByCaller &&
     !(await confirmConversationCommand(command.id, args, context?.commandContext))
   ) {
     return {
@@ -855,29 +876,37 @@ export async function dispatchCommand(
     };
   }
 
-  // Backend command: a dangerous one is held until the user confirms it in the dialog.
-  const outcome = await runWithHumanConfirmation(
-    async (confirmation) => {
-      const result = await executeBackend({
-        commandId: command.id,
-        args,
-        commandContext: context?.commandContext,
-        isPipe: context?.isPipe,
-        ...(confirmation && { confirmation }),
-      });
-      return result.executeCommand;
-    },
-    {
-      commandId: command.id,
-      title: withClientLabel(command).title || command.id,
-      description: withClientLabel(command).description || undefined,
-      args,
-      argumentTypes: argumentTypesOf(command.arguments),
-      sensitivity: command.sensitivity,
-      dangerous: command.dangerous,
+  // Backend command: a dangerous one is held until the user confirms it in the dialog, and the
+  // app shows its effect around the run whichever surface started it.
+  return withCommandEffect(
+    { commandId: command.id, args, commandContext: context?.commandContext },
+    async () => {
+      const outcome = await runWithHumanConfirmation(
+        async (confirmation) => {
+          const result = await executeBackend({
+            commandId: command.id,
+            args,
+            commandContext: context?.commandContext,
+            isPipe: context?.isPipe,
+            ...(confirmation && { confirmation }),
+          });
+          return result.executeCommand;
+        },
+        {
+          commandId: command.id,
+          title: withClientLabel(command).title || command.id,
+          description: withClientLabel(command).description || undefined,
+          args,
+          argumentTypes: argumentTypesOf(command.arguments),
+          sensitivity: command.sensitivity,
+          dangerous: command.dangerous,
+          ...context?.confirmationSubject,
+        },
+        { preConfirmed: context?.confirmedByCaller },
+      );
+      return commandResultOf(outcome);
     },
   );
-  return commandResultOf(outcome);
 }
 
 /** How asking for a command's missing arguments ended. */

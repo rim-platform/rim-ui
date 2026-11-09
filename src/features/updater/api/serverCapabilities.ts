@@ -84,6 +84,12 @@ export const APP_COMMAND_KEYBINDS = "app_command_keybinds";
  */
 export const ACCOUNT_MACROS = "account_macros";
 
+/**
+ * The capability of a server that records a command run from one of the app's own controls
+ * (a button, a toggle, a dialog's action) as `CommandInitiator.UI`.
+ */
+export const COMMAND_INITIATOR_UI = "command_initiator_ui";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

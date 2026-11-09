@@ -145,6 +145,7 @@ vi.mock("../../../core/query/keys", () => ({
     channels: (ws?: string) => ["channels", ws],
     joinedChannels: (ws?: string) => ["channels", ws, "joined"],
     conversation: (ws?: string, id?: string) => ["conversation", ws, id],
+    conversationMemberRemovals: (ws?: string, id?: string) => ["memberRemovals", ws, id],
     conversations: () => ["conversations"],
     server: (serverId: string) => ["server", serverId],
     plugins: () => ["plugins"],

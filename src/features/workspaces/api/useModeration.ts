@@ -358,10 +358,36 @@ export interface MessageReportPage {
 export const REPORTS_PAGE_SIZE = 20;
 
 /** Refreshes the member directory: roles, timeouts and membership all live there. */
+export function invalidateMembers(qc: QueryClient, serverId: string): Promise<void> {
+  return qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
+}
+
+/** Refreshes the member directory and the ban list once a member was banned. */
+export function refreshAfterBan(qc: QueryClient, serverId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
+  qc.invalidateQueries({ queryKey: queryKeys.serverBans(serverId) });
+}
+
+/** Drops a lifted ban from the cached ban list at once, then refreshes the list. */
+export function refreshAfterUnban(qc: QueryClient, serverId: string, userId: string): void {
+  qc.setQueryData<ServerBanRow[]>(queryKeys.serverBans(serverId), (old) =>
+    old?.filter((ban) => ban.userId !== userId),
+  );
+  qc.invalidateQueries({ queryKey: queryKeys.serverBans(serverId) });
+}
+
+/** Refreshes the message counts shown for a member once their messages were deleted. */
+export function invalidateMemberMessageCounts(
+  qc: QueryClient,
+  serverId: string,
+  userId: string,
+): void {
+  void qc.invalidateQueries({ queryKey: ["memberMessageCounts", serverId, userId] });
+}
+
 function useInvalidateMembers() {
   const qc = useQueryClient();
-  return (serverId: string) =>
-    qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
+  return (serverId: string) => invalidateMembers(qc, serverId);
 }
 
 export function useSetMemberRoleMutation() {
@@ -393,10 +419,7 @@ export function useBanMemberMutation() {
         BAN_MEMBER,
         vars,
       ),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.serverMembers(vars.serverId) });
-      qc.invalidateQueries({ queryKey: queryKeys.serverBans(vars.serverId) });
-    },
+    onSuccess: (_data, vars) => refreshAfterBan(qc, vars.serverId),
   });
 }
 
@@ -405,12 +428,7 @@ export function useUnbanMemberMutation() {
   return useMutation({
     mutationFn: (vars: MutationUnbanMemberArgs) =>
       graphqlClient.request<{ unbanMember: boolean }>(UNBAN_MEMBER, vars),
-    onSuccess: (_data, vars) => {
-      qc.setQueryData<ServerBanRow[]>(queryKeys.serverBans(vars.serverId), (old) =>
-        old?.filter((ban) => ban.userId !== vars.userId),
-      );
-      qc.invalidateQueries({ queryKey: queryKeys.serverBans(vars.serverId) });
-    },
+    onSuccess: (_data, vars) => refreshAfterUnban(qc, vars.serverId, vars.userId),
   });
 }
 
@@ -663,7 +681,7 @@ export function useDeleteMemberMessages() {
   return useMutation({
     mutationFn: deleteAllMemberMessages,
     onSettled: (_data, _error, vars) => {
-      void qc.invalidateQueries({ queryKey: ["memberMessageCounts", vars.serverId, vars.userId] });
+      invalidateMemberMessageCounts(qc, vars.serverId, vars.userId);
     },
   });
 }

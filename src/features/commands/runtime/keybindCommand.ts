@@ -41,6 +41,20 @@ export function keybindCommand(
   if (found) return withClientLabel(found);
   const plugin = isPluginShaped(commandId);
   if (!plugin && keybindCommands && paletteCommands) return null;
+  return standInCommand(
+    commandId,
+    inLocalCommandNamespace(commandId) ? "DESKTOP_LOCAL" : "BACKEND",
+  );
+}
+
+/**
+ * A definition of `commandId` for running it without the server's: titled as a keybind shows
+ * it, a plugin's when the id names one, with the given execution target.
+ */
+export function standInCommand(
+  commandId: string,
+  executionTarget: CommandDefinition["executionTarget"],
+): CommandDefinition {
   const pluginCommand = findPluginCommand(commandId);
   return {
     id: commandId,
@@ -48,7 +62,7 @@ export function keybindCommand(
     description: "",
     category: "",
     sourceKind: commandId.startsWith("plugin.") ? "PLUGIN" : "BUILT_IN",
-    executionTarget: inLocalCommandNamespace(commandId) ? "DESKTOP_LOCAL" : "BACKEND",
+    executionTarget,
     requiredContext: [],
     requiredCapabilities: [],
     visibleInPalette: false,

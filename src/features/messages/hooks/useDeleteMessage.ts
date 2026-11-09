@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
@@ -13,6 +13,30 @@ const DELETE_MESSAGE = "chat.delete_message";
 
 const MODERATOR_DELETE_DESCRIPTION =
   "You are deleting another member's message as a moderator. This cannot be undone, and it is recorded in the audit log.";
+
+/** Shows a message the server deleted as deleted in its conversation's cached timeline. */
+export function markMessageDeleted(
+  qc: QueryClient,
+  workspaceId: string,
+  conversationId: string,
+  messageId: string,
+): void {
+  qc.setQueryData<InfiniteData<MessagesPage>>(
+    queryKeys.messages(workspaceId, conversationId),
+    (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          items: page.items.map((m) =>
+            m.id === messageId ? { ...m, isDeleted: true, text: "" } : m,
+          ),
+        })),
+      };
+    },
+  );
+}
 
 export function useDeleteMessage(
   workspaceId: string | null | undefined,
@@ -68,21 +92,7 @@ export function useDeleteMessage(
         return false;
       }
 
-      qc.setQueryData<InfiniteData<MessagesPage>>(
-        queryKeys.messages(workspaceId, conversationId),
-        (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              items: page.items.map((m) =>
-                m.id === messageId ? { ...m, isDeleted: true, text: "" } : m,
-              ),
-            })),
-          };
-        },
-      );
+      markMessageDeleted(qc, workspaceId, conversationId, messageId);
       return true;
     },
     [workspaceId, conversationId, executeCommandMutation, qc],

@@ -97,6 +97,33 @@ export function invalidateConversationQueries(
   });
 }
 
+/**
+ * Refreshes what a join, an invitation, an archive change or a member's removal affects, and
+ * commits this device's membership change to an encrypted conversation's group.
+ *
+ * @param encrypted - Whether the conversation is end-to-end encrypted.
+ */
+export function refreshAfterMembershipChange(
+  qc: QueryClient,
+  serverId: string,
+  conversationId: string,
+  encrypted: boolean,
+): void {
+  invalidateConversationQueries(qc, serverId, conversationId);
+  if (encrypted) commitOwnMembershipChange(serverId, conversationId);
+}
+
+/** Notes that the viewer is leaving a conversation, before the leave is sent. */
+export function startLeaving(conversationId: string): void {
+  markLeaving(conversationId);
+}
+
+/** Ends a leave, whichever way it went, and refreshes what it affects. */
+export function finishLeaving(qc: QueryClient, serverId: string, conversationId: string): void {
+  clearLeaving(conversationId);
+  invalidateConversationQueries(qc, serverId, conversationId);
+}
+
 /** Join a public, unarchived channel. */
 export function useJoinChannelMutation() {
   const qc = useQueryClient();
@@ -110,8 +137,12 @@ export function useJoinChannelMutation() {
     },
     onSuccess: (conversation, vars) => {
       qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
+      refreshAfterMembershipChange(
+        qc,
+        vars.serverId,
+        vars.conversationId,
+        Boolean(conversation.encryptedAt),
+      );
     },
   });
 }
@@ -136,11 +167,10 @@ export function useLeaveConversationMutation() {
       return res.leaveConversation;
     },
     onMutate: (vars) => {
-      markLeaving(vars.conversationId);
+      startLeaving(vars.conversationId);
     },
     onSettled: (_data, _err, vars) => {
-      clearLeaving(vars.conversationId);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+      finishLeaving(qc, vars.serverId, vars.conversationId);
     },
   });
 }
@@ -155,8 +185,12 @@ function afterMembersAdded(
   vars: { serverId: string; conversationId: string },
 ): void {
   qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-  invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-  if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
+  refreshAfterMembershipChange(
+    qc,
+    vars.serverId,
+    vars.conversationId,
+    Boolean(conversation.encryptedAt),
+  );
 }
 
 /** Add (invite) workspace members to a channel or group the viewer belongs to. */
@@ -205,8 +239,7 @@ export function useRemoveConversationMemberMutation() {
       return res.removeConversationMember;
     },
     onSuccess: (_data, vars) => {
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-      commitOwnMembershipChange(vars.serverId, vars.conversationId);
+      refreshAfterMembershipChange(qc, vars.serverId, vars.conversationId, true);
     },
   });
 }
@@ -224,8 +257,12 @@ export function useSetConversationArchivedMutation() {
     },
     onSuccess: (conversation, vars) => {
       qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-      if (conversation.encryptedAt) commitOwnMembershipChange(vars.serverId, vars.conversationId);
+      refreshAfterMembershipChange(
+        qc,
+        vars.serverId,
+        vars.conversationId,
+        Boolean(conversation.encryptedAt),
+      );
     },
   });
 }

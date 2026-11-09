@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -21,6 +21,12 @@ interface UpdateTopicVars {
   topic: string;
 }
 
+/** Refreshes the conversation lists of a workspace once a topic in it changed. */
+export function invalidateTopicQueries(qc: QueryClient, serverId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations(serverId) });
+}
+
 export function useUpdateTopicMutation() {
   const qc = useQueryClient();
 
@@ -34,8 +40,7 @@ export function useUpdateTopicMutation() {
         },
       }),
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.channels(vars.serverId) });
-      qc.invalidateQueries({ queryKey: queryKeys.conversations(vars.serverId) });
+      invalidateTopicQueries(qc, vars.serverId);
     },
     onError: (err) => {
       toast.error("The topic could not be changed", {

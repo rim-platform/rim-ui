@@ -87,9 +87,15 @@ export function workspaceCommandOffered(commandId: string): boolean {
   return workspaceActionOffered(action, useWorkspaceStore.getState().workspaceId);
 }
 
-/** Opens `action`'s dialog for the open workspace, or says why it cannot. */
-export function openWorkspaceAction(action: WorkspaceAction): void {
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
+/**
+ * Opens `action`'s dialog for a workspace, or says why it cannot.
+ *
+ * @param workspaceId - The workspace to leave or rename; the open one when left out.
+ */
+export function openWorkspaceAction(
+  action: WorkspaceAction,
+  workspaceId: string | null = useWorkspaceStore.getState().workspaceId,
+): void {
   if (workspaceId && workspaceActionOffered(action, workspaceId)) {
     useWorkspaceActionStore.getState().open(action, workspaceId);
     return;

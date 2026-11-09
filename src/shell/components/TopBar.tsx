@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, ChevronDown, Search, Sparkles } from "lucide-rea
 
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
 import { showInvisibleCharacters } from "../../features/agents/runtime/invisibleCharacters";
-import { runDesktopLocalCommand } from "../../features/commands/runtime/commandDispatcher";
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
 import { NotificationBellButton } from "../../features/notifications/components/NotificationBellButton";
 import { usePluginList } from "../../features/plugins/api/usePluginList";
@@ -159,7 +159,7 @@ function SearchField({ narrow }: { narrow: boolean }) {
   return (
     <button
       type="button"
-      onClick={() => runDesktopLocalCommand("workspace.open_search")}
+      onClick={() => void runCommandFromClick("workspace.open_search")}
       aria-keyshortcuts={keystroke ?? undefined}
       className={cn(
         "flex h-8 min-w-0 items-center gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 text-left text-sm text-rim-text-muted transition hover:border-rim-text-faint hover:text-rim-text",
