@@ -1,19 +1,19 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
 import { graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
-import { toast } from "../../../shared/toast";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { Button } from "../../../shared/ui/Button";
 import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime";
 import { handleDomain, personName, viewHandle } from "../../../shared/utils/handles";
 import {
+  decideJoinRequest,
   joinRequestBadge,
-  useAcceptJoinRequest,
-  useDeclineJoinRequest,
   useJoinRequestCount,
   useJoinRequests,
+  type JoinRequestDecision,
   type JoinRequestRow,
 } from "../api/publicJoinLink";
 import { useCurrentUser } from "../api/useCurrentUser";
-import { publicLinkErrorMessage } from "../publicJoinLink";
 
 const ERROR_BOX =
   "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
@@ -34,30 +34,18 @@ export function JoinRequestsSection({ serverId }: { serverId: string }) {
     useJoinRequests(serverId);
   const { data: count } = useJoinRequestCount(serverId);
   const { data: me } = useCurrentUser();
-  const accept = useAcceptJoinRequest();
-  const decline = useDeclineJoinRequest();
+  const qc = useQueryClient();
+  const decision = useMutation({
+    mutationFn: (vars: JoinRequestDecision) => decideJoinRequest(qc, vars),
+  });
   const requests = data?.pages.flatMap((page) => page.items) ?? [];
   const badge = joinRequestBadge(count);
   const ownDomain = handleDomain(me?.handle);
   // A server without join requests refuses the query itself: there is nothing to show.
   if (isError && isSchemaRefusal(error)) return null;
 
-  function decide(request: JoinRequestRow, accepted: boolean) {
-    const name = requesterName(request);
-    (accepted ? accept : decline).mutate(
-      { serverId, requestId: request.id },
-      {
-        onSuccess: () =>
-          toast.success(accepted ? `${name} joined the workspace` : `Declined ${name}'s request`),
-        onError: (err) =>
-          toast.error(
-            publicLinkErrorMessage(
-              err,
-              accepted ? "Could not accept the request" : "Could not decline the request",
-            ),
-          ),
-      },
-    );
+  function decide(request: JoinRequestRow, accept: boolean) {
+    decision.mutate({ serverId, requestId: request.id, name: requesterName(request), accept });
   }
 
   return (
@@ -96,9 +84,7 @@ export function JoinRequestsSection({ serverId }: { serverId: string }) {
             const handle = request.user
               ? viewHandle(request.user.username, request.user.handle, ownDomain)?.shown
               : undefined;
-            const busy =
-              (accept.isPending && accept.variables?.requestId === request.id) ||
-              (decline.isPending && decline.variables?.requestId === request.id);
+            const busy = decision.isPending && decision.variables?.requestId === request.id;
             return (
               <li
                 key={request.id}

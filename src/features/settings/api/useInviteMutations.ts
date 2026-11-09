@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -124,17 +124,17 @@ export function useCreateInviteMutation() {
 
 /**
  * Revokes a workspace invite (owner only): it admits nobody from then on. Revoking a revoked
- * invite succeeds unchanged. The workspace's invite list is refetched afterwards.
+ * invite succeeds unchanged. The workspace's invite list is refetched afterwards. Settings and
+ * the Revoke Invite command both run it.
+ *
+ * @throws The server's refusal, for the dialog that shows it.
  */
-export function useRevokeInviteMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ inviteId }: { serverId: string; inviteId: string }) =>
-      graphqlClient.request<RevokeInviteResponse>(REVOKE_INVITE_MUTATION, { inviteId }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.workspaceInvites(vars.serverId) });
-    },
-  });
+export async function revokeInvite(
+  qc: QueryClient,
+  { serverId, inviteId }: { serverId: string; inviteId: string },
+): Promise<void> {
+  await graphqlClient.request<RevokeInviteResponse>(REVOKE_INVITE_MUTATION, { inviteId });
+  void qc.invalidateQueries({ queryKey: queryKeys.workspaceInvites(serverId) });
 }
 
 /** Joins a workspace by invite; the workspace list is refetched so the rail shows it. */

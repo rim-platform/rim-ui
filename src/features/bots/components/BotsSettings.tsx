@@ -5,6 +5,7 @@ import type { Bot } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { BotBadge } from "../../../shared/ui/BotBadge";
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
@@ -148,7 +149,9 @@ export function BotsSettings({ serverId }: { serverId: string }) {
             ref={newBotRef}
             variant="primary"
             size="sm"
-            onClick={() => setDialog({ kind: "create" })}
+            onClick={() =>
+              void runCommandFromClick("bots.new", undefined, { target: { workspaceId: serverId } })
+            }
             disabled={full || bots.isPending || bots.isError}
           >
             New bot
@@ -250,16 +253,10 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           onConfirm={() => {
             const at = active.findIndex((b) => b.userId === dialog.bot.userId);
             const next = active[at + 1]?.userId ?? null;
-            deactivate.mutate(dialog.bot.userId, {
-              onSuccess: () => {
-                setDialog(null);
-                // The row that opened this moves to the deactivated list.
-                setRefocus({ editOf: next });
-              },
-              onError: (err) => {
-                setDialog(null);
-                toast.error(graphqlErrorMessage(err, "Could not deactivate the bot"));
-              },
+            void deactivate.mutateAsync(dialog.bot.userId).then((done) => {
+              setDialog(null);
+              // The row that opened this moves to the deactivated list.
+              if (done) setRefocus({ editOf: next });
             });
           }}
         />

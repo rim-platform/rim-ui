@@ -18,6 +18,10 @@ vi.mock("@tauri-apps/api/event", () => ({
     return Promise.resolve(events.unlisten);
   }),
 }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
 
 import { lockVault } from "../../../core/accountVault/accountVault";
 import { readSealedItem } from "../../../core/accountVault/sealedStorage";
@@ -221,7 +225,7 @@ describe("useAgentBridge", () => {
     await renderBridge();
     const { body } = await asked("/pair", { name: "Claude Code" });
     await user.click(await screen.findByRole("button", { name: "Don't connect" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(
       (await asked("/pair/poll", { requestId: body.requestId, pollSecret: body.pollSecret })).body,
     ).toEqual({ status: "refused" });

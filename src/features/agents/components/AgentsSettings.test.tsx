@@ -18,6 +18,11 @@ vi.mock("../../workspaces/api/useMyServers", () => ({
   useMyServers: () => ({ data: [] }),
 }));
 vi.mock("../../agent/agentAvailability", () => ({ agentAvailable: () => true }));
+// The buttons run the agent commands, which only the desktop app has.
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
 vi.mock("./AgentPluginsDialog", () => ({
   AgentPluginsDialog: ({ agent }: { agent: { name: string } }) => (
     <div>Plugin commands of {agent.name}</div>
@@ -446,6 +451,50 @@ describe("AgentsSettings", () => {
     expect(screen.getByRole("button", { name: "Disconnect Evil⟦U+202E⟧name" })).toBeInTheDocument();
     expect(within(screen.getByRole("table")).getAllByRole("rowheader")).toHaveLength(8);
     expect(screen.getByText("The 8 most recent of 10 channels.")).toBeInTheDocument();
+  });
+
+  it("runs the agent commands from its buttons, on the agent shown", async () => {
+    const user = userEvent.setup();
+    useConnectedAgentsStore.setState({
+      agents: [AGENT, { ...AGENT, id: "agent-2", name: "Other" }],
+    });
+    useAgentRecordStore.setState({
+      entries: [
+        {
+          at: "2026-11-06T10:00:00.000Z",
+          agentId: "agent-1",
+          agentName: "Claude Code",
+          tool: "rim_read_messages",
+          workspaceId: "w1",
+          channelId: null,
+          query: false,
+          messageIds: [],
+          refused: false,
+        },
+      ],
+    });
+    const open = vi.spyOn(useAgentsSettingsRequestStore.getState(), "open");
+    renderTab();
+    await user.click(screen.getByRole("button", { name: /^Claude Code/ }));
+    for (const [name, kind] of [
+      ["Disconnect Claude Code", "disconnect"],
+      ["Choose what Claude Code can read", "chooseReads"],
+      ["Choose the commands of Claude Code", "choosePlugins"],
+      ["What Claude Code was given", "record"],
+      ["Runs of Claude Code", "runs"],
+    ]) {
+      await user.click(screen.getByRole("button", { name }));
+      await waitFor(() => expect(open).toHaveBeenCalledWith({ kind, agentId: "agent-1" }));
+      // Each dialog is closed again so the next button is reachable.
+      await user.keyboard("{Escape}");
+      open.mockClear();
+    }
+    await user.click(screen.getByRole("button", { name: "What agents were given" }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith({ kind: "record" }));
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "All runs" }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith({ kind: "allRuns" }));
+    open.mockRestore();
   });
 
   it("opens the AI Agent tab from the line under the list", async () => {

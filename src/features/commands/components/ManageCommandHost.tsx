@@ -1,18 +1,18 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { MessageReportStatus, ReportOutcome } from "../../../core/graphql/generated/schema-types";
-import { asSentence } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { ListPickerDialog, type PickerItem } from "../../../shared/ui/ListPickerDialog";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { personName } from "../../../shared/utils/handles";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import {
+  deactivateBot,
+  revokeIncomingWebhook,
   useBots,
-  useDeactivateBot,
   useIncomingWebhooks,
-  useRevokeIncomingWebhook,
 } from "../../bots/api/botsApi";
 import { useAllChannels } from "../../bots/api/useAllChannels";
 import { DEACTIVATE_BOT_DESCRIPTION, REVOKE_WEBHOOK_DESCRIPTION } from "../../bots/confirmTexts";
@@ -28,35 +28,31 @@ import {
 } from "../../instance-moderation/api/instanceModeration";
 import { ClearProfileDialog } from "../../instance-moderation/components/ClearProfileDialog";
 import { usePluginList } from "../../plugins/api/usePluginList";
-import { useRevokeAllAiConsent } from "../../plugins/api/usePluginAiConsent";
+import { revokePluginAiAccess } from "../../plugins/api/usePluginAiConsent";
 import { shortPrincipal } from "../../plugins/registry/model";
 import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
-import { useBlockedPrincipals, useUnblockPrincipal } from "../../relay/api/useBlockedPrincipals";
+import { unblockPerson, useBlockedPrincipals } from "../../relay/api/useBlockedPrincipals";
 import { usePendingDmRequests } from "../../relay/api/useDmRequests";
 import type { DmRequestView } from "../../relay/api/relayApi";
 import { blockTargetOf } from "../../relay/blocking/blockPerson";
 import { askToBlock } from "../../relay/blocking/useBlockPersonStore";
 import { blockedName } from "../../relay/blocking/blockedName";
+import { BlockConfirmDialog } from "../../relay/components/BlockConfirmDialog";
 import { REPORT_REASONS, useDmRequestActions } from "../../relay/components/useDmRequestActions";
 import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
 import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
-import { useRevokeInviteMutation } from "../../settings/api/useInviteMutations";
+import { revokeInvite } from "../../settings/api/useInviteMutations";
 import {
   useWorkspaceInvites,
   type WorkspaceInviteRow,
 } from "../../settings/api/useWorkspaceInvites";
 import { revokeInviteDescription } from "../../settings/inviteText";
-import {
-  useAcceptJoinRequest,
-  useDeclineJoinRequest,
-  useJoinRequests,
-} from "../../workspaces/api/publicJoinLink";
+import { decideJoinRequest, useJoinRequests } from "../../workspaces/api/publicJoinLink";
 import { useMessageReports, useResolveReportMutation } from "../../workspaces/api/useModeration";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
-import { publicLinkErrorMessage } from "../../workspaces/publicJoinLink";
-import { useManageCommandStore } from "../state/useManageCommandStore";
+import { useManageCommandStore, type RequestAction } from "../state/useManageCommandStore";
 import { useSettingsIntentStore } from "../state/useSettingsIntentStore";
 
 /** Opens a Settings tab. */
@@ -87,7 +83,14 @@ export function ManageCommandHost() {
   const close = useManageCommandStore((s) => s.close);
   if (!request) return null;
   if (request.kind === "request") {
-    return <RequestCommand requestId={request.requestId} action={request.action} onClose={close} />;
+    return (
+      <RequestCommand
+        requestId={request.requestId}
+        action={request.action}
+        reason={request.reason}
+        onClose={close}
+      />
+    );
   }
   if (request.kind === "unblock-principal") return <UnblockPrincipalPicker onClose={close} />;
   if (request.kind === "unblock-ip") return <UnblockIpPicker onClose={close} />;
@@ -152,9 +155,8 @@ function ReportPicker({ workspaceId, onClose, resolve }: PickerProps & { resolve
 }
 
 function JoinRequestPicker({ workspaceId, onClose, accept }: PickerProps & { accept: boolean }) {
+  const qc = useQueryClient();
   const requests = useJoinRequests(workspaceId);
-  const acceptRequest = useAcceptJoinRequest();
-  const declineRequest = useDeclineJoinRequest();
   const rows = requests.data?.pages.flatMap((p) => p.items) ?? [];
   const nameOf = (id: string) => {
     const row = rows.find((r) => r.id === id);
@@ -166,21 +168,13 @@ function JoinRequestPicker({ workspaceId, onClose, accept }: PickerProps & { acc
     detail: r.message ?? "No message",
   }));
   function pick(item: PickerItem) {
-    const name = nameOf(item.id);
     onClose();
-    (accept ? acceptRequest : declineRequest)
-      .mutateAsync({ serverId: workspaceId, requestId: item.id })
-      .then(() =>
-        toast.success(accept ? `${name} joined the workspace` : `Declined ${name}'s request`),
-      )
-      .catch((err: unknown) =>
-        toast.error(
-          publicLinkErrorMessage(
-            err,
-            accept ? "Could not accept the request" : "Could not decline the request",
-          ),
-        ),
-      );
+    void decideJoinRequest(qc, {
+      serverId: workspaceId,
+      requestId: item.id,
+      name: nameOf(item.id),
+      accept,
+    });
   }
   return (
     <ListPickerDialog
@@ -196,8 +190,8 @@ function JoinRequestPicker({ workspaceId, onClose, accept }: PickerProps & { acc
 }
 
 function InvitePicker({ workspaceId, onClose }: PickerProps) {
+  const qc = useQueryClient();
   const invites = useWorkspaceInvites(workspaceId);
-  const revoke = useRevokeInviteMutation();
   const [chosen, setChosen] = useState<WorkspaceInviteRow | null>(null);
   const active = (invites.data?.pages.flatMap((p) => p.items) ?? []).filter(
     (i) => i.state === "ACTIVE",
@@ -210,7 +204,7 @@ function InvitePicker({ workspaceId, onClose }: PickerProps) {
         tone="danger"
         confirmLabel="Revoke invite"
         errorFallback="Could not revoke the invite"
-        onConfirm={() => revoke.mutateAsync({ serverId: workspaceId, inviteId: chosen.id })}
+        onConfirm={() => revokeInvite(qc, { serverId: workspaceId, inviteId: chosen.id })}
         onDone={() => {
           onClose();
           toast.success("Invite revoked");
@@ -241,8 +235,8 @@ function BotPicker({
   onClose,
   action,
 }: PickerProps & { action: "edit" | "deactivate" }) {
+  const qc = useQueryClient();
   const bots = useBots(workspaceId);
-  const deactivate = useDeactivateBot(workspaceId);
   const [chosen, setChosen] = useState<{ userId: string; name: string } | null>(null);
   const active = (bots.data ?? []).filter((b) => !b.deactivatedAt);
   if (chosen) {
@@ -252,14 +246,9 @@ function BotPicker({
         description={DEACTIVATE_BOT_DESCRIPTION}
         confirmLabel="Deactivate"
         danger
-        isPending={deactivate.isPending}
         onClose={onClose}
         onConfirm={() => {
-          deactivate
-            .mutateAsync(chosen.userId)
-            .catch((err: unknown) =>
-              toast.error(graphqlErrorMessage(err, "Could not deactivate the bot")),
-            );
+          void deactivateBot(qc, workspaceId, chosen.userId);
           onClose();
         }}
       />
@@ -290,7 +279,7 @@ function WebhookPicker({ workspaceId, onClose }: PickerProps) {
   const webhooks = useIncomingWebhooks(workspaceId, true);
   const channels = useAllChannels(workspaceId);
   const bots = useBots(workspaceId);
-  const revoke = useRevokeIncomingWebhook(workspaceId);
+  const qc = useQueryClient();
   const [chosen, setChosen] = useState<string | null>(null);
   const active = (webhooks.data ?? []).filter((w) => !w.revokedAt);
   if (chosen) {
@@ -300,14 +289,9 @@ function WebhookPicker({ workspaceId, onClose }: PickerProps) {
         description={REVOKE_WEBHOOK_DESCRIPTION}
         confirmLabel="Revoke"
         danger
-        isPending={revoke.isPending}
         onClose={onClose}
         onConfirm={() => {
-          revoke
-            .mutateAsync(chosen)
-            .catch((err: unknown) =>
-              toast.error(graphqlErrorMessage(err, "Could not revoke the webhook")),
-            );
+          void revokeIncomingWebhook(qc, workspaceId, chosen);
           onClose();
         }}
       />
@@ -438,8 +422,8 @@ function PluginPicker({
   action: "toggle" | "update" | "uninstall" | "revoke-ai";
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const plugins = usePluginList();
-  const revoke = useRevokeAllAiConsent();
   const eligible = (plugins.data ?? []).filter((p) =>
     action === "update"
       ? p.source?.kind === "git"
@@ -458,16 +442,10 @@ function PluginPicker({
     if (action === "revoke-ai") {
       const plugin = eligible.find((p) => p.plugin_id === item.id);
       if (!plugin) return;
-      revoke
-        .mutateAsync({ pluginId: plugin.plugin_id, commandIds: plugin.approved_ai_commands })
-        .then(({ failed }) => {
-          if (failed.length > 0) {
-            toast.error("Some commands could not be revoked", {
-              description: `Failed: ${failed.join(", ")}`,
-            });
-          }
-        })
-        .catch(() => toast.error("Failed to revoke AI access"));
+      void revokePluginAiAccess(qc, {
+        pluginId: plugin.plugin_id,
+        commandIds: plugin.approved_ai_commands,
+      });
       return;
     }
     useSettingsIntentStore.getState().set({ kind: "plugin", action, pluginId: item.id });
@@ -490,8 +468,8 @@ function PluginPicker({
 }
 
 function UnblockPersonPicker({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
   const blocked = useBlockedPrincipals();
-  const unblock = useUnblockPrincipal();
   const aliases = useContactStore((s) => s.aliases);
   const items: PickerItem[] = (blocked.data ?? []).map((entry) => ({
     id: entry.principalId,
@@ -499,17 +477,7 @@ function UnblockPersonPicker({ onClose }: { onClose: () => void }) {
   }));
   function pick(item: PickerItem) {
     onClose();
-    unblock
-      .mutateAsync(item.id)
-      .then(() =>
-        toast.success(asSentence(`Unblocked ${item.label}`), {
-          description:
-            "They can message you again. A conversation they started comes back as a request when they next write in it.",
-        }),
-      )
-      .catch((err: unknown) =>
-        toast.error(graphqlErrorMessage(err, `Could not unblock ${item.label}`)),
-      );
+    void unblockPerson(qc, { principalId: item.id, name: item.label });
   }
   return (
     <ListPickerDialog
@@ -633,10 +601,12 @@ function PersonCommand({
 function RequestCommand({
   requestId,
   action,
+  reason,
   onClose,
 }: {
   requestId: string;
-  action: "accept" | "ignore" | "read-first" | "report";
+  action: RequestAction;
+  reason?: string;
   onClose: () => void;
 }) {
   const pending = usePendingDmRequests();
@@ -645,37 +615,55 @@ function RequestCommand({
     if (!pending.isPending && !request) onClose();
   }, [pending.isPending, request, onClose]);
   if (!request) return null;
-  return <RequestRunner request={request} action={action} onClose={onClose} />;
+  return <RequestRunner request={request} action={action} reason={reason} onClose={onClose} />;
 }
 
+/**
+ * Runs `action` on a message request at once, or asks first: Block in its confirmation, and
+ * Report for its reason unless `reason` is given. Closes once the decision has run.
+ */
 function RequestRunner({
   request,
   action,
+  reason,
   onClose,
 }: {
   request: DmRequestView;
-  action: "accept" | "ignore" | "read-first" | "report";
+  action: RequestAction;
+  reason?: string;
   onClose: () => void;
 }) {
   const actions = useDmRequestActions(request, { closeOnDismiss: true });
+  const asks = action === "block" || (action === "report" && !reason);
   const ran = useRef(false);
   useEffect(() => {
-    if (action === "report" || ran.current) return;
+    if (asks || ran.current) return;
     ran.current = true;
     const run =
       action === "accept"
         ? actions.accept
         : action === "ignore"
           ? actions.ignore
-          : actions.readFirst;
+          : action === "report"
+            ? () => actions.report(reason ?? "")
+            : actions.readFirst;
     void run().finally(onClose);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  if (action !== "report") return null;
+  if (action === "block") {
+    return (
+      <BlockConfirmDialog
+        name={actions.blockName}
+        onConfirm={() => void actions.block().finally(onClose)}
+        onClose={onClose}
+      />
+    );
+  }
+  if (!asks) return null;
   return (
     <ListPickerDialog
       title="Report this message request"
-      items={REPORT_REASONS.map((reason) => ({ id: reason, label: reason }))}
+      items={REPORT_REASONS.map((label) => ({ id: label, label }))}
       emptyText="No reasons."
       onPick={(item) => void actions.report(item.id).then(() => onClose())}
       onClose={onClose}

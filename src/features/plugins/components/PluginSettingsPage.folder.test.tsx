@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({ useRuntime: vi.fn() }));
 vi.mock("../registry/components/RegistryNotes", () => ({ RegistryNotes: () => null }));
@@ -26,6 +26,9 @@ vi.mock("../api/usePluginActions", () => ({
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { safeInvoke } from "../../../core/tauri/safeInvoke";
+import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
+import { LOCAL_COMMANDS } from "../../commands/runtime/localCommands";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 
 beforeEach(() => {
@@ -49,6 +52,27 @@ describe("Install from local folder", () => {
 
     await waitFor(() => expect(installFromLocal).toHaveBeenCalledTimes(1));
     expect(safeInvoke).toHaveBeenCalledWith("plugin_pick_folder");
+    expect(installFromLocal.mock.calls[0][0]).toBe("/home/ada/plugins/poll");
+  });
+
+  it("runs Install Plugin with the folder source, as the palette does", async () => {
+    vi.mocked(safeInvoke).mockResolvedValue({ ok: true, value: null });
+    const set = vi.spyOn(useSettingsIntentStore.getState(), "set");
+    render(<PluginSettingsPage />);
+    clickInstallFromFolder();
+
+    await waitFor(() => expect(safeInvoke).toHaveBeenCalledWith("plugin_pick_folder"));
+    expect(set).toHaveBeenCalledWith({ kind: "plugin", action: "install", source: "folder" });
+    set.mockRestore();
+  });
+
+  it("starts the same install from the palette's Install Plugin with the folder source", async () => {
+    vi.mocked(safeInvoke).mockResolvedValue({ ok: true, value: "/home/ada/plugins/poll" });
+    render(<PluginSettingsPage />);
+    const install = LOCAL_COMMANDS.find((c) => c.id === "plugins.install")!;
+    await act(() => dispatchCommand(install, vi.fn(), { args: { source: "folder" } }));
+
+    await waitFor(() => expect(installFromLocal).toHaveBeenCalledTimes(1));
     expect(installFromLocal.mock.calls[0][0]).toBe("/home/ada/plugins/poll");
   });
 

@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
+import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import type {
   Bot,
   BotToken,
@@ -14,6 +15,7 @@ import type {
   UpdateBotInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 import {
   BOT_EVENTS,
   WEBHOOK_FORMATS,
@@ -271,18 +273,35 @@ export function useUpdateBot(serverId: string) {
 }
 
 /** Deactivates a bot for good; its webhooks are revoked with it. */
+/**
+ * Deactivates a bot of `serverId` for good and refreshes the lists it was on; a failure is shown
+ * in a toast. Settings > Bots and the Deactivate Bot command both run it.
+ *
+ * @returns Whether the bot was deactivated.
+ */
+export async function deactivateBot(
+  qc: QueryClient,
+  serverId: string,
+  botUserId: string,
+): Promise<boolean> {
+  try {
+    await graphqlClient.request<{ deactivateBot: Bot }>(DEACTIVATE_BOT_MUTATION, { botUserId });
+  } catch (err) {
+    toast.error(graphqlErrorMessage(err, "Could not deactivate the bot"));
+    return false;
+  }
+  void qc.invalidateQueries({ queryKey: queryKeys.bots(serverId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.incomingWebhooks(serverId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
+  return true;
+}
+
+/** {@link deactivateBot} with its pending state, for a control that shows it. */
 export function useDeactivateBot(serverId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (botUserId: string) =>
-      (await graphqlClient.request<{ deactivateBot: Bot }>(DEACTIVATE_BOT_MUTATION, { botUserId }))
-        .deactivateBot,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.bots(serverId) });
-      void qc.invalidateQueries({ queryKey: queryKeys.incomingWebhooks(serverId) });
-      void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(serverId) });
-      void qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
-    },
+    mutationFn: (botUserId: string) => deactivateBot(qc, serverId, botUserId),
   });
 }
 
@@ -300,18 +319,36 @@ export function useRevokeBotToken(botUserId: string) {
   });
 }
 
-/** Revokes one incoming webhook. */
+/**
+ * Revokes one incoming webhook of `serverId`, so its URL stops working, and refreshes the
+ * webhook list; a failure is shown in a toast. Settings > Bots and the Revoke Webhook command
+ * both run it.
+ *
+ * @returns Whether the webhook was revoked.
+ */
+export async function revokeIncomingWebhook(
+  qc: QueryClient,
+  serverId: string,
+  id: string,
+): Promise<boolean> {
+  try {
+    await graphqlClient.request<{ revokeIncomingWebhook: IncomingWebhook }>(
+      REVOKE_INCOMING_WEBHOOK_MUTATION,
+      { id },
+    );
+  } catch (err) {
+    toast.error(graphqlErrorMessage(err, "Could not revoke the webhook"));
+    return false;
+  }
+  void qc.invalidateQueries({ queryKey: queryKeys.incomingWebhooks(serverId) });
+  return true;
+}
+
+/** {@link revokeIncomingWebhook} with its pending state, for a control that shows it. */
 export function useRevokeIncomingWebhook(serverId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) =>
-      (
-        await graphqlClient.request<{ revokeIncomingWebhook: IncomingWebhook }>(
-          REVOKE_INCOMING_WEBHOOK_MUTATION,
-          { id },
-        )
-      ).revokeIncomingWebhook,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.incomingWebhooks(serverId) }),
+    mutationFn: (id: string) => revokeIncomingWebhook(qc, serverId, id),
   });
 }
 

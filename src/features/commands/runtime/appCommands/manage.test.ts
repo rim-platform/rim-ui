@@ -33,9 +33,12 @@ import { MANAGE_COMMANDS, MANAGE_HANDLERS } from "./manage";
 
 const executeBackend = vi.fn();
 
-function run(id: string) {
+function run(id: string, args?: Record<string, unknown>) {
   const command = LOCAL_COMMANDS.find((c) => c.id === id)!;
-  return dispatchCommand(command, executeBackend, { commandContext: currentCommandContext() });
+  return dispatchCommand(command, executeBackend, {
+    args,
+    commandContext: currentCommandContext(),
+  });
 }
 
 function setRole(role: ServerMemberRoleGql) {
@@ -202,7 +205,47 @@ describe("bots and webhooks", () => {
   });
 });
 
+describe("new webhook", () => {
+  function botsOn() {
+    setRole(ServerMemberRoleGql.OWNER);
+    queryClient.setQueryData(queryKeys.serverInfo, {
+      features: [{ key: "bots", state: "ENABLED", reason: null }],
+      capabilities: ["incoming_webhooks"],
+    });
+  }
+
+  it("opens the Settings form that asks for the channel when no conversation is in context", async () => {
+    botsOn();
+    await run("bots.new_webhook");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
+    expect(useSettingsIntentStore.getState().intent).toEqual({ kind: "webhook-create" });
+    expect(requested()).toBeNull();
+  });
+
+  it("still asks for a channel when another kind of conversation is in context", async () => {
+    botsOn();
+    cacheConversation(dm());
+    useShellStore.getState().setSelectedConversationId("dm-1");
+    await run("bots.new_webhook");
+    expect(toast.info).toHaveBeenCalledWith("Open a channel first");
+    expect(useSettingsIntentStore.getState().intent).toBeNull();
+  });
+});
+
 describe("plugin commands", () => {
+  it("starts installing from a folder or a git URL its source names", async () => {
+    await run("plugins.install", { source: "folder" });
+    expect(useSettingsIntentStore.getState().intent).toEqual({
+      kind: "plugin",
+      action: "install",
+      source: "folder",
+    });
+    await run("plugins.install", { source: "git" });
+    expect(useSettingsIntentStore.getState().intent).toMatchObject({ source: "git" });
+    await run("plugins.install", { source: "somewhere" });
+    expect(useSettingsIntentStore.getState().intent).toEqual({ kind: "plugin", action: "install" });
+  });
+
   it("opens the install choices on the plugins page", async () => {
     await run("plugins.install");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugins" });
@@ -266,5 +309,23 @@ describe("people commands", () => {
     expect(requested()).toEqual({ kind: "request", action: "report", requestId: "req-1" });
     await run("people.read_request_first");
     expect(requested()).toEqual({ kind: "request", action: "read-first", requestId: "req-1" });
+  });
+
+  it("report a message request for the reason given, and block its sender", async () => {
+    relayOn();
+    cacheConversation(dm());
+    useShellStore.getState().setSelectedConversationId("dm-1");
+    queryClient.setQueryData(queryKeys.dmRequests(DmRequestStatus.PENDING), [
+      { id: "req-1", conversationId: "dm-1" },
+    ]);
+    await run("people.report_request", { reason: "Spam" });
+    expect(requested()).toEqual({
+      kind: "request",
+      action: "report",
+      requestId: "req-1",
+      reason: "Spam",
+    });
+    await run("people.block");
+    expect(requested()).toEqual({ kind: "request", action: "block", requestId: "req-1" });
   });
 });

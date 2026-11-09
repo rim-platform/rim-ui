@@ -6,6 +6,8 @@ import userEvent from "@testing-library/user-event";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient as globalQueryClient } from "../../../core/query/queryClient";
+import { useShellStore } from "../../../shell/state/useShellStore";
+import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentStore";
 import { fakeServerInfo, serverInfoQueryClient } from "../../../test/serverInfo";
 import {
   BOT_EVENTS,
@@ -31,6 +33,13 @@ vi.mock("../webhookUrl", () => ({
 }));
 vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: () => ({ platform: "web" }),
+}));
+// New bot and New webhook run their commands, which this page's viewer may run.
+vi.mock("../../commands/runtime/appCommands/manageAvailability", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../commands/runtime/appCommands/manageAvailability")
+  >()),
+  refuseManage: () => false,
 }));
 
 import { BotsSettings } from "./BotsSettings";
@@ -95,8 +104,10 @@ async function tabWithin(user: ReturnType<typeof userEvent.setup>, dialog: HTMLE
   return reached;
 }
 
+/** Presses New bot, which runs `bots.new`, and waits for the form it opens. */
 async function openNewBot() {
   fireEvent.click(await enabledButton("New bot"));
+  await screen.findByRole("button", { name: "Add bot" });
 }
 
 describe("BotsSettings", () => {
@@ -119,6 +130,17 @@ describe("BotsSettings", () => {
     for (const name of ["Edit", "Tokens", "Channels", "Deactivate"]) {
       expect(within(row).getByRole("button", { name })).toBeInTheDocument();
     }
+  });
+
+  it("runs New Bot, which opens its form through Settings as the palette's does", async () => {
+    const set = vi.spyOn(useSettingsIntentStore.getState(), "set");
+    serve([]);
+    renderSettings();
+    await openNewBot();
+    expect(set).toHaveBeenCalledWith({ kind: "bot-create" });
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
+    set.mockRestore();
+    useShellStore.getState().reset();
   });
 
   it("says there are no bots yet and offers New bot", async () => {
@@ -738,6 +760,16 @@ describe("BotsSettings", () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Create webhook" }));
       return channelOptions;
     }
+
+    it("runs New Webhook for this workspace, not for the channel open beside it", async () => {
+      const set = vi.spyOn(useSettingsIntentStore.getState(), "set");
+      useShellStore.getState().setSelectedConversationId("c-open");
+      await createHook("Plain");
+      expect(set).toHaveBeenCalledWith({ kind: "webhook-create" });
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
+      set.mockRestore();
+      useShellStore.getState().reset();
+    });
 
     it("offers only channels without a webhook and shows the URL once, built from the server", async () => {
       const options = await createHook("Plain");

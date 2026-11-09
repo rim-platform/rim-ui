@@ -6,7 +6,8 @@ export type AgentsSettingsRequest =
   | { kind: "chooseReads"; agentId: string }
   | { kind: "choosePlugins"; agentId: string }
   | { kind: "allRuns" }
-  | { kind: "record" }
+  | { kind: "runs"; agentId: string }
+  | { kind: "record"; agentId?: string }
   | { kind: "clearRecord" };
 
 interface AgentsSettingsRequestState {

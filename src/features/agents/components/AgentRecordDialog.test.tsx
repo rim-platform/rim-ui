@@ -12,9 +12,15 @@ vi.mock("../../plugins/api/usePluginList", () => ({
     data: [{ plugin_id: "dev.example.pods", display_name: "Po\u202Eds" }],
   }),
 }));
+// Its clear button runs `agents.clear_record`, which only the desktop app has.
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
 
 import { queryKeys } from "../../../core/query/keys";
 import { CLEARED_TOOL, useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordStore";
+import { useAgentsSettingsRequestStore } from "../state/useAgentsSettingsRequestStore";
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { AgentRecordDialog } from "./AgentRecordDialog";
 
@@ -57,6 +63,17 @@ function show() {
   return onClose;
 }
 
+/** The dialog as the Clear the Agents Record command opens it: its confirmation alone. */
+function showClear() {
+  const onClose = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AgentRecordDialog agent={null} startWithClear onClose={onClose} />
+    </QueryClientProvider>,
+  );
+  return onClose;
+}
+
 function lines() {
   return screen.queryAllByRole("listitem").map((item) => item.textContent);
 }
@@ -82,6 +99,7 @@ describe("AgentRecordDialog", () => {
 
   beforeEach(() => {
     useAgentRecordStore.setState({ entries: [] });
+    useAgentsSettingsRequestStore.setState({ request: null });
   });
 
   it("says what the record is", () => {
@@ -194,13 +212,22 @@ describe("AgentRecordDialog", () => {
     expect(document.body.textContent).not.toContain("m-secret");
   });
 
+  it("runs agents.clear_record from its button, whose confirmation takes its place", async () => {
+    const user = userEvent.setup();
+    useAgentRecordStore.setState({ entries: [entry(), entry({ agentId: "agent-2" })] });
+    const onClose = show();
+    await user.click(screen.getByRole("button", { name: "Clear the whole record" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(useAgentsSettingsRequestStore.getState().request).toEqual({ kind: "clearRecord" });
+    expect(useAgentRecordStore.getState().entries).toHaveLength(2);
+  });
+
   it("clears the whole record after asking, and leaves one line", async () => {
     const user = userEvent.setup();
     useAgentRecordStore.setState({
       entries: [entry(), entry({ agentId: "agent-2" })],
     });
-    show();
-    await user.click(screen.getByRole("button", { name: "Clear the whole record" }));
+    const onClose = showClear();
     expect(
       screen.getByText(
         "This clears the record for every agent. It leaves one line saying you did.",
@@ -212,17 +239,16 @@ describe("AgentRecordDialog", () => {
     const { entries } = useAgentRecordStore.getState();
     expect(entries).toHaveLength(1);
     expect(entries[0].tool).toBe(CLEARED_TOOL);
-    expect(lines()).toEqual([expect.stringContaining("You cleared the record")]);
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("clears nothing when the question is cancelled", async () => {
     const user = userEvent.setup();
     useAgentRecordStore.setState({ entries: [entry()] });
-    show();
-    await user.click(screen.getByRole("button", { name: "Clear the whole record" }));
+    const onClose = showClear();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(useAgentRecordStore.getState().entries).toHaveLength(1);
-    expect(lines()).toHaveLength(1);
+    expect(onClose).toHaveBeenCalled();
   });
 
   describe("RIM commands", () => {

@@ -20,9 +20,9 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 
 import {
+  acceptJoinRequest,
+  declineJoinRequest,
   joinRequestBadge,
-  useAcceptJoinRequest,
-  useDeclineJoinRequest,
   useJoinByPublicLink,
   useJoinRequestCount,
   useJoinRequests,
@@ -219,18 +219,17 @@ describe("public join link hooks", () => {
   });
 
   it.each([
-    ["accepting", "mutation AcceptJoinRequest", () => useAcceptJoinRequest()],
-    ["declining", "mutation DeclineJoinRequest", () => useDeclineJoinRequest()],
-  ])("refreshes the workspace's requests and link after %s", async (_name, needle, hook) => {
+    ["accepting", "mutation AcceptJoinRequest", acceptJoinRequest],
+    ["declining", "mutation DeclineJoinRequest", declineJoinRequest],
+  ])("refreshes the workspace's requests and link after %s", async (_name, needle, answer) => {
     routeRequests(requestMock, {
       [needle]: (vars) => ({
         acceptJoinRequest: { id: vars.requestId, status: JoinRequestStatus.ACCEPTED },
         declineJoinRequest: { id: vars.requestId, status: JoinRequestStatus.DECLINED },
       }),
     });
-    const { invalidate, wrapper } = setup();
-    const { result } = renderHook(hook, { wrapper });
-    await act(() => result.current.mutateAsync({ serverId: "ws-1", requestId: "jr-1" }));
+    const { qc, invalidate } = setup();
+    await answer(qc, { serverId: "ws-1", requestId: "jr-1" });
     expect(callsTo(requestMock, needle)).toEqual([{ serverId: "ws-1", requestId: "jr-1" }]);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.joinRequests("ws-1") });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.publicJoinLink("ws-1") });
@@ -242,9 +241,8 @@ describe("public join link hooks", () => {
         acceptJoinRequest: { id: "jr-1", status: JoinRequestStatus.ACCEPTED },
       }),
     });
-    const { invalidate, wrapper } = setup();
-    const { result } = renderHook(() => useAcceptJoinRequest(), { wrapper });
-    await act(() => result.current.mutateAsync({ serverId: "ws-1", requestId: "jr-1" }));
+    const { qc, invalidate } = setup();
+    await acceptJoinRequest(qc, { serverId: "ws-1", requestId: "jr-1" });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.serverMembers("ws-1") });
   });
 

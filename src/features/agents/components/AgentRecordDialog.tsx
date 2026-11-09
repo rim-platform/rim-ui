@@ -1,9 +1,9 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 
 import { queryKeys } from "../../../core/query/keys";
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { findCachedConversation } from "../../conversations/api/useConversation";
 import type { ConversationSummary } from "../../conversations/types";
@@ -104,8 +104,9 @@ function entryLine(
  * those since disconnected, newest first, and the way to clear the whole record.
  *
  * @param agent - The agent to show, or `null` for the whole record.
- * @param startWithClear - Open on the confirmation that clears the record, and close once it is
- * answered.
+ * @param startWithClear - Show only the confirmation that clears the record, and close once it is
+ * answered. Without it, the button that clears the record runs `agents.clear_record`, whose
+ * confirmation replaces this dialog.
  */
 export function AgentRecordDialog({
   agent,
@@ -121,7 +122,6 @@ export function AgentRecordDialog({
   const clear = useAgentRecordStore((s) => s.clear);
   const { data: servers } = useMyServers();
   const { data: plugins } = useInstalledPlugins();
-  const [confirming, setConfirming] = useState(startWithClear);
 
   const workspaceName = (id: string) =>
     servers?.find((server) => server.id === id)?.name ?? (id || "an unknown workspace");
@@ -134,7 +134,7 @@ export function AgentRecordDialog({
     .slice(-SHOWN)
     .reverse();
 
-  if (confirming) {
+  if (startWithClear) {
     return (
       <ConfirmActionDialog
         title="Clear the whole record?"
@@ -143,10 +143,9 @@ export function AgentRecordDialog({
         danger
         onConfirm={() => {
           clear();
-          if (startWithClear) onClose();
-          else setConfirming(false);
+          onClose();
         }}
-        onClose={() => (startWithClear ? onClose() : setConfirming(false))}
+        onClose={onClose}
       />
     );
   }
@@ -181,7 +180,16 @@ export function AgentRecordDialog({
       )}
       {entries.length > 0 && (
         <div className="mt-4 flex justify-end">
-          <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              void runCommandFromClick("agents.clear_record").then((outcome) => {
+                // The command's own confirmation takes this dialog's place.
+                if (outcome.ok) onClose();
+              })
+            }
+          >
             Clear the whole record
           </Button>
         </div>

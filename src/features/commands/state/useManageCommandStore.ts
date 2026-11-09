@@ -19,9 +19,14 @@ export type ManageRequest =
   | { kind: "unblock-person" }
   | {
       kind: "request";
-      action: "accept" | "ignore" | "read-first" | "report";
+      action: RequestAction;
       requestId: string;
+      /** For `report`: the reason to report it for, rather than asking for one. */
+      reason?: string;
     };
+
+/** What a command does with a message request. */
+export type RequestAction = "accept" | "ignore" | "read-first" | "report" | "block";
 
 interface ManageCommandState {
   request: ManageRequest | null;

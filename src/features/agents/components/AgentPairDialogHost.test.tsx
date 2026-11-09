@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// Don't connect runs `agents.refuse_pairing`, which only the desktop app has.
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
+
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentPairDialogHost } from "./AgentPairDialogHost";
 
@@ -88,7 +94,7 @@ describe("AgentPairDialogHost", () => {
     show();
     expect(screen.getByRole("button", { name: "Don't connect" })).toHaveFocus();
     await user.keyboard("{Enter}");
-    expect(refuse).toHaveBeenCalledWith("request-1");
+    await vi.waitFor(() => expect(refuse).toHaveBeenCalledWith("request-1"));
     expect(approve).not.toHaveBeenCalled();
   });
 
@@ -97,7 +103,7 @@ describe("AgentPairDialogHost", () => {
     render(<AgentPairDialogHost />);
     show();
     await user.click(screen.getByRole("button", { name: "Don't connect" }));
-    expect(refuse).toHaveBeenCalledWith("request-1");
+    await vi.waitFor(() => expect(refuse).toHaveBeenCalledWith("request-1"));
     expect(approve).not.toHaveBeenCalled();
   });
 

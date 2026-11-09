@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
 import { Dialog } from "../../../shared/ui/Dialog";
+import { REFUSE_AGENT_PAIRING } from "../../commands/runtime/appCommands/agentCommandIds";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import type { PendingView } from "../runtime/pairing";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 
@@ -79,7 +81,7 @@ export function AgentPairDialogHost() {
           key={view.requestId}
           view={view}
           onApprove={() => approve(view.requestId)}
-          onRefuse={() => refuse(view.requestId)}
+          onRefuse={() => void runCommandFromClick(REFUSE_AGENT_PAIRING)}
         />
       )}
     </Dialog>

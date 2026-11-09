@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -10,7 +11,7 @@ import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
-import { useRevokeInviteMutation } from "../api/useInviteMutations";
+import { revokeInvite } from "../api/useInviteMutations";
 import { useWorkspaceInvites, type WorkspaceInviteRow } from "../api/useWorkspaceInvites";
 import { ROLE_LABEL, revokeInviteDescription } from "../inviteText";
 import { InviteDialog } from "./InviteDialog";
@@ -103,7 +104,7 @@ function InvitesSection({ serverId }: { serverId: string }) {
     fetchNextPage,
     isFetchingNextPage,
   } = useWorkspaceInvites(serverId);
-  const revoke = useRevokeInviteMutation();
+  const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<WorkspaceInviteRow | null>(null);
   const invites = data?.pages.flatMap((page) => page.items) ?? [];
@@ -169,7 +170,7 @@ function InvitesSection({ serverId }: { serverId: string }) {
           tone="danger"
           confirmLabel="Revoke invite"
           errorFallback="Could not revoke the invite"
-          onConfirm={() => revoke.mutateAsync({ serverId, inviteId: revoking.id })}
+          onConfirm={() => revokeInvite(qc, { serverId, inviteId: revoking.id })}
           onDone={() => {
             setRevoking(null);
             toast.success("Invite revoked");
