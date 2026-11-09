@@ -1,3 +1,5 @@
+import { RESTART_TO_UPDATE_COMMAND_ID, updateReady } from "./appCommands/generalAvailability";
+
 /** Commands the server refuses in the direct space, so the palette does not offer them there. */
 export const DIRECT_SPACE_HIDDEN_COMMANDS: ReadonlySet<string> = new Set([
   "chat.list_channels",
@@ -36,5 +38,6 @@ export function offeredInSituation(commandId: string, situation: PaletteSituatio
   if (UNREADS_PAGE_COMMANDS.has(commandId)) return situation.unreadsOpen;
   if (commandId === "workspace.close_panel") return situation.panelOpen;
   if (commandId === "workspace.back_to_workspace") return situation.hasDirectOrigin;
+  if (commandId === RESTART_TO_UPDATE_COMMAND_ID) return updateReady();
   return true;
 }

@@ -9,6 +9,10 @@ import {
   useChannelTargets,
   useDirectTargets,
   useJoinableTargets,
+  useMacroTargets,
+  useMemberTargets,
+  useMessageableTargets,
+  usePipelineTargets,
   useWorkspaceTargets,
   type PickerTarget,
   type Targets,
@@ -43,6 +47,26 @@ const TEXT: Record<TargetPickerKind, PickerText> = {
     placeholder: "Search channels...",
     empty: "No channels to join",
   },
+  member: {
+    title: "Choose a person",
+    placeholder: "Search people...",
+    empty: "No people here.",
+  },
+  messageableMember: {
+    title: "Message someone",
+    placeholder: "Search people...",
+    empty: "No one to message here.",
+  },
+  macro: {
+    title: "Run a macro",
+    placeholder: "Search macros...",
+    empty: "No macros yet",
+  },
+  pipeline: {
+    title: "Turn a pipeline on or off",
+    placeholder: "Search pipelines...",
+    empty: "No pipelines in this workspace",
+  },
 };
 
 interface PaletteTargetPickerProps {
@@ -71,6 +95,14 @@ export function PaletteTargetPicker(props: PaletteTargetPickerProps) {
       return <TargetList key={source} {...props} useTargets={useWorkspaceTargets} />;
     case "joinableChannel":
       return <TargetList key={source} {...props} useTargets={useJoinableTargets} />;
+    case "member":
+      return <TargetList key={source} {...props} useTargets={useMemberTargets} />;
+    case "messageableMember":
+      return <TargetList key={source} {...props} useTargets={useMessageableTargets} />;
+    case "macro":
+      return <TargetList key={source} {...props} useTargets={useMacroTargets} />;
+    case "pipeline":
+      return <TargetList key={source} {...props} useTargets={usePipelineTargets} />;
   }
 }
 

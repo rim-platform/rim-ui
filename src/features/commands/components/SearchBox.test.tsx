@@ -181,7 +181,10 @@ describe("the search box", () => {
       "blocks the release: #384",
     );
     expect(within(group("Messages")).getByRole("option")).toHaveTextContent("Bob in #development");
-    expect(within(group("Commands")).getByRole("option")).toHaveTextContent("Post Release Notes");
+    // The app's own commands that fuzzy-match "rel" follow the server's.
+    expect(within(group("Commands")).getAllByRole("option")[0]).toHaveTextContent(
+      "Post Release Notes",
+    );
   });
 
   it("moves through every row with the arrow keys, naming the active one on the field", () => {
@@ -192,7 +195,6 @@ describe("the search box", () => {
     expect(options[0]).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(field(), { key: "ArrowDown" });
     expect(field()).toHaveAttribute("aria-activedescendant", options[1].id);
-    fireEvent.keyDown(field(), { key: "ArrowDown" });
     fireEvent.keyDown(field(), { key: "ArrowDown" });
     expect(field()).toHaveAttribute("aria-activedescendant", options[2].id);
     fireEvent.keyDown(field(), { key: "ArrowUp" });

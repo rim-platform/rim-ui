@@ -154,14 +154,19 @@ export function useDeletePipelineMutation() {
   });
 }
 
+/** Turns a pipeline on or off. */
+export function togglePipeline(vars: { pipelineId: string; enabled: boolean }) {
+  return graphqlClient.request<{ togglePipeline: Pipeline }>(TogglePipelineDocument, {
+    pipelineId: vars.pipelineId,
+    enabled: vars.enabled,
+  });
+}
+
 export function useTogglePipelineMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { pipelineId: string; enabled: boolean; serverId: string }) =>
-      graphqlClient.request<{ togglePipeline: Pipeline }>(TogglePipelineDocument, {
-        pipelineId: vars.pipelineId,
-        enabled: vars.enabled,
-      }),
+      togglePipeline(vars),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.pipelines(vars.serverId) });
     },

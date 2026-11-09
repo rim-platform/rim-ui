@@ -427,6 +427,16 @@ function CommandPaletteDialog() {
         case "workspace":
           await runCommand(command, { workspaceId: target.id });
           break;
+        case "member":
+        case "messageableMember":
+          await runCommand(command, { userId: target.id });
+          break;
+        case "macro":
+          await runCommand(command, { macroId: target.id });
+          break;
+        case "pipeline":
+          await runCommand(command, { pipelineId: target.id });
+          break;
         case "joinableChannel":
           await runCommand(
             command,

@@ -13,8 +13,10 @@ import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useDirectInbox } from "../../relay/api/useDirectInbox";
 import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
+import { useMyMacros } from "../../macros/api/useMacros";
+import { usePipelines } from "../../pipelines/api/usePipelines";
 import { useMyServers } from "../../workspaces/api/useMyServers";
-import { fetchServerMembers } from "../../workspaces/api/useServerMembers";
+import { fetchServerMembers, useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useKnownHandles } from "../../workspaces/state/useKnownHandles";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { ownerName, workspaceLabels } from "../../workspaces/workspaceLabel";
@@ -158,4 +160,64 @@ export function useWorkspaceTargets(): Targets {
       .filter((ws) => ws.id !== workspaceId && !isDirectSpace(ws.id));
   }, [servers, remoteSpaces, origins, forked, workspaceId]);
   return { items, isPending };
+}
+
+/**
+ * The open workspace's members, by the name the member list shows.
+ *
+ * @param messageable - Leave out the viewer and bots, who cannot be messaged.
+ */
+function useMembers(messageable: boolean): Targets {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const viewerId = useAuthStore((s) => s.session?.userId);
+  const { data, isPending } = useServerMembers(workspaceId);
+  const items = useMemo(
+    () =>
+      (data ?? [])
+        .filter((m) => !messageable || (m.userId !== viewerId && !m.isBot))
+        .map((m) => ({
+          id: m.userId,
+          serverId: workspaceId ?? "",
+          label: m.displayName || m.username,
+        })),
+    [data, messageable, viewerId, workspaceId],
+  );
+  return { items, isPending };
+}
+
+/** The open workspace's members. */
+export function useMemberTargets(): Targets {
+  return useMembers(false);
+}
+
+/** The open workspace's members who can be sent a direct message: not the viewer, not bots. */
+export function useMessageableTargets(): Targets {
+  return useMembers(true);
+}
+
+/** The viewer's macros in the open workspace, as Settings > Macros lists them. */
+export function useMacroTargets(): Targets {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const { data, isPending } = useMyMacros(workspaceId);
+  const items = useMemo(
+    () => (data ?? []).map((m) => ({ id: m.id, serverId: workspaceId ?? "", label: m.name })),
+    [data, workspaceId],
+  );
+  return { items, isPending: Boolean(workspaceId) && isPending };
+}
+
+/** The open workspace's pipelines, each with whether it is on, as Settings > Pipelines lists them. */
+export function usePipelineTargets(): Targets {
+  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const { data, isPending } = usePipelines(workspaceId);
+  const items = useMemo(
+    () =>
+      (data ?? []).map((p) => ({
+        id: p.id,
+        serverId: workspaceId ?? "",
+        label: `${p.name} (${p.enabled ? "on" : "off"})`,
+      })),
+    [data, workspaceId],
+  );
+  return { items, isPending: Boolean(workspaceId) && isPending };
 }

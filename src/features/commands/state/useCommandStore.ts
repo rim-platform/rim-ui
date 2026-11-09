@@ -1,7 +1,15 @@
 import { create } from "zustand";
 
 /** The kind of target a palette command asks for before it runs. */
-export type TargetPickerKind = "channel" | "direct" | "workspace" | "joinableChannel";
+export type TargetPickerKind =
+  | "channel"
+  | "direct"
+  | "workspace"
+  | "joinableChannel"
+  | "member"
+  | "messageableMember"
+  | "macro"
+  | "pipeline";
 
 /**
  * What the search box shows first: `commands`, the command palette's list, or `search`,

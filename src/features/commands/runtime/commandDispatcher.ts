@@ -67,6 +67,7 @@ import {
   selectedMessageOf,
 } from "./appCommands/messageContext";
 import { CONVERSATION_HANDLERS } from "./appCommands/conversation";
+import { GENERAL_ARGUMENT_PROMPTS, GENERAL_HANDLERS } from "./appCommands/general";
 import { withClientLabel } from "./localCommands";
 import {
   runWithHumanConfirmation,
@@ -529,6 +530,7 @@ const localHandlers: Record<string, LocalHandler> = {
   [QUIT_COMMAND_ID]: () => {
     void requestQuit();
   },
+  ...GENERAL_HANDLERS,
 };
 
 /**
@@ -565,6 +567,7 @@ const argumentPrompts: Record<
     alias: "conversationId",
     picker: "joinableChannel",
   },
+  ...GENERAL_ARGUMENT_PROMPTS,
 };
 
 /** The kind of target the palette asks for before it runs `commandId`, if it asks. */
