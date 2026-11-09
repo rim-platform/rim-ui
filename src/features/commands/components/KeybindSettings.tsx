@@ -34,7 +34,12 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
-import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
+import {
+  listedKeybinds,
+  slotHolders,
+  unboundCommands,
+  useHomeAppKeybinds,
+} from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
 import { compareCommandCategories } from "../runtime/commandCategories";
 import {
@@ -147,6 +152,8 @@ export function KeybindSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const { data: serverKeybinds, isLoading } = useResolvedKeybinds(workspaceId ?? undefined);
+  // In a workspace another server hosts, the app command keybinds the connected server keeps.
+  const homeAppKeybinds = useHomeAppKeybinds(workspaceId);
   // Keybinds kept on this device: plugin commands, and app commands where the server keeps none.
   const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const addDeviceKeybind = useDeviceKeybindStore((s) => s.add);
@@ -155,10 +162,10 @@ export function KeybindSettings() {
   const profile = useActiveKeybindProfile();
   const keybinds = useMemo(
     () =>
-      listedKeybinds(deviceKeybinds, serverKeybinds, profile).filter((kb) =>
+      listedKeybinds(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((kb) =>
         commandOfferedHere(kb.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
   // `workspace.open_command_palette`), which causes their titles to fall back to
@@ -198,7 +205,7 @@ export function KeybindSettings() {
   } = useKeybindableCommands();
 
   // Where the server keeps bindings to this app's own commands, a server binding may name one.
-  const appCommandsOnServer = appCommandKeybindsOnServer(workspaceId);
+  const appCommandsOnServer = appCommandKeybindsOnServer();
   const serverKeybindable = useMemo(
     () =>
       appCommandsOnServer
@@ -279,10 +286,10 @@ export function KeybindSettings() {
   // Commands whose default keys a binding took, listed with no key
   const unbound = useMemo(
     () =>
-      unboundCommands(deviceKeybinds, serverKeybinds, profile).filter((c) =>
+      unboundCommands(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((c) =>
         commandOfferedHere(c.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   const filteredUnbound = useMemo(() => {
     if (!searchQuery.trim()) return unbound;

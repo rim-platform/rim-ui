@@ -119,7 +119,7 @@ describe("appCommandKeybindsOnServer", () => {
     expect(bindsOnDevice("workspace.toggle_zen_mode")).toBe(true);
   });
 
-  it("is true where the connected server lists the capability and hosts the workspace", () => {
+  it("is true where the connected server lists the capability", () => {
     serverLists([APP_COMMAND_KEYBINDS]);
     useWorkspaceStore.getState().setWorkspaceId("ws-1");
     expect(appCommandKeybindsOnServer()).toBe(true);
@@ -127,13 +127,13 @@ describe("appCommandKeybindsOnServer", () => {
     expect(bindsOnDevice(REFRESH)).toBe(true);
   });
 
-  it("is false in a workspace another server hosts", () => {
+  it("stays true in a workspace another server hosts", () => {
     serverLists([APP_COMMAND_KEYBINDS]);
     useRelayStore.setState({
       spaces: { "ws-remote": { spaceId: "ws-remote", hostServerId: "srv-2" } as SpaceRecord },
     });
     useWorkspaceStore.getState().setWorkspaceId("ws-remote");
-    expect(appCommandKeybindsOnServer()).toBe(false);
-    expect(bindsOnDevice("workspace.toggle_zen_mode")).toBe(true);
+    expect(appCommandKeybindsOnServer()).toBe(true);
+    expect(bindsOnDevice("workspace.toggle_zen_mode")).toBe(false);
   });
 });

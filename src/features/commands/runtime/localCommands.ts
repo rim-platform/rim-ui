@@ -28,8 +28,8 @@ function localCommand(
 /**
  * Commands that exist only in this app. The server does not list them, so the palette and the
  * keybind picker add them here. A keybind to one is kept on the connected server when it lists
- * the `app_command_keybinds` capability, which stores it without running it, and on this device
- * for an older server or in a workspace another server hosts.
+ * the `app_command_keybinds` capability, which stores it without running it and serves it in
+ * every workspace, and on this device for an older server.
  */
 export const LOCAL_COMMANDS: readonly CommandDefinition[] = [
   localCommand(

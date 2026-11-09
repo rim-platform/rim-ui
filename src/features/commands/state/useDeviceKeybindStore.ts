@@ -3,10 +3,8 @@ import { persist } from "zustand/middleware";
 
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
-import { hostOf } from "../../relay/state/useRelayStore";
 import { APP_COMMAND_KEYBINDS, hasCapability } from "../../updater/api/serverCapabilities";
 import type { KnownServerInfo } from "../../updater/api/serverInfoApi";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { isLocalCommand } from "../runtime/localCommands";
 import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
 import { openPluginSettingsTarget } from "../../plugins/pluginSettingsLink";
@@ -26,21 +24,14 @@ export function isDeviceKeybind(keybindId: string): boolean {
 }
 
 /**
- * Whether the server keeps keybinds to this app's own commands for the open workspace: the
- * connected server lists {@link APP_COMMAND_KEYBINDS}, as its cached info says, and hosts the
- * open workspace. A workspace on another server lists that server's keybinds, so a binding
- * saved on the connected server would not show or run there.
- *
- * @param workspaceId - The open workspace; read from the workspace store when not given.
+ * Whether the connected server keeps keybinds to this app's own commands: it lists
+ * {@link APP_COMMAND_KEYBINDS}, as its cached info says. It keeps them for every workspace,
+ * those other servers host included, since the keybinds lists add them there.
  */
-export function appCommandKeybindsOnServer(
-  workspaceId: string | null = useWorkspaceStore.getState().workspaceId,
-): boolean {
-  return (
-    hasCapability(
-      queryClient.getQueryData<KnownServerInfo>(queryKeys.serverInfo),
-      APP_COMMAND_KEYBINDS,
-    ) && hostOf(workspaceId) === null
+export function appCommandKeybindsOnServer(): boolean {
+  return hasCapability(
+    queryClient.getQueryData<KnownServerInfo>(queryKeys.serverInfo),
+    APP_COMMAND_KEYBINDS,
   );
 }
 

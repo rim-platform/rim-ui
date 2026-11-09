@@ -8,6 +8,7 @@ import type { CommandDefinition, ResolvedKeybind } from "../types";
 const state = vi.hoisted(() => ({
   plugins: [] as PluginInfo[],
   keybinds: [] as ResolvedKeybind[],
+  home: [] as ResolvedKeybind[],
   commands: [] as CommandDefinition[],
 }));
 vi.mock("../../plugins/api/usePluginList", () => ({
@@ -17,17 +18,21 @@ vi.mock("../../plugins/api/usePluginKeybinds", () => ({
   usePluginSuggestedKeybinds: () => [],
 }));
 vi.mock("../api/useKeybinds", () => ({
-  useResolvedKeybinds: () => ({ data: state.keybinds, isLoading: false }),
+  useResolvedKeybinds: (spaceId?: string, enabled = true) => ({
+    data: !enabled ? undefined : spaceId === undefined ? state.home : state.keybinds,
+    isLoading: false,
+  }),
 }));
 vi.mock("../api/useCommands", () => ({
   useCommands: () => ({ data: state.commands }),
 }));
 const createKeybind = vi.fn();
 const updateKeybind = vi.fn();
+const deleteKeybind = vi.fn();
 vi.mock("../api/useKeybindSettings", () => ({
   useCreateKeybindMutation: () => ({ mutate: createKeybind, isPending: false, isError: false }),
   useUpdateKeybindMutation: () => ({ mutate: updateKeybind, isPending: false }),
-  useDeleteKeybindMutation: () => ({ mutate: vi.fn() }),
+  useDeleteKeybindMutation: () => ({ mutate: deleteKeybind }),
 }));
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -37,6 +42,8 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
+import type { SpaceRecord } from "../../relay/state/relayDb";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { APP_COMMAND_KEYBINDS } from "../../updater/api/serverCapabilities";
 import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
 import { useDeviceKeybindStore } from "../state/useDeviceKeybindStore";
@@ -237,5 +244,67 @@ describe("KeybindSettings where the server keeps app command keybinds", () => {
 
     expect(within(picker).getByRole("option", { name: "Toggle Zen Mode" })).toBeInTheDocument();
     expect(within(picker).queryByRole("option", { name: "Refresh pods" })).not.toBeInTheDocument();
+  });
+});
+
+describe("KeybindSettings in a workspace another server hosts", () => {
+  beforeEach(() => {
+    createKeybind.mockReset();
+    updateKeybind.mockReset();
+    deleteKeybind.mockReset();
+    useKeybindProfileStore.setState({
+      profile: { ...BUILT_IN_PROFILES.minimal, bindings: [] },
+      replacesDefaults: true,
+    });
+    state.plugins = [];
+    state.commands = [serverCommand("workspace.open_search", "Open Search", "Search")];
+    state.keybinds = [serverKeybind("host-1", "Ctrl+Shift+F", "workspace.open_search")];
+    state.home = [
+      serverKeybind("home-zen", "Ctrl+Alt+Z", "workspace.toggle_zen_mode"),
+      serverKeybind("home-search", "Ctrl+Alt+S", "workspace.open_search"),
+    ];
+    useDeviceKeybindStore.setState({ keybinds: [] });
+    useRelayStore.setState({
+      spaces: { "ws-1": { spaceId: "ws-1", hostServerId: "srv-2" } as SpaceRecord },
+    });
+  });
+
+  afterEach(() => {
+    useRelayStore.setState({ spaces: {} });
+    state.home = [];
+  });
+
+  it("lists the connected server's app command keybinds and none of its others", () => {
+    render(<KeybindSettings />);
+
+    expect(screen.getByText("Toggle Zen Mode")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Alt+Z")).toBeInTheDocument();
+    expect(screen.queryByText("Ctrl+Alt+S")).not.toBeInTheDocument();
+    expect(screen.getByText("Ctrl+Shift+F")).toBeInTheDocument();
+  });
+
+  it("turns off and deletes one through the keybind mutations, which go to the connected server", async () => {
+    const user = userEvent.setup();
+    render(<KeybindSettings />);
+    const view = screen.getByText("View").closest("div") as HTMLElement;
+
+    await user.click(within(view).getByRole("button", { name: "Disable keybind" }));
+    expect(updateKeybind).toHaveBeenCalledWith(
+      expect.objectContaining({ keybindId: "home-zen", isEnabled: false }),
+    );
+    expect(updateKeybind.mock.calls[0][0]).not.toHaveProperty("workspaceId");
+
+    await user.click(within(view).getByRole("button", { name: "Delete keybind" }));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(deleteKeybind).toHaveBeenCalledWith({ keybindId: "home-zen" });
+  });
+
+  it("lists nothing twice in a workspace of the connected server", () => {
+    useRelayStore.setState({ spaces: {} });
+    state.keybinds = [serverKeybind("home-zen", "Ctrl+Alt+Z", "workspace.toggle_zen_mode")];
+    state.home = [serverKeybind("home-zen", "Ctrl+Alt+Z", "workspace.toggle_zen_mode")];
+    render(<KeybindSettings />);
+
+    expect(screen.getAllByText("Ctrl+Alt+Z")).toHaveLength(1);
   });
 });
