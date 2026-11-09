@@ -18,6 +18,7 @@ import { InvitationGate } from "../../features/conversations/components/Conversa
 import { DraftDirectView } from "../../features/conversations/components/DraftDirectView";
 import { ThreadPanel } from "../../features/threads/components/ThreadPanel";
 import { CommandPalette, KeybindProvider } from "../../features/commands";
+import { useAppKeybindMove } from "../../features/commands/runtime/appKeybindMove";
 import { ShortcutsPanel } from "../../features/commands/components/ShortcutsPanel";
 import { QuickAccessAssigner } from "../../features/commands/components/QuickAccessAssigner";
 import { SearchOverlay } from "../../features/messages/components/SearchOverlay";
@@ -338,6 +339,7 @@ function WorkspaceShell() {
   useAutoFocusComposer(mainSurface.kind);
   useGlobalKeyHandlers();
   useNavigationHistory();
+  useAppKeybindMove();
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;
 

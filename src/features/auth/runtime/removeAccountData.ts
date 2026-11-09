@@ -11,6 +11,7 @@ import { deleteSealedAccount } from "../../../core/accountVault/sealedStorage";
 import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
+import { forgetAppKeybindMove } from "../../commands/runtime/appKeybindMove";
 import { resetE2eeSession } from "../../e2ee/runtime/session";
 import { deleteAccount } from "../../e2ee/web/db";
 import { keyBackend } from "../../key-identity/api/keyBackend";
@@ -108,6 +109,7 @@ export async function removeAccountData(account: DeviceAccount): Promise<void> {
     () => useRemovalNotices.getState().forget(removalAccountKey(userId)),
   ]);
   parts.push(["key setup choice", () => forgetKeySetupDeferral(userId)]);
+  parts.push(["keybind move record", () => forgetAppKeybindMove(userId)]);
 
   let failed = false;
   for (const [what, remove] of parts) {

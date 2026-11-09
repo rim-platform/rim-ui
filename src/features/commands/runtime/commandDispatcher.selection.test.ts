@@ -269,7 +269,10 @@ describe("Toggle Channel Lenses", () => {
   const lensCommand = LOCAL_COMMANDS.find((cmd) => cmd.id === "workspace.toggle_lens_picker")!;
 
   it("is one of this app's commands, named after the lens button", () => {
-    expect(lensCommand).toMatchObject({ title: "Toggle Channel Lenses", category: "Workspace" });
+    expect(lensCommand).toMatchObject({
+      title: "Toggle Channel Lenses",
+      category: "Conversations",
+    });
   });
 
   it("opens and closes the open channel's lens picker", async () => {
