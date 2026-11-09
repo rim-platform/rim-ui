@@ -77,6 +77,13 @@ export const HOME_LAYOUT = "home_layout";
  */
 export const APP_COMMAND_KEYBINDS = "app_command_keybinds";
 
+/**
+ * The capability of a server that keeps the person's macros as their own commands: steps that
+ * name app and plugin commands and ask for arguments (`UserCommandStep.ask`),
+ * `UserCommand.aiCallable`, `nlDescription`, `intentSamples` and `macroStepCommands`.
+ */
+export const ACCOUNT_MACROS = "account_macros";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

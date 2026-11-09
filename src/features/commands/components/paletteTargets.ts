@@ -15,6 +15,7 @@ import { useContactStore } from "../../relay/contacts/useContactStore";
 import { useDirectInbox } from "../../relay/api/useDirectInbox";
 import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
+import { useAccountMacros, useAccountMacrosOn } from "../../macros/api/useAccountMacros";
 import { useMyMacros } from "../../macros/api/useMacros";
 import { usePipelines } from "../../pipelines/api/usePipelines";
 import { useMyServers } from "../../workspaces/api/useMyServers";
@@ -197,15 +198,28 @@ export function useMessageableTargets(): Targets {
   return useMembers(true);
 }
 
-/** The viewer's macros in the open workspace, as Settings > Macros lists them. */
+/**
+ * The person's macros: their enabled macros from the home server when it keeps them, else their
+ * macros in the open workspace, as Settings > Macros lists them.
+ */
 export function useMacroTargets(): Targets {
+  const accountMacros = useAccountMacrosOn();
   const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
-  const { data, isPending } = useMyMacros(workspaceId);
+  const { data, isPending } = useMyMacros(accountMacros ? undefined : workspaceId);
+  const { data: saved, isPending: savedPending } = useAccountMacros();
   const items = useMemo(
-    () => (data ?? []).map((m) => ({ id: m.id, serverId: workspaceId ?? "", label: m.name })),
-    [data, workspaceId],
+    () =>
+      accountMacros
+        ? (saved ?? [])
+            .filter((m) => m.isEnabled)
+            .map((m) => ({ id: m.id, serverId: "", label: showInvisibleCharacters(m.title) }))
+        : (data ?? []).map((m) => ({ id: m.id, serverId: workspaceId ?? "", label: m.name })),
+    [accountMacros, saved, data, workspaceId],
   );
-  return { items, isPending: Boolean(workspaceId) && isPending };
+  return {
+    items,
+    isPending: accountMacros ? savedPending : Boolean(workspaceId) && isPending,
+  };
 }
 
 /** The open workspace's pipelines, each with whether it is on, as Settings > Pipelines lists them. */

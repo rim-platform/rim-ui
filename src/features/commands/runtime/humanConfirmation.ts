@@ -63,7 +63,8 @@ export type HumanConfirmationOutcome<R> =
   | { kind: "stale" }
   | { kind: "unconfirmed"; message: string };
 
-const SENSITIVITY_RANK: Record<CommandSensitivity, number> = {
+/** How strict each sensitivity is: a higher rank asks for more before a command runs. */
+export const SENSITIVITY_RANK: Readonly<Record<CommandSensitivity, number>> = {
   [CommandSensitivity.SAFE]: 0,
   [CommandSensitivity.SENSITIVE]: 1,
   [CommandSensitivity.MUTATING]: 2,

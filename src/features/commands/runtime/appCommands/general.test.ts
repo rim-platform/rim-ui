@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
   openDirectWithMember: vi.fn(),
   runMacro: vi.fn(),
+  runLegacyMacro: vi.fn(),
   togglePipeline: vi.fn(),
   backUpHistoryNow: vi.fn(),
   openLogFolder: vi.fn(),
@@ -16,6 +17,9 @@ vi.mock("../../../conversations/state/openDirect", () => ({
   openDirectWithMember: mocks.openDirectWithMember,
 }));
 vi.mock("../../../macros/runtime/runMacro", () => ({ runMacro: mocks.runMacro }));
+vi.mock("../../../macros/runtime/runLegacyMacro", () => ({
+  runLegacyMacro: mocks.runLegacyMacro,
+}));
 vi.mock("../../../pipelines/api/usePipelines", () => ({ togglePipeline: mocks.togglePipeline }));
 vi.mock("../../../history-archive/backUpNow", () => ({
   backUpHistoryNow: mocks.backUpHistoryNow,
@@ -32,6 +36,8 @@ import { queryKeys } from "../../../../core/query/keys";
 import { queryClient } from "../../../../core/query/queryClient";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { commandOfferedHere } from "../../../agent/agentAvailability";
+import { useAuthStore } from "../../../auth/state/useAuthStore";
+import { recordMacroMoves } from "../../../macros/runtime/macroMoves";
 import { useRelayStore } from "../../../relay/state/useRelayStore";
 import { SETTINGS_TABS, settingsTabCommandId } from "../../../settings/settingsTabs";
 import { useUpdaterStore, initialUpdaterData } from "../../../updater/state/useUpdaterStore";
@@ -345,10 +351,34 @@ describe("keybind, macro and pipeline commands", () => {
     const macro = { id: "m-1", name: "Standup", description: null, steps: [] };
     queryClient.setQueryData(queryKeys.macros("ws-1"), [macro]);
     run("app.run_macro", { macroId: "m-1" });
-    await vi.waitFor(() => expect(mocks.runMacro).toHaveBeenCalledWith(macro, "ws-1", undefined));
+    await vi.waitFor(() =>
+      expect(mocks.runLegacyMacro).toHaveBeenCalledWith(macro, "ws-1", undefined),
+    );
     run("app.run_macro", { macroId: "gone" });
     await vi.waitFor(() => expect(mocks.toast.info).toHaveBeenCalled());
-    expect(mocks.runMacro).toHaveBeenCalledTimes(1);
+    expect(mocks.runLegacyMacro).toHaveBeenCalledTimes(1);
+    expect(mocks.runMacro).not.toHaveBeenCalled();
+  });
+
+  it("runs the person's macro, or the one a workspace macro moved into, where the server keeps them", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    useAuthStore.setState({ session: { userId: "u-1" } as never });
+    recordMacroMoves("u-1", { "m-old": "user.standup" });
+    const unmoved = { id: "m-2", name: "Triage", description: null, steps: [] };
+    queryClient.setQueryData(queryKeys.macros("ws-1"), [unmoved]);
+    try {
+      run("app.run_macro", { macroId: "user.focus" });
+      await vi.waitFor(() => expect(mocks.runMacro).toHaveBeenCalledWith("user.focus"));
+      run("app.run_macro", { macroId: "m-old" });
+      await vi.waitFor(() => expect(mocks.runMacro).toHaveBeenCalledWith("user.standup"));
+      run("app.run_macro", { macroId: "m-2" });
+      await vi.waitFor(() =>
+        expect(mocks.runLegacyMacro).toHaveBeenCalledWith(unmoved, "ws-1", undefined),
+      );
+    } finally {
+      localStorage.clear();
+      useAuthStore.setState({ session: null });
+    }
   });
 
   it("switches the picked pipeline", async () => {

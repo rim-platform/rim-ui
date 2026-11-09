@@ -1,6 +1,7 @@
 import { graphqlClient } from "../../../core/graphql/client";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import type { CommandContextInput, CommandDefinition } from "../../commands/types";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import {
@@ -27,12 +28,13 @@ function macroContext(workspaceId: string): CommandContextInput {
 }
 
 /**
- * Runs a saved macro for the user and toasts how it went. The server holds a macro with a
+ * Runs a saved workspace macro for the user, on the server that hosts `workspaceId`, and toasts
+ * how it went. The server holds a macro with a
  * dangerous step until the user confirms it in the confirmation dialog; the confirmed run sends
  * the context the first call sent, read once when the run starts. `commands` is the registry
  * the dialog reads step sensitivities from.
  */
-export async function runMacro(
+export async function runLegacyMacro(
   macro: Pick<Macro, "id" | "name" | "steps">,
   workspaceId: string,
   commands: readonly CommandDefinition[] | undefined,
@@ -49,7 +51,7 @@ export async function runMacro(
         };
         const res = await graphqlClient.request<{ executeMacro: ExecuteMacroResult }>(
           ExecuteMacroDocument,
-          { input },
+          routedToWorkspace({ input }, workspaceId),
         );
         return res.executeMacro;
       },

@@ -18,7 +18,7 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
-import { runMacro } from "./runMacro";
+import { runLegacyMacro } from "./runLegacyMacro";
 
 const macro = {
   id: "macro-1",
@@ -58,13 +58,13 @@ afterEach(() => {
   queryClient.clear();
 });
 
-describe("runMacro context", () => {
+describe("runLegacyMacro context", () => {
   it("sends the open conversation, its open thread and the focused surface", async () => {
     requestMock.mockResolvedValue({ executeMacro: { status: "SUCCESS", message: "Done" } });
     openLoadedThread("conv-9", "msg-root-1", "thread-1");
     useShellStore.getState().setFocusedSurface("mainSurface");
 
-    await runMacro(macro, "ws-1", undefined);
+    await runLegacyMacro(macro, "ws-1", undefined);
 
     expect(sentContexts()).toEqual([
       {
@@ -80,7 +80,7 @@ describe("runMacro context", () => {
   it("sends only the workspace when no conversation is open", async () => {
     requestMock.mockResolvedValue({ executeMacro: { status: "SUCCESS", message: "Done" } });
 
-    await runMacro(macro, "ws-1", undefined);
+    await runLegacyMacro(macro, "ws-1", undefined);
 
     expect(sentContexts()).toEqual([{ workspaceId: "ws-1" }]);
   });
@@ -89,7 +89,7 @@ describe("runMacro context", () => {
     requestMock.mockResolvedValue({ executeMacro: { status: "SUCCESS", message: "Done" } });
     openLoadedThread("conv-9", "msg-root-1", "thread-1");
 
-    await runMacro(macro, "ws-2", undefined);
+    await runLegacyMacro(macro, "ws-2", undefined);
 
     expect(sentContexts()).toEqual([{ workspaceId: "ws-2" }]);
   });
@@ -112,7 +112,7 @@ describe("runMacro context", () => {
     });
 
     try {
-      await runMacro(macro, "ws-1", undefined);
+      await runLegacyMacro(macro, "ws-1", undefined);
     } finally {
       unsubscribe();
     }
@@ -130,13 +130,13 @@ describe("runMacro context", () => {
   });
 });
 
-describe("runMacro failure", () => {
+describe("runLegacyMacro failure", () => {
   it("names the macro and shows the server's reason under it", async () => {
     requestMock.mockResolvedValue({
       executeMacro: { status: "ERROR", message: "macro `Triage` failed on a step" },
     });
 
-    await runMacro(macro, "ws-1", undefined);
+    await runLegacyMacro(macro, "ws-1", undefined);
 
     expect(toast.error).toHaveBeenCalledWith('Macro "Triage" failed', {
       description: "macro `Triage` failed on a step",

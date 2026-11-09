@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
-import { useCommands } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { KEYBIND_CONTEXTS } from "../profiles/keybindProfile";
 import { useEffectiveKeybinds } from "../runtime/effectiveKeybinds";
 import { BUILT_IN_COMMAND_TITLES, withClientLabel } from "../runtime/localCommands";
@@ -50,7 +50,7 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const keybinds = useEffectiveKeybinds();
   const vimMode = useKeybindProfileStore((s) => s.profile.vimMode);
   const profileName = useKeybindProfileStore((s) => s.profile.name);
-  const { data: commands } = useCommands("KEYBIND_PICKER");
+  const { data: commands } = useCommandsWithMacros("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   const [query, setQuery] = useState("");
 

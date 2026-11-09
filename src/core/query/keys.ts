@@ -74,6 +74,10 @@ export const queryKeys = {
   // `["userCommands"]` prefix covers both.
   userCommands: ["userCommands"] as const,
   userCommand: (id?: string | null) => ["userCommands", "byId", id ?? null] as const,
+  // The account's macros with every field of their steps, read from the home server.
+  accountMacros: ["userCommands", "account"] as const,
+  // Every built-in and app command a macro step may name, as the home server lists them.
+  macroStepCommands: ["macroStepCommands"] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
   // The search box's first page of one workspace's matches, in the all-workspaces scope.

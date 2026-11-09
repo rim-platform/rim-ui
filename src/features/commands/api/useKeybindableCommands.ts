@@ -5,7 +5,7 @@ import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { argumentsNoSurfaceSupplies, runsWithoutArguments } from "../runtime/commandRunnable";
 import { LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
 import type { CommandDefinition } from "../types";
-import { useCommands } from "./useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 
 /** The commands a person may bind to a key here, as the keybind picker lists them. */
 export interface KeybindableCommands {
@@ -36,7 +36,7 @@ function asArgs(value: unknown): Record<string, unknown> | undefined {
  * A command with a required argument that neither the context nor a prompt supplies is left out.
  */
 export function useKeybindableCommands(): KeybindableCommands {
-  const { data: commands } = useCommands("KEYBIND_PICKER");
+  const { data: commands } = useCommandsWithMacros("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   const offered = useMemo(
     () =>

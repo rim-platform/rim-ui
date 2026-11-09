@@ -1,4 +1,4 @@
-import type { CommandDefinition, CommandResult } from "../types";
+import type { CommandContextInput, CommandDefinition, CommandResult } from "../types";
 import {
   argumentGiven,
   argumentTypesOf,
@@ -73,6 +73,9 @@ import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { MANAGE_HANDLERS } from "./appCommands/manage";
 import { withClientLabel } from "./localCommands";
 import { tomorrowMorning } from "../../notifications/rules";
+import { accountMacrosOn } from "../../macros/api/useAccountMacros";
+import { isMacroId } from "../../macros/runtime/macroCommands";
+import { runMacro } from "../../macros/runtime/runMacro";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
@@ -723,6 +726,20 @@ export async function dispatchCommand(
     onArguments?: (args: Record<string, unknown>) => void;
   },
 ): Promise<CommandResult | null> {
+  // One of the person's macros runs here, step by step; a plugin never runs it.
+  if (isMacroId(command.id) && accountMacrosOn()) {
+    if (context?.callerPluginId) {
+      return {
+        status: "ERROR",
+        message: "A plugin can't run your macros",
+        payload: null,
+        followUpCommands: [],
+      };
+    }
+    await runMacro(command.id, context?.commandContext as CommandContextInput | undefined);
+    return { status: "SUCCESS", message: "", payload: LOCAL_ACTION_PAYLOAD, followUpCommands: [] };
+  }
+
   // A command that lacks the argument a surface asks for opens that surface instead.
   if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
     return {

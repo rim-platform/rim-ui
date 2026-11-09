@@ -5,6 +5,7 @@ import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import {
   isKeystrokeRecorder,
   parseKeystroke,
@@ -69,7 +70,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
   const resolvedKeybinds = useEffectiveKeybinds();
-  const { data: keybindCommands } = useCommands("KEYBIND_PICKER");
+  const { data: keybindCommands } = useCommandsWithMacros("KEYBIND_PICKER");
   const { data: paletteCommands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);

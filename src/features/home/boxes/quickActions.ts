@@ -1,6 +1,6 @@
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
-import { useCommands } from "../../commands/api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { LOCAL_COMMANDS, withClientLabel } from "../../commands/runtime/localCommands";
 import {
   argumentsNoSurfaceSupplies,
@@ -21,7 +21,7 @@ export type ResolvedAction =
  * needs arguments neither the context nor the action supplies, says why.
  */
 export function useResolvedActions(actions: readonly QuickAction[]): ResolvedAction[] {
-  const { data: commands, isPending } = useCommands("KEYBIND_PICKER");
+  const { data: commands, isPending } = useCommandsWithMacros("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   return actions.map((action) => {
     const id = action.commandId;
