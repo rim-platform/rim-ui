@@ -228,11 +228,16 @@ function contextPerson(commandContext: Record<string, unknown> | undefined): str
   return directPeerId(conversation, useAuthStore.getState().session?.userId);
 }
 
+/**
+ * A command on a person: the one its `user_id` argument names, else the other person of the
+ * context's direct message; with neither, a picker of people. Block in a message request's
+ * conversation answers the request instead, blocking the person who sent it.
+ */
 function personHandler(
   id: string,
   purpose: "add-contact" | "remove-contact" | "block",
 ): LocalHandler {
-  return (_args, commandContext) => {
+  return (args, commandContext) => {
     if (refuseManage(id)) return;
     // In a message request's conversation, the person to block is the one who sent it.
     const request = purpose === "block" ? contextRequest(commandContext) : undefined;
@@ -240,7 +245,10 @@ function personHandler(
       open({ kind: "request", action: "block", requestId: request.id });
       return;
     }
-    open({ kind: "person", purpose, userId: contextPerson(commandContext) });
+    const named = args?.user_id ?? args?.userId;
+    const userId =
+      typeof named === "string" && named.trim() !== "" ? named : contextPerson(commandContext);
+    open({ kind: "person", purpose, userId });
   };
 }
 
@@ -274,8 +282,8 @@ function clearFlag(_args: unknown, commandContext: Record<string, unknown> | und
  * context, the one in Settings > Bots that asks for the channel.
  */
 function openWebhook(commandContext: Record<string, unknown> | undefined): void {
-  if (refuseManage("bots.new_webhook")) return;
-  const { conversationId, conversation } = conversationOf(commandContext);
+  const { workspaceId, conversationId, conversation } = conversationOf(commandContext);
+  if (refuseManage("bots.new_webhook", workspaceId ?? null)) return;
   if (!conversationId) {
     openSettings("bots", { kind: "webhook-create" });
     return;

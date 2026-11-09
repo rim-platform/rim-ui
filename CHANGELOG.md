@@ -142,6 +142,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Were Given and Open Agent Runs can name one agent. The rows that revoke invites, answer join
   requests, unblock people, deactivate bots, revoke webhooks and take back a plugin's AI access do
   the same as their commands, with the same messages.
+- The moderation dialogs (change role, time out, kick, ban, delete messages, slow mode, who can
+  post), unban, clear timeout, the conversation menu, the notification mutes, joining, archiving
+  and leaving channels, the members panel's invite and remove, and Mark all read run their
+  commands, as the palette does: the audit log records a click as `ui` or `context_menu`, a
+  click asks for the confirmation the palette asks for and only once, and a failure names the
+  missing permission.
 - A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
   list the macro's steps with the arguments fixed for each.

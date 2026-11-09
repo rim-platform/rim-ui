@@ -6,7 +6,6 @@ import type {
   InstancePrincipalBlock,
   InstancePrincipalBlockOutcome,
 } from "../../../core/graphql/generated/schema-types";
-import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { formatTime } from "../../../shared/utils/formatTime";
 import { useBlockPrincipalMutation, useUnblockPrincipalMutation } from "../api/instanceModeration";
@@ -34,17 +33,7 @@ export function PrincipalBlocksSection({ blocks, draft }: PrincipalBlocksSection
 
   function handleUnblock(block: InstancePrincipalBlock) {
     const name = blockName(block);
-    unblock.mutate(
-      { principalId: block.principalId },
-      {
-        onSuccess: (outcome) => {
-          if (!outcome.lifted) toast.info(`${name} was not blocked`);
-          else if (outcome.emailUnblocked) toast.success(`Unblocked ${name} and their email`);
-          else toast.success(`Unblocked ${name}`);
-        },
-        onError: (err) => toast.error(graphqlErrorMessage(err, "Could not lift the block")),
-      },
-    );
+    unblock.mutate({ principalId: block.principalId, name });
   }
 
   return (

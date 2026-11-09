@@ -7,15 +7,10 @@ import { formatTime } from "../../../shared/utils/formatTime";
 import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServerRole } from "../api/useMyServerRole";
-import {
-  useBanMemberMutation,
-  useKickMemberMutation,
-  useSetMemberRoleMutation,
-  useTimeoutMemberMutation,
-  type MemberMessagesDeleted,
-} from "../api/useModeration";
+import type { MemberMessagesDeleted } from "../api/useModeration";
 import { useMemberMessageDeletion } from "../hooks/useMemberMessageDeletion";
 import { countOf, deletedText } from "../memberMessages";
+import { minutesUntil, payloadField, runConfirmedModeration } from "../moderationCommands";
 import { assignableRoles, roleLabel, type ServerMemberRoleGql } from "../role";
 import {
   BAN_EXPIRY_PRESETS,
@@ -98,9 +93,10 @@ interface ActionDialogProps {
   onClose: () => void;
 }
 
-function trimmedOrNull(value: string): string | null {
+/** The `reason` argument of a moderation command: the trimmed text, left out when blank. */
+function reasonArg(value: string): { reason?: string } {
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  return trimmed ? { reason: trimmed } : {};
 }
 
 function ChangeRoleDialog({
@@ -112,7 +108,6 @@ function ChangeRoleDialog({
   const viewerRole = useMyServerRole(workspaceId);
   const roles = assignableRoles(viewerRole, member.role);
   const [role, setRole] = useState<ServerMemberRoleGql>(initialRole);
-  const setMemberRole = useSetMemberRoleMutation();
 
   return (
     <ModerationDialog
@@ -124,8 +119,11 @@ function ChangeRoleDialog({
       confirmLabel="Change role"
       confirmDisabled={!roles.includes(role)}
       errorFallback="Could not change the role"
-      onConfirm={() =>
-        setMemberRole.mutateAsync({ serverId: workspaceId, userId: member.userId, role })
+      onConfirm={async () =>
+        (await runConfirmedModeration(workspaceId, "admin.set_role", {
+          user_id: member.userId,
+          role: role.toLowerCase(),
+        })) !== null
       }
       onDone={() => {
         toast.success(`${member.displayName} is now ${roleLabel(role)}`);
@@ -218,7 +216,6 @@ function TimeoutDialog({
   const [preset, setPreset] = useState(initialPreset);
   const [custom, setCustom] = useState("");
   const [reason, setReason] = useState("");
-  const timeoutMember = useTimeoutMemberMutation();
   const confirmedUntil = useRef<string | null>(null);
 
   const customUntil = preset === CUSTOM_DURATION ? futureIsoFromLocalInput(custom) : null;
@@ -240,13 +237,15 @@ function TimeoutDialog({
       onConfirm={async () => {
         const until = computeUntil();
         if (!until) throw new Error("Pick a time in the future");
-        const res = await timeoutMember.mutateAsync({
-          serverId: workspaceId,
-          userId: member.userId,
-          until,
-          reason: trimmedOrNull(reason),
+        const result = await runConfirmedModeration(workspaceId, "admin.timeout", {
+          user_id: member.userId,
+          minutes: minutesUntil(until),
+          ...reasonArg(reason),
         });
-        confirmedUntil.current = res.timeoutMember.until;
+        if (!result) return false;
+        const confirmed = payloadField(result, "until");
+        confirmedUntil.current = typeof confirmed === "string" ? confirmed : null;
+        return true;
       }}
       onDone={() => {
         const until = confirmedUntil.current;
@@ -275,7 +274,6 @@ function TimeoutDialog({
 
 function KickDialog({ workspaceId, member, onClose }: ActionDialogProps) {
   const [reason, setReason] = useState("");
-  const kickMember = useKickMemberMutation();
 
   return (
     <ModerationDialog
@@ -284,12 +282,11 @@ function KickDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       tone="danger"
       confirmLabel="Kick"
       errorFallback="Could not kick the member"
-      onConfirm={() =>
-        kickMember.mutateAsync({
-          serverId: workspaceId,
-          userId: member.userId,
-          reason: trimmedOrNull(reason),
-        })
+      onConfirm={async () =>
+        (await runConfirmedModeration(workspaceId, "admin.kick", {
+          user_id: member.userId,
+          ...reasonArg(reason),
+        })) !== null
       }
       onDone={() => {
         toast.success(`Kicked ${member.displayName}`);
@@ -309,7 +306,6 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
   const [reason, setReason] = useState("");
   const [expiry, setExpiry] = useState(NEVER);
   const [custom, setCustom] = useState("");
-  const banMember = useBanMemberMutation();
   const offersDeletion = hasCapability(useServerInfo().info, DELETE_MEMBER_MESSAGES);
   const deletion = useMemberMessageDeletion(workspaceId, member.userId, "none");
   const deleted = useRef<MemberMessagesDeleted | null>(null);
@@ -337,19 +333,21 @@ function BanDialog({ workspaceId, member, onClose }: ActionDialogProps) {
       onConfirm={async () => {
         deleted.current = null;
         deleteError.current = null;
-        await banMember.mutateAsync({
-          serverId: workspaceId,
-          userId: member.userId,
-          reason: trimmedOrNull(reason),
-          expiresAt: computeExpiry(),
+        const expiresAt = computeExpiry();
+        const banned = await runConfirmedModeration(workspaceId, "admin.ban", {
+          user_id: member.userId,
+          ...reasonArg(reason),
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
         });
-        if (deletion.total === 0) return;
+        if (!banned) return false;
+        if (deletion.total === 0) return true;
         // A ban that went through never offers Retry: a failed delete is reported on its own.
         try {
           deleted.current = await deletion.run();
         } catch (err) {
           deleteError.current = err;
         }
+        return true;
       }}
       onDone={() => {
         if (deleteError.current) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
@@ -54,18 +54,68 @@ vi.mock("../../bots/webhookUrl", () => ({
 }));
 
 import { ConversationActionsMenu } from "./ConversationActionsMenu";
+import { ConversationActionConfirmHost } from "./ConversationActionConfirmHost";
+import { ManageCommandHost } from "../../commands/components/ManageCommandHost";
 import { channelPostingKey } from "../api/useChannelPosting";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+
+/** The server commands the menu and its dialogs run, which the workspace's server lists. */
+const MENU_COMMANDS = [
+  "chat.join_channel",
+  "chat.mark_as_read",
+  "chat.archive_channel",
+  "chat.unarchive_channel",
+  "chat.leave_conversation",
+  "chat.set_slow_mode",
+  "chat.set_channel_posting",
+  "notifications.set_level",
+  "notifications.mute_conversation",
+  "notifications.unmute_conversation",
+];
 
 function serve(role: ServerMemberRoleGql, overrides: Record<string, () => unknown> = {}) {
   routeRequests(requestMock, {
     "query Server(": () => ({ server: { id: "ws-1", name: "Acme", viewerRole: role } }),
-    "mutation LeaveConversation": () => ({ leaveConversation: true }),
-    "mutation SetConversationArchived": () => ({
-      setConversationArchived: makeConversation({ isArchived: true }),
-    }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
     ...overrides,
   });
 }
+
+/** What a menu item on `conv-1` of `ws-1` sends, as the palette would apart from the initiator. */
+function menuRun(commandId: string, args: Record<string, unknown>) {
+  return {
+    commandId,
+    args: { server_id: "ws-1", conversation_id: "conv-1", ...args },
+    commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+    initiator: "CONTEXT_MENU",
+  };
+}
+
+/** What a dialog's button on `conv-1` of `ws-1` sends, which names no initiator here. */
+function dialogRun(commandId: string, args: Record<string, unknown>) {
+  return {
+    commandId,
+    args: { server_id: "ws-1", conversation_id: "conv-1", ...args },
+    commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+  };
+}
+
+beforeEach(() => {
+  serveCommands("ws-1", MENU_COMMANDS);
+  useWorkspaceStore.getState().setWorkspaceId("ws-1");
+});
+
+afterEach(() => {
+  clearServedCommands();
+  queryClient.clear();
+  useWorkspaceStore.getState().clearWorkspaceId();
+});
 
 async function openMenu(
   conversation: ConversationSummary,
@@ -77,10 +127,20 @@ async function openMenu(
   if (serverInfo) {
     qc.setQueryDefaults(queryKeys.serverInfo, { gcTime: Infinity });
     qc.setQueryData(queryKeys.serverInfo, serverInfo);
+    queryClient.setQueryData(queryKeys.serverInfo, serverInfo);
   }
+  // The commands read the conversation and the viewer's role from the app's cache.
+  queryClient.setQueryData(queryKeys.server("ws-1"), {
+    id: "ws-1",
+    name: "Acme",
+    viewerRole: role,
+  });
+  queryClient.setQueryData(queryKeys.conversations("ws-1"), { items: [conversation] });
   render(
     <QueryClientProvider client={qc}>
       <ConversationActionsMenu workspaceId="ws-1" conversation={conversation} />
+      <ConversationActionConfirmHost />
+      <ManageCommandHost />
     </QueryClientProvider>,
   );
   // Let the role load before reading the menu.
@@ -191,16 +251,14 @@ describe("ConversationActionsMenu — role gating", () => {
   });
 
   it("puts Join channel first for a public channel the viewer has not joined", async () => {
-    serve(ServerMemberRoleGql.MEMBER, {
-      "mutation JoinChannel": () => ({ joinChannel: makeConversation() }),
-    });
+    serve(ServerMemberRoleGql.MEMBER);
+    useShellStore.setState({ selectedConversationId: "conv-other" });
     await openMenu(makeConversation({ isMember: false }), ServerMemberRoleGql.MEMBER);
     expect(menuLabels()).toEqual(["Join channel", "Members", "Assign keybind…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Join channel" }));
+    // The menu's own conversation, not the open one.
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1" },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([menuRun("chat.join_channel", {})]),
     );
   });
 
@@ -254,10 +312,12 @@ describe("ConversationActionsMenu — role gating", () => {
       const labels = menuLabels();
       expect(labels[labels.length - 1]).toBe("Block…");
       fireEvent.click(screen.getByRole("menuitem", { name: "Block…" }));
-      expect(useBlockPersonStore.getState().target).toEqual({
-        principalId: "rimp1_alice",
-        name: "Alice",
-      });
+      await waitFor(() =>
+        expect(useBlockPersonStore.getState().target).toEqual({
+          principalId: "rimp1_alice",
+          name: "Alice",
+        }),
+      );
     });
 
     it("offers no Block… on a group", async () => {
@@ -321,8 +381,13 @@ describe("ConversationActionsMenu — role gating", () => {
 
   describe("Mark as unread", () => {
     const seedPages = (items: { id: string; authorId: string }[]) => async (qc: QueryClient) => {
-      qc.setQueryDefaults(queryKeys.messages("ws-1", "conv-1"), { gcTime: Infinity });
-      qc.setQueryData(queryKeys.messages("ws-1", "conv-1"), { pages: [{ items }], pageParams: [] });
+      for (const client of [qc, queryClient]) {
+        client.setQueryDefaults(queryKeys.messages("ws-1", "conv-1"), { gcTime: Infinity });
+        client.setQueryData(queryKeys.messages("ws-1", "conv-1"), {
+          pages: [{ items }],
+          pageParams: [],
+        });
+      }
     };
 
     beforeEach(() => {
@@ -384,15 +449,13 @@ describe("ConversationActionsMenu — role gating", () => {
   });
 
   it("offers Mark as read while the conversation has unread messages", async () => {
-    serve(ServerMemberRoleGql.MEMBER, { "mutation MarkAsRead": () => ({ markAsRead: true }) });
+    serve(ServerMemberRoleGql.MEMBER);
     useUnreadStore.getState().setCounts("ws-1", { "conv-1": 3 });
     await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
     expect(menuLabels()[0]).toBe("Mark as read");
     fireEvent.click(screen.getByRole("menuitem", { name: "Mark as read" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation MarkAsRead")).toEqual([
-        { input: expect.objectContaining({ conversationId: "conv-1", workspaceId: "ws-1" }) },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([menuRun("chat.mark_as_read", {})]),
     );
     expect(useUnreadStore.getState().counts["conv-1"] ?? 0).toBe(0);
   });
@@ -408,7 +471,10 @@ describe("ConversationActionsMenu — role gating", () => {
     serve(ServerMemberRoleGql.MEMBER);
     await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
     fireEvent.click(screen.getByRole("menuitem", { name: "Invite people…" }));
-    expect(useMembersPanelStore.getState()).toMatchObject({ open: true, invitingIn: "conv-1" });
+    await waitFor(() =>
+      expect(useMembersPanelStore.getState()).toMatchObject({ open: true, invitingIn: "conv-1" }),
+    );
+    expect(useShellStore.getState().selectedConversationId).toBe("conv-1");
   });
 
   it("Edit topic starts the header's topic edit from the current topic", async () => {
@@ -427,10 +493,12 @@ describe("ConversationActionsMenu — role gating", () => {
     const item = screen.getByRole("menuitem", { name: "Assign keybind…" });
     expect(item).toHaveAttribute("aria-keyshortcuts", "Ctrl+Shift+B");
     fireEvent.click(item);
-    expect(useQuickAccessStore.getState()).toMatchObject({
-      isOpen: true,
-      target: { kind: "channel", conversationId: "conv-1", serverId: "ws-1", label: "general" },
-    });
+    await waitFor(() =>
+      expect(useQuickAccessStore.getState()).toMatchObject({
+        isOpen: true,
+        target: { kind: "channel", conversationId: "conv-1", serverId: "ws-1", label: "general" },
+      }),
+    );
   });
 });
 
@@ -448,33 +516,30 @@ describe("ConversationActionsMenu — actions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel…" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Archive #general?" });
-    expect(callsTo(requestMock, "mutation SetConversationArchived")).toHaveLength(0);
+    expect(sentCommands(requestMock)).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
 
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
-    expect(callsTo(requestMock, "mutation SetConversationArchived")).toEqual([
-      { serverId: "ws-1", conversationId: "conv-1", archived: true },
-    ]);
+    await waitFor(() =>
+      expect(sentCommands(requestMock)).toEqual([menuRun("chat.archive_channel", {})]),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Archived #general"));
   });
 
   it("unarchives without a confirmation", async () => {
-    serve(ServerMemberRoleGql.MODERATOR, {
-      "mutation SetConversationArchived": () => ({
-        setConversationArchived: makeConversation(),
-      }),
-    });
+    serve(ServerMemberRoleGql.MODERATOR);
     await openMenu(makeConversation({ isArchived: true }), ServerMemberRoleGql.MODERATOR);
     fireEvent.click(screen.getByRole("menuitem", { name: "Unarchive channel" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetConversationArchived")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", archived: false },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([menuRun("chat.unarchive_channel", {})]),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows the server's message when archiving is forbidden", async () => {
     serve(ServerMemberRoleGql.MODERATOR, {
-      "mutation SetConversationArchived": () => {
+      "mutation ExecuteCommand": () => {
         throw graphqlError("FORBIDDEN", "Only owners and moderators can archive channels");
       },
     });
@@ -482,7 +547,10 @@ describe("ConversationActionsMenu — actions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Archive channel…" }));
     fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Only owners and moderators can archive channels"),
+      expect(toast.error).toHaveBeenCalledWith("Could not archive the channel: not done", {
+        card: "denied",
+        description: "Only owners and moderators can archive channels",
+      }),
     );
   });
 
@@ -493,10 +561,9 @@ describe("ConversationActionsMenu — actions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel" }));
 
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
-    expect(callsTo(requestMock, "mutation LeaveConversation")).toEqual([
-      { serverId: "ws-1", conversationId: "conv-1" },
-    ]);
-    expect(toast.success).toHaveBeenCalledWith("Left #general");
+    expect(sentCommands(requestMock)).toEqual([menuRun("chat.leave_conversation", {})]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Left #general"));
   });
 
   it("confirms before leaving a private channel", async () => {
@@ -504,9 +571,13 @@ describe("ConversationActionsMenu — actions", () => {
     await openMenu(makeConversation({ isPrivate: true }), ServerMemberRoleGql.GUEST);
     fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel…" }));
     await screen.findByRole("dialog", { name: "Leave #general?" });
-    expect(callsTo(requestMock, "mutation LeaveConversation")).toHaveLength(0);
+    expect(sentCommands(requestMock)).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Leave" }));
-    await waitFor(() => expect(callsTo(requestMock, "mutation LeaveConversation")).toHaveLength(1));
+    await waitFor(() =>
+      expect(sentCommands(requestMock)).toEqual([menuRun("chat.leave_conversation", {})]),
+    );
+    // Asked once: the command's confirmation is the menu's.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
@@ -539,9 +610,7 @@ describe("ConversationActionsMenu — slow mode", () => {
   });
 
   it("a moderator picks an interval and saves it", async () => {
-    serve(ServerMemberRoleGql.MODERATOR, {
-      "mutation SetSlowMode": () => ({ setSlowMode: makeConversation({ slowModeSeconds: 30 }) }),
-    });
+    serve(ServerMemberRoleGql.MODERATOR);
     await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
     fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode…" }));
 
@@ -563,32 +632,26 @@ describe("ConversationActionsMenu — slow mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetSlowMode")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", seconds: 30 },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([dialogRun("chat.set_slow_mode", { seconds: 30 })]),
     );
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     expect(toast.success).toHaveBeenCalledWith("Slow mode in #general: 30 seconds");
   });
 
   it("turns slow mode off", async () => {
-    serve(ServerMemberRoleGql.OWNER, {
-      "mutation SetSlowMode": () => ({ setSlowMode: makeConversation() }),
-    });
+    serve(ServerMemberRoleGql.OWNER);
     await openMenu(makeConversation({ slowModeSeconds: 60 }), ServerMemberRoleGql.OWNER);
     fireEvent.click(screen.getByRole("menuitem", { name: "Slow mode…: 1 min" }));
     fireEvent.click(await screen.findByRole("radio", { name: "Off" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetSlowMode")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", seconds: 0 },
-      ]),
+      expect(sentCommands(requestMock)).toEqual([dialogRun("chat.set_slow_mode", { seconds: 0 })]),
     );
   });
 
   it("keeps the dialog open with the server's message on failure", async () => {
     serve(ServerMemberRoleGql.MODERATOR, {
-      "mutation SetSlowMode": () => {
+      "mutation ExecuteCommand": () => {
         throw graphqlError("VALIDATION", "slow mode is for channels only");
       },
     });
@@ -597,6 +660,7 @@ describe("ConversationActionsMenu — slow mode", () => {
     fireEvent.click(await screen.findByRole("radio", { name: "10 seconds" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("slow mode is for channels only");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 
@@ -647,9 +711,6 @@ describe("ConversationActionsMenu — who can post", () => {
   it("a moderator restricts posting and closes threads", async () => {
     serve(ServerMemberRoleGql.MODERATOR, {
       "query ChannelPosting(": () => ({ conversation: posting(PostingPolicy.EVERYONE, true) }),
-      "mutation SetChannelPosting": () => ({
-        setChannelPosting: posting(PostingPolicy.MODERATORS, false),
-      }),
     });
     await openMenu(makeConversation(), ServerMemberRoleGql.MODERATOR);
     fireEvent.click(screen.getByRole("menuitem", { name: "Who can post…" }));
@@ -669,13 +730,8 @@ describe("ConversationActionsMenu — who can post", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetChannelPosting")).toEqual([
-        {
-          serverId: "ws-1",
-          conversationId: "conv-1",
-          policy: PostingPolicy.MODERATORS,
-          allowsThreads: false,
-        },
+      expect(sentCommands(requestMock)).toEqual([
+        dialogRun("chat.set_channel_posting", { policy: "moderators", allows_threads: false }),
       ]),
     );
     await waitFor(() => expect(dialog).not.toBeInTheDocument());

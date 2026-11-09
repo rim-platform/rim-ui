@@ -1,3 +1,4 @@
+import { graphqlErrorMessage } from "../../../../core/graphql/errors";
 import { ConversationTypeEnum } from "../../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../../core/query/keys";
 import { queryClient } from "../../../../core/query/queryClient";
@@ -9,6 +10,10 @@ import { useAgentEncryptedStore } from "../../../agent/state/useAgentEncryptedSt
 import { useAuthStore } from "../../../auth/state/useAuthStore";
 import { findCachedConversation } from "../../../conversations/api/useConversation";
 import {
+  acceptConversationInvite,
+  declineConversationInvite,
+} from "../../../conversations/api/useConversationInvite";
+import {
   markConversationUnread,
   spaceMarksUnread,
 } from "../../../conversations/api/useMarkAsUnread";
@@ -16,7 +21,11 @@ import { useConversationDialogStore } from "../../../conversations/state/useConv
 import { useInvitationActionsStore } from "../../../conversations/state/useInvitationActionsStore";
 import { useMembersPanelStore } from "../../../conversations/state/useMembersPanelStore";
 import type { ConversationSummary } from "../../../conversations/types";
-import { canInviteTo } from "../../../conversations/utils";
+import { canInviteTo, isInvited } from "../../../conversations/utils";
+import {
+  isShownConversation,
+  showConversation,
+} from "../../../conversations/hooks/useOpenConversation";
 import { useLensStore } from "../../../lenses/state/useLensStore";
 import type { MessageSelectionTarget } from "../../../messages/state/useSelectedMessageStore";
 import { useNotificationsPanelStore } from "../../../notifications/state/useNotificationsPanelStore";
@@ -102,14 +111,32 @@ function openLensPicker(commandContext: Record<string, unknown> | undefined): vo
 
 /** Answers the invitation on screen, or says to open one. */
 function answerInvitation(commandContext: Record<string, unknown> | undefined, accept: boolean) {
-  const { conversationId } = focusedConversation(commandContext);
+  const { conversationId, conversation } = focusedConversation(commandContext);
   const actions = useInvitationActionsStore.getState().actions;
-  if (!actions || !conversationId || actions.conversationId !== conversationId) {
+  if (actions && conversationId && actions.conversationId === conversationId) {
+    if (!accept) actions.decline();
+    else if (!actions.accept()) toast.info("Set up this device for encryption to join");
+    return;
+  }
+  // An invitation that is not open, as a sidebar row's menu names it, is answered directly.
+  if (
+    !conversationId ||
+    !conversation ||
+    !isInvited(conversation, useAuthStore.getState().session?.userId)
+  ) {
     toast.info(OPEN_AN_INVITATION);
     return;
   }
-  if (!accept) actions.decline();
-  else if (!actions.accept()) toast.info("Set up this device for encryption to join");
+  const vars = { serverId: conversation.serverId, conversationId };
+  if (accept) {
+    acceptConversationInvite(queryClient, vars).catch((err: unknown) =>
+      toast.error(graphqlErrorMessage(err, "Could not join the conversation")),
+    );
+  } else {
+    declineConversationInvite(queryClient, vars).catch((err: unknown) =>
+      toast.error(graphqlErrorMessage(err, "Could not decline the invitation")),
+    );
+  }
 }
 
 export const CONVERSATION_COMMANDS: CommandDefinition[] = [
@@ -302,6 +329,9 @@ export const CONVERSATION_HANDLERS: Record<string, LocalHandler> = {
     if (!allowed) {
       toast.info("You can't add people to this conversation");
       return;
+    }
+    if (!isShownConversation(conversation.serverId, conversationId)) {
+      showConversation(conversationId, conversation.serverId);
     }
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useMembersPanelStore.getState().openInvite(conversationId);

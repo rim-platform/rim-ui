@@ -176,12 +176,10 @@ describe("skew check", () => {
     ]);
   });
 
-  it("refuses only the member message deletion documents on a server without delete_member_messages", () => {
+  it("refuses only the member message counts on a server without delete_member_messages", () => {
+    // The delete itself runs as the Delete Member's Messages command, through executeCommand.
     const refused = refusedOperations(schemaWithoutMemberMessageDeletion(), documents);
-    expect(refused.map((r) => r.label).sort()).toEqual([
-      "mutation DeleteMemberMessages",
-      "query MemberMessageCounts",
-    ]);
+    expect(refused.map((r) => r.label).sort()).toEqual(["query MemberMessageCounts"]);
   });
 
   it("refuses only the timeout reason query on a server without ServerMember.timeoutReason", () => {

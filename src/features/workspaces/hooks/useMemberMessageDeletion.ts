@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 import {
-  useDeleteMemberMessages,
+  deleteInRounds,
   useMemberMessageCounts,
   type MemberMessageCountsResult,
   type MemberMessagesDeleted,
 } from "../api/useModeration";
 import { messagesToDelete, type DeletePeriod } from "../memberMessages";
+import { payloadField, runConfirmedModeration } from "../moderationCommands";
 
 /** The state of a choice to delete a person's messages: the period, the counts and the delete. */
 export interface MemberMessageDeletion {
@@ -28,9 +29,10 @@ export interface MemberMessageDeletion {
   /** Whether the choice is settled: `none`, or the counts arrived. */
   ready: boolean;
   /**
-   * Deletes the counted messages over the counted period.
+   * Deletes the counted messages over the chosen period with the Delete Member's Messages
+   * command, run again while more remain; the dialog that calls it was the confirmation.
    *
-   * @throws When the counts have not arrived, or the delete fails.
+   * @throws When nothing is chosen, the counts have not arrived, or the delete fails.
    */
   run: () => Promise<MemberMessagesDeleted>;
 }
@@ -47,7 +49,6 @@ export function useMemberMessageDeletion(
   const [period, setPeriod] = useState<DeletePeriod>(initialPeriod);
   const [includePrivate, setIncludePrivate] = useState(true);
   const counts = useMemberMessageCounts(workspaceId, userId, period);
-  const deleteMutation = useDeleteMemberMessages();
 
   const data = counts.data;
   const offerPrivate = (data?.counts.unjoinedPrivate.messages ?? 0) > 0;
@@ -56,12 +57,25 @@ export function useMemberMessageDeletion(
   const ready = period === "none" || counts.isSuccess;
 
   async function run(): Promise<MemberMessagesDeleted> {
+    if (period === "none") throw new Error("Choose how far back to delete");
     if (!data) throw new Error("Their messages have not been counted yet");
-    return deleteMutation.mutateAsync({
-      serverId: workspaceId,
-      userId,
-      since: data.since,
-      includeUnjoinedPrivate: includePrivate && offerPrivate,
+    const args = {
+      user_id: userId,
+      window: period,
+      include_unjoined_private: includePrivate && offerPrivate,
+    };
+    return deleteInRounds(async () => {
+      const result = await runConfirmedModeration(
+        workspaceId,
+        "admin.delete_member_messages",
+        args,
+      );
+      if (!result) throw new Error("Cancelled");
+      const deleted = payloadField(result, "deleted");
+      return {
+        deleted: typeof deleted === "number" ? deleted : 0,
+        hasMore: payloadField(result, "has_more") === true,
+      };
     });
   }
 

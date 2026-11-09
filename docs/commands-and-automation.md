@@ -142,6 +142,28 @@ names it: "Includes a dangerous command: \<title\>." While the chain runs, "Exec
 palette then shows each stage's result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd>
 in an empty search reopens the last stage, and <kbd>Esc</kbd> clears the chain.
 
+## Buttons and menus run commands
+
+A button, a menu item, a dialog's main button or a key in a list that does what a command does
+runs that command, the way the palette runs it: the same lookup, gates, result and audit entry.
+The audit log records where it started: `ui` for a button, a toggle, a dialog's main button or a
+Home quick box (a server that does not list `command_initiator_ui` records these as `palette`),
+`context_menu` for an item of a menu, such as a conversation's, a person's or a notification's,
+and `keybind` for a key in a list. A control acts on what it shows: a sidebar
+row's menu on that row's conversation, a person's menu on that person, a notification's menu on
+its conversation, never on whatever happens to be open.
+
+A click asks for the same confirmation the palette asks for: **Archive Channel…** and **Leave
+channel…** in a conversation's menu ask "Archive \<channel\>?" or "Leave \<name\>?", as the
+palette does, and only once. A control with its own confirmation, such as the Kick, Ban, Change
+role, Time out and Delete messages dialogs or a member row's **Remove**, is that confirmation:
+nothing asks again, except for a `Restricted` command, which still asks you to type its verb. A
+refusal reads as it does from the palette, naming a missing permission; a dialog shows it in
+place, with **Retry**. The command's gates apply too: while you are timed out you cannot join a
+channel, kick, ban or set slow mode from a click either. Where a server does not list the command
+yet, such as **Clear Timeout**, **Mute Conversation…**, **Unmute Conversation** or **Edit
+Topic…** on an older server, the control does what it did before.
+
 ## Keybinds
 
 A keybind runs one command, sometimes with fixed arguments. These are the default bindings of a

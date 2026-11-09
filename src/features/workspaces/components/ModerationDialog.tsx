@@ -14,9 +14,12 @@ interface ModerationDialogProps {
   tone: ModerationTone;
   confirmLabel: string;
   confirmDisabled?: boolean;
-  /** Runs the action; a rejection keeps the dialog open with the server's message. */
+  /**
+   * Runs the action; a rejection keeps the dialog open with the server's message, and resolving
+   * `false` keeps it open without one, as when the person cancelled a further confirmation.
+   */
   onConfirm: () => Promise<unknown>;
-  /** Called after `onConfirm` resolves. */
+  /** Called after `onConfirm` resolves to anything but `false`. */
   onDone: () => void;
   onClose: () => void;
   /** Fallback when a failure carries no server message. */
@@ -63,9 +66,9 @@ export function ModerationDialog({
     setPending(true);
     setError(null);
     try {
-      await onConfirm();
+      const done = await onConfirm();
       setPending(false);
-      onDone();
+      if (done !== false) onDone();
     } catch (err) {
       setPending(false);
       setError(graphqlErrorMessage(err, errorFallback));

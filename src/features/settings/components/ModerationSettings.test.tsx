@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import { commandSucceeded, sentCommands, serveCommands } from "../../../test/clickCommands";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
@@ -100,7 +101,7 @@ function serve(extra: Record<string, (vars: Record<string, unknown>) => unknown>
     "query MessageReports": (vars) => ({
       messageReports: vars.cursor ? secondPage : firstPage,
     }),
-    "mutation UnbanMember": () => ({ unbanMember: true }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
     "query MemberMessageCounts": () => ({
       memberMessageCounts: {
         readable: { messages: 5, channels: 2 },
@@ -153,6 +154,7 @@ describe("ModerationSettings", () => {
 
   it("lists bans with reason and expiry and lifts one", async () => {
     serve();
+    serveCommands("ws-1", ["admin.unban"]);
     renderSettings();
     const carol = await screen.findByTestId("ban-row-u-carol");
     expect(carol).toHaveTextContent("Carol");
@@ -164,8 +166,12 @@ describe("ModerationSettings", () => {
 
     fireEvent.click(within(carol).getByRole("button", { name: "Unban Carol" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation UnbanMember")).toEqual([
-        { serverId: "ws-1", userId: "u-carol" },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "admin.unban",
+          args: { server_id: "ws-1", user_id: "u-carol" },
+          commandContext: { workspaceId: "ws-1" },
+        },
       ]),
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Unbanned Carol"));

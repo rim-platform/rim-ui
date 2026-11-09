@@ -4,7 +4,8 @@ import { PostingPolicy } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { cn } from "../../../shared/ui/cn";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
-import { useChannelPosting, useSetChannelPostingMutation } from "../api/useChannelPosting";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useChannelPosting } from "../api/useChannelPosting";
 import type { ConversationSummary } from "../types";
 import { conversationLabel } from "../utils";
 
@@ -26,7 +27,6 @@ export function ChannelPostingDialog({
   onClose,
 }: ChannelPostingDialogProps) {
   const posting = useChannelPosting(workspaceId, conversation);
-  const setPosting = useSetChannelPostingMutation();
   // Null until the moderator changes something: the form shows the channel's current setting.
   const [choice, setChoice] = useState<PostingChoice | null>(null);
   const label = conversationLabel(conversation);
@@ -45,14 +45,23 @@ export function ChannelPostingDialog({
       confirmLabel="Save"
       confirmDisabled={!posting.supported || unchanged}
       errorFallback="Could not change who can post"
-      onConfirm={() =>
-        setPosting.mutateAsync({
-          serverId: workspaceId,
-          conversationId: conversation.id,
-          policy: chosen.policy,
-          allowsThreads: chosen.allowsThreads,
-        })
-      }
+      onConfirm={async () => {
+        const outcome = await runCommandFromClick(
+          "chat.set_channel_posting",
+          {
+            server_id: workspaceId,
+            conversation_id: conversation.id,
+            policy: chosen.policy.toLowerCase(),
+            allows_threads: chosen.allowsThreads,
+          },
+          {
+            target: { workspaceId, conversationId: conversation.id },
+            throwOnError: true,
+            successToast: null,
+          },
+        );
+        return outcome.ok;
+      }}
       onDone={() => {
         toast.success(
           restricted

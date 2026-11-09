@@ -2,6 +2,7 @@ import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import {
+  closeLeftConversation,
   finishLeaving,
   invalidateConversationQueries,
   refreshAfterMembershipChange,
@@ -16,10 +17,12 @@ import type { ConversationSummary } from "../../conversations/types";
 import { invalidatePinQueries, setPinnedInCache } from "../../messages/api/usePinMessage";
 import { invalidateAfterReaction } from "../../messages/api/useToggleReaction";
 import { markMessageDeleted } from "../../messages/hooks/useDeleteMessage";
+import { levelPatchOf, patchConversationLevel } from "../../notifications/api/conversationLevel";
 import { invalidateNotificationSettings } from "../../notifications/api/useNotificationSettings";
 import {
   invalidateNotificationInbox,
   invalidateUnreadNotificationCount,
+  markAllReadInCache,
 } from "../../notifications/api/useNotifications";
 import {
   invalidateMemberMessageCounts,
@@ -199,6 +202,7 @@ const COMMAND_EFFECTS: Readonly<Record<string, CommandEffect>> = {
   },
   "chat.leave_conversation": {
     before: inConversation((_workspaceId, conversationId) => startLeaving(conversationId)),
+    after: inConversation((_workspaceId, conversationId) => closeLeftConversation(conversationId)),
     settled: inConversation((workspaceId, conversationId) =>
       finishLeaving(queryClient, workspaceId, conversationId),
     ),
@@ -237,9 +241,14 @@ const COMMAND_EFFECTS: Readonly<Record<string, CommandEffect>> = {
     }),
   },
   "notifications.set_level": {
-    after: inConversation((workspaceId, conversationId) =>
-      refreshAfterMute(queryClient, workspaceId, conversationId),
-    ),
+    after: (call, result) => {
+      const workspaceId = workspaceOf(call);
+      const conversationId = conversationOf(call);
+      if (!workspaceId || !conversationId) return;
+      const patch = levelPatchOf(result.payload);
+      if (patch) patchConversationLevel(queryClient, workspaceId, conversationId, patch);
+      refreshAfterMute(queryClient, workspaceId, conversationId);
+    },
   },
   "notifications.mute_conversation": muteEffect(true),
   "notifications.unmute_conversation": muteEffect(false),
@@ -247,7 +256,8 @@ const COMMAND_EFFECTS: Readonly<Record<string, CommandEffect>> = {
     after: inWorkspace((workspaceId) => invalidateNotificationSettings(queryClient, workspaceId)),
   },
   "notifications.mark_all_read": {
-    after: inWorkspace((workspaceId) => invalidateNotificationInbox(queryClient, workspaceId)),
+    before: inWorkspace((workspaceId) => markAllReadInCache(queryClient, workspaceId)),
+    settled: inWorkspace((workspaceId) => invalidateNotificationInbox(queryClient, workspaceId)),
   },
 };
 

@@ -183,6 +183,18 @@ describe("runCommandFromClick", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it("shows no success toast and no outcome for a null success text", async () => {
+    const outcome = await runCommandFromClick(
+      "chat.set_topic",
+      { topic: "news" },
+      { successToast: null },
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
   it("throws the server's refusal for a dialog that shows it", async () => {
     request.mockRejectedValue(new Error("Topic too long"));
 

@@ -10,23 +10,16 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import {
   PageDir,
-  type DeletedMemberMessages,
+  ReportOutcome,
   type MemberMessageCounts,
   type MessageReportStatus,
-  type MutationBanMemberArgs,
   type MutationClearMessageFlagArgs,
   type MutationClearTimeoutArgs,
-  type MutationDeleteMemberMessagesArgs,
-  type MutationKickMemberArgs,
   type MutationDeleteMessageArgs,
   type MutationReportEncryptedMessageArgs,
   type MutationReportMessageArgs,
   type MutationResolveReportArgs,
-  type MutationSetMemberRoleArgs,
-  type MutationTimeoutMemberArgs,
-  type MutationUnbanMemberArgs,
   type QueryMemberMessageCountsArgs,
-  type ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
@@ -40,45 +33,6 @@ import { countOf, periodSince, type DeletePeriod } from "../memberMessages";
  * re-checked server-side (role ladder, targeting rules); the UI gates are only there to avoid
  * offering what would fail.
  */
-
-const SET_MEMBER_ROLE = gql`
-  mutation SetMemberRole($serverId: ID!, $userId: ID!, $role: ServerMemberRoleGql!) {
-    setMemberRole(serverId: $serverId, userId: $userId, role: $role) {
-      userId
-      memberRole
-    }
-  }
-`;
-
-const KICK_MEMBER = gql`
-  mutation KickMember($serverId: ID!, $userId: ID!, $reason: String) {
-    kickMember(serverId: $serverId, userId: $userId, reason: $reason)
-  }
-`;
-
-const BAN_MEMBER = gql`
-  mutation BanMember($serverId: ID!, $userId: ID!, $reason: String, $expiresAt: DateTime) {
-    banMember(serverId: $serverId, userId: $userId, reason: $reason, expiresAt: $expiresAt) {
-      userId
-      expiresAt
-    }
-  }
-`;
-
-const UNBAN_MEMBER = gql`
-  mutation UnbanMember($serverId: ID!, $userId: ID!) {
-    unbanMember(serverId: $serverId, userId: $userId)
-  }
-`;
-
-const TIMEOUT_MEMBER = gql`
-  mutation TimeoutMember($serverId: ID!, $userId: ID!, $until: DateTime!, $reason: String) {
-    timeoutMember(serverId: $serverId, userId: $userId, until: $until, reason: $reason) {
-      userId
-      until
-    }
-  }
-`;
 
 const CLEAR_TIMEOUT = gql`
   mutation ClearTimeout($serverId: ID!, $userId: ID!) {
@@ -261,26 +215,6 @@ const MEMBER_MESSAGE_COUNTS = gql`
   }
 `;
 
-const DELETE_MEMBER_MESSAGES = gql`
-  mutation DeleteMemberMessages(
-    $serverId: ID!
-    $userId: ID!
-    $since: DateTime
-    $includeUnjoinedPrivate: Boolean!
-  ) {
-    deleteMemberMessages(
-      serverId: $serverId
-      userId: $userId
-      since: $since
-      includeUnjoinedPrivate: $includeUnjoinedPrivate
-    ) {
-      deleted
-      channels
-      hasMore
-    }
-  }
-`;
-
 const DELETE_REPORTED_MESSAGE = gql`
   mutation DeleteReportedMessage($input: DeleteMessageInput!) {
     deleteMessage(input: $input)
@@ -385,72 +319,13 @@ export function invalidateMemberMessageCounts(
   void qc.invalidateQueries({ queryKey: ["memberMessageCounts", serverId, userId] });
 }
 
-function useInvalidateMembers() {
-  const qc = useQueryClient();
-  return (serverId: string) => invalidateMembers(qc, serverId);
-}
-
-export function useSetMemberRoleMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: (vars: MutationSetMemberRoleArgs) =>
-      graphqlClient.request<{ setMemberRole: { userId: string; memberRole: ServerMemberRoleGql } }>(
-        SET_MEMBER_ROLE,
-        vars,
-      ),
-    onSuccess: (_data, vars) => invalidate(vars.serverId),
-  });
-}
-
-export function useKickMemberMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: (vars: MutationKickMemberArgs) =>
-      graphqlClient.request<{ kickMember: boolean }>(KICK_MEMBER, vars),
-    onSuccess: (_data, vars) => invalidate(vars.serverId),
-  });
-}
-
-export function useBanMemberMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: MutationBanMemberArgs) =>
-      graphqlClient.request<{ banMember: { userId: string; expiresAt: string | null } }>(
-        BAN_MEMBER,
-        vars,
-      ),
-    onSuccess: (_data, vars) => refreshAfterBan(qc, vars.serverId),
-  });
-}
-
-export function useUnbanMemberMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: MutationUnbanMemberArgs) =>
-      graphqlClient.request<{ unbanMember: boolean }>(UNBAN_MEMBER, vars),
-    onSuccess: (_data, vars) => refreshAfterUnban(qc, vars.serverId, vars.userId),
-  });
-}
-
-export function useTimeoutMemberMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: (vars: MutationTimeoutMemberArgs) =>
-      graphqlClient.request<{ timeoutMember: { userId: string; until: string } }>(
-        TIMEOUT_MEMBER,
-        vars,
-      ),
-    onSuccess: (_data, vars) => invalidate(vars.serverId),
-  });
-}
-
-export function useClearTimeoutMutation() {
-  const invalidate = useInvalidateMembers();
-  return useMutation({
-    mutationFn: (vars: MutationClearTimeoutArgs) =>
-      graphqlClient.request<{ clearTimeout: boolean }>(CLEAR_TIMEOUT, vars),
-    onSuccess: (_data, vars) => invalidate(vars.serverId),
-  });
+/** Ends a member's timeout early with the `clearTimeout` mutation, then reads the members again. */
+export async function clearMemberTimeout(
+  qc: QueryClient,
+  vars: MutationClearTimeoutArgs,
+): Promise<void> {
+  await graphqlClient.request<{ clearTimeout: boolean }>(CLEAR_TIMEOUT, vars);
+  await invalidateMembers(qc, vars.serverId);
 }
 
 /** Active bans of the workspace, newest first (Owner/Moderator only). */
@@ -563,16 +438,33 @@ export function useMessageReports(
   });
 }
 
-export function useResolveReportMutation() {
+/**
+ * Resolves or dismisses a report of `serverId` and says so in a toast, or says why it could not;
+ * the workspace's report lists are read again after a change. The report rows and the Resolve
+ * Report and Dismiss Report commands both settle reports with it.
+ */
+export async function settleReport(
+  qc: QueryClient,
+  vars: MutationResolveReportArgs,
+): Promise<void> {
+  try {
+    await graphqlClient.request<{ resolveReport: { id: string; status: MessageReportStatus } }>(
+      RESOLVE_REPORT,
+      vars,
+    );
+  } catch (err) {
+    toast.error(graphqlErrorMessage(err, "Could not update the report"));
+    return;
+  }
+  void qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] });
+  toast.success(vars.outcome === ReportOutcome.RESOLVED ? "Report resolved" : "Report dismissed");
+}
+
+/** {@link settleReport} as a mutation, whose pending state a report row shows. */
+export function useSettleReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: MutationResolveReportArgs) =>
-      graphqlClient.request<{ resolveReport: { id: string; status: MessageReportStatus } }>(
-        RESOLVE_REPORT,
-        vars,
-      ),
-    onSuccess: (_data, vars) =>
-      qc.invalidateQueries({ queryKey: ["messageReports", vars.serverId] }),
+    mutationFn: (vars: MutationResolveReportArgs) => settleReport(qc, vars),
   });
 }
 
@@ -599,46 +491,42 @@ export function clearMessageFlagOptions(qc: QueryClient) {
 }
 
 /**
- * Most `deleteMemberMessages` calls one deletion makes (1000 each) before it stops and says more
- * remain.
+ * Most runs of the delete command one deletion makes (1000 messages each) before it stops and
+ * says more remain.
  */
 export const MAX_DELETE_ROUNDS = 50;
 
 /** What one deletion of a person's messages did. */
 export interface MemberMessagesDeleted {
-  /** Messages deleted over every call. */
+  /** Messages deleted over every run. */
   deleted: number;
-  /** Whether matching messages remain after the last call. */
+  /** Whether matching messages remain after the last run. */
   hasMore: boolean;
 }
 
 /** A person's message counts, with the `since` they were asked for. */
 export interface MemberMessageCountsResult {
   counts: MemberMessageCounts;
-  /** The bound the counts were asked with, which the delete then sends. */
+  /** The bound the counts were asked with. */
   since: string | null;
 }
 
 /**
- * Deletes a person's messages, calling `deleteMemberMessages` again while more remain, at most
- * {@link MAX_DELETE_ROUNDS} times; stops early when a call deletes nothing.
+ * Deletes a person's messages by running `round` again while more remain, at most
+ * {@link MAX_DELETE_ROUNDS} times; stops early when a run deletes nothing.
  *
+ * @param round - One run of the delete, answering how many it deleted and whether more remain.
  * @returns How many were deleted, and whether more remain.
- * @throws The first call's error unchanged; a later call's error as an `Error` that names how
+ * @throws The first run's error unchanged; a later run's error as an `Error` that names how
  * many were already deleted.
  */
-export async function deleteAllMemberMessages(
-  vars: MutationDeleteMemberMessagesArgs,
+export async function deleteInRounds(
+  round: () => Promise<MemberMessagesDeleted>,
 ): Promise<MemberMessagesDeleted> {
   let deleted = 0;
   try {
-    for (let round = 0; round < MAX_DELETE_ROUNDS; round += 1) {
-      const res = (
-        await graphqlClient.request<{ deleteMemberMessages: DeletedMemberMessages }>(
-          DELETE_MEMBER_MESSAGES,
-          vars,
-        )
-      ).deleteMemberMessages;
+    for (let run = 0; run < MAX_DELETE_ROUNDS; run += 1) {
+      const res = await round();
       deleted += res.deleted;
       if (!res.hasMore || res.deleted === 0) return { deleted, hasMore: res.hasMore };
     }
@@ -671,17 +559,6 @@ export function useMemberMessageCounts(serverId: string, userId: string, period:
         { serverId, userId, since } satisfies QueryMemberMessageCountsArgs,
       );
       return { counts: res.memberMessageCounts, since };
-    },
-  });
-}
-
-/** Deletes a person's messages with {@link deleteAllMemberMessages}, then drops their counts. */
-export function useDeleteMemberMessages() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deleteAllMemberMessages,
-    onSettled: (_data, _error, vars) => {
-      invalidateMemberMessageCounts(qc, vars.serverId, vars.userId);
     },
   });
 }

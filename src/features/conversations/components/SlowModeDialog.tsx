@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { toast } from "../../../shared/toast";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
-import { SLOW_MODE_OPTIONS, useSetSlowModeMutation } from "../api/useSlowMode";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { SLOW_MODE_OPTIONS } from "../api/useSlowMode";
 import type { ConversationSummary } from "../types";
 import { conversationLabel } from "../utils";
 
@@ -19,7 +20,6 @@ export function SlowModeDialog({ workspaceId, conversation, onClose }: SlowModeD
     ? SLOW_MODE_OPTIONS
     : [...SLOW_MODE_OPTIONS, { seconds: current, label: `${current} seconds (current)` }];
   const [seconds, setSeconds] = useState(current);
-  const setSlowMode = useSetSlowModeMutation();
   const label = conversationLabel(conversation);
 
   return (
@@ -30,9 +30,18 @@ export function SlowModeDialog({ workspaceId, conversation, onClose }: SlowModeD
       confirmLabel="Save"
       confirmDisabled={seconds === current}
       errorFallback="Could not change slow mode"
-      onConfirm={() =>
-        setSlowMode.mutateAsync({ serverId: workspaceId, conversationId: conversation.id, seconds })
-      }
+      onConfirm={async () => {
+        const outcome = await runCommandFromClick(
+          "chat.set_slow_mode",
+          { server_id: workspaceId, conversation_id: conversation.id, seconds },
+          {
+            target: { workspaceId, conversationId: conversation.id },
+            throwOnError: true,
+            successToast: null,
+          },
+        );
+        return outcome.ok;
+      }}
       onDone={() => {
         const chosen = options.find((o) => o.seconds === seconds);
         toast.success(
