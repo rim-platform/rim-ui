@@ -3,6 +3,7 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import type { PluginInfo, PluginInstallSource } from "../types";
 import { capabilityLabel } from "./consentText";
 import { kindLabel, trustBadge } from "./pluginTrust";
+import { RunsCommandsList } from "./RunsCommandsList";
 
 interface PluginDetailsDialogProps {
   plugin: PluginInfo;
@@ -70,6 +71,11 @@ export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProp
             <p>The plugin asks for no permissions.</p>
           )}
         </section>
+
+        <RunsCommandsList
+          ids={plugin.runs_commands ?? []}
+          granted={plugin.granted_commands ?? []}
+        />
 
         {origins.length > 0 && (
           <section className="space-y-1">

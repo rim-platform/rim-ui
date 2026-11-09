@@ -67,6 +67,21 @@ const ExecuteCommandDocument = gql`
 `;
 
 /**
+ * The commands the server lists on `surface` in `commandContext`, fetched now, bypassing
+ * the cache.
+ */
+export async function fetchCommandList(
+  surface: CommandSurface,
+  commandContext?: CommandContextInput,
+): Promise<CommandDefinition[]> {
+  const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(CommandsDocument, {
+    surface,
+    commandContext,
+  });
+  return res.commands;
+}
+
+/**
  * The command registry for one surface, fetched with the active workspace as context and
  * cached per workspace.
  */

@@ -131,6 +131,7 @@ yourself.
 | `storage`             | A WebSandboxed plugin's small store, below.                  |
 | `settings`            | What the user saved in the plugin's settings form, below.    |
 | `chat`                | The person's messages, below.                                |
+| `commands`            | The app's own commands the person granted, below.            |
 
 ### Context
 
@@ -245,6 +246,27 @@ Reads come from what the person's device stores. The calls need `"chat.read"` or
 `"chat.write.encrypted"` (a manifest asking for an encrypted one must ask for the plain one
 too); otherwise they reject with `CAPABILITY_DENIED`. `rim.chat.*` is routed by both hosts
 but not frozen in v1, so the shapes may still change.
+
+### Commands
+
+`host.commands.execute(commandId, args)` asks the app to run one of its own commands as the
+person: a built-in or app command the manifest lists in
+[`runs_commands`](../../docs/plugin-manifest.md#runs_commands) and the person granted.
+
+```ts
+const run = await host.commands.execute("workspace.open_home");
+if (run.status === "refused") host.log.info(`not run: ${run.code}`);
+await host.commands.execute("chat.post_message", { conversation_id: conversationId, text: "done" });
+```
+
+It resolves with `{ status, code?, message? }` and never the command's output: `success`,
+`error` (it ran and failed, or its confirmation expired) or `refused` with `code`
+`NOT_ALLOWED`, `NOT_GRANTED`, `UNAVAILABLE`, `RATE_LIMITED`, `COOLING_DOWN`, `BUSY` or
+`CONFIRMATION_DISMISSED`. A command that changes something asks the person first in a card
+naming the plugin, so the promise may wait up to two minutes. A `workspace_id`,
+`conversation_id` or `thread_id` in `args` replaces the person's current one. A host from before
+this request rejects with `METHOD_NOT_FOUND`. In tests, answer `rim.command.execute` from
+`onRequest`.
 
 ## Testing without the app
 

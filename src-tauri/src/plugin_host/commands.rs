@@ -83,6 +83,10 @@ pub struct PluginInfo {
     /// When each capability was given and revoked, and the encrypted messages the
     /// plugin read per day.
     pub audit: PluginAudit,
+    /// The built-in and app commands the manifest asks to run.
+    pub runs_commands: Vec<String>,
+    /// The ids of `runs_commands` the person granted.
+    pub granted_commands: Vec<String>,
 }
 
 #[tauri::command]
@@ -166,6 +170,10 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
             source: record.source.clone(),
             starting: record.starting,
             audit: store.audit.get(id).cloned().unwrap_or_default(),
+            runs_commands: manifest
+                .map(|m| m.runs_commands.clone())
+                .unwrap_or_default(),
+            granted_commands: record.granted_commands.clone(),
         });
     }
     Ok(plugins)
@@ -861,16 +869,16 @@ fn apply_update_to_store(
             format!("plugin record not found: {}", manifest.plugin_id),
         ))
     })?;
-    let (approved_capabilities, approved_ai_commands, _) =
-        registry::carried(&record, old_manifest, manifest);
+    let kept = registry::carried(&record, old_manifest, manifest);
     let bundle_fingerprint = if record.bundle_fingerprint.is_empty() {
         String::new()
     } else {
         local_install::compute_bundle_fingerprint(plugin_dir)?
     };
     store.upsert(PluginRecord {
-        approved_capabilities,
-        approved_ai_commands,
+        approved_capabilities: kept.capabilities,
+        approved_ai_commands: kept.ai_commands,
+        granted_commands: kept.commands,
         bundle_fingerprint,
         fingerprint_changed: false,
         ..record
@@ -2002,11 +2010,144 @@ pub fn plugin_record_encrypted_reads(
     Ok(())
 }
 
+/// Grants `plugin_id` running each of `command_ids`, which its manifest's
+/// `runs_commands` must list.
+///
+/// # Errors
+///
+/// The errors of [`lifecycle::grant_commands`], and `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_grant_commands(
+    plugin_id: String,
+    command_ids: Vec<String>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    lifecycle::grant_commands(&mut store, &manifest, &command_ids)?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Takes back `plugin_id`'s grant to run `command_id`. The plugin keeps running.
+///
+/// # Errors
+///
+/// `LifecycleError::NotFound` for an unknown plugin, `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_revoke_command(
+    plugin_id: String,
+    command_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    lifecycle::revoke_command(&mut store, &plugin_id, &command_id)?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Records in `plugin_id`'s audit that it asked the app to run `command_id`, and how
+/// the run ended: `outcome` `success`, `error` or `refused`, with `code` saying why a
+/// refused run was refused.
+///
+/// # Errors
+///
+/// `LifecycleError::InvalidCommandRun` for an outcome, code or id out of shape,
+/// `LifecycleError::NotFound` for an unknown plugin, `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_record_command_run(
+    plugin_id: String,
+    command_id: String,
+    outcome: String,
+    code: Option<String>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    check_command_run(&command_id, &outcome, code.as_deref())?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    if store.get(&plugin_id).is_none() {
+        return Err(LifecycleError::NotFound(plugin_id));
+    }
+    store.record_command_run(
+        &plugin_id,
+        &command_id,
+        &outcome,
+        code.as_deref(),
+        chrono::Utc::now(),
+    );
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Longest refusal code a recorded command run may carry.
+const MAX_RUN_CODE_LEN: usize = 32;
+
+/// Checks a command run before it is recorded: a known outcome, a code of at most
+/// [`MAX_RUN_CODE_LEN`] capital letters and underscores, and an id of at most 256
+/// printable ASCII characters, since a plugin's own request names it.
+///
+/// # Errors
+///
+/// `LifecycleError::InvalidCommandRun` saying what is out of shape.
+fn check_command_run(
+    command_id: &str,
+    outcome: &str,
+    code: Option<&str>,
+) -> Result<(), LifecycleError> {
+    let invalid = |what: &str| Err(LifecycleError::InvalidCommandRun(what.to_string()));
+    if !crate::plugin_host::state::COMMAND_RUN_OUTCOMES.contains(&outcome) {
+        return invalid("unknown outcome");
+    }
+    if code.is_some_and(|c| {
+        c.is_empty()
+            || c.len() > MAX_RUN_CODE_LEN
+            || !c.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+    }) {
+        return invalid("code out of shape");
+    }
+    if command_id.is_empty()
+        || command_id.len() > 256
+        || !command_id.bytes().all(|b| b.is_ascii_graphic())
+    {
+        return invalid("command id out of shape");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn command_runs_are_checked_before_they_are_recorded() {
+        assert!(check_command_run("workspace.go_back", "success", None).is_ok());
+        assert!(check_command_run("chat.post_message", "refused", Some("NOT_GRANTED")).is_ok());
+        assert!(check_command_run("workspace.go_back", "done", None).is_err());
+        assert!(check_command_run("workspace.go_back", "refused", Some("not granted")).is_err());
+        assert!(check_command_run("workspace.go_back", "refused", Some("")).is_err());
+        assert!(check_command_run("", "error", None).is_err());
+        assert!(check_command_run("a b", "error", None).is_err());
+        assert!(check_command_run(&"a".repeat(257), "error", None).is_err());
+    }
 
     /// A plugin `dev.example.hello` of `kind` declaring the panel `main`, whose
     /// folder holds `index.html`.
@@ -2428,6 +2569,29 @@ mod tests {
         assert_eq!(record.approved_capabilities, vec!["chat.read".to_string()]);
         assert!(record.bundle_fingerprint.is_empty());
         assert_eq!(record.source, git_source());
+    }
+
+    #[test]
+    fn an_update_drops_the_grants_of_commands_it_no_longer_lists() {
+        let tmp = TempDir::new().unwrap();
+        let mut store = PluginStateStore::default();
+        store.upsert(PluginRecord {
+            granted_commands: vec!["workspace.go_back".into(), "workspace.open_home".into()],
+            ..recorded(git_source(), &[], "")
+        });
+        let listing = |ids: &[&str]| PluginManifest {
+            runs_commands: ids.iter().map(|c| c.to_string()).collect(),
+            ..asking(&[])
+        };
+        apply_update_to_store(
+            &mut store,
+            Some(&listing(&["workspace.go_back", "workspace.open_home"])),
+            &listing(&["workspace.open_home", "chat.post_message"]),
+            tmp.path(),
+        )
+        .unwrap();
+        let record = store.get(HELLO).unwrap();
+        assert_eq!(record.granted_commands, vec!["workspace.open_home"]);
     }
 
     /// The manifest of [`installed`] asking for `network.fetch` to `origins`.

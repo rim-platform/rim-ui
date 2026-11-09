@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const revoke = vi.hoisted(() => vi.fn(async () => {}));
+const revokeCommand = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginCapabilities", () => ({
   useRevokeCapability: vi.fn(() => ({ mutateAsync: revoke, isPending: false })),
+  useRevokeCommand: vi.fn(() => ({ mutate: revokeCommand, isPending: false })),
 }));
 
 import { PluginAuditPanel } from "./PluginAuditPanel";
@@ -33,6 +35,51 @@ const plugin: PluginInfo = {
 };
 
 describe("PluginAuditPanel", () => {
+  it("lists the granted commands with a revoke each, their grants and the runs", () => {
+    render(
+      <PluginAuditPanel
+        plugin={{
+          ...plugin,
+          runs_commands: ["workspace.open_home", "chat.post_message"],
+          granted_commands: ["workspace.open_home"],
+          audit: {
+            grants: [
+              {
+                capability: "workspace.open_home",
+                kind: "command",
+                action: "granted",
+                at: "2026-10-01T09:00:00Z",
+              },
+            ],
+            encrypted_reads: {},
+            command_runs: [
+              { command_id: "workspace.open_home", outcome: "success", at: "2026-10-01T09:01:00Z" },
+              {
+                command_id: "chat.post_message",
+                outcome: "refused",
+                code: "NOT_GRANTED",
+                at: "2026-10-01T09:02:00Z",
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    const granted = screen.getByRole("region", { name: "Commands it can run" });
+    expect(granted).toHaveTextContent("Open Home");
+    fireEvent.click(screen.getByRole("button", { name: "Take back Open Home" }));
+    expect(revokeCommand).toHaveBeenCalledWith({
+      pluginId: "dev.example.reader",
+      commandId: "workspace.open_home",
+    });
+    expect(screen.getByRole("region", { name: "Permission history" })).toHaveTextContent(
+      "Run Open Home granted",
+    );
+    const runs = screen.getByRole("region", { name: "Commands it ran" }).querySelectorAll("li");
+    expect(runs[0]).toHaveTextContent("chat.post_message refused (NOT_GRANTED)");
+    expect(runs[1]).toHaveTextContent("Open Home ran");
+  });
+
   it("shows the grant history newest first and the encrypted reads per day", () => {
     render(<PluginAuditPanel plugin={plugin} />);
     const history = screen.getByRole("region", { name: "Permission history" });

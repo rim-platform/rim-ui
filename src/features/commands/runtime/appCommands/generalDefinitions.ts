@@ -1,7 +1,27 @@
 import type { TargetPickerKind } from "../../state/useCommandStore";
 import type { CommandDefinition } from "../../types";
-import { localCommand } from "./localCommand";
+import { localCommand, PLUGIN_RUNNABLE } from "./localCommand";
 import { SETTINGS_TABS, settingsTabCommandId } from "../../../settings/settingsTabs";
+
+/**
+ * The Settings pages a plugin may be granted opening: none about the account's keys and
+ * sign-in, plugins, agents, moderation, bots, contacts, direct messages or the workspace.
+ */
+const PLUGIN_OPENABLE_SETTINGS_TABS: ReadonlySet<string> = new Set([
+  "profile",
+  "desktop",
+  "messages",
+  "notifications",
+  "history",
+  "keybinds",
+  "keyboard",
+  "commands",
+  "macros",
+  "pipelines",
+  "state",
+  "emoji",
+  "about",
+]);
 
 const SETTINGS_TAB_COMMANDS: CommandDefinition[] = SETTINGS_TABS.map((tab) =>
   localCommand(
@@ -9,6 +29,8 @@ const SETTINGS_TAB_COMMANDS: CommandDefinition[] = SETTINGS_TABS.map((tab) =>
     tab.group === "Workspace" ? "Workspace" : "App",
     `Settings: ${tab.label}`,
     `Open Settings on the ${tab.label} page`,
+    true,
+    PLUGIN_OPENABLE_SETTINGS_TABS.has(tab.key) ? PLUGIN_RUNNABLE : {},
   ),
 );
 
@@ -25,6 +47,8 @@ export const GENERAL_COMMANDS: CommandDefinition[] = [
     "Navigation",
     "Open Direct Messages",
     "Switch to your direct messages",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "workspace.add",
@@ -52,6 +76,7 @@ export const GENERAL_COMMANDS: CommandDefinition[] = [
     "View Profile…",
     "Pick a person and see their profile",
     false,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "people.message",

@@ -39,7 +39,8 @@ pub mod method {
     /// Host → plugin notification: provisional principal ids and the key-based ids that
     /// replaced them, so a plugin can rewrite ids it stored.
     pub const PRINCIPALS_REMAPPED: &str = "rim.principals.remapped";
-    /// Host → plugin request: run one of the plugin's manifest commands.
+    /// Host → plugin request: run one of the plugin's manifest commands. Plugin → host
+    /// request: ask the app to run a built-in or app command the person granted it.
     pub const COMMAND_EXECUTE: &str = "rim.command.execute";
     /// Plugin → host request or notification: write a line to the host log.
     pub const LOG: &str = "rim.log";

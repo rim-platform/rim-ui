@@ -30,6 +30,8 @@ vi.mock("../api/usePluginList", () => ({
 
 vi.mock("../../commands/api/useCommands", () => ({
   reloadCommands: vi.fn(),
+  useCommands: vi.fn(() => ({ data: [] })),
+  fetchCommandList: vi.fn(async () => []),
 }));
 
 import { invoke } from "@tauri-apps/api/core";

@@ -53,6 +53,11 @@ export interface CommandDefinition {
   sensitivity?: CommandSensitivity;
   /** The arguments the server declares for the command; absent on commands the client defines. */
   arguments?: CommandArgumentInfo[];
+  /**
+   * Set on an app command a plugin may be granted: one that only opens, shows, or moves
+   * focus or selection, or starts a form the person finishes. Absent means no plugin runs it.
+   */
+  pluginRunnable?: boolean;
 }
 
 export interface ResolvedKeybind {

@@ -5,7 +5,7 @@ import { Shield } from "lucide-react";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { usePluginEnable } from "../api/usePluginActions";
-import { useApproveCapabilities } from "../api/usePluginCapabilities";
+import { useApproveCapabilities, useGrantCommands } from "../api/usePluginCapabilities";
 import {
   parsePluginCapabilities,
   runtimeKind,
@@ -21,6 +21,7 @@ import {
   networkFetchText,
   plainCapabilityOf,
 } from "./consentText";
+import { runsCommandNote, useRunsCommandRows, type RunsCommandRow } from "./runsCommands";
 
 const capabilityDescriptions: Record<PluginCapability, string> = {
   "chat.read": CHAT_CONSENT_TEXT["chat.read"],
@@ -58,7 +59,22 @@ export function PluginCapabilityPrompt({
     () => new Set(parsedCapabilities),
   );
   const approve = useApproveCapabilities();
+  const grantCommands = useGrantCommands();
   const enable = usePluginEnable();
+  const commandRows = useRunsCommandRows(plugin.runs_commands ?? []);
+  const alreadyGranted = new Set(plugin.granted_commands ?? []);
+  // Nothing is checked for the person: each command is granted only by its own tick.
+  const [commandsSelected, setCommandsSelected] = useState<Set<string>>(() => new Set());
+  const [grantError, setGrantError] = useState<string | null>(null);
+
+  function toggleCommand(id: string) {
+    setCommandsSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [startError, setStartError] = useState<string | null>(null);
   const start = startOnApprove && !plugin.enabled;
 
@@ -83,23 +99,45 @@ export function PluginCapabilityPrompt({
     });
   }
 
+  /** Closes the prompt, or turns the plugin on first when it was opened to start it. */
+  function finish() {
+    if (!start) {
+      onClose();
+      return;
+    }
+    enable.mutate(plugin.plugin_id, {
+      onSuccess: onClose,
+      onError: (err) =>
+        setStartError(
+          `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings → Plugins.`,
+        ),
+    });
+  }
+
   function handleApprove() {
     setStartError(null);
+    setGrantError(null);
+    const newCommands = commandRows
+      .filter((row) => commandsSelected.has(row.id) && !alreadyGranted.has(row.id))
+      .map((row) => row.id);
     approve.mutate(
       { pluginId: plugin.plugin_id, capabilities: Array.from(selected) },
       {
         onSuccess: () => {
-          if (!start) {
-            onClose();
+          if (newCommands.length === 0) {
+            finish();
             return;
           }
-          enable.mutate(plugin.plugin_id, {
-            onSuccess: onClose,
-            onError: (err) =>
-              setStartError(
-                `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings → Plugins.`,
-              ),
-          });
+          grantCommands.mutate(
+            { pluginId: plugin.plugin_id, commandIds: newCommands },
+            {
+              onSuccess: finish,
+              onError: (err) =>
+                setGrantError(
+                  `The permissions are saved, but the commands were not granted: ${err.message}`,
+                ),
+            },
+          );
         },
       },
     );
@@ -177,6 +215,21 @@ export function PluginCapabilityPrompt({
           ))}
         </div>
 
+        {commandRows.length > 0 && (
+          <RunsCommandsSection
+            rows={commandRows}
+            granted={alreadyGranted}
+            selected={commandsSelected}
+            onToggle={toggleCommand}
+          />
+        )}
+
+        {grantError && (
+          <p className="text-xs text-rim-danger" role="alert">
+            {grantError}
+          </p>
+        )}
+
         {start && (
           <p className="text-xs text-rim-text-muted">
             The plugin starts once you approve. Cancel leaves it installed and turned off.
@@ -190,12 +243,12 @@ export function PluginCapabilityPrompt({
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" size="sm" onClick={onClose}>
-            {startError ? "Close" : "Cancel"}
+            {startError || grantError ? "Close" : "Cancel"}
           </Button>
-          {!startError && (
+          {!startError && !grantError && (
             <Button
               size="sm"
-              isLoading={approve.isPending || enable.isPending}
+              isLoading={approve.isPending || grantCommands.isPending || enable.isPending}
               onClick={handleApprove}
             >
               {start ? "Approve and turn on" : "Approve"}
@@ -215,5 +268,75 @@ function ChatConsentLine({ text }: { text: string }) {
       <span className="font-medium">{text.slice(0, colon + 1)}</span>
       <span className="text-rim-text-muted">{text.slice(colon + 1)}</span>
     </p>
+  );
+}
+
+/**
+ * The built-in and app commands the plugin asks to run: a box per one the person may grant,
+ * none checked, those already granted shown as granted, and those no plugin may run or that
+ * are not offered here greyed with why.
+ */
+function RunsCommandsSection({
+  rows,
+  granted,
+  selected,
+  onToggle,
+}: {
+  rows: RunsCommandRow[];
+  granted: ReadonlySet<string>;
+  selected: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <section aria-label="Commands it can run" className="space-y-1">
+      <h4 className="text-xs font-medium text-rim-text">Commands it can run</h4>
+      <p className="text-xs text-rim-text-muted">
+        Tick each command it may run as you. Those that change something ask you each time.
+      </p>
+      <div className="space-y-1">
+        {rows.map((row) => {
+          const grantable = row.kind === "runs" || row.kind === "asks";
+          const note = runsCommandNote(row);
+          const label = (
+            <div className="min-w-0">
+              <p className={`text-sm ${grantable ? "text-rim-text" : "text-rim-text-faint"}`}>
+                {showInvisibleCharacters(row.title)}
+                {row.category && (
+                  <span className="ml-1 text-xs text-rim-text-faint">· {row.category}</span>
+                )}
+              </p>
+              <p className="font-mono text-[11px] text-rim-text-faint">{row.id}</p>
+              {note && <p className="text-xs text-rim-text-muted">{note}</p>}
+            </div>
+          );
+          if (!grantable) {
+            return (
+              <div key={row.id} className="flex items-start gap-3 px-3 py-2 opacity-60">
+                <span className="mt-0.5 w-[13px] shrink-0" aria-hidden />
+                {label}
+              </div>
+            );
+          }
+          const already = granted.has(row.id);
+          return (
+            <label
+              key={row.id}
+              className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 transition hover:bg-white/5"
+            >
+              <input
+                type="checkbox"
+                checked={already || selected.has(row.id)}
+                disabled={already}
+                onChange={() => onToggle(row.id)}
+                className="mt-0.5 accent-rim-accent"
+                aria-label={`Let it run ${row.title}`}
+              />
+              {label}
+              {already && <span className="ml-auto text-xs text-rim-success">Granted</span>}
+            </label>
+          );
+        })}
+      </div>
+    </section>
   );
 }

@@ -637,6 +637,26 @@ export function runDesktopLocalCommand(commandId: string, args?: Record<string, 
 }
 
 /**
+ * Runs the local handler of a command for a caller that is not the person, such as a
+ * plugin the person granted it, with `args` and the `commandContext` the caller acts in. It
+ * never runs a command that answers or manages agents, and opens no argument picker.
+ *
+ * @returns `null` when the command has no local handler (or is an agent command), else
+ *   whether it succeeded and what its result says.
+ */
+export function runLocalCommandForCaller(
+  commandId: string,
+  args: Record<string, unknown>,
+  commandContext: Record<string, unknown>,
+): { ok: boolean; message: string } | null {
+  if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return null;
+  if (!Object.prototype.hasOwnProperty.call(localHandlers, commandId)) return null;
+  const result = localHandlers[commandId](args, commandContext);
+  if (!result) return { ok: true, message: "" };
+  return { ok: result.status !== "ERROR", message: result.message };
+}
+
+/**
  * Backend commands whose local handler acts on the arguments typed in the message box itself,
  * rather than leaving them to the server.
  */

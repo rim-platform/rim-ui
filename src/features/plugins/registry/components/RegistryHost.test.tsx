@@ -39,7 +39,11 @@ vi.mock("../../api/usePluginList", () => ({
   usePluginList: () => ({ data: registry.installed }),
 }));
 
-vi.mock("../../../commands/api/useCommands", () => ({ reloadCommands: vi.fn() }));
+vi.mock("../../../commands/api/useCommands", () => ({
+  reloadCommands: vi.fn(),
+  useCommands: vi.fn(() => ({ data: [] })),
+  fetchCommandList: vi.fn(async () => []),
+}));
 
 vi.mock("./RegistryInstallDialog", () => ({
   RegistryInstallDialog: ({ item }: { item: RegistryItem }) => (

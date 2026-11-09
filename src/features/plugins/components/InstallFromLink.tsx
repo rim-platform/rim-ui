@@ -27,6 +27,9 @@ function changesOf(fetched: FetchedLinkBundle, current: PluginInfo) {
     version: current.version === next.version ? null : `${current.version} → ${next.version}`,
     added: next.capabilities.filter((c) => !current.capabilities.includes(c)),
     removed: current.capabilities.filter((c) => !next.capabilities.includes(c)),
+    addedCommands: (next.runs_commands ?? []).filter(
+      (c) => !(current.runs_commands ?? []).includes(c),
+    ),
   };
 }
 
@@ -186,6 +189,9 @@ function ReplaceDialog({
           {changes.added.length > 0 && <li>New permissions: {changes.added.join(", ")}</li>}
           {changes.removed.length > 0 && (
             <li>Permissions no longer asked for: {changes.removed.join(", ")}</li>
+          )}
+          {changes.addedCommands.length > 0 && (
+            <li>New commands it can run: {changes.addedCommands.join(", ")}</li>
           )}
           {changes.added.length === 0 && changes.removed.length === 0 && (
             <li>Permissions: unchanged</li>

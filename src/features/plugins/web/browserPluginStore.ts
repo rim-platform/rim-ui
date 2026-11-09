@@ -17,11 +17,12 @@ import {
   type SealedStore,
 } from "../../../core/accountVault/sealedRecords";
 import { exclusive } from "../../key-identity/browser/persistence";
-import { EMPTY_AUDIT, withEncryptedReads, withGrant } from "../audit";
+import { EMPTY_AUDIT, withCommandRun, withEncryptedReads, withGrant } from "../audit";
 import {
   sameNetworkOrigins,
   type PluginAudit,
   type PluginCommandInfo,
+  type PluginCommandRunOutcome,
   type PluginContextAction,
   type PluginInfo,
   type PluginInstallResult,
@@ -36,6 +37,7 @@ import {
   NETWORK_FETCH,
   parseManifestText,
   settingValueError,
+  unrunnableByPlugins,
   type ManifestSetting,
   type PluginManifest,
 } from "../../../../sdk/plugin-sdk/src/manifestRules";
@@ -104,6 +106,8 @@ export interface InstallRecord {
   installedAt: string;
   /** Grant history and encrypted reads; absent on records older than the audit. */
   audit?: PluginAudit;
+  /** The ids of the manifest's `runs_commands` granted; absent on records from before them. */
+  grantedCommands?: string[];
 }
 
 interface StoredBundle {
@@ -289,6 +293,8 @@ export function toPluginInfo(record: InstallRecord): PluginInfo {
     source: record.source,
     starting: record.starting,
     audit: record.audit ?? EMPTY_AUDIT,
+    runs_commands: manifest.runs_commands,
+    granted_commands: record.grantedCommands ?? [],
   };
 }
 
@@ -362,6 +368,59 @@ export class BrowserPluginStore implements PluginServices {
       ...(r.approvedCapabilities.includes(capability)
         ? { audit: withGrant(r.audit, capability, "revoked", new Date()) }
         : {}),
+    }));
+  }
+
+  /**
+   * Grant the plugin running each of `commandIds`, as on the desktop: each must be one its
+   * manifest's `runs_commands` lists, and none one no plugin may run.
+   */
+  grantCommands(pluginId: string, commandIds: string[]): Promise<void> {
+    return this.update(pluginId, (r) => {
+      const listed = parseManifestText(r.manifestText).runs_commands;
+      for (const id of commandIds) {
+        if (!listed.includes(id)) {
+          throw new Error(`command not listed in the plugin's runs_commands: ${id}`);
+        }
+        const reason = unrunnableByPlugins(id);
+        if (reason !== null) throw new Error(`a plugin cannot run ${id}: ${reason}`);
+      }
+      const granted = [...(r.grantedCommands ?? [])];
+      let audit = r.audit;
+      const now = new Date();
+      for (const id of commandIds) {
+        if (!granted.includes(id)) {
+          granted.push(id);
+          audit = withGrant(audit, id, "granted", now, "command");
+        }
+      }
+      return { ...r, grantedCommands: granted, ...(audit ? { audit } : {}) };
+    });
+  }
+
+  /** Take back the plugin's grant to run `commandId`; the plugin keeps running. */
+  revokeCommand(pluginId: string, commandId: string): Promise<void> {
+    return this.update(pluginId, (r) => {
+      const granted = r.grantedCommands ?? [];
+      if (!granted.includes(commandId)) return r;
+      return {
+        ...r,
+        grantedCommands: granted.filter((c) => c !== commandId),
+        audit: withGrant(r.audit, commandId, "revoked", new Date(), "command"),
+      };
+    });
+  }
+
+  /** Record that the plugin asked the app to run `commandId`, and how the run ended. */
+  recordCommandRun(
+    pluginId: string,
+    commandId: string,
+    outcome: PluginCommandRunOutcome,
+    code?: string,
+  ): Promise<void> {
+    return this.update(pluginId, (r) => ({
+      ...r,
+      audit: withCommandRun(r.audit, commandId, outcome, code, new Date()),
     }));
   }
 
@@ -458,6 +517,9 @@ export class BrowserPluginStore implements PluginServices {
         (c) => manifest.capabilities.includes(c) && (c !== NETWORK_FETCH || sitesKept),
       ),
       approvedAiCommands: (kept?.approvedAiCommands ?? []).filter((c) => aiCommands.includes(c)),
+      grantedCommands: (kept?.grantedCommands ?? []).filter((c) =>
+        manifest.runs_commands.includes(c),
+      ),
       starting: false,
       installedAt: new Date().toISOString(),
       // An update keeps the plugin's history; a fresh install starts its own.

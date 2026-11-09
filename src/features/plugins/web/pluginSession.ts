@@ -61,6 +61,11 @@ export interface SessionHooks {
   settingsGet(): Promise<Record<string, unknown>>;
   /** A `rim.chat.*` call, already past the capability gate and its rate limit. */
   chat?(method: string, params: unknown): Promise<unknown>;
+  /**
+   * The plugin's request to run one of the app's own commands; answers how the run ended.
+   * Without it the request gets `METHOD_NOT_FOUND`.
+   */
+  runCommand?(commandId: string, args: Record<string, unknown>): Promise<unknown>;
   /** The session ended on its own: a failed handshake, a flood, missed heartbeats. */
   stopped(reason: string): void;
 }
@@ -609,6 +614,19 @@ export class PluginSession {
           throw new RpcError(ErrorCode.INVALID_PARAMS, "missing required param: value");
         await this.hooks.storageSet(key, p.value);
         return { ok: true };
+      }
+      case Method.commandExecute: {
+        if (!this.hooks.runCommand) {
+          throw new RpcError(ErrorCode.METHOD_NOT_FOUND, `method not found: ${method}`);
+        }
+        const p = isRecord(params) ? params : {};
+        if (typeof p.commandId !== "string") {
+          throw new RpcError(ErrorCode.INVALID_PARAMS, "missing required param: commandId");
+        }
+        if (p.args !== undefined && p.args !== null && !isRecord(p.args)) {
+          throw new RpcError(ErrorCode.INVALID_PARAMS, "args must be an object");
+        }
+        return this.hooks.runCommand(p.commandId, isRecord(p.args) ? p.args : {});
       }
       default:
         if (isChatMethod(method) && this.hooks.chat) return this.hooks.chat(method, params);

@@ -35,6 +35,7 @@ export const Method = {
   principalChanged: "rim.principal.changed",
   principalsRemapped: "rim.principals.remapped",
   commandExecute: "rim.command.execute",
+  runCommand: "rim.command.execute",
   log: "rim.log",
   settingsGet: "rim.settings.get",
   settingsChanged: "rim.settings.changed",
@@ -194,6 +195,38 @@ export interface CommandExecuteResponse {
   jsonrpc: JsonRpcVersion;
   id: Id;
   result: CommandResult;
+}
+
+export interface RunCommandParams {
+  /** A built-in or app command the manifest lists in runs_commands and the person granted, such as workspace.open_home. Never a plugin command. */
+  commandId: string;
+  /** The command's arguments, keyed by argument name. A workspace_id, conversation_id or thread_id among them replaces the person's current one. Missing means none. */
+  args?: Record<string, unknown>;
+}
+
+/** Plugin to host: ask the app to run a built-in or app command the person granted the plugin. Added within v1. Needs no capability; the grant is checked at each request, as the person stands then. The app runs it as the person, in their current workspace and conversation; a command that changes something first asks the person in a card naming the plugin. The host answers within two minutes. A host from before this request answers METHOD_NOT_FOUND. */
+export interface RunCommandRequest {
+  jsonrpc: JsonRpcVersion;
+  id: Id;
+  method: "rim.command.execute";
+  params: RunCommandParams;
+}
+
+/** How the run ended. Never the command's output. */
+export interface RunCommandResult {
+  /** success: it ran. error: it ran and failed, or the confirmation expired. refused: it did not run; code says why. */
+  status: "success" | "error" | "refused";
+  /** Why a refused run did not run: NOT_ALLOWED (no plugin may run it), NOT_GRANTED (not granted, or the plugin is off), UNAVAILABLE (not offered here), RATE_LIMITED (over 20 a minute), COOLING_DOWN (the person dismissed this plugin's card in the last minute), BUSY (another confirmation is open), CONFIRMATION_DISMISSED (the person dismissed the card). */
+  code?: string;
+  /** One line for a log, not for the person. */
+  message?: string;
+}
+
+/** Host to plugin: the answer to rim.command.execute. A refusal is a result too, never an error; INVALID_PARAMS answers a request without a string commandId or with args that are not an object. */
+export interface RunCommandResponse {
+  jsonrpc: JsonRpcVersion;
+  id: Id;
+  result: RunCommandResult;
 }
 
 export interface LogParams {

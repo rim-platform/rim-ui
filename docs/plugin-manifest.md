@@ -203,14 +203,48 @@ checks each value it uses and ignores keys it does not know. The plugin reads th
 ]
 ```
 
+## `runs_commands`
+
+A list of strings, default `[]`: the built-in and app commands the plugin asks to run as the
+person, such as `workspace.open_home` or `chat.post_message`. A plugin runs its own commands
+without listing them. Install refuses, with `INVALID_RUNS_COMMANDS` and ``invalid runs_commands:
+<reason>``:
+
+- more than 32 ids, or one listed twice;
+- an id that is not two or more dot-separated segments of `a-z 0-9 _ -`, at most 128 bytes;
+- an id starting `plugin.`: another plugin's commands, and its own, are never run this way;
+- one of the commands that answer and manage agents: `agents.approve_request`,
+  `agents.refuse_request`, `agents.approve_pairing`, `agents.refuse_pairing`,
+  `agents.disconnect`, `agents.choose_reads`, `agents.choose_plugin_commands`,
+  `agents.open_runs`, `agents.open_record` and `agents.clear_record`.
+
+An id neither the workspace nor the app knows installs: the permission prompt shows it as "Not
+available here". The prompt lists every id under "Commands it can run" with its title and
+category, a box per one the person may grant and none ticked. Plugins can run a built-in that is
+neither `dangerous` nor `RESTRICTED` (one that changes something is labelled "asks you each
+time") and the app commands marked for plugins, which only open, show, move focus or selection,
+or start a form the person finishes. The others are greyed with "Plugins can't run this". An
+update that lists new ids opens the prompt again; grants of ids it drops are gone. Settings →
+Plugins → the plugin's row lists the granted commands, each with Revoke, and the runs.
+
+A plugin asks with `host.commands.execute(commandId, args)` in the SDK, `rim.command.execute`
+from a local process, or `rim.command.execute` from its panel. Each run is checked as the person
+stands then: granted and the plugin on, offered here, at most 20 a minute. It runs as the person
+in their current workspace, conversation and thread, never on their selected message, with a
+`workspace_id`, `conversation_id` or `thread_id` in `args` in place of theirs, and the server
+checks every permission as the person. A built-in that changes something shows a card, "<plugin>
+wants to run <command>", with the arguments and the conversation; dismissing it holds the
+plugin's requests for a minute. The plugin hears only `{ status, code?, message? }`, never the
+command's output, and every run is recorded in its audit.
+
 ## The content hash
 
 The desktop records a hash of the manifest at install and when the user approves AI commands: the
 SHA-256, in lowercase hex, of the parsed manifest serialized as compact JSON, with the fields in
 the order above, defaults filled in and unknown fields gone. Whitespace, key order and spelled-out
 defaults do not change it. `network_origins`, a panel's `slot` and a setting's `default`, `min`,
-`max`, `options` and `placeholder` are left out when absent, so a manifest without them hashes as
-on a host without those fields; other absent options are `null`.
+`max`, `options` and `placeholder` are left out when absent, and `runs_commands` when empty, so a
+manifest without them hashes as on a host without those fields; other absent options are `null`.
 
 It gates AI consent. When the hash differs from the recorded one and the manifest declares
 `ai_callable` commands, or the user approved some, the agent runs none of the plugin's commands

@@ -117,5 +117,10 @@ export function configureWebPluginHost(platform: AppPlatform): void {
     rimOrigins(),
     (pluginId, method, params, granted) =>
       appMessageService.call(pluginId, method, params, granted),
+    // Loaded on first use: the runner reaches the command dispatcher, which reaches this host.
+    async (pluginId, commandId, args) => {
+      const { runCommandForPlugin } = await import("../runtime/pluginCommandRunner");
+      return runCommandForPlugin(pluginId, commandId, args);
+    },
   );
 }

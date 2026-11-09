@@ -156,6 +156,8 @@ export interface UpdatePlan {
   newCapabilities: string[];
   /** AI-callable commands neither in the installed copy nor consented to. */
   newAiCommands: string[];
+  /** Commands the entry asks to run that the installed copy did not list. */
+  newCommands: string[];
   /** `network.fetch` is approved and the entry lists other sites, so it is asked for again. */
   sitesChanged: boolean;
 }
@@ -163,7 +165,8 @@ export interface UpdatePlan {
 /**
  * Plan the update of `plugin` to `check`. It installs at once when it keeps the runtime kind
  * and the publisher, asks for no capability the person was not already asked for or approved,
- * adds no AI-callable command beyond those already there or consented, and keeps the sites an
+ * adds no AI-callable command beyond those already there or consented, asks to run no command
+ * the installed copy did not list, and keeps the sites an
  * approved `network.fetch` reaches. Post-install steps are the host's to find: a git update
  * that needs one waits for consent there.
  */
@@ -177,6 +180,8 @@ export function planUpdate(plugin: PluginInfo, check: VerifiedEntry): UpdatePlan
   const newAiCommands = check.manifest.commands
     .filter((c) => c.ai_callable && !known.has(c.id))
     .map((c) => c.id);
+  const listed = new Set([...(plugin.runs_commands ?? []), ...(plugin.granted_commands ?? [])]);
+  const newCommands = (check.manifest.runs_commands ?? []).filter((id) => !listed.has(id));
   const sitesChanged =
     plugin.approved_capabilities.includes(NETWORK_FETCH) &&
     check.manifest.capabilities.includes(NETWORK_FETCH) &&
@@ -187,11 +192,13 @@ export function planUpdate(plugin: PluginInfo, check: VerifiedEntry): UpdatePlan
       !kindChanged &&
       newCapabilities.length === 0 &&
       newAiCommands.length === 0 &&
+      newCommands.length === 0 &&
       !sitesChanged,
     publisherChanged,
     kindChanged,
     newCapabilities,
     newAiCommands,
+    newCommands,
     sitesChanged,
   };
 }

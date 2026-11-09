@@ -29,7 +29,7 @@ import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
 import type { CommandDefinition } from "../../types";
 import { currentCommandContext } from "../commandContext";
 import type { LocalHandler } from "../commandDispatcher";
-import { localCommand } from "./localCommand";
+import { localCommand, PLUGIN_RUNNABLE } from "./localCommand";
 import { OPEN_A_CONVERSATION, openMessageList, selectedMessageInList } from "./messageContext";
 
 const OPEN_AN_INVITATION = "Open an invitation first";
@@ -149,24 +149,32 @@ export const CONVERSATION_COMMANDS: CommandDefinition[] = [
     "Messages",
     "Select Next Message",
     "Move the selection to the next message",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "chat.select_previous_message",
     "Messages",
     "Select Previous Message",
     "Move the selection to the previous message",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "chat.select_first_message",
     "Messages",
     "Select First Message",
     "Move the selection to the first message loaded",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "chat.select_last_message",
     "Messages",
     "Select Last Message",
     "Move the selection to the newest message",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "chat.toggle_fold",
@@ -185,6 +193,8 @@ export const CONVERSATION_COMMANDS: CommandDefinition[] = [
     "Conversations",
     "Browse Channels…",
     "See the channels in the open workspace and join one",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "chat.accept_invitation",
@@ -233,6 +243,8 @@ export const CONVERSATION_COMMANDS: CommandDefinition[] = [
     "Unreads",
     "Unreads: Show or Hide Muted",
     "Show or hide the muted conversations on the Unreads page",
+    true,
+    PLUGIN_RUNNABLE,
   ),
   localCommand(
     "agents.allow_in_encrypted_conversation",

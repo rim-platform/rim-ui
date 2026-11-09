@@ -1,5 +1,5 @@
 {
-  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and sdk/plugin-sdk/src/manifestRules.ts run every entry and must agree with `valid`. `builtinCapabilities` is the list of capability names a manifest may declare and a command may require, besides `network.fetch` for a WebSandboxed plugin; both hosts check that theirs equals it. `forbiddenOrigins` stands for the app's and the RIM API's origins.",
+  "description": "Manifests both hosts must judge alike: src-tauri/src/plugin_host/validation.rs and sdk/plugin-sdk/src/manifestRules.ts run every entry and must agree with `valid`. `builtinCapabilities` is the list of capability names a manifest may declare and a command may require, besides `network.fetch` for a WebSandboxed plugin; both hosts check that theirs equals it. `forbiddenOrigins` stands for the app's and the RIM API's origins. `agentManagementCommands` is the list of command ids no plugin may list in `runs_commands`; both hosts check that theirs equals it.",
   "builtinCapabilities": [
     "ui.panel",
     "ui.notify",
@@ -9,6 +9,18 @@
     "chat.write.encrypted"
   ],
   "forbiddenOrigins": ["https://api.rim.example/api", "https://rim.example"],
+  "agentManagementCommands": [
+    "agents.approve_request",
+    "agents.refuse_request",
+    "agents.approve_pairing",
+    "agents.refuse_pairing",
+    "agents.disconnect",
+    "agents.choose_reads",
+    "agents.choose_plugin_commands",
+    "agents.open_runs",
+    "agents.open_record",
+    "agents.clear_record"
+  ],
   "vectors": [
     {
       "name": "web plugin without the SDK",
@@ -3129,6 +3141,357 @@
             "read_only": null
           }
         ]
+      }
+    },
+    {
+      "name": "runs_commands naming built-in and app commands",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["workspace.open_settings", "chat.post_message", "settings.open.profile"]
+      }
+    },
+    {
+      "name": "runs_commands on a local process",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "DesktopLocalProcess",
+        "entrypoint": "main.py",
+        "runs_commands": ["workspace.go_back"]
+      }
+    },
+    {
+      "name": "runs_commands naming a command no host knows",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["example.not_a_command_yet"]
+      }
+    },
+    {
+      "name": "empty runs_commands",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": []
+      }
+    },
+    {
+      "name": "runs_commands with 32 ids",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": [
+          "workspace.cmd_0",
+          "workspace.cmd_1",
+          "workspace.cmd_2",
+          "workspace.cmd_3",
+          "workspace.cmd_4",
+          "workspace.cmd_5",
+          "workspace.cmd_6",
+          "workspace.cmd_7",
+          "workspace.cmd_8",
+          "workspace.cmd_9",
+          "workspace.cmd_10",
+          "workspace.cmd_11",
+          "workspace.cmd_12",
+          "workspace.cmd_13",
+          "workspace.cmd_14",
+          "workspace.cmd_15",
+          "workspace.cmd_16",
+          "workspace.cmd_17",
+          "workspace.cmd_18",
+          "workspace.cmd_19",
+          "workspace.cmd_20",
+          "workspace.cmd_21",
+          "workspace.cmd_22",
+          "workspace.cmd_23",
+          "workspace.cmd_24",
+          "workspace.cmd_25",
+          "workspace.cmd_26",
+          "workspace.cmd_27",
+          "workspace.cmd_28",
+          "workspace.cmd_29",
+          "workspace.cmd_30",
+          "workspace.cmd_31"
+        ]
+      }
+    },
+    {
+      "name": "runs_commands with 33 ids",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": [
+          "workspace.cmd_0",
+          "workspace.cmd_1",
+          "workspace.cmd_2",
+          "workspace.cmd_3",
+          "workspace.cmd_4",
+          "workspace.cmd_5",
+          "workspace.cmd_6",
+          "workspace.cmd_7",
+          "workspace.cmd_8",
+          "workspace.cmd_9",
+          "workspace.cmd_10",
+          "workspace.cmd_11",
+          "workspace.cmd_12",
+          "workspace.cmd_13",
+          "workspace.cmd_14",
+          "workspace.cmd_15",
+          "workspace.cmd_16",
+          "workspace.cmd_17",
+          "workspace.cmd_18",
+          "workspace.cmd_19",
+          "workspace.cmd_20",
+          "workspace.cmd_21",
+          "workspace.cmd_22",
+          "workspace.cmd_23",
+          "workspace.cmd_24",
+          "workspace.cmd_25",
+          "workspace.cmd_26",
+          "workspace.cmd_27",
+          "workspace.cmd_28",
+          "workspace.cmd_29",
+          "workspace.cmd_30",
+          "workspace.cmd_31",
+          "workspace.cmd_32"
+        ]
+      }
+    },
+    {
+      "name": "runs_commands listing an id twice",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["workspace.go_back", "workspace.go_back"]
+      }
+    },
+    {
+      "name": "runs_commands naming its own plugin command",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["plugin.dev.example.runner.refresh"]
+      }
+    },
+    {
+      "name": "runs_commands naming another plugin's command",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["plugin.dev.example.other.delete_all"]
+      }
+    },
+    {
+      "name": "runs_commands naming an agent approval",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["agents.approve_request"]
+      }
+    },
+    {
+      "name": "runs_commands naming the agents record",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["agents.clear_record"]
+      }
+    },
+    {
+      "name": "runs_commands with an uppercase id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["Workspace.open_settings"]
+      }
+    },
+    {
+      "name": "runs_commands with a one-segment id",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["quit"]
+      }
+    },
+    {
+      "name": "runs_commands with an empty segment",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["workspace..open"]
+      }
+    },
+    {
+      "name": "runs_commands with a space",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["workspace.open settings"]
+      }
+    },
+    {
+      "name": "runs_commands with an id over 128 bytes",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": [
+          "workspace.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      }
+    },
+    {
+      "name": "runs_commands with an id of exactly 128 bytes",
+      "valid": true,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": [
+          "workspace.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      }
+    },
+    {
+      "name": "runs_commands that is not a list",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": "workspace.go_back"
+      }
+    },
+    {
+      "name": "runs_commands holding a number",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": ["workspace.go_back", 7]
+      }
+    },
+    {
+      "name": "null runs_commands",
+      "valid": false,
+      "manifest": {
+        "manifest_version": 1,
+        "plugin_id": "dev.example.runner",
+        "display_name": "Runner",
+        "version": "0.1.0",
+        "description": "Runs the app's commands.",
+        "runtime_kind": "WebSandboxed",
+        "entrypoint": "main.mjs",
+        "runs_commands": null
       }
     }
   ]

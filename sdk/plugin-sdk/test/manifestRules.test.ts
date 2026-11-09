@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_MANAGEMENT_COMMAND_IDS,
   BUILTIN_CAPABILITIES,
   ManifestError,
   parseManifest,
@@ -35,6 +36,29 @@ describe("manifest rules", () => {
 
   it("know the built-in capabilities the desktop host knows", () => {
     expect([...BUILTIN_CAPABILITIES]).toEqual(vectors.builtinCapabilities);
+  });
+
+  it("know the agent-management commands the desktop host keeps from plugins", () => {
+    expect([...AGENT_MANAGEMENT_COMMAND_IDS]).toEqual(vectors.agentManagementCommands);
+  });
+
+  it("read runs_commands, empty when the manifest leaves it out", () => {
+    const base = {
+      manifest_version: 1,
+      plugin_id: "dev.example.runner",
+      display_name: "Runner",
+      version: "0.1.0",
+      description: "Runs commands.",
+      runtime_kind: "WebSandboxed",
+      entrypoint: "main.mjs",
+    };
+    expect(parseManifest(base).runs_commands).toEqual([]);
+    expect(parseManifest({ ...base, runs_commands: ["workspace.go_back"] }).runs_commands).toEqual([
+      "workspace.go_back",
+    ]);
+    expect(() =>
+      validateManifest({ ...base, runs_commands: ["plugin.dev.example.other.wipe"] }),
+    ).toThrow("invalid runs_commands: `plugin.dev.example.other.wipe` cannot be run by a plugin");
   });
 
   const desktop = {

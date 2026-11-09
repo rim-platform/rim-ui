@@ -37,6 +37,50 @@ export const BUILTIN_CAPABILITIES = [
 export type BuiltinCapability = (typeof BUILTIN_CAPABILITIES)[number];
 
 const RESERVED_ID_PREFIXES = ["dev.rim.", "com.rim."];
+
+/** How many command ids `runs_commands` may list. */
+export const MAX_RUNS_COMMANDS = 32;
+/** Longest command id `runs_commands` may list, in bytes. */
+export const MAX_COMMAND_ID_BYTES = 128;
+
+/**
+ * The app commands that answer and manage agents. Each is the person's own act, so no
+ * plugin may list one in `runs_commands`.
+ */
+export const AGENT_MANAGEMENT_COMMAND_IDS: readonly string[] = Object.freeze([
+  "agents.approve_request",
+  "agents.refuse_request",
+  "agents.approve_pairing",
+  "agents.refuse_pairing",
+  "agents.disconnect",
+  "agents.choose_reads",
+  "agents.choose_plugin_commands",
+  "agents.open_runs",
+  "agents.open_record",
+  "agents.clear_record",
+]);
+
+/**
+ * Whether `id` is a command id `runs_commands` may name: 1 to {@link MAX_COMMAND_ID_BYTES}
+ * bytes of two or more dot-separated segments of `a-z 0-9 _ -`.
+ */
+export function isCommandId(id: string): boolean {
+  return byteLength(id) <= MAX_COMMAND_ID_BYTES && /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/.test(id);
+}
+
+/**
+ * Why a plugin may never run the command `id`, whatever the person grants: another
+ * plugin's command, or one that answers or manages agents.
+ *
+ * @returns The reason, or `null` when a person may grant it.
+ */
+export function unrunnableByPlugins(id: string): string | null {
+  if (id.startsWith("plugin.")) return "plugin commands are run by their own plugin";
+  if (AGENT_MANAGEMENT_COMMAND_IDS.includes(id)) {
+    return "answering and managing agents is the person's own act";
+  }
+  return null;
+}
 const LOCAL_ONLY_CAPABILITIES = ["local.process", "fs.read", "fs.write"];
 
 /**
@@ -133,6 +177,11 @@ export interface PluginManifest {
   context_actions: { id: string; title: string; command_id: string; context_types: string[] }[];
   panels: ManifestPanel[];
   settings_schema: ManifestSetting[];
+  /**
+   * The built-in and app commands the plugin asks to run, which the person grants one by
+   * one; empty when the manifest lists none.
+   */
+  runs_commands: string[];
 }
 
 /** A manifest the host refuses, with the reason. */
@@ -306,6 +355,7 @@ function parseShape(raw: unknown): PluginManifest {
         ...(placeholder !== null ? { placeholder } : {}),
       };
     }),
+    runs_commands: withDefault(raw, "runs_commands", [], asStrings, where),
   };
 }
 
@@ -566,6 +616,32 @@ function validateWebLayout(m: PluginManifest): void {
   }
 }
 
+/**
+ * The `runs_commands` rules: at most {@link MAX_RUNS_COMMANDS} ids, each listed once, each a
+ * command id by {@link isCommandId}, and none a plugin may never run. Ids neither host knows
+ * pass: the person sees them as not available here.
+ */
+function validateRunsCommands(m: PluginManifest): void {
+  const reject = (reason: string): never => {
+    throw new ManifestError(`invalid runs_commands: ${reason}`);
+  };
+  if (m.runs_commands.length > MAX_RUNS_COMMANDS) {
+    reject(`lists ${m.runs_commands.length} commands, at most ${MAX_RUNS_COMMANDS}`);
+  }
+  const seen = new Set<string>();
+  for (const id of m.runs_commands) {
+    if (!isCommandId(id)) {
+      reject(
+        `\`${id}\` is not a command id of dot-separated a-z 0-9 _ - segments, at most ${MAX_COMMAND_ID_BYTES} bytes`,
+      );
+    }
+    if (seen.has(id)) reject(`\`${id}\` is listed twice`);
+    seen.add(id);
+    const reason = unrunnableByPlugins(id);
+    if (reason !== null) reject(`\`${id}\` cannot be run by a plugin: ${reason}`);
+  }
+}
+
 function normalizeName(name: string): string {
   return name.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
@@ -764,8 +840,8 @@ export interface InstallContext {
  * (an encrypted chat capability with its plain one), commands that require only
  * declared capabilities, `network_origins`, a web plugin's entrypoint and panel
  * ids, no argument named like one the host adds from a required context, the
- * `settings_schema` rules, no command both `read_only` and `dangerous`, and the AI
- * surface's install-id leak check.
+ * `settings_schema` rules, no command both `read_only` and `dangerous`, the AI
+ * surface's install-id leak check, and the `runs_commands` rules.
  */
 export function checkInstall(manifest: PluginManifest, context: InstallContext = {}): void {
   if (RESERVED_ID_PREFIXES.some((prefix) => manifest.plugin_id.startsWith(prefix))) {
@@ -792,6 +868,7 @@ export function checkInstall(manifest: PluginManifest, context: InstallContext =
     }
     if (command.ai_callable) checkAiCommand(command);
   }
+  validateRunsCommands(manifest);
 }
 
 /** {@link parseManifest} then {@link checkInstall}: the verdict an install gives. */
