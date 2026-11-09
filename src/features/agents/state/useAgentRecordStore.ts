@@ -36,6 +36,8 @@ export interface RecordEntry {
   change?: "asked" | "sent" | "proposed" | "done" | "discarded" | "expired" | "busy" | "refused";
   /** The plugin command it was about. An id the call gave in the wrong shape is left empty. */
   plugin?: { pluginId: string; commandId: string };
+  /** The id of RIM's own command it was about, when the call gave one in the shape of an id. */
+  command?: string;
   /** The run it belongs to: its agent's calls with no long gap between them. */
   runId?: string;
 }

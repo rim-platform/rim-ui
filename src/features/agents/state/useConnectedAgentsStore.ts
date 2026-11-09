@@ -23,6 +23,8 @@ export interface ConnectedAgent {
   grants: AgentGrants;
   /** What it may run, by plugin id. Everything starts off. */
   pluginApprovals: Record<string, PluginApproval>;
+  /** The ids of RIM's own commands it may ask to run. Everything starts off. */
+  commandApprovals: string[];
   /** When its grants or approvals last changed, ISO 8601; a run does not span the change. */
   scopeChangedAt?: string;
 }
@@ -34,6 +36,33 @@ interface ConnectedAgentsState {
   setGrants: (id: string, grants: AgentGrants) => void;
   /** Keeps an approval for one plugin, or with `null` takes it away. */
   setPluginApprovals: (id: string, pluginId: string, approval: PluginApproval | null) => void;
+  /** Replaces the RIM commands the agent may ask to run. */
+  setCommandApprovals: (id: string, commandIds: string[]) => void;
+}
+
+/** The stored shape's version: 1 added `commandApprovals`. */
+const STORE_VERSION = 1;
+
+/**
+ * Brings stored agents up to the current shape: an agent stored before `commandApprovals`
+ * existed gets none, and a missing `pluginApprovals` becomes none.
+ *
+ * @param persisted - What the storage held, of any version.
+ * @returns The state with every agent in the current shape.
+ */
+export function migrateConnectedAgents(persisted: unknown): { agents: ConnectedAgent[] } {
+  const stored = (persisted as { agents?: unknown } | null | undefined)?.agents;
+  const agents = Array.isArray(stored) ? (stored as Partial<ConnectedAgent>[]) : [];
+  return {
+    agents: agents.map(
+      (agent) =>
+        ({
+          ...agent,
+          pluginApprovals: agent.pluginApprovals ?? {},
+          commandApprovals: Array.isArray(agent.commandApprovals) ? agent.commandApprovals : [],
+        }) as ConnectedAgent,
+    ),
+  };
 }
 
 /** The programs connected to this account on this device, sealed under the account vault. */
@@ -63,11 +92,25 @@ export const useConnectedAgentsStore = create<ConnectedAgentsState>()(
             };
           }),
         })),
+      setCommandApprovals: (id, commandIds) =>
+        set((state) => ({
+          agents: state.agents.map((agent) =>
+            agent.id === id
+              ? {
+                  ...agent,
+                  scopeChangedAt: new Date().toISOString(),
+                  commandApprovals: [...new Set(commandIds)],
+                }
+              : agent,
+          ),
+        })),
     }),
     {
       name: "rim-connected-agents",
       storage: createJSONStorage(() => sealedStateStorage),
       skipHydration: true,
+      version: STORE_VERSION,
+      migrate: (persisted) => migrateConnectedAgents(persisted) as ConnectedAgentsState,
     },
   ),
 );

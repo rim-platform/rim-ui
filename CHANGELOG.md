@@ -24,6 +24,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Connected agents outside RIM, such as Claude Code, can ask to run RIM's own commands in the
+  desktop app: **Choose its commands** in Settings > Agents has a **RIM commands** section, by
+  category, where you tick the ones an agent may ask for. Every call shows an approval card first,
+  a dangerous command is only proposed, and a command acts only in the workspaces and channels the
+  agent can read. Agents get the tools `rim_list_commands` and `rim_run_command`.
+
 - Commands for answering, connecting and managing agents in the desktop app: approve or refuse an
   agent's request, connect or turn down a program asking to, disconnect an agent, choose what it
   can read and its plugin commands, and open the runs and the record of what agents were given.
@@ -99,6 +105,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Open Marketplace (Ctrl+Shift+X) is now Browse Plugins and opens Settings > Plugins, instead of a
+  "coming soon" page. "Choose an Agent's Plugin Commands…" is now "Choose an Agent's Commands…".
 - Commands are grouped by what they do (Navigation, Messages, Moderation, Home…) in the palette and in Settings > Keybinds, and keyboard shortcuts for the app's own commands, such as Toggle Zen Mode and Go Back, follow you to your other devices on servers that support it. Shortcuts you already set for them on this device move to the server once, with a short note; plugin shortcuts stay on this device.
 - Commands that need more than the open conversation, such as Do Not Disturb, notification level and moderation actions, now ask for what they need in a form when run from the palette, a keybind or a quick box, instead of being left out. Settings > Keybinds can save a keybind's arguments, and Home's Quick actions settings take a command's arguments in the same fields instead of JSON; a field left empty is asked for when the command runs.
 - The top bar's search field opens one search box: channels and people, messages and commands

@@ -53,7 +53,6 @@ const SURFACE_COMMANDS: Record<MainSurface["kind"], string> = {
   conversation: "workspace.navigate_to_channel",
   settings: "workspace.open_settings",
   plugin: openPluginPanelCommandId("some-plugin", "some-panel"),
-  marketplace: "workspace.open_marketplace",
   "audit-log": "workspace.open_audit_log",
   home: "workspace.open_home",
   unreads: "workspace.open_unreads",
@@ -154,7 +153,7 @@ describe("every way into the app is reachable", () => {
     });
 
     runDesktopLocalCommand("workspace.open_marketplace");
-    expect(useShellStore.getState().mainSurface).toEqual({ kind: "marketplace" });
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugins" });
 
     runDesktopLocalCommand("workspace.open_settings");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });

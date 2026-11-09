@@ -221,7 +221,7 @@ const localHandlers: Record<string, LocalHandler> = {
     }
   },
   "workspace.open_marketplace": () => {
-    useShellStore.getState().setMainSurface({ kind: "marketplace" });
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "plugins" });
   },
   "workspace.open_agents": () => {
     useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" });

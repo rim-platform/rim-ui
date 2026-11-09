@@ -616,7 +616,7 @@ describe("AppShell — narrow and medium windows", () => {
 
   it("puts the navigation in a drawer in a narrow window", async () => {
     const user = userEvent.setup();
-    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
+    useShellStore.setState({ mainSurface: { kind: "plugin", pluginId: "missing-plugin" } });
     renderAt(600);
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tool-panel")).not.toBeInTheDocument();
@@ -689,11 +689,11 @@ describe("AppShell — narrow and medium windows", () => {
   });
 
   it("keeps a main-area page mounted when the window narrows", () => {
-    useShellStore.setState({ mainSurface: { kind: "marketplace" } });
+    useShellStore.setState({ mainSurface: { kind: "plugin", pluginId: "missing-plugin" } });
     renderAt(1400);
-    const text = screen.getByText("Marketplace coming soon!");
+    const text = screen.getByText(/Plugin missing-plugin is not enabled/);
     resizeTo(600);
-    expect(screen.getByText("Marketplace coming soon!")).toBe(text);
+    expect(screen.getByText(/Plugin missing-plugin is not enabled/)).toBe(text);
   });
 
   it("keeps Tab inside the drawer and closes it on Escape from the page body", async () => {
@@ -872,7 +872,6 @@ describe("AppShell — the top bar", () => {
       { kind: "settings" },
       { kind: "audit-log" },
       { kind: "plugin", pluginId: "some-plugin" },
-      { kind: "marketplace" },
       { kind: "dm-requests", workspaceId: "ws-1" },
     ];
     renderShell();

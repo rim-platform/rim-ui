@@ -18,6 +18,7 @@ import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { secureRandom } from "./agentCrypto";
 import { appAgentChanges } from "./appAgentChanges";
+import { appAgentCommands } from "./appAgentCommands";
 import { appAgentPlugins } from "./appAgentPlugins";
 import { appAgentReads } from "./appAgentReads";
 import { handleBridgeRequest } from "./bridgeHandler";
@@ -89,6 +90,7 @@ export function useAgentBridge(): void {
           reads: appAgentReads,
           changes: appAgentChanges,
           plugins: appAgentPlugins,
+          commands: appAgentCommands,
           version: BUILD_VERSION,
         },
       });

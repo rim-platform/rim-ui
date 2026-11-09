@@ -119,6 +119,16 @@ describe("AgentRunDialog", () => {
     expect(screen.getByText("Suggested Pods delete")).toBeInTheDocument();
   });
 
+  it("names RIM commands and what became of them", () => {
+    show([
+      entry(0, { ...SEND, change: "asked", command: "chat.set_topic" }),
+      entry(1, { ...SEND, change: "done", command: "chat.set_topic" }),
+      entry(2, { ...SEND, change: "proposed", command: "moderation.ban" }),
+    ]);
+    expect(screen.getByText("Asked to run chat.set_topic → Ran")).toBeInTheDocument();
+    expect(screen.getByText("Suggested moderation.ban")).toBeInTheDocument();
+  });
+
   it("shows each way a step ended as its own card, and a read as a plain row", () => {
     const plugin = { pluginId: "dev.example.pods", commandId: "restart" };
     show([

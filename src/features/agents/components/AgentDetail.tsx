@@ -132,6 +132,7 @@ export function AgentDetail({
     hasGrantIn(agent.grants ?? {}, workspaceId),
   );
   const { current, stale } = approvedCommands(agent, plugins);
+  const rimCommands = (agent.commandApprovals ?? []).length;
   const places = placesGiven(entries, agent.id);
   const shown = places.slice(0, MAX_PLACES);
 
@@ -208,6 +209,7 @@ export function AgentDetail({
         <ul className="list-disc space-y-0.5 pl-5 text-sm text-rim-text">
           <li>Sending a message</li>
           <li>A plugin command that its plugin doesn&apos;t mark as read-only</li>
+          <li>Every RIM command you approved for it</li>
         </ul>
         <p className="text-xs text-rim-text-muted">
           Each approval covers one call. You see the exact text or arguments, and the request ends
@@ -226,9 +228,20 @@ export function AgentDetail({
         </p>
       </Section>
 
-      <Section title="Plugin commands">
+      <Section title="Commands">
         <p className="break-words text-sm text-rim-text">
-          {current > 0 ? `${current} approved.` : `None approved for ${name}.`}
+          {rimCommands > 0
+            ? `RIM commands: ${rimCommands} approved.`
+            : `RIM commands: none approved for ${name}.`}
+        </p>
+        <p className="text-xs text-rim-text-muted">
+          A RIM command asks you each time, and a dangerous one can only be suggested. It works only
+          in channels and workspaces it has a grant for.
+        </p>
+        <p className="break-words text-sm text-rim-text">
+          {current > 0
+            ? `Plugin commands: ${current} approved.`
+            : `Plugin commands: none approved.`}
           {stale > 0 &&
             ` ${stale} can't run now: their plugin changed, was removed or is turned off.`}
         </p>
@@ -242,10 +255,10 @@ export function AgentDetail({
           type="button"
           variant="secondary"
           size="sm"
-          aria-label={`Choose the plugin commands of ${name}`}
+          aria-label={`Choose the commands of ${name}`}
           onClick={onChoosePlugins}
         >
-          Choose its plugin commands
+          Choose its commands
         </Button>
       </Section>
 

@@ -5,7 +5,9 @@ import {
   CommandInitiator,
   CommandSensitivity,
   ServerFeatureState,
+  type CommandContextInput,
   type CommandResult,
+  type ConfirmationProofInput,
 } from "../../../core/graphql/generated/schema-types";
 import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
@@ -27,7 +29,7 @@ import { connected, lookup, record, runId, workspaces } from "./appAgentReads";
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 /** Whether the server says agents' commands are off. The server still enforces it either way. */
-async function commandsOff(): Promise<boolean> {
+export async function commandsOff(): Promise<boolean> {
   const info = await queryClient.fetchQuery({
     queryKey: queryKeys.serverInfo,
     queryFn: fetchServerInfo,
@@ -38,7 +40,7 @@ async function commandsOff(): Promise<boolean> {
 }
 
 /** The channel's title, falling back on its id. */
-async function channelName(workspaceId: string, channelId: string): Promise<string> {
+export async function channelName(workspaceId: string, channelId: string): Promise<string> {
   const conversation = await fetchConversation(queryClient, workspaceId, channelId);
   return conversation?.title ?? channelId;
 }
@@ -107,6 +109,43 @@ function confirm(request: AgentConfirmation): Promise<"approved" | "discarded" |
   });
 }
 
+/**
+ * Runs a command on the server for an outside agent: initiator AGENT, with the agent's run when the
+ * server keeps runs, and with the proof when the call re-sends a confirmed one.
+ *
+ * @returns The server's result.
+ */
+export async function executeAsAgent({
+  commandId,
+  args,
+  commandContext,
+  runId: run,
+  proof,
+}: {
+  commandId: string;
+  args: Record<string, unknown>;
+  commandContext: CommandContextInput;
+  runId: string;
+  proof?: ConfirmationProofInput;
+}): Promise<CommandResult> {
+  // An older server refuses the whole call for a field it doesn't know.
+  const withRun = await serverHasCapability(COMMAND_RUN_ID);
+  const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
+    EXECUTE_COMMAND_MUTATION,
+    {
+      input: {
+        commandId,
+        args,
+        commandContext,
+        initiator: CommandInitiator.AGENT,
+        ...(withRun ? { runId: run } : {}),
+        ...(proof ? { confirmation: proof } : {}),
+      },
+    },
+  );
+  return answer.executeCommand;
+}
+
 /** Whether a confirmation is open now. */
 export function confirmationOpen(): boolean {
   return useConfirmationModalStore.getState().request !== null || hostDialogOpen();
@@ -125,24 +164,14 @@ export const appAgentChanges = createAgentChanges({
   busy: confirmationOpen,
   runId,
   commandsOff,
-  post: async ({ workspaceId, channelId, text, runId: run, proof }) => {
-    // An older server refuses the whole call for a field it doesn't know.
-    const withRun = await serverHasCapability(COMMAND_RUN_ID);
-    const answer = await graphqlClient.request<{ executeCommand: CommandResult }>(
-      EXECUTE_COMMAND_MUTATION,
-      {
-        input: {
-          commandId: "chat.post_message",
-          args: { server_id: workspaceId, conversation_id: channelId, text },
-          commandContext: { workspaceId, conversationId: channelId },
-          initiator: CommandInitiator.AGENT,
-          ...(withRun ? { runId: run } : {}),
-          ...(proof ? { confirmation: proof } : {}),
-        },
-      },
-    );
-    return answer.executeCommand;
-  },
+  post: ({ workspaceId, channelId, text, runId: run, proof }) =>
+    executeAsAgent({
+      commandId: "chat.post_message",
+      args: { server_id: workspaceId, conversation_id: channelId, text },
+      commandContext: { workspaceId, conversationId: channelId },
+      runId: run,
+      proof,
+    }),
   confirm,
   record,
   cooldown: agentCooldown,

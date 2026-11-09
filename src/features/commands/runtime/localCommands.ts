@@ -246,8 +246,8 @@ export const CLIENT_COMMAND_LABELS: Readonly<
     description: "Go to the conversation below in the sidebar.",
   },
   "workspace.open_marketplace": {
-    title: "Open Marketplace",
-    description: "Coming soon: browse and install plugins",
+    title: "Browse Plugins",
+    description: "Find, install and manage plugins",
   },
   "workspace.next_unread_channel": {
     title: "Next Unread Conversation",
@@ -272,7 +272,7 @@ const SERVER_COMMAND_TITLES: Readonly<Record<string, string>> = {
   "workspace.open_settings": "Open Settings",
   "workspace.search_in_channel": "Search in Channel",
   "workspace.open_search": "Open Search",
-  "workspace.open_marketplace": "Open Marketplace",
+  "workspace.open_marketplace": "Browse Plugins",
   "workspace.open_agent": "Open AI Agent",
   "workspace.cycle_recent_activity": "Cycle Recent Activity",
   "workspace.toggle_sidebar": "Toggle Sidebar",

@@ -2,10 +2,24 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), rim: vi.fn() }));
 vi.mock("../../plugins/api/usePluginList", () => ({ useInstalledPlugins: () => mocks.list() }));
+vi.mock("../api/agentCommandList", () => ({
+  useOfferedCommandList: (workspaceIds: readonly string[]) => mocks.rim(workspaceIds),
+}));
+vi.mock("../../relay/state/useRelayStore", () => ({
+  isDirectSpace: (id: string) => id === "direct",
+}));
 
+import {
+  CommandArgumentType,
+  CommandExecutionTarget,
+  CommandSensitivity,
+  CommandSourceKind,
+} from "../../../core/graphql/generated/schema-types";
 import type { PluginCommandInfo, PluginInfo } from "../../plugins/types";
+import type { AgentCommand } from "../runtime/agentCommands";
+import type { AgentGrants } from "../runtime/grants";
 import {
   useConnectedAgentsStore,
   type ConnectedAgent,
@@ -15,7 +29,9 @@ import { AgentPluginsDialog } from "./AgentPluginsDialog";
 
 const PLUGIN = "dev.example.pods";
 const INTRO =
-  "A plugin command can do anything the plugin can. Approve only what you want this program to use. Approvals for RIM's own agent don't carry over.";
+  "Approve only what you want this program to ask for. Approvals for RIM's own agent don't carry over.";
+const NO_GRANT =
+  "Choose what it can read first: RIM commands work only in a workspace it has a grant in.";
 const CHANGED = "This plugin changed since you approved it. Choose again.";
 const EMPTY = "No plugin here offers commands to agents.";
 const READ_ONLY_LINE =
@@ -68,16 +84,58 @@ function loaded(plugins: PluginInfo[]) {
   return { data: plugins, isPending: false, isError: false, isSuccess: true };
 }
 
+function rimCommand(id: string, fields: Partial<AgentCommand> = {}): AgentCommand {
+  return {
+    id,
+    title: `Rim ${id}`,
+    description: `Does ${id}. More words here.`,
+    category: "Messages",
+    sourceKind: CommandSourceKind.BUILT_IN,
+    executionTarget: CommandExecutionTarget.BACKEND,
+    arguments: [
+      {
+        name: "conversation_id",
+        title: "Conversation",
+        description: "",
+        argumentType: CommandArgumentType.CONVERSATION_ID,
+        required: true,
+      },
+    ],
+    requiredContext: [],
+    dangerous: false,
+    aiCallable: true,
+    sensitivity: CommandSensitivity.MUTATING,
+    ...fields,
+  };
+}
+
+const RIM_COMMANDS = [
+  rimCommand("chat.pin_message"),
+  rimCommand("moderation.kick", { category: "Moderation", dangerous: true }),
+  rimCommand("chat.react"),
+];
+
+function rimLoaded(commands: AgentCommand[] = RIM_COMMANDS, isError = false) {
+  return { commands, isPending: false, isError };
+}
+
+const GRANTED: AgentGrants = { w1: { all: true, channelIds: [] } };
+
 const onClose = vi.fn();
 
-function show(approvals: Record<string, PluginApproval> = {}) {
+function show(
+  approvals: Record<string, PluginApproval> = {},
+  commandApprovals: string[] = [],
+  grants: AgentGrants = {},
+) {
   const agent: ConnectedAgent = {
     id: "agent-1",
     name: "Claude Code",
     tokenHash: "hash",
     pairedAt: "2026-11-06T10:00:00.000Z",
-    grants: {},
+    grants,
     pluginApprovals: approvals,
+    commandApprovals,
   };
   useConnectedAgentsStore.setState({ agents: [agent] });
   return render(<AgentPluginsDialog agent={agent} onClose={onClose} />);
@@ -85,6 +143,14 @@ function show(approvals: Record<string, PluginApproval> = {}) {
 
 function stored() {
   return useConnectedAgentsStore.getState().agents[0].pluginApprovals;
+}
+
+function storedCommands() {
+  return useConnectedAgentsStore.getState().agents[0].commandApprovals;
+}
+
+function rimCheck(id: string) {
+  return screen.getByRole("checkbox", { name: new RegExp(`Rim ${id.replace(".", "\\.")}`) });
 }
 
 function check(id: string) {
@@ -99,6 +165,7 @@ describe("AgentPluginsDialog", () => {
   beforeEach(() => {
     onClose.mockReset();
     mocks.list.mockReset().mockReturnValue(loaded([plugin()]));
+    mocks.rim.mockReset().mockReturnValue(rimLoaded([]));
   });
 
   it("names the agent and says what approving means", () => {
@@ -277,11 +344,102 @@ describe("AgentPluginsDialog", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  it("says when the list cannot be loaded, and cannot save", () => {
+  it("says when the list cannot be loaded, and saves only RIM commands then", async () => {
     mocks.list.mockReturnValue({ isPending: false, isError: true, isSuccess: false });
-    show();
+    mocks.rim.mockReturnValue(rimLoaded());
+    const kept = { manifestHash: "hash-1", commandIds: ["reads"] };
+    show({ [PLUGIN]: kept }, [], GRANTED);
     expect(screen.getByRole("alert")).toHaveTextContent("Could not load your plugins");
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.click(rimCheck("chat.react"));
+    await save();
+    expect(storedCommands()).toEqual(["chat.react"]);
+    expect(stored()).toEqual({ [PLUGIN]: kept });
+  });
+
+  describe("RIM commands", () => {
+    it("asks for a grant first when the agent has none, and loads nothing", () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show();
+      expect(screen.getByText(NO_GRANT)).toBeInTheDocument();
+      expect(mocks.rim).toHaveBeenCalledWith([]);
+    });
+
+    it("loads the commands of the workspaces it has a grant in, not a direct space", () => {
+      show({}, [], {
+        w1: { all: false, channelIds: ["c1"] },
+        w2: { all: false, channelIds: [] },
+        direct: { all: true, channelIds: [] },
+      });
+      expect(mocks.rim).toHaveBeenCalledWith(["w1"]);
+      expect(screen.queryByText(NO_GRANT)).not.toBeInTheDocument();
+    });
+
+    it("lists them above the plugins, by category, all off to start", () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show({}, [], GRANTED);
+      const section = screen.getByRole("region", { name: "RIM commands" });
+      const groups = within(section).getAllByRole("group");
+      expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
+        "Messages",
+        "Moderation",
+      ]);
+      expect(within(groups[0]).getAllByRole("checkbox")).toHaveLength(2);
+      for (const box of within(section).getAllByRole("checkbox")) expect(box).not.toBeChecked();
+      const regions = screen.getAllByRole("region");
+      expect(regions[0]).toBe(section);
+    });
+
+    it("shows the title, the first sentence of the description and a badge when only proposed", () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show({}, [], GRANTED);
+      const pin = rimCheck("chat.pin_message").closest("label");
+      expect(pin).toHaveTextContent("Does chat.pin_message.");
+      expect(pin).not.toHaveTextContent("More words here.");
+      expect(pin).not.toHaveTextContent("Only proposed");
+      expect(rimCheck("moderation.kick").closest("label")).toHaveTextContent("Only proposed");
+    });
+
+    it("saves what is ticked", async () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show({}, [], GRANTED);
+      await userEvent.click(rimCheck("chat.pin_message"));
+      await userEvent.click(rimCheck("moderation.kick"));
+      expect(storedCommands()).toEqual([]);
+      await save();
+      expect(storedCommands()).toEqual(["chat.pin_message", "moderation.kick"]);
+    });
+
+    it("ticks what is approved, and drops an approval no longer offered", async () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show({}, ["chat.react", "gone.command"], GRANTED);
+      expect(rimCheck("chat.react")).toBeChecked();
+      expect(rimCheck("chat.pin_message")).not.toBeChecked();
+      await save();
+      expect(storedCommands()).toEqual(["chat.react"]);
+    });
+
+    it("keeps approvals it could not show while a workspace's list failed", async () => {
+      mocks.rim.mockReturnValue(rimLoaded(RIM_COMMANDS, true));
+      show({}, ["chat.react", "elsewhere.command"], GRANTED);
+      expect(screen.getByRole("alert")).toHaveTextContent("Could not load RIM's commands");
+      await userEvent.click(rimCheck("chat.react"));
+      await save();
+      expect(storedCommands()).toEqual(["elsewhere.command"]);
+    });
+
+    it("cannot save while the commands load", () => {
+      mocks.rim.mockReturnValue({ commands: [], isPending: true, isError: false });
+      show({}, [], GRANTED);
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    });
+
+    it("changes nothing on Cancel", async () => {
+      mocks.rim.mockReturnValue(rimLoaded());
+      show({}, [], GRANTED);
+      await userEvent.click(rimCheck("chat.react"));
+      await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(storedCommands()).toEqual([]);
+    });
   });
 
   it("warns that a plugin able to read can hand over what a grant doesn't cover", () => {

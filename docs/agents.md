@@ -121,11 +121,37 @@ Moderators can read that log.
 
 On a server whose operator switched off AI commands, posting is refused before you're asked.
 
+## RIM commands
+
+An agent can ask to run RIM's own commands, such as pinning a message or setting a channel's
+topic, but only the ones you tick. Pick the agent, then **Choose its commands**: the **RIM
+commands** section lists, by category, the commands RIM offers agents in the workspaces it can
+read. Nothing is ticked at first, and what you approved for the built-in agent doesn't count here.
+
+RIM offers a command only when the server lets agents call it, the server runs it, and it changes
+something. Commands that only move around the app or read are left out: the agent reads through its
+read tools. Sending a message has its own request, above. Commands that connect, answer or manage
+agents are never offered.
+
+- **Every call asks you first**, with an approval card like the one for posting: the agent's
+  name, the command, the workspace, the channel when it names one, and every argument in full.
+  Values that look like secrets are hidden. A command the server marks as restricted also asks you
+  to type its word.
+- **A command marked "Only proposed"** is dangerous. It never runs from an agent: the agent can only
+  suggest it, and you run it yourself.
+- **It acts only where you let the agent read.** The agent names the workspace and every
+  conversation and message itself; RIM never uses what you have open. A workspace it can't read, a
+  channel outside its grant, a direct message, a group or an encrypted conversation is refused
+  before you're asked. RIM checks the approval and the grant again after you confirm.
+
+Discards, expiries and the 10 seconds after them work as they do for posting. On a server whose
+operator switched off AI commands, RIM commands are refused before you're asked.
+
 ## Plugin commands
 
 An agent can also run commands of your plugins, but only the ones you tick. Pick the agent, then
-**Choose its plugin commands**. Nothing is ticked at first, and what you approved for the built-in
-agent doesn't count here.
+**Choose its commands**. Nothing is ticked at first, and what you approved for the built-in agent
+doesn't count here.
 
 - **A command its plugin marks as read-only** runs without asking. That mark is the plugin's own
   claim, and RIM can't check it.
@@ -145,7 +171,8 @@ Each agent's page in **Settings > Agents** lists the channels it read, how many 
 Two buttons show more:
 
 - **What it was given**: every request, with the time, the tool, the channel, the message ids,
-  what it asked to post or run and how that ended, and what RIM refused. It never holds message
+  what it asked to post or run, RIM's or a plugin's command, and how that ended, and what RIM
+  refused. It never holds message
   text, search text, or a command's arguments or results.
 - **Its runs**: the same record, grouped. A run is that agent's requests with no more than 15
   minutes between them. It's a grouping by time: RIM can't see where the agent's task starts or

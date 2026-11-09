@@ -246,9 +246,10 @@ confirming that one change, unless a plugin says a command you approved only rea
   a grant at any time, and the change applies to the program's next call. Grants stay on this
   device, sealed with your account. Only workspaces on your own server are offered: one hosted on
   another server can't be granted yet.
-- **What it can ask.** Seven tools, over the Model Context Protocol: `rim_list_workspaces`,
+- **What it can ask.** Nine tools, over the Model Context Protocol: `rim_list_workspaces`,
   `rim_list_channels`, `rim_read_messages`, `rim_search_messages`, `rim_send_message`,
-  `rim_list_plugin_commands` and `rim_run_plugin_command`. Each acts on the workspace it names,
+  `rim_list_plugin_commands`, `rim_run_plugin_command`, `rim_list_commands` and
+  `rim_run_command`. Each acts on the workspace it names,
   whichever one you have open. A message comes with its id, channel,
   thread, the author's display name, its text, its times, and each attachment's name, type and size.
   Text that people wrote is marked untrusted, which makes it less able to steer the program but
@@ -276,8 +277,24 @@ confirming that one change, unless a plugin says a command you approved only rea
   goes out under your name, and the others in the channel are not told a program wrote it. The audit
   log records that an agent started it, which an Owner or Moderator can read. The server's AI
   command switch applies: on a server that has it off, sending is refused before you're asked.
+- **RIM commands.** Nothing is approved to start with, and what you approved for the agent above
+  doesn't carry over. The **RIM commands** section of **Choose its commands** lists, by category,
+  the commands the server lists for agents in the workspaces the program has a grant in, that the
+  server runs and that are not `SAFE`. Sending a message (it has its own tool), plugin commands and
+  the commands that answer or manage agents are left out. `rim_list_commands` gives the program
+  each one's id, title, description, category, argument schema, mode and whether you approved it.
+  Every call of `rim_run_command` opens a dialog like the one for sending, with the workspace, the
+  channel when it names one, the command and every argument in full; a `RESTRICTED` command also asks
+  for its word. A dangerous command is only suggested and never runs. The program names the
+  workspace and every conversation, message and thread itself: each conversation must be one its
+  grant covers, a message or thread id needs a conversation beside it, a workspace argument must be
+  the workspace it named, and nothing comes from what you have open. Before running, RIM fetches
+  the server's list again and checks the approval and the grant, and checks both again after you
+  confirm; the app then answers the server's own confirmation for you. The server's AI command
+  switch applies, discards, expiries and the 10 seconds after them work as they do for sending, and
+  what a command returns goes to the program marked untrusted, up to 512 KiB.
 - **Plugin commands.** Nothing is approved to start with, and what you approved for the agent above
-  doesn't carry over. **Choose its plugin commands** on a program's row lists, for each turned-on
+  doesn't carry over. **Choose its commands** on a program's row lists, for each turned-on
   plugin, the commands it offers to agents, and you tick them one by one. A command the plugin
   marks `read_only` runs without asking. That is the plugin's claim: RIM can't check it, and the
   screen says so. Any other approved command opens a dialog like the one for sending, with the
@@ -295,7 +312,7 @@ confirming that one change, unless a plugin says a command you approved only rea
   same whether a command isn't approved, its plugin changed or is turned off, or it doesn't exist.
 - **The record.** **What it was given** lists what RIM handed to that program, what it asked to send
   or run and what it refused: when, which tool, which channel, how many messages and their ids, how a
-  request to send ended, with the message's id if it went out, and which plugin command was run,
+  request to send ended, with the message's id if it went out, and which RIM or plugin command was run,
   asked for or suggested. It never holds a command's arguments or what it returned. **What agents were given** lists it
   for every program, including those since disconnected. It holds no message text and no search
   text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most

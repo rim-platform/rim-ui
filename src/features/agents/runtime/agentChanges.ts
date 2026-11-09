@@ -114,7 +114,8 @@ const DISCARDED: ToolOutcome = {
     message: "The person chose not to send this. Do not send it again unless they ask.",
   },
 };
-const COMMANDS_OFF: ToolOutcome = {
+/** The answer while the server has agents' commands switched off. */
+export const COMMANDS_OFF: ToolOutcome = {
   isError: true,
   payload: {
     refusal: "DENIED",
@@ -134,8 +135,8 @@ interface Call {
   channelId: string | null;
 }
 
-/** What the agent is told about a failed post. The message is the server's own. */
-function refusalOf(error: unknown): ToolOutcome {
+/** What the agent is told about a failed command call. The message is the server's own. */
+export function refusalOf(error: unknown): ToolOutcome {
   const refusal = readRefusal(error);
   return {
     isError: true,

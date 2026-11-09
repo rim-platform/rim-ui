@@ -189,6 +189,7 @@ describe("createPairing", () => {
       pairedAt: "2026-11-06T10:00:00.000Z",
       grants: {},
       pluginApprovals: {},
+      commandApprovals: [],
     });
     expect(JSON.stringify(agents)).not.toContain(token);
     expect(JSON.stringify(agents)).not.toContain(token.slice("rimagent_".length));

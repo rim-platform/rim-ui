@@ -154,7 +154,7 @@ new device:
 | <kbd>Ctrl+Alt+S</kbd> | Open Settings |
 | <kbd>Ctrl+F</kbd> | Search in this conversation |
 | <kbd>Ctrl+Shift+F</kbd> | Search the workspace |
-| <kbd>Ctrl+Shift+X</kbd> | Open the plugin marketplace |
+| <kbd>Ctrl+Shift+X</kbd> | Browse plugins: Settings > Plugins |
 | <kbd>Ctrl+Shift+A</kbd> | Open the AI agent (desktop app) |
 | <kbd>Ctrl+Shift+C</kbd> | Create a channel |
 | <kbd>Ctrl+Shift+G</kbd> | New message |
