@@ -199,12 +199,14 @@ function focusInConversation(selector: string): void {
 
 /**
  * A command this app runs itself: called with the command's arguments and the context it runs
- * in, it acts and returns nothing, or a result that says what happened.
+ * in, it acts and returns nothing, or a result that says what happened. One that works on after
+ * it returns, such as a back-up, returns a promise that settles when it is done; it says how it
+ * went itself.
  */
 export type LocalHandler = (
   args: Record<string, unknown> | undefined,
   commandContext: Record<string, unknown> | undefined,
-) => void | CommandResult;
+) => void | CommandResult | Promise<void>;
 
 const localHandlers: Record<string, LocalHandler> = {
   ...CONVERSATION_HANDLERS,
@@ -701,7 +703,8 @@ export function runLocalCommandForCaller(
   if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return null;
   if (!Object.prototype.hasOwnProperty.call(localHandlers, commandId)) return null;
   const result = localHandlers[commandId](args, commandContext);
-  if (!result) return { ok: true, message: "" };
+  // A handler that works on says how it went itself.
+  if (!result || result instanceof Promise) return { ok: true, message: "" };
   return { ok: result.status !== "ERROR", message: result.message };
 }
 
@@ -808,7 +811,10 @@ export async function dispatchCommand(
   // the app does, unless arguments typed for the server were given.
   const localHandler = localHandlers[command.id];
   if (localHandler && !(context?.typedArgs && typedArgumentsGoToServer(command, context.args))) {
-    const result = localHandler(context?.args, context?.commandContext);
+    // A handler that works on settles its promise when done, so the run ends with it; any other
+    // has acted by the time it returns.
+    const returned = localHandler(context?.args, context?.commandContext);
+    const result = returned instanceof Promise ? await returned : returned;
     if (result) return result;
     return {
       status: "SUCCESS",

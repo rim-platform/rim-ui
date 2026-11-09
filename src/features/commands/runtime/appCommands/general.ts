@@ -47,7 +47,7 @@ export { GENERAL_ARGUMENT_PROMPTS, GENERAL_COMMANDS } from "./generalDefinitions
 type Handler = (
   args: Record<string, unknown> | undefined,
   commandContext: Record<string, unknown> | undefined,
-) => void | CommandResult;
+) => void | CommandResult | Promise<void>;
 
 function stringArg(args: Record<string, unknown> | undefined, ...names: string[]): string {
   for (const name of names) {
@@ -283,26 +283,25 @@ export const GENERAL_HANDLERS: Record<string, Handler> = {
     if (userId) void openDirectWithMember(userId);
   },
   "app.sign_out": () => useAppDialogStore.getState().open("signOut"),
-  "app.check_for_updates": () => void checkForUpdates(),
+  "app.check_for_updates": () => checkForUpdates(),
   "app.restart_to_update": () => {
     if (!updateReady()) {
       toast.info("No update is downloaded yet.");
       return;
     }
-    void useUpdaterStore.getState().restartToUpdate();
+    return useUpdaterStore.getState().restartToUpdate();
   },
-  "app.open_log_folder": () => {
-    openLogFolder().catch((error: unknown) =>
+  "app.open_log_folder": () =>
+    openLogFolder().catch((error: unknown) => {
       toast.error("The log folder could not be opened", {
         description: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  },
+      });
+    }),
   "app.minimize_window": () => void onWindow("minimize", (w) => w.minimize()),
   "app.toggle_maximize_window": () => void onWindow("toggleMaximize", (w) => w.toggleMaximize()),
   "app.close_window": () => void onWindow("close", (w) => w.close()),
   "settings.assign_keybind": assignKeybind,
-  "settings.back_up_history": () => void backUpHistoryNow(),
+  "settings.back_up_history": () => backUpHistoryNow(),
   "app.run_macro": (args) => {
     const macroId = stringArg(args, "macroId", "macro_id");
     if (macroId) void runMacroById(macroId);

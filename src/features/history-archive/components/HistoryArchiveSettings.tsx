@@ -620,16 +620,24 @@ function ConnectedArchive({
   notice: Notice | null;
   onDisconnected: () => void;
 }) {
-  const [busy, setBusy] = useState<"restore" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"export" | "restore" | "disconnect" | null>(null);
   const [message, setMessage] = useState<string | null>(notice?.message ?? null);
   const [error, setError] = useState<string | null>(notice?.error ?? null);
   const afterRestore = useAfterRestore();
 
-  /** Runs `settings.back_up_history`, which says in a toast how the back-up went. */
-  function backUpNow() {
+  /**
+   * Runs `settings.back_up_history`, which says in a toast how the back-up went; the button is
+   * busy until it ends.
+   */
+  async function backUpNow() {
+    setBusy("export");
     setMessage(null);
     setError(null);
-    void runCommandFromClick("settings.back_up_history");
+    try {
+      await runCommandFromClick("settings.back_up_history");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function run(kind: "restore" | "disconnect") {
@@ -668,7 +676,12 @@ function ConnectedArchive({
       </div>
       <ArchiveDevices account={account} />
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={backUpNow} disabled={busy !== null}>
+        <Button
+          size="sm"
+          onClick={() => void backUpNow()}
+          isLoading={busy === "export"}
+          disabled={busy !== null}
+        >
           Back up now
         </Button>
         <Button

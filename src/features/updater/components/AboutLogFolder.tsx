@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 
@@ -7,13 +9,21 @@ import { runCommandFromClick } from "../../commands/runtime/runFromClick";
  */
 export function AboutLogFolder() {
   const { platform } = useRuntime();
+  // Set while the folder is being opened.
+  const [opening, setOpening] = useState(false);
   if (platform !== "desktop") return null;
+
+  function open() {
+    setOpening(true);
+    void runCommandFromClick("app.open_log_folder").finally(() => setOpening(false));
+  }
 
   return (
     <div className="text-xs">
       <button
         type="button"
-        onClick={() => void runCommandFromClick("app.open_log_folder")}
+        onClick={open}
+        disabled={opening}
         className="text-rim-text-faint underline underline-offset-2 transition hover:text-rim-text-muted"
       >
         Open log folder

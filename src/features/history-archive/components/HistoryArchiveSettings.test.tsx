@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const { tauri } = vi.hoisted(() => ({ tauri: { available: true } }));
@@ -280,8 +280,19 @@ describe("HistoryArchiveSettings", () => {
 
     expect(await screen.findByText("/home/ada/Dropbox/RIM")).toBeInTheDocument();
     // Back up now runs the command, which says in a toast how it went.
+    let finish!: () => void;
+    runCommandFromClick.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = () => resolve({ ok: true, result: null });
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
     expect(runCommandFromClick).toHaveBeenCalledWith("settings.back_up_history");
+    // The buttons stay busy until the command ends.
+    expect(screen.getByRole("button", { name: "Back up now" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Restore from archive" })).toBeDisabled();
+    await act(async () => finish());
+    expect(screen.getByRole("button", { name: "Back up now" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Restore from archive" }));
     expect(await screen.findByText(/1 file has not synced/)).toBeInTheDocument();

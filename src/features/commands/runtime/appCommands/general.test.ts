@@ -335,6 +335,27 @@ describe("desktop commands", () => {
     run("settings.back_up_history");
     expect(mocks.backUpHistoryNow).toHaveBeenCalled();
   });
+
+  it("ends a run of the back-up only once the back-up has ended", async () => {
+    let finish!: () => void;
+    mocks.backUpHistoryNow.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const command = LOCAL_COMMANDS.find((c) => c.id === "settings.back_up_history")!;
+    let ended = false;
+    const running = dispatchCommand(command, vi.fn(), {}).then((result) => {
+      ended = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    finish();
+    expect(await running).toMatchObject({ status: "SUCCESS" });
+    expect(ended).toBe(true);
+  });
 });
 
 describe("keybind, macro and pipeline commands", () => {

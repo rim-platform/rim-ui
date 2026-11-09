@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Button } from "../../../shared/ui/Button";
 import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useClientVersion } from "../hooks/useClientVersion";
@@ -47,17 +49,17 @@ function summaryOf(view: UpdaterView): string {
   }
 }
 
-/** Runs `app.check_for_updates`, as the palette does. */
-function checkForUpdates() {
-  void runCommandFromClick("app.check_for_updates");
-}
-
-/** Runs `app.restart_to_update`, as the palette does. */
-function restartToUpdate() {
-  void runCommandFromClick("app.restart_to_update");
-}
-
 function UpdateAction({ view }: { view: UpdaterView }) {
+  // Set while the check or restart command this button ran has not ended.
+  const [running, setRunning] = useState(false);
+  /** Runs `commandId`, as the palette does, with the button busy until it ends. */
+  const run = (commandId: string) => {
+    setRunning(true);
+    void runCommandFromClick(commandId).finally(() => setRunning(false));
+  };
+  const checkForUpdates = () => run("app.check_for_updates");
+  const restartToUpdate = () => run("app.restart_to_update");
+
   switch (view.status) {
     case "idle":
     case "upToDate":
@@ -66,7 +68,7 @@ function UpdateAction({ view }: { view: UpdaterView }) {
         <Button
           variant="secondary"
           size="sm"
-          isLoading={view.status === "checking"}
+          isLoading={running || view.status === "checking"}
           onClick={checkForUpdates}
         >
           Check for updates
@@ -84,14 +86,18 @@ function UpdateAction({ view }: { view: UpdaterView }) {
           Download update
         </Button>
       ) : (
-        <Button variant="secondary" size="sm" onClick={checkForUpdates}>
+        <Button variant="secondary" size="sm" isLoading={running} onClick={checkForUpdates}>
           Check for updates
         </Button>
       );
     case "ready":
     case "installing":
       return (
-        <Button size="sm" isLoading={view.status === "installing"} onClick={restartToUpdate}>
+        <Button
+          size="sm"
+          isLoading={running || view.status === "installing"}
+          onClick={restartToUpdate}
+        >
           Restart to update
         </Button>
       );
