@@ -362,7 +362,7 @@ describe("AppShell — session restore", () => {
 
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Restoring session...");
-    expect(status.querySelectorAll(".rim-splash-ball")).toHaveLength(3);
+    expect(status.querySelectorAll("[class*=rim-glow-]")).toHaveLength(4);
     expect(screen.queryByTestId("workspace-rail")).not.toBeInTheDocument();
   });
 });

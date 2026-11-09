@@ -76,25 +76,75 @@ body {
   outline-offset: 2px;
 }
 
-@keyframes rim-splash-bounce {
+/* The splash's glow behind the bolt: three blurred copies and the bolt itself pulse together. */
+@keyframes rim-glow-wide {
   0%,
-  60%,
   100% {
-    transform: translateY(0);
+    opacity: 0.24;
   }
-  30% {
-    transform: translateY(-9px);
+  50% {
+    opacity: 0.76;
+  }
+}
+@keyframes rim-glow-halo {
+  0%,
+  100% {
+    opacity: 0.36;
+  }
+  50% {
+    opacity: 0.96;
+  }
+}
+@keyframes rim-glow-core {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.86;
+  }
+}
+/* #ff8450 is the bolt's brighter peak. */
+@keyframes rim-glow-bolt {
+  0%,
+  100% {
+    fill: var(--color-rim-signal);
+  }
+  50% {
+    fill: #ff8450;
   }
 }
 
-.rim-splash-ball {
-  transform-box: fill-box;
-  animation: rim-splash-bounce 1.2s ease-in-out infinite;
+.rim-glow-wide {
+  animation: rim-glow-wide 1.8s ease-in-out infinite;
+}
+.rim-glow-halo {
+  animation: rim-glow-halo 1.8s ease-in-out infinite;
+}
+/* #ff8a5c is the glow's light core. */
+.rim-glow-core {
+  fill: #ff8a5c;
+  animation: rim-glow-core 1.8s ease-in-out infinite;
+}
+.rim-glow-bolt {
+  animation: rim-glow-bolt 1.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rim-splash-ball {
+  .rim-glow-wide,
+  .rim-glow-halo,
+  .rim-glow-core,
+  .rim-glow-bolt {
     animation: none;
+  }
+  .rim-glow-wide {
+    opacity: 0.35;
+  }
+  .rim-glow-halo {
+    opacity: 0.5;
+  }
+  .rim-glow-core {
+    opacity: 0.45;
   }
 }
 

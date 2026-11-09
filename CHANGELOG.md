@@ -112,6 +112,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
 - Open Marketplace (Ctrl+Shift+X) is now Browse Plugins and opens Settings > Plugins, instead of a
   "coming soon" page. "Choose an Agent's Plugin Commands…" is now "Choose an Agent's Commands…".
 - Commands are grouped by what they do (Navigation, Messages, Moderation, Home…) in the palette and in Settings > Keybinds, and keyboard shortcuts for the app's own commands, such as Toggle Zen Mode and Go Back, follow you to your other devices on servers that support it. Shortcuts you already set for them on this device move to the server once, with a short note; plugin shortcuts stay on this device.
