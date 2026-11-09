@@ -170,10 +170,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Security
 
-- The desktop app's encrypted message cache uses a newer bundled SQLCipher (4.19.0, on SQLite
-  3.53.4, through rusqlite 0.41), the release RUSTSEC-2026-0459 lists as patched; existing caches
-  open as before. The SQLite fix for CVE-2026-119375 (3.54.0) is not in a SQLCipher release that
-  rusqlite bundles yet.
+- The desktop app's encrypted message cache uses a newer bundled SQLCipher: 4.19.0 on SQLite
+  3.53.4 (rusqlite 0.41, the release RUSTSEC-2026-0459 lists as patched), and existing caches
+  open as before. CVE-2026-119375 is fixed only from SQLite 3.54, which needs a libsqlite3-sys
+  release on sqlcipher-src 420; until then the desktop's bundled SQLite stays affected.
 
 ## [0.0.11] - 2026-11-03
 
