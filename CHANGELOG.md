@@ -38,7 +38,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   the agent run a macro whose steps are all commands the agent may run, run on RIM's server,
   with every argument fixed; otherwise it says why it is off.
 - The macros you made in each workspace move into your macros once, and are deleted where they
-  were; at 100 macros the rest stay, and a toast says how many stayed where.
+  were; at 100 macros the rest stay, and a toast says how many stayed where. Those that stayed,
+  at the limit or refused by the server, are listed under **Not moved yet** in Settings → Macros
+  with the reason, to **Try again** or **Delete**.
 - Connected agents outside RIM, such as Claude Code, can ask to run RIM's own commands in the
   desktop app: **Choose its commands** in Settings > Agents has a **RIM commands** section, by
   category, where you tick the ones an agent may ask for. Every call shows an approval card first,

@@ -78,6 +78,8 @@ export const queryKeys = {
   accountMacros: ["userCommands", "account"] as const,
   // Every built-in and app command a macro step may name, as the home server lists them.
   macroStepCommands: ["macroStepCommands"] as const,
+  // The workspace macros that stayed in their workspace when the account's macros moved.
+  macroMovesStayed: (userId?: string) => ["macroMovesStayed", userId ?? null] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
   // The search box's first page of one workspace's matches, in the all-workspaces scope.

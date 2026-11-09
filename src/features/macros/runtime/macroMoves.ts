@@ -82,11 +82,89 @@ export function recordMovedWorkspace(userId: string, workspaceId: string): void 
   }
 }
 
+/** Forgets that the macros of the workspace `workspaceId` moved, so the move reads it again. */
+export function forgetMovedWorkspace(userId: string, workspaceId: string): void {
+  try {
+    const done = movedWorkspaces(userId);
+    if (done === "all" || !done.has(workspaceId)) return;
+    localStorage.setItem(
+      doneKey(userId),
+      JSON.stringify([...done].filter((id) => id !== workspaceId)),
+    );
+  } catch {
+    // Storage unavailable: there is nothing kept to forget.
+  }
+}
+
+/** A workspace macro that stayed where it was in the last move of its workspace, and why. */
+export interface StayedMacro {
+  workspaceId: string;
+  workspaceName: string;
+  /** The workspace macro's id. */
+  macroId: string;
+  title: string;
+  /** The server's refusal, or that the person keeps the most macros they may. */
+  reason: string;
+}
+
+function stayedKey(userId: string): string {
+  return `rim.macroMovesStayed.${macroMoveAccount(userId)}`;
+}
+
+function isStayedMacro(value: unknown): value is StayedMacro {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return ["workspaceId", "workspaceName", "macroId", "title", "reason"].every(
+    (key) => typeof entry[key] === "string",
+  );
+}
+
+/** The workspace macros of the account `userId` that stayed where they were; empty when unread. */
+export function readStayedMacros(userId: string): StayedMacro[] {
+  try {
+    const raw = localStorage.getItem(stayedKey(userId));
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(isStayedMacro) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStayedMacros(userId: string, stayed: readonly StayedMacro[]): void {
+  try {
+    if (stayed.length === 0) localStorage.removeItem(stayedKey(userId));
+    else localStorage.setItem(stayedKey(userId), JSON.stringify(stayed));
+  } catch {
+    // Storage unavailable: the macros still stay in their workspaces.
+  }
+}
+
+/** Replaces what stayed in the workspace `workspaceId` with `stayed`, from its latest move. */
+export function recordStayedMacros(
+  userId: string,
+  workspaceId: string,
+  stayed: readonly StayedMacro[],
+): void {
+  writeStayedMacros(userId, [
+    ...readStayedMacros(userId).filter((entry) => entry.workspaceId !== workspaceId),
+    ...stayed,
+  ]);
+}
+
+/** Forgets the stayed workspace macro `macroId`, once it is deleted. */
+export function forgetStayedMacro(userId: string, macroId: string): void {
+  writeStayedMacros(
+    userId,
+    readStayedMacros(userId).filter((entry) => entry.macroId !== macroId),
+  );
+}
+
 /** Forgets which macros the account `userId` moved, an account removed from this device. */
 export function forgetMacroMoves(userId: string): void {
   try {
     localStorage.removeItem(movesKey(userId));
     localStorage.removeItem(doneKey(userId));
+    localStorage.removeItem(stayedKey(userId));
   } catch {
     // Storage unavailable: there is nothing kept to forget.
   }

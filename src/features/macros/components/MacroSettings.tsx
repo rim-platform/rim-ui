@@ -17,6 +17,9 @@ import { useStepCommandChoices } from "../api/useStepCommandChoices";
 import { stepTitle } from "../runtime/macroCommands";
 import { MAX_MACROS } from "../runtime/macroSteps";
 import { runMacro } from "../runtime/runMacro";
+import { deleteStayedMacro, retryWorkspaceMove, useStayedMacros } from "../runtime/macroMove";
+import type { StayedMacro } from "../runtime/macroMoves";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
 import { AiMacroBuilder } from "./AiMacroBuilder";
 import { MacroEditor, type MacroPrefill } from "./MacroEditor";
@@ -287,6 +290,118 @@ export function MacroSettings() {
           })}
         </ul>
       )}
+
+      <NotMovedYet />
     </div>
+  );
+}
+
+/**
+ * The workspace macros that stayed in their workspace when the person's macros moved: each with
+ * its workspace and why it stayed, to move again or delete. Nothing when none stayed.
+ */
+function NotMovedYet() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const stayed = useStayedMacros();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (!userId || stayed.length === 0) return null;
+
+  async function tryAgain(entry: StayedMacro) {
+    if (!userId) return;
+    setProblem(null);
+    setBusyId(entry.macroId);
+    try {
+      await retryWorkspaceMove(userId, { id: entry.workspaceId, name: entry.workspaceName });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(entry: StayedMacro) {
+    if (!userId) return;
+    setProblem(null);
+    setBusyId(entry.macroId);
+    try {
+      await deleteStayedMacro(userId, entry);
+      setConfirmId(null);
+    } catch (err) {
+      setProblem(errorSentence(err, "The workspace macro could not be deleted."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section aria-labelledby="not-moved-yet" className="space-y-2">
+      <h3 id="not-moved-yet" className="text-sm font-semibold text-rim-text">
+        Not moved yet
+      </h3>
+      <p className="text-xs text-rim-text-muted">
+        These macros from your workspaces could not become your macros. They are still kept in their
+        workspace and run only there.
+      </p>
+      {problem && (
+        <p role="alert" className="text-xs text-rim-danger">
+          {problem}
+        </p>
+      )}
+      <ul className="divide-y divide-rim-line rounded-lg border border-rim-line">
+        {stayed.map((entry) => {
+          const title = showInvisibleCharacters(entry.title);
+          return (
+            <li key={entry.macroId} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-rim-text">{title}</div>
+                <div className="truncate text-xs text-rim-text-muted">
+                  In {showInvisibleCharacters(entry.workspaceName)}: {entry.reason}
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void tryAgain(entry)}
+                  disabled={busyId !== null}
+                  aria-label={`Try moving ${title} again`}
+                  className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text disabled:opacity-50"
+                >
+                  Try again
+                </button>
+                {confirmId === entry.macroId ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void remove(entry)}
+                      disabled={busyId !== null}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/10 disabled:opacity-50"
+                    >
+                      Delete it
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmId(null)}
+                      className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-void/50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmId(entry.macroId)}
+                    disabled={busyId !== null}
+                    aria-label={`Delete ${title} from ${showInvisibleCharacters(entry.workspaceName)}`}
+                    className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

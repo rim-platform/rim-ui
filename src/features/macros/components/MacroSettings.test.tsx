@@ -30,6 +30,8 @@ import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
 import type { AccountMacro, MacroStepCommand } from "../api/useAccountMacros";
+import { useAuthStore } from "../../auth/state/useAuthStore";
+import { recordStayedMacros, readStayedMacros } from "../runtime/macroMoves";
 import { MacroSettings } from "./MacroSettings";
 
 function stepCommand(id: string, title: string, extra: Partial<MacroStepCommand> = {}) {
@@ -106,6 +108,8 @@ function serve(macros: AccountMacro[]) {
     "mutation CreateUserCommand": () => ({ createUserCommand: { id: "x" } }),
     "mutation UpdateUserCommand": () => ({ updateUserCommand: { id: "x" } }),
     "mutation DeleteUserCommand": () => ({ deleteUserCommand: true }),
+    "mutation DeleteMacro": () => ({ deleteMacro: true }),
+    "query MacrosToMove": () => ({ myMacros: [] }),
   });
 }
 
@@ -131,6 +135,8 @@ beforeEach(() => {
 afterEach(() => {
   queryClient.clear();
   vi.clearAllMocks();
+  localStorage.clear();
+  useAuthStore.setState({ session: null });
 });
 
 describe("MacroSettings list", () => {
@@ -324,5 +330,62 @@ describe("MacroSettings form", () => {
     expect(callsTo(mocks.request, "mutation UpdateUserCommand")[0].input).not.toHaveProperty(
       "aiCallable",
     );
+  });
+});
+
+describe("MacroSettings macros not moved yet", () => {
+  const STAYED = {
+    workspaceId: "ws-2",
+    workspaceName: "Design",
+    macroId: "m-1",
+    title: "Old triage",
+    reason: "unknown command step `x.y`",
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ session: { userId: "u-1" } as never });
+    recordStayedMacros("u-1", "ws-2", [STAYED]);
+  });
+
+  it("lists each one with its workspace and why it stayed, and deletes one after a confirm", async () => {
+    serve([]);
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Not moved yet" })).toBeInTheDocument();
+    expect(screen.getByText("Old triage")).toBeInTheDocument();
+    expect(screen.getByText("In Design: unknown command step `x.y`")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Old triage from Design" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "mutation DeleteMacro")).toEqual([{ macroId: "m-1" }]),
+    );
+    await waitFor(() => expect(screen.queryByText("Old triage")).not.toBeInTheDocument());
+    expect(readStayedMacros("u-1")).toEqual([]);
+  });
+
+  it("moves a workspace's macros again on Try again", async () => {
+    serve([]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Try moving Old triage again" }));
+
+    await waitFor(() =>
+      expect(callsTo(mocks.request, "query MacrosToMove")).toEqual([{ serverId: "ws-2" }]),
+    );
+    await waitFor(() => expect(screen.queryByText("Old triage")).not.toBeInTheDocument());
+  });
+
+  it("shows nothing when every macro moved", async () => {
+    localStorage.clear();
+    serve([]);
+    renderPage();
+
+    await waitFor(() =>
+      expect(queryClient.getQueryState(queryKeys.macroMovesStayed("u-1"))?.status).toBe("success"),
+    );
+
+    expect(screen.queryByRole("heading", { name: "Not moved yet" })).not.toBeInTheDocument();
   });
 });

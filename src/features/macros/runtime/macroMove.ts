@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 
-import { graphqlErrorCode } from "../../../core/graphql/errors";
+import { graphqlErrorCode, graphqlErrorMessage } from "../../../core/graphql/errors";
 import { logger } from "../../../core/logger";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
@@ -20,7 +21,17 @@ import {
 } from "../api/useAccountMacros";
 import { deleteWorkspaceMacro, fetchMacrosToMove, type MacroToMove } from "../api/useMacros";
 import { agentOptionBlocker, macroKeyFromTitle } from "./macroCommands";
-import { movedWorkspaces, recordMacroMoves, recordMovedWorkspace } from "./macroMoves";
+import {
+  forgetMovedWorkspace,
+  forgetStayedMacro,
+  movedWorkspaces,
+  readMacroMoves,
+  readStayedMacros,
+  recordMacroMoves,
+  recordMovedWorkspace,
+  recordStayedMacros,
+  type StayedMacro,
+} from "./macroMoves";
 import { MAX_MACROS } from "./macroSteps";
 
 /** The most characters a macro's title may have. */
@@ -165,18 +176,32 @@ async function moveOnce(
     }
     let complete = true;
     let left = 0;
+    const stayed: StayedMacro[] = [];
+    const stay = (macro: MacroToMove, reason: string) =>
+      stayed.push({
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        macroId: macro.id,
+        title: macro.name,
+        reason,
+      });
+    const recorded = readMacroMoves(userId);
     for (const macro of macros) {
       const steps = macro.steps.map((step) => ({
         commandId: step.commandId,
         args: argsOf(step.args),
       }));
-      const twin = existing.find(
-        (m) => m.title.trim() === macro.name.trim() && sameSteps(m.steps, steps),
-      );
+      // A macro this move made earlier, whose workspace macro was not deleted then, or one with
+      // the same title and steps.
+      const earlier = recorded[macro.id];
+      const twin =
+        (earlier !== undefined ? existing.find((m) => m.id === earlier) : undefined) ??
+        existing.find((m) => m.title.trim() === macro.name.trim() && sameSteps(m.steps, steps));
       let movedTo = twin?.id;
       if (!movedTo) {
         if (existing.length >= MAX_MACROS) {
           left += 1;
+          stay(macro, `you have ${MAX_MACROS} macros`);
           continue;
         }
         const title = uniqueTitle(macro.name, existing);
@@ -202,8 +227,10 @@ async function moveOnce(
         try {
           await createOnce(input, deps);
         } catch (err) {
-          if (refusedByServer(err)) summary.refused += 1;
-          else complete = false;
+          if (refusedByServer(err)) {
+            summary.refused += 1;
+            stay(macro, graphqlErrorMessage(err, "the server refused it"));
+          } else complete = false;
           logger.warn("[RIM:macros] a workspace macro could not be moved:", err);
           continue;
         }
@@ -234,8 +261,10 @@ async function moveOnce(
         `${left} ${plural(left)} stayed in ${workspace.name}: you can keep ${MAX_MACROS} macros`,
       );
     }
+    recordStayedMacros(userId, workspace.id, stayed);
     if (complete) recordMovedWorkspace(userId, workspace.id);
   }
+  void queryClient.invalidateQueries({ queryKey: queryKeys.macroMovesStayed(userId) });
 
   if (summary.moved > 0) {
     invalidateAccountMacros();
@@ -254,14 +283,71 @@ async function moveOnce(
   return summary;
 }
 
-/** Creates the macro, and again without the agent option when the server refuses it with it. */
+/**
+ * Creates the macro; when the server refuses it with the agent option or the words for the
+ * agent, which have checks of their own, once more without them.
+ */
 async function createOnce(input: CreateUserCommandInput, deps: MacroMoveDeps): Promise<void> {
   try {
     await deps.create(input);
   } catch (err) {
-    if (!input.aiCallable || !refusedByServer(err)) throw err;
-    await deps.create({ ...input, aiCallable: false });
+    const { aiCallable, nlDescription, intentSamples, ...plain } = input;
+    const forAgent = aiCallable || Boolean(nlDescription) || (intentSamples?.length ?? 0) > 0;
+    if (!forAgent || !refusedByServer(err)) throw err;
+    await deps.create({ ...plain, aiCallable: false });
   }
+}
+
+/**
+ * Moves the macros of `workspace` again: what stayed there in the last move is tried once more.
+ *
+ * @param userId - The signed-in account.
+ * @param workspace - The workspace whose macros stayed.
+ * @returns How the move went.
+ */
+export function retryWorkspaceMove(
+  userId: string,
+  workspace: MoveWorkspace,
+  deps: MacroMoveDeps = defaultDeps,
+): Promise<MacroMoveSummary> {
+  forgetMovedWorkspace(userId, workspace.id);
+  return moveWorkspaceMacros(userId, [workspace], deps);
+}
+
+/**
+ * Deletes a workspace macro that stayed where it was, on the server that hosts its workspace,
+ * and forgets that it stayed.
+ */
+export async function deleteStayedMacro(
+  userId: string,
+  stayed: StayedMacro,
+  deps: Pick<MacroMoveDeps, "deleteWorkspaceMacro"> = defaultDeps,
+): Promise<void> {
+  try {
+    await deps.deleteWorkspaceMacro(stayed.macroId, stayed.workspaceId);
+  } catch (err) {
+    if (graphqlErrorCode(err) !== "NOT_FOUND") throw err;
+  }
+  forgetStayedMacro(userId, stayed.macroId);
+  void queryClient.invalidateQueries({ queryKey: queryKeys.macroMovesStayed(userId) });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.macros() });
+}
+
+const NO_STAYED: StayedMacro[] = [];
+
+/** The signed-in person's workspace macros that stayed in their workspace in the last move. */
+export function useStayedMacros(): StayedMacro[] {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const { data } = useQuery(
+    {
+      queryKey: queryKeys.macroMovesStayed(userId),
+      queryFn: () => (userId ? readStayedMacros(userId) : []),
+      enabled: Boolean(userId),
+      staleTime: Infinity,
+    },
+    queryClient,
+  );
+  return data ?? NO_STAYED;
 }
 
 /**

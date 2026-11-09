@@ -292,7 +292,10 @@ another macro, shown as "Another macro (kept, no longer offered)".
 the app finds your home server keeping your macros, it moves the ones you made in each workspace
 into your macros and deletes them where they were; one with the title and steps of a macro you
 already have is only deleted, and one whose title is taken gets " (2)". At 100 macros the rest
-stay where they are, and a toast says how many stayed in which workspace. Settings → Commands is
+stay where they are, and a toast says how many stayed in which workspace. Settings → Macros lists
+the ones that stayed, at 100 macros or because the server refused them, under **Not moved yet**,
+each with its workspace and the reason: **Try again** moves that workspace's macros once more,
+and **Delete** deletes it from its workspace after a confirm. Settings → Commands is
 gone: what it made are macros. With a home server that does not keep your macros, Settings →
 Macros still lists the macros of the open workspace and Settings → Commands is still there.
 
