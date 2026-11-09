@@ -279,7 +279,7 @@ function readDraft(
   }
   const values = fieldValuesOf(command, draft);
   if (command && values) {
-    const read = readFields(presetFields(command), values, false);
+    const read = readFields(presetFields(command), values, false, command.id);
     if (!read.ok) return { problem: "Check the arguments", fieldProblems: read.problems };
     const presetArgs = presetArgsOf(command, read.args, fieldsWorkspace);
     return {
@@ -421,6 +421,7 @@ function QuickForm({
               {fieldsCommand && fieldValues ? (
                 <PresetArgumentsSection
                   fields={presetFields(fieldsCommand)}
+                  commandId={fieldsCommand.id}
                   values={fieldValues}
                   onChange={(name, value) =>
                     change(index, { fields: { ...fieldValues, [name]: value } })

@@ -415,6 +415,8 @@ function StepRow({
                       mode="preset"
                       problem={problems[field.name] ?? null}
                       workspaceId={workspaceId}
+                      commandId={step.commandId}
+                      formValues={step.values ?? undefined}
                     />
                   )}
                   <label className="flex items-center gap-1.5 text-xs text-rim-text-muted">

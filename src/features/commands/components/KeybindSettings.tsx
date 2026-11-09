@@ -238,7 +238,7 @@ export function KeybindSettings() {
   ): { presetArgs: unknown } | null {
     const command = presetCommand(commandId);
     if (!command || draft.values === null) return { presetArgs: kept ?? undefined };
-    const read = readFields(presetFields(command), draft.values, false);
+    const read = readFields(presetFields(command), draft.values, false, command.id);
     if (!read.ok) {
       setDraft({ ...draft, problems: read.problems });
       return null;
@@ -739,6 +739,7 @@ export function KeybindSettings() {
           {presetCommand(newCommandId) && (
             <PresetArgumentsSection
               fields={presetFields(presetCommand(newCommandId)!)}
+              commandId={newCommandId}
               values={newPreset.values}
               onChange={(name, value) => setNewPreset(withFieldValue(newPreset, name, value))}
               problems={newPreset.problems}
@@ -885,6 +886,7 @@ export function KeybindSettings() {
                         {!isDeviceKeybind(kb.id) && presetCommand(editCommandId) && (
                           <PresetArgumentsSection
                             fields={presetFields(presetCommand(editCommandId)!)}
+                            commandId={editCommandId}
                             values={editPreset.values}
                             saved={kb.presetArgs}
                             onChange={(name, value) =>

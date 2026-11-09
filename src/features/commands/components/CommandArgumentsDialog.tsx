@@ -26,7 +26,7 @@ function ArgumentsForm({ request }: { request: CommandArgumentsRequest }) {
   const [problems, setProblems] = useState<Record<string, string>>({});
 
   function run() {
-    const read = readFields(fields, values, true);
+    const read = readFields(fields, values, true, request.commandId);
     if (!read.ok) {
       setProblems(read.problems);
       return;
@@ -70,6 +70,10 @@ function ArgumentsForm({ request }: { request: CommandArgumentsRequest }) {
         mode="ask"
         problems={problems}
         workspaceId={request.workspaceId}
+        commandId={request.commandId}
+        givenValues={
+          request.conversationId ? { conversation_id: request.conversationId } : undefined
+        }
         autoFocusFirst
         onSubmit={run}
       />

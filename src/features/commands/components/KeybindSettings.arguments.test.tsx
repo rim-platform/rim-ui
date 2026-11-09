@@ -141,7 +141,7 @@ describe("KeybindSettings arguments", () => {
       within(mode)
         .getAllByRole("option")
         .map((o) => o.textContent),
-    ).toEqual(["Ask when run", "On", "Off", "Until"]);
+    ).toEqual(["Ask when run", "Until I turn it back on", "Off", "Until a time"]);
     expect(within(section).queryByLabelText("Workspace")).toBeNull();
     fireEvent.change(mode, { target: { value: "until" } });
     fireEvent.change(within(section).getByLabelText(/Minutes/), { target: { value: "30" } });

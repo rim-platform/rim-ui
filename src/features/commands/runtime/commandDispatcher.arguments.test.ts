@@ -261,3 +261,43 @@ describe("dispatchCommand asking for arguments", () => {
     expect(useCommandArgumentsStore.getState().request).toBeNull();
   });
 });
+
+describe("dispatchCommand asking for a topic", () => {
+  const SET_TOPIC = command("chat.set_topic", {
+    title: "Edit Topic…",
+    category: "Conversations",
+    arguments: [
+      argument("server_id", CommandArgumentType.WORKSPACE_ID),
+      argument("conversation_id", CommandArgumentType.CONVERSATION_ID),
+      argument("topic", CommandArgumentType.STRING),
+    ],
+  });
+
+  it("runs a preset that clears the topic without asking for it", async () => {
+    await dispatchCommand(SET_TOPIC, executeBackend, {
+      args: { topic: "" },
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+
+    expect(useCommandArgumentsStore.getState().request).toBeNull();
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ topic: "" });
+  });
+
+  it("tells the form the command and the conversation it runs in", async () => {
+    const running = dispatchCommand(SET_TOPIC, executeBackend, {
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+
+    await vi.waitFor(() => expect(askedNames()).toEqual(["topic"]));
+    expect(useCommandArgumentsStore.getState().request).toMatchObject({
+      commandId: "chat.set_topic",
+      conversationId: "conv-1",
+    });
+    useCommandArgumentsStore.getState().submit({ topic: "" });
+    await running;
+
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ topic: "" });
+  });
+});
