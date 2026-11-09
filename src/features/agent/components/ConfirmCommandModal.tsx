@@ -26,6 +26,7 @@ import {
 } from "./ConfirmCommandModal/argIdentity";
 import { detectCrossChannel } from "./ConfirmCommandModal/crossChannelDetector";
 import { IdArgRow } from "./ConfirmCommandModal/IdArgRow";
+import { MacroSteps } from "./ConfirmCommandModal/MacroSteps";
 import { verbMatches } from "./ConfirmCommandModal/verbDeriver";
 import {
   OUTSIDE_AGENT_ARM_MS,
@@ -428,6 +429,9 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 workspaceId={argsWorkspaceId}
               />
             )}
+
+            {/* What one of the person's macros will run, step by step */}
+            <MacroSteps commandId={request.commandId} />
 
             {/* Type-to-confirm input */}
             {requireType && (

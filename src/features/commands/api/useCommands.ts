@@ -14,6 +14,7 @@ import type {
   CommandResult,
 } from "../types";
 import type { ConfirmationProof } from "../runtime/humanConfirmation";
+import type { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 
 const CommandsDocument = gql`
   query Commands($surface: CommandSurface, $commandContext: CommandContextInput) {
@@ -110,34 +111,49 @@ export function useCommands(surface?: CommandSurface, commandContext?: CommandCo
   });
 }
 
+/** One command run, as {@link executeCommandAt} sends it. */
+export interface ExecuteCommandRequest {
+  commandId: string;
+  args?: Record<string, unknown>;
+  commandContext?: CommandContextInput;
+  isPipe?: boolean;
+  confirmation?: ConfirmationProof;
+  /** Who started it; the server takes a person's palette run when omitted. */
+  initiator?: CommandInitiator;
+}
+
+/**
+ * Runs a command on the server that hosts the workspace of its `commandContext`; one without a
+ * workspace runs on the connected server.
+ */
+export function executeCommandAt(
+  input: ExecuteCommandRequest,
+): Promise<{ executeCommand: CommandResult }> {
+  return graphqlClient.request<{ executeCommand: CommandResult }>(
+    ExecuteCommandDocument,
+    routedToWorkspace(
+      {
+        input: {
+          commandId: input.commandId,
+          args: input.args,
+          commandContext: input.commandContext,
+          isPipe: input.isPipe,
+          ...(input.confirmation && { confirmation: input.confirmation }),
+          ...(input.initiator && { initiator: input.initiator }),
+        },
+      },
+      input.commandContext?.workspaceId,
+    ),
+  );
+}
+
 /**
  * Runs a command a person started, on the server that hosts the workspace of its
  * `commandContext`; one without a workspace runs on the connected server.
  */
 export function useExecuteCommandMutation() {
   return useMutation({
-    mutationFn: (input: {
-      commandId: string;
-      args?: Record<string, unknown>;
-      commandContext?: CommandContextInput;
-      isPipe?: boolean;
-      confirmation?: ConfirmationProof;
-    }) =>
-      graphqlClient.request<{ executeCommand: CommandResult }>(
-        ExecuteCommandDocument,
-        routedToWorkspace(
-          {
-            input: {
-              commandId: input.commandId,
-              args: input.args,
-              commandContext: input.commandContext,
-              isPipe: input.isPipe,
-              ...(input.confirmation && { confirmation: input.confirmation }),
-            },
-          },
-          input.commandContext?.workspaceId,
-        ),
-      ),
+    mutationFn: (input: Omit<ExecuteCommandRequest, "initiator">) => executeCommandAt(input),
     // A `TIMED_OUT` answer (a mutating command while timed out) switches the composer to its
     // timed-out banner, whichever surface ran the command.
     onError: (err, input) => {

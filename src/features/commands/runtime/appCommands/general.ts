@@ -11,7 +11,12 @@ import { openDirectWithMember } from "../../../conversations/state/openDirect";
 import { ConversationTypeEnum } from "../../../../core/graphql/generated/schema-types";
 import { backUpHistoryNow } from "../../../history-archive/backUpNow";
 import type { Macro } from "../../../macros/api/useMacros";
+import { accountMacrosOn } from "../../../macros/api/useAccountMacros";
+import { isMacroId } from "../../../macros/runtime/macroCommands";
+import { readMacroMoves } from "../../../macros/runtime/macroMoves";
+import { runLegacyMacro } from "../../../macros/runtime/runLegacyMacro";
 import { runMacro } from "../../../macros/runtime/runMacro";
+import { useAuthStore } from "../../../auth/state/useAuthStore";
 import { togglePipeline } from "../../../pipelines/api/usePipelines";
 import { useRelayStore } from "../../../relay/state/useRelayStore";
 import { SETTINGS_TABS, settingsTabCommandId } from "../../../settings/settingsTabs";
@@ -107,7 +112,8 @@ function assignKeybind(): void {
   useQuickAccessStore.getState().open({ kind: "workspace", workspaceId, label });
 }
 
-async function runMacroById(macroId: string): Promise<void> {
+/** Runs the workspace macro `macroId` of the open workspace. */
+async function runWorkspaceMacro(macroId: string): Promise<void> {
   const workspaceId = useWorkspaceStore.getState().workspaceId;
   if (!workspaceId) {
     toast.info("Open a workspace first.");
@@ -123,7 +129,26 @@ async function runMacroById(macroId: string): Promise<void> {
   const commands = queryClient.getQueryData<CommandDefinition[]>(
     queryKeys.commands("PALETTE", workspaceId),
   );
-  await runMacro(macro, workspaceId, commands);
+  await runLegacyMacro(macro, workspaceId, commands);
+}
+
+/**
+ * Runs the macro `macroId` names: one of the person's macros (`user.<key>`), a workspace macro
+ * that moved into them, or a workspace macro of the open workspace.
+ */
+async function runMacroById(macroId: string): Promise<void> {
+  if (!accountMacrosOn()) {
+    await runWorkspaceMacro(macroId);
+    return;
+  }
+  if (isMacroId(macroId)) {
+    await runMacro(macroId);
+    return;
+  }
+  const userId = useAuthStore.getState().session?.userId;
+  const moved = userId ? readMacroMoves(userId)[macroId] : undefined;
+  if (moved) await runMacro(moved);
+  else await runWorkspaceMacro(macroId);
 }
 
 async function togglePipelineById(pipelineId: string): Promise<void> {

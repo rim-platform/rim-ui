@@ -700,8 +700,17 @@ export type CreateServerInput = {
 };
 
 export type CreateUserCommandInput = {
+  /**
+   * Lets the AI agent run the macro; refused unless every step is an AI-callable built-in
+   * the server runs, with every argument fixed.
+   */
+  aiCallable?: Scalars['Boolean']['input'];
   commandId: Scalars['String']['input'];
   description: Scalars['String']['input'];
+  /** Up to 10 example phrases for the AI agent, each at most 200 characters. */
+  intentSamples?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** How the macro is described to the AI agent, at most 1,000 characters. */
+  nlDescription?: InputMaybe<Scalars['String']['input']>;
   steps: Array<UserCommandStepInput>;
   title: Scalars['String']['input'];
 };
@@ -1904,6 +1913,7 @@ export type Mutation = {
   createIncomingWebhook: CreatedIncomingWebhook;
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   createMacro: MacroDef;
   /**
    * Create a pipeline. Any member, but only an Owner or Moderator may give it a Post as bot
@@ -1930,6 +1940,7 @@ export type Mutation = {
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
   deleteKeybind: Scalars['Boolean']['output'];
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   deleteMacro: Scalars['Boolean']['output'];
   /**
    * Delete a person's messages in the workspace's channels, thread replies included, sent at
@@ -1973,6 +1984,7 @@ export type Mutation = {
    */
   endWebhookTestSession: Scalars['Boolean']['output'];
   executeCommand: CommandResult;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
   forwardMessage: Message;
@@ -2439,6 +2451,7 @@ export type Mutation = {
    */
   updateIncomingWebhookFormat: IncomingWebhook;
   updateKeybind: Keybind;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   updateMacro: MacroDef;
   /**
    * Update fields on the authenticated user's profile.
@@ -3781,8 +3794,8 @@ export type Query = {
    *
    * With `intentPhrase` the commands are ranked by how well the phrase matches their
    * intent samples, title and natural-language description. `limit` defaults to 50 and is
-   * capped at 100. `workspaceId` scopes the list to one workspace, including its AI-callable
-   * macros.
+   * capped at 100. `workspaceId` scopes the list to one workspace; the caller's
+   * agent-callable macros are listed for a workspace where they may run every step.
    *
    * Limited to 5 calls per 60-second sliding window per user; more fail with
    * `RATE_LIMITED`. Fails with `FEATURE_DISABLED` while the AI command surface is off.
@@ -3798,8 +3811,8 @@ export type Query = {
    * apart from a confirmation, a timeout in force and the arguments given. Naming the direct
    * space makes the caller a guest of it.
    *
-   * `AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
-   * workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+   * `AI` lists only the AI-callable commands, the caller's agent-callable macros among them,
+   * and fails with `FEATURE_DISABLED` while the AI command surface is off.
    */
   commands: Array<Command>;
   /** The caller's contacts, oldest first. */
@@ -3871,7 +3884,15 @@ export type Query = {
    * to themselves. A filter with neither is rejected.
    */
   listAuditLog: AuditLogPage;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   macroByName?: Maybe<MacroDef>;
+  /**
+   * Every built-in and app command a macro step may name, sorted by id, whatever the
+   * caller's role and workspace: the built-ins the server runs and those the client runs,
+   * and the app commands other than the agent-management ones. Plugin commands are not in
+   * it.
+   */
+  macroStepCommands: Array<Command>;
   me: User;
   /**
    * How many of a person's messages in the workspace's channels, sent at or after `since`
@@ -3919,7 +3940,10 @@ export type Query = {
   myJoinRequests: Array<JoinRequest>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
-  /** The caller's own macros in the workspace. `FORBIDDEN` for a non-member. */
+  /**
+   * The caller's own macros in the workspace. `FORBIDDEN` for a non-member.
+   * @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand
+   */
   myMacros: Array<MacroDef>;
   /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
@@ -5306,9 +5330,18 @@ export type UpdatePublicJoinLinkInput = {
 };
 
 export type UpdateUserCommandInput = {
+  /**
+   * Omitted, keeps the stored value, which turns off when the new steps no longer let the
+   * agent run the macro.
+   */
+  aiCallable?: InputMaybe<Scalars['Boolean']['input']>;
   commandId: Scalars['String']['input'];
   description: Scalars['String']['input'];
+  /** Omitted, keeps the stored value. */
+  intentSamples?: InputMaybe<Array<Scalars['String']['input']>>;
   isEnabled: Scalars['Boolean']['input'];
+  /** Omitted, keeps the stored value. */
+  nlDescription?: InputMaybe<Scalars['String']['input']>;
   steps: Array<UserCommandStepInput>;
   title: Scalars['String']['input'];
 };
@@ -5387,26 +5420,58 @@ export type User = {
   username: Scalars['String']['output'];
 };
 
-/** A user command as its owner saved it, in the shape `updateUserCommand` takes. */
+/**
+ * A macro, the person's own command, as its owner saved it, in the shape `updateUserCommand`
+ * takes.
+ */
 export type UserCommand = {
+  /**
+   * Whether the owner lets the AI agent run the macro. The agent runs it only while every
+   * step is an AI-callable built-in the server runs, with every argument fixed.
+   */
+  aiCallable: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
   /** The command id, `user.<key>`, the same as the listed `Command.id`. */
   id: Scalars['String']['output'];
+  /** Example phrases for the AI agent. */
+  intentSamples: Array<Scalars['String']['output']>;
   /** `false` while the command is disabled; a disabled command is not listed by `commands`. */
   isEnabled: Scalars['Boolean']['output'];
+  /** How the macro is described to the AI agent; empty when its description serves. */
+  nlDescription: Scalars['String']['output'];
   /** The steps in the order they run. */
   steps: Array<UserCommandStep>;
   title: Scalars['String']['output'];
 };
 
-/** One step of a user command: the command it runs and the arguments it passes. */
+/**
+ * One step of a macro: the command it runs, the arguments fixed for it and the arguments the
+ * client asks for when the macro runs.
+ */
 export type UserCommandStep = {
   args?: Maybe<Scalars['JSON']['output']>;
+  /**
+   * Names of the arguments the client asks the person for before the first step runs;
+   * empty when the step asks for none.
+   */
+  ask: Array<Scalars['String']['output']>;
+  /**
+   * A built-in, app or plugin command id, or on a macro saved before steps could name app
+   * and plugin commands, another macro.
+   */
   commandId: Scalars['String']['output'];
 };
 
+/** One step of a macro. */
 export type UserCommandStepInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
+  /**
+   * Names of the arguments the client asks for when the macro runs: at most 32, each 1 to
+   * 64 bytes, none twice and none a key of `args`. Omitted, none on create, and on update
+   * what the stored step at the same position asked for when it names the same command.
+   */
+  ask?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** A built-in, app or plugin command id. */
   commandId: Scalars['String']['input'];
 };
 

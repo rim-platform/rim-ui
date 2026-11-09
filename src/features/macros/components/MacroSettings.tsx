@@ -31,7 +31,7 @@ import { limitView } from "../../limits/limits";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { AiMacroBuilder } from "./AiMacroBuilder";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
-import { runMacro } from "../runtime/runMacro";
+import { runLegacyMacro } from "../runtime/runLegacyMacro";
 
 const MAX_STEPS = 20;
 
@@ -119,10 +119,13 @@ function MacroEditor({
     try {
       if (initial) {
         await updateMacro.mutateAsync({
-          macroId: initial.id,
-          name: trimmedName,
-          description: description.trim(),
-          steps: validSteps,
+          input: {
+            macroId: initial.id,
+            name: trimmedName,
+            description: description.trim(),
+            steps: validSteps,
+          },
+          workspaceId: serverId,
         });
       } else {
         await createMacro.mutateAsync({
@@ -320,14 +323,15 @@ export function MacroSettings() {
   const handleDelete = useCallback(
     async (macroId: string) => {
       try {
-        await deleteMacro.mutateAsync(macroId);
+        if (!workspaceId) return;
+        await deleteMacro.mutateAsync({ macroId, workspaceId });
         toast.success("Macro deleted");
         setConfirmDeleteId(null);
       } catch {
         toast.error("Failed to delete macro");
       }
     },
-    [deleteMacro],
+    [deleteMacro, workspaceId],
   );
 
   /** Runs a macro; one with a dangerous step asks for confirmation first. */
@@ -336,7 +340,7 @@ export function MacroSettings() {
       if (!workspaceId) return;
       setExecutingId(macro.id);
       try {
-        await runMacro(macro, workspaceId, commands);
+        await runLegacyMacro(macro, workspaceId, commands);
       } finally {
         setExecutingId(null);
       }

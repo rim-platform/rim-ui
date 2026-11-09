@@ -23,6 +23,8 @@ vi.mock("../../agent/agentAvailability", () => ({
   commandOfferedHere: (id: string) => id !== "workspace.open_agent",
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { actionTitle, useResolvedActions } from "./quickActions";
 
 function definition(id: string, overrides: Partial<CommandDefinition> = {}): CommandDefinition {
@@ -119,5 +121,31 @@ describe("useResolvedActions", () => {
 
   it("says a command it does not know isn't available", () => {
     expect(resolve(["chat.gone"])[0].reason).toBe("This command isn't available here");
+  });
+
+  it("runs the person's macro from the home server where the workspace lists none", () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    queryClient.setQueryData(queryKeys.macroStepCommands, [SCROLL_TO_TOP]);
+    queryClient.setQueryData(queryKeys.accountMacros, [
+      {
+        id: "user.top",
+        title: "Back to top",
+        description: "",
+        isEnabled: true,
+        aiCallable: false,
+        nlDescription: "",
+        intentSamples: [],
+        steps: [{ commandId: "chat.scroll_to_top", args: {}, ask: [] }],
+      },
+    ]);
+    try {
+      const [resolved] = resolve(["user.top"]);
+
+      expect(resolved.reason).toBeNull();
+      expect(resolved.command).toMatchObject({ id: "user.top", category: "Macro" });
+      expect(actionTitle(resolved)).toBe("Back to top");
+    } finally {
+      queryClient.clear();
+    }
   });
 });

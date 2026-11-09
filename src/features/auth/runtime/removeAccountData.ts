@@ -12,6 +12,7 @@ import { getGraphqlEndpoint } from "../../../core/graphql/config";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { forgetAppKeybindMove } from "../../commands/runtime/appKeybindMove";
+import { forgetMacroMoves } from "../../macros/runtime/macroMoves";
 import { resetE2eeSession } from "../../e2ee/runtime/session";
 import { deleteAccount } from "../../e2ee/web/db";
 import { keyBackend } from "../../key-identity/api/keyBackend";
@@ -110,6 +111,7 @@ export async function removeAccountData(account: DeviceAccount): Promise<void> {
   ]);
   parts.push(["key setup choice", () => forgetKeySetupDeferral(userId)]);
   parts.push(["keybind move record", () => forgetAppKeybindMove(userId)]);
+  parts.push(["macro move record", () => forgetMacroMoves(userId)]);
 
   let failed = false;
   for (const [what, remove] of parts) {

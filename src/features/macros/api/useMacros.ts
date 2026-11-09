@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import type {
   ConfirmationChallenge,
   MacroStep as MacroStepGql,
@@ -114,20 +115,34 @@ export function useCreateMacroMutation() {
   });
 }
 
+/** Changes a workspace macro, on the server that hosts `workspaceId`. */
 export function useUpdateMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateMacroInput) => graphqlClient.request(UpdateMacroDocument, { input }),
+    mutationFn: ({ input, workspaceId }: { input: UpdateMacroInput; workspaceId: string }) =>
+      graphqlClient.request(UpdateMacroDocument, routedToWorkspace({ input }, workspaceId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },
   });
 }
 
+/**
+ * Deletes the workspace macro `macroId`, on the server that hosts `workspaceId`.
+ *
+ * @param macroId - The workspace macro's id.
+ * @param workspaceId - The workspace it is kept in.
+ */
+export async function deleteWorkspaceMacro(macroId: string, workspaceId: string): Promise<void> {
+  await graphqlClient.request(DeleteMacroDocument, routedToWorkspace({ macroId }, workspaceId));
+}
+
+/** Deletes a workspace macro, on the server that hosts `workspaceId`. */
 export function useDeleteMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (macroId: string) => graphqlClient.request(DeleteMacroDocument, { macroId }),
+    mutationFn: ({ macroId, workspaceId }: { macroId: string; workspaceId: string }) =>
+      deleteWorkspaceMacro(macroId, workspaceId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },

@@ -819,6 +819,19 @@ input CreateUserCommandInput {
 	title: String!
 	description: String!
 	steps: [UserCommandStepInput!]!
+	"""
+	Lets the AI agent run the macro; refused unless every step is an AI-callable built-in
+	the server runs, with every argument fixed.
+	"""
+	aiCallable: Boolean! = false
+	"""
+	How the macro is described to the AI agent, at most 1,000 characters.
+	"""
+	nlDescription: String
+	"""
+	Up to 10 example phrases for the AI agent, each at most 200 characters.
+	"""
+	intentSamples: [String!]
 }
 
 """
@@ -2331,10 +2344,10 @@ type Mutation {
 	unmuteConversation(input: UnmuteConversationInput!): Boolean!
 	createCustomEmoji(input: CreateCustomEmojiInput!): CustomEmoji!
 	deleteCustomEmoji(emojiId: ID!): Boolean!
-	createMacro(input: CreateMacroInput!): MacroDef!
-	updateMacro(input: UpdateMacroInput!): MacroDef!
-	deleteMacro(macroId: ID!): Boolean!
-	executeMacro(input: ExecuteMacroInput!): CommandResult!
+	createMacro(input: CreateMacroInput!): MacroDef! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	updateMacro(input: UpdateMacroInput!): MacroDef! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	deleteMacro(macroId: ID!): Boolean! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	executeMacro(input: ExecuteMacroInput!): CommandResult! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
 	createChannelLens(input: CreateChannelLensInput!): ChannelLens!
 	updateChannelLens(input: UpdateChannelLensInput!): ChannelLens!
 	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
@@ -3679,8 +3692,8 @@ type Query {
 	apart from a confirmation, a timeout in force and the arguments given. Naming the direct
 	space makes the caller a guest of it.
 	
-	`AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
-	workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+	`AI` lists only the AI-callable commands, the caller's agent-callable macros among them,
+	and fails with `FEATURE_DISABLED` while the AI command surface is off.
 	"""
 	commands(surface: CommandSurface, commandContext: CommandContextInput): [Command!]!
 	"""
@@ -3694,13 +3707,20 @@ type Query {
 	
 	With `intentPhrase` the commands are ranked by how well the phrase matches their
 	intent samples, title and natural-language description. `limit` defaults to 50 and is
-	capped at 100. `workspaceId` scopes the list to one workspace, including its AI-callable
-	macros.
+	capped at 100. `workspaceId` scopes the list to one workspace; the caller's
+	agent-callable macros are listed for a workspace where they may run every step.
 	
 	Limited to 5 calls per 60-second sliding window per user; more fail with
 	`RATE_LIMITED`. Fails with `FEATURE_DISABLED` while the AI command surface is off.
 	"""
 	commandDiscover(intentPhrase: String, limit: Int, workspaceId: ID): [Command!]!
+	"""
+	Every built-in and app command a macro step may name, sorted by id, whatever the
+	caller's role and workspace: the built-ins the server runs and those the client runs,
+	and the app commands other than the agent-management ones. Plugin commands are not in
+	it.
+	"""
+	macroStepCommands: [Command!]!
 	resolvedKeybinds(workspaceId: ID): [Keybind!]!
 	conversation(serverId: ID!, conversationId: ID!): Conversation!
 	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
@@ -3749,8 +3769,8 @@ type Query {
 	"""
 	The caller's own macros in the workspace. `FORBIDDEN` for a non-member.
 	"""
-	myMacros(serverId: ID!): [MacroDef!]!
-	macroByName(serverId: ID!, name: String!): MacroDef
+	myMacros(serverId: ID!): [MacroDef!]! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	macroByName(serverId: ID!, name: String!): MacroDef @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
 	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
 	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
@@ -5068,6 +5088,19 @@ input UpdateUserCommandInput {
 	description: String!
 	steps: [UserCommandStepInput!]!
 	isEnabled: Boolean!
+	"""
+	Omitted, keeps the stored value, which turns off when the new steps no longer let the
+	agent run the macro.
+	"""
+	aiCallable: Boolean
+	"""
+	Omitted, keeps the stored value.
+	"""
+	nlDescription: String
+	"""
+	Omitted, keeps the stored value.
+	"""
+	intentSamples: [String!]
 }
 
 input UpdateWorkspacePluginInput {
@@ -5159,7 +5192,8 @@ type User {
 }
 
 """
-A user command as its owner saved it, in the shape `updateUserCommand` takes.
+A macro, the person's own command, as its owner saved it, in the shape `updateUserCommand`
+takes.
 """
 type UserCommand {
 	"""
@@ -5176,19 +5210,54 @@ type UserCommand {
 	`false` while the command is disabled; a disabled command is not listed by `commands`.
 	"""
 	isEnabled: Boolean!
+	"""
+	Whether the owner lets the AI agent run the macro. The agent runs it only while every
+	step is an AI-callable built-in the server runs, with every argument fixed.
+	"""
+	aiCallable: Boolean!
+	"""
+	How the macro is described to the AI agent; empty when its description serves.
+	"""
+	nlDescription: String!
+	"""
+	Example phrases for the AI agent.
+	"""
+	intentSamples: [String!]!
 }
 
 """
-One step of a user command: the command it runs and the arguments it passes.
+One step of a macro: the command it runs, the arguments fixed for it and the arguments the
+client asks for when the macro runs.
 """
 type UserCommandStep {
+	"""
+	A built-in, app or plugin command id, or on a macro saved before steps could name app
+	and plugin commands, another macro.
+	"""
 	commandId: String!
 	args: JSON
+	"""
+	Names of the arguments the client asks the person for before the first step runs;
+	empty when the step asks for none.
+	"""
+	ask: [String!]!
 }
 
+"""
+One step of a macro.
+"""
 input UserCommandStepInput {
+	"""
+	A built-in, app or plugin command id.
+	"""
 	commandId: String!
 	args: JSON
+	"""
+	Names of the arguments the client asks for when the macro runs: at most 32, each 1 to
+	64 bytes, none twice and none a key of `args`. Omitted, none on create, and on update
+	what the stored step at the same position asked for when it names the same command.
+	"""
+	ask: [String!]
 }
 
 type UserPresenceGql {
@@ -5541,6 +5610,10 @@ enum WorkspaceStateScopeGql {
 	USER
 }
 
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

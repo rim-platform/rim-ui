@@ -3,7 +3,8 @@ import { Search, Terminal, Plug, User, Zap } from "lucide-react";
 import { Highlight } from "@nozbe/microfuzz/react";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCommandStore } from "../state/useCommandStore";
-import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
+import { useExecuteCommandMutation } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
@@ -88,7 +89,7 @@ function CommandPaletteDialog() {
     [workspaceId, selectedConversationId],
   );
 
-  const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
+  const { data: commands, isLoading: isLoadingCommands } = useCommandsWithMacros("PALETTE");
   const pluginCommands = usePluginCommands();
   const runnableHere = useRunnableHere();
   const registryItems = useRegistryPaletteItems();

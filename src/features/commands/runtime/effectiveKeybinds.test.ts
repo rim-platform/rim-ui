@@ -10,6 +10,8 @@ vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
     selector({ workspaceId: "ws-1" }),
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import type { SpaceRecord } from "../../relay/state/relayDb";
 import { useResolvedKeybinds } from "../api/useKeybinds";
@@ -318,6 +320,28 @@ describe("app command keybinds of the connected server", () => {
     expect(commandFor(result.current, "Ctrl+Alt+F9")).toBe("workspace.open_search");
     expect(commandFor(result.current, "Ctrl+Alt+F7")).toBeNull();
     expect(commandFor(result.current, "Ctrl+Alt+F8")).toBeNull();
+  });
+
+  it("hold the person's macro keybinds where the connected server keeps their macros", () => {
+    hostedElsewhere();
+    const macro = keybind({
+      id: "home-macro",
+      keystroke: "Ctrl+Alt+F11",
+      commandId: "user.standup",
+      source: "USER",
+    });
+    serversAnswer([ZEN, macro], [HOST_SEARCH]);
+
+    const { result: before } = renderHook(() => useHomeAppKeybinds("ws-1"));
+    expect(before.current.map((kb) => kb.id)).toEqual(["home-zen"]);
+
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    try {
+      const { result } = renderHook(() => useHomeAppKeybinds("ws-1"));
+      expect(result.current.map((kb) => kb.id)).toEqual(["home-zen", "home-macro"]);
+    } finally {
+      queryClient.clear();
+    }
   });
 
   it("are not read again in a workspace of the connected server, which already has them", () => {

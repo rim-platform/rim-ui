@@ -10,6 +10,8 @@ import { useActiveKeybindProfile } from "../state/useKeybindProfileStore";
 import type { KeybindContext, ResolvedKeybind } from "../types";
 import { normalizeKeystroke } from "./keybindEngine";
 import { isLocalCommand } from "./localCommands";
+import { useAccountMacrosOn } from "../../macros/api/useAccountMacros";
+import { isMacroId } from "../../macros/runtime/macroCommands";
 
 /** The context-and-keystroke slot a keybind occupies; one binding per slot fires. */
 export function keybindSlot(context: KeybindContext, keystroke: string): string {
@@ -135,10 +137,11 @@ export function unboundCommands(
 const NO_KEYBINDS: readonly ResolvedKeybind[] = [];
 
 /**
- * The user's bindings to this app's own commands that the connected server keeps, while the
- * open workspace is one another server hosts: that workspace's keybinds come from its host, and
- * app commands run in this app wherever the person is. Empty in a workspace of the connected
- * server, whose keybinds already hold them.
+ * The user's bindings to this app's own commands, and to their macros when the connected server
+ * keeps those, that the connected server keeps, while the open workspace is one another server
+ * hosts: that workspace's keybinds come from its host, and app commands and macros run in this
+ * app wherever the person is. Empty in a workspace of the connected server, whose keybinds
+ * already hold them.
  *
  * @param workspaceId - The open workspace.
  */
@@ -147,12 +150,17 @@ export function useHomeAppKeybinds(workspaceId: string | null): readonly Resolve
     (s) => workspaceId !== null && Boolean(s.spaces[workspaceId]?.hostServerId),
   );
   const { data: home } = useResolvedKeybinds(undefined, remote);
+  const macrosOn = useAccountMacrosOn();
   return useMemo(
     () =>
       remote && home
-        ? home.filter((kb) => kb.source === "USER" && isLocalCommand(kb.commandId))
+        ? home.filter(
+            (kb) =>
+              kb.source === "USER" &&
+              (isLocalCommand(kb.commandId) || (macrosOn && isMacroId(kb.commandId))),
+          )
         : NO_KEYBINDS,
-    [remote, home],
+    [remote, home, macrosOn],
   );
 }
 

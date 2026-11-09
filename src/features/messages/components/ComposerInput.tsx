@@ -15,7 +15,8 @@ import { getSlashCommandSuggestions } from "../utils/slashCommands";
 import type { SlashCommand } from "../utils/slashCommands";
 import { cn } from "../../../shared/ui/cn";
 import { Avatar } from "../../../shared/ui/Avatar";
-import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { useResolvedKeybinds } from "../../commands/api/useKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
@@ -127,7 +128,7 @@ export function ComposerInput({
   // Fetch all commands and keybinds for inline command preview
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { emojis: customEmojis } = useCustomEmojis(workspaceId);
-  const { data: serverCommands } = useCommands("PALETTE");
+  const { data: serverCommands } = useCommandsWithMacros("PALETTE");
   const pluginCommands = usePluginCommands();
   const runnableHere = useRunnableHere();
   // The server's commands with this app's titles, then this app's own and the plugins', as the

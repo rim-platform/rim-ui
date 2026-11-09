@@ -17,7 +17,7 @@ import {
   useUpdateKeybindMutation,
   useDeleteKeybindMutation,
 } from "../api/useKeybindSettings";
-import { useCommands } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { useKeybindableCommands } from "../api/useKeybindableCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
@@ -177,7 +177,7 @@ export function KeybindSettings() {
   // raw IDs in the keybind list. KEYBIND_PICKER surface returns all commands
   // that are keybind-capable regardless of palette visibility, so it is used
   // here exclusively to build the title lookup map.
-  const { data: commands } = useCommands("KEYBIND_PICKER");
+  const { data: commands } = useCommandsWithMacros("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
