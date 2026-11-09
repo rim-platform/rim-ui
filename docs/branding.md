@@ -6,7 +6,7 @@ file is for. They are the source of truth; this repository holds copies or rende
 | Where | What | From |
 |---|---|---|
 | `public/rim-favicon.svg`, `public/favicon.ico` | The browser tab icon, linked from `index.html` | `rim-favicon.svg`, `favicon.ico`, copied as they are |
-| `src/shared/brand/RimLogo.tsx` | `RimMark`, `RimLockup` and `RimSplash`, inline SVG components | The path data of `rim-mark.svg`, `rim-lockup.svg` and `rim-splash.svg`; `RimMark` is the R in three pieces with its signal-orange node, `RimLockup` the R, a bolt for the I, and the M, `RimSplash` the wordmark with a pulsing glow behind the bolt |
+| `src/shared/brand/RimLogo.tsx` | Inline SVG components: `RimMark`, the R in three pieces with its signal-orange node; `RimLockup`, the R, a bolt for the I, and the M; `RimSplash`, the wordmark with a pulsing glow behind the bolt | The path data of `rim-mark.svg`, `rim-lockup.svg` and `rim-splash.svg` |
 | `src-tauri/icons/` | The desktop app icons listed in `tauri.conf.json`'s `bundle.icon` | `rim-app-icon-1024.png` through `tauri icon` |
 
 The letters take `currentColor`, so they follow the text colour of the element around them. The
