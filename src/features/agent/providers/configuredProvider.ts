@@ -23,16 +23,13 @@ export async function providerKeyConfigured(): Promise<boolean> {
 }
 
 /**
- * The provider the AI agent settings choose, registered here when nothing has registered it yet,
- * so a builder opened before the agent overlay still works.
+ * The provider `providerId` names, registered here when nothing has registered it yet.
  *
- * @returns The provider and the model to ask.
- * @throws An `Error` with the message {@link NO_API_KEY} when the vault holds no key, or one that
- *   names a provider this app does not support.
+ * @param providerId - The provider's id, such as `anthropic` or `openai`.
+ * @returns The registered provider.
+ * @throws An `Error` that names a provider this app does not support.
  */
-export async function configuredProvider(): Promise<ConfiguredProvider> {
-  const { providerId, modelId } = useAgentStore.getState().settings;
-  if (!(await providerKeyConfigured())) throw new Error(NO_API_KEY);
+export async function loadProvider(providerId: string): Promise<AiProvider> {
   let provider = getProvider(providerId);
   if (!provider) {
     if (providerId === "anthropic") {
@@ -48,5 +45,19 @@ export async function configuredProvider(): Promise<ConfiguredProvider> {
     }
     registerProvider(provider);
   }
-  return { provider, modelId };
+  return provider;
+}
+
+/**
+ * The provider the AI agent settings choose, registered here when nothing has registered it yet,
+ * so a builder opened before the agent overlay still works.
+ *
+ * @returns The provider and the model to ask.
+ * @throws An `Error` with the message {@link NO_API_KEY} when the vault holds no key, or one that
+ *   names a provider this app does not support.
+ */
+export async function configuredProvider(): Promise<ConfiguredProvider> {
+  const { providerId, modelId } = useAgentStore.getState().settings;
+  if (!(await providerKeyConfigured())) throw new Error(NO_API_KEY);
+  return { provider: await loadProvider(providerId), modelId };
 }

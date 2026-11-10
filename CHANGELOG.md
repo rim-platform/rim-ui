@@ -24,6 +24,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- The AI agent's header switches the model in the open conversation: it lists the models of
+  every provider with a key set, the conversation carries on with the new model, and "Switched
+  to \<model\>" marks where it changed.
 - Settings → Agents installs Claude Code, Codex, Gemini CLI, opencode and Goose for you, with
   one confirmation, keeps them up to date and removes their files, shows how big each one is
   before it downloads and how much space they use, and signs you in to them: in a terminal, in
