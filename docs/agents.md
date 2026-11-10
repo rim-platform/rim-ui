@@ -314,7 +314,9 @@ for you, Ready or Failed, and up to 20 recent ones, with the agent, the title, t
 it last did something. The title is the one the agent gives the session, or the start of your
 first prompt. A dot marks a session that finished or started waiting since you last had it open.
 The **Agent sessions** box on Home shows the same, up to six, with **New session** and **All
-sessions** ([Home](home.md)).
+sessions** ([Home](home.md)). So does the **Agent sessions** button in the top bar, once you've
+added an agent program: it shows how many sessions wait for you, or a dot while one is working,
+and opens that list under the bar.
 
 **Transcripts aren't kept.** RIM keeps a session's transcript in memory while the app runs, and
 never stores it. The recent list keeps only the agent, the folder, the agent's id for the session,

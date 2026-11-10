@@ -7,6 +7,7 @@ vi.mock("../../agent/agentAvailability", () => ({ agentAvailable: () => availabl
 
 import { useShellStore } from "../../../shell/state/useShellStore";
 import type { AgentSession, AgentSessionStatus } from "../../agents/acp/agentSession";
+import { AgentSessionList } from "../../agents/components/sessions/AgentSessionList";
 import { useAgentSessionRows } from "../../agents/components/sessions/useAgentSessionRows";
 import {
   useAgentSessionsStore,
@@ -15,7 +16,6 @@ import {
 } from "../../agents/state/useAgentSessionsStore";
 import { useStartAgentSessionStore } from "../../agents/state/useStartAgentSessionStore";
 import { defaultLayout } from "../layout/homeLayout";
-import { AGENT_SESSIONS_SHOWN, AgentSessionsBoxBody } from "./AgentSessionsBox";
 import { boxKind, type HomeBoxData } from "./registry";
 
 /** A running session as the box reads it: its status and the agent's name. */
@@ -45,7 +45,7 @@ function recent(key: string, minutesAgo: number, fields: Partial<RecentAgentSess
 
 /** The box as Home shows it, with its count. */
 function Box() {
-  const agentSessions = useAgentSessionRows(AGENT_SESSIONS_SHOWN);
+  const agentSessions = useAgentSessionRows();
   const kind = boxKind("agentSessions")!;
   const count = kind.count({ agentSessions } as HomeBoxData);
   return (
@@ -175,10 +175,10 @@ describe("Agent sessions box", () => {
   });
 });
 
-describe("AgentSessionsBoxBody", () => {
+describe("AgentSessionList", () => {
   it("marks an unseen row", () => {
     render(
-      <AgentSessionsBoxBody
+      <AgentSessionList
         rows={[
           {
             key: "a",

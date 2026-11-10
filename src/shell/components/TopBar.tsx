@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, Search, Sparkles } from "lucide-react";
 
 import { useRuntime } from "../../core/runtime/RuntimeProvider";
+import { AgentSessionsButton } from "../../features/agents/components/sessions/AgentSessionsButton";
 import { showInvisibleCharacters } from "../../features/agents/runtime/invisibleCharacters";
 import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
@@ -25,8 +26,8 @@ export const SEARCH_BOX_NAME = "Search or run a command";
 
 /**
  * The bar above the conversation list and the main area: Back and Forward on the left, or the
- * navigation button in a narrow window, the search field in the middle, and Plugins and
- * Notifications on the right. In the
+ * navigation button in a narrow window, the search field in the middle, and Agent sessions,
+ * Plugins and Notifications on the right. In the
  * desktop app's own window frame it is also the title bar: its empty areas drag the window, and
  * the window controls sit at its far right outside macOS.
  */
@@ -58,6 +59,7 @@ export function TopBar() {
         {...drag}
         className={cn("ml-auto flex h-full items-center justify-end gap-1", !narrow && "flex-1")}
       >
+        <AgentSessionsButton />
         <PluginsButton narrow={narrow} />
         <NotificationBellButton />
         {windowControls && <WindowControls className="ml-2" />}

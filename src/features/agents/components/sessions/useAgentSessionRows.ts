@@ -9,6 +9,9 @@ import {
 } from "../../state/useAgentSessionsStore";
 import { useStatuses } from "./useSessionStatuses";
 
+/** The most sessions a short list shows. */
+export const AGENT_SESSION_ROWS = 6;
+
 /** One agent session as a short list shows it. */
 export interface AgentSessionRow {
   key: string;
@@ -28,6 +31,8 @@ export interface AgentSessionRows {
   rows: readonly AgentSessionRow[];
   /** How many sessions wait for the person's answer, the ones past the limit too. */
   waiting: number;
+  /** How many sessions are working on a turn, the ones past the limit too. */
+  working: number;
 }
 
 /**
@@ -36,7 +41,7 @@ export interface AgentSessionRows {
  *
  * @param limit - The most rows.
  */
-export function useAgentSessionRows(limit: number): AgentSessionRows {
+export function useAgentSessionRows(limit: number = AGENT_SESSION_ROWS): AgentSessionRows {
   const sessions = useRunningAgentSessionsStore((s) => s.sessions);
   const unseen = useRunningAgentSessionsStore((s) => s.unseen);
   const recent = useAgentSessionsStore((s) => s.recent);
@@ -44,7 +49,7 @@ export function useAgentSessionRows(limit: number): AgentSessionRows {
   const available = agentAvailable();
 
   return useMemo(() => {
-    if (!available) return { rows: [], waiting: 0 };
+    if (!available) return { rows: [], waiting: 0, working: 0 };
     const order = new Map(recent.map((entry, index) => [entry.key, index]));
     const running = Object.keys(sessions)
       .filter((key) => {
@@ -76,6 +81,7 @@ export function useAgentSessionRows(limit: number): AgentSessionRows {
       });
     }
     const waiting = running.filter((key) => statuses[key] === "waiting").length;
-    return { rows: rows.slice(0, limit), waiting };
+    const working = running.filter((key) => statuses[key] === "working").length;
+    return { rows: rows.slice(0, limit), waiting, working };
   }, [available, sessions, statuses, recent, unseen, limit]);
 }

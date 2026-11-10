@@ -17,7 +17,6 @@ import { useHomeMentions } from "../api/useHomeMentions";
 import { useHomeUnread } from "../api/useHomeUnread";
 import { useHomeWaiting } from "../api/useHomeWaiting";
 import { useHomeWorkspaces } from "../api/useHomeWorkspaces";
-import { AGENT_SESSIONS_SHOWN } from "../boxes/AgentSessionsBox";
 import type { HomeBoxData } from "../boxes/registry";
 import { EDIT_HOME_COMMAND_ID } from "../editHome";
 import { useHomeEditStore } from "../state/useHomeEditStore";
@@ -72,7 +71,7 @@ export function HomePage() {
   const [openRun, setOpenRun] = useState<string | null>(null);
   const selectedRun = runs.find((run) => runKey(run) === openRun);
 
-  const agentSessions = useAgentSessionRows(AGENT_SESSIONS_SHOWN);
+  const agentSessions = useAgentSessionRows();
 
   const view = useHomeLayout(agentsShown, agentAvailable());
   const hidden = useHomeHiddenStore((s) => s.hidden);
