@@ -144,6 +144,41 @@ impl AllowList {
         Ok(())
     }
 
+    /// Removes `old` when it is there, adds `new` when it is given and not there yet, and saves
+    /// the list once.
+    ///
+    /// # Errors
+    ///
+    /// A sentence for the page when the list would be over its limit or could not be saved; the
+    /// list is then unchanged.
+    pub(crate) fn replace(
+        &mut self,
+        old: Option<&AllowedProgram>,
+        new: Option<AllowedProgram>,
+    ) -> Result<(), String> {
+        let before = self.entries.clone();
+        if let Some(old) = old {
+            self.entries.retain(|entry| entry != old);
+        }
+        if let Some(new) = new {
+            if !self.entries.contains(&new) {
+                if self.is_full() {
+                    self.entries = before;
+                    return Err(full_message());
+                }
+                self.entries.push(new);
+            }
+        }
+        if self.entries == before {
+            return Ok(());
+        }
+        if let Err(error) = self.save() {
+            self.entries = before;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// The entries, in the order they were allowed.
     pub(crate) fn entries(&self) -> Vec<AllowedProgram> {
         self.entries.clone()
@@ -182,7 +217,7 @@ pub(crate) fn full_message() -> String {
 
 /// Writes `bytes` to a new file at `path`, readable only by this user on Unix, and flushes it to
 /// the disk.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let _ = fs::remove_file(path);
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -288,6 +323,32 @@ mod tests {
         let (list, warning) = AllowList::read(Some(dir.path().join(FILE_NAME)));
         assert!(list.entries().is_empty());
         assert_eq!(warning, None);
+    }
+
+    #[test]
+    fn replacing_swaps_one_pair_for_another_in_one_save() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut list = AllowList::open(Some(path.clone()));
+        for i in 0..MAX_ENTRIES {
+            list.add(entry(&format!("/bin/p{i}"), &[])).unwrap();
+        }
+        assert_eq!(
+            list.replace(None, Some(entry("/bin/new", &[]))),
+            Err(full_message())
+        );
+        list.replace(
+            Some(&entry("/bin/p3", &[])),
+            Some(entry("/bin/new", &["acp"])),
+        )
+        .unwrap();
+        let read = AllowList::read(Some(path)).0;
+        assert!(read.contains("/bin/new", &args(&["acp"])));
+        assert!(!read.contains("/bin/p3", &args(&[])));
+        assert_eq!(read.entries().len(), MAX_ENTRIES);
+        list.replace(Some(&entry("/bin/new", &["acp"])), None)
+            .unwrap();
+        assert_eq!(list.entries().len(), MAX_ENTRIES - 1);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod account_lock;
 mod agent_bridge;
+mod agent_installer;
 mod agent_proxy;
 mod agent_runner;
 mod desktop_shell;
@@ -82,6 +83,7 @@ pub fn run() {
             desktop_shell::setup(app.handle());
             agent_bridge::setup(app.handle());
             agent_runner::setup(app.handle());
+            agent_installer::setup(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -290,6 +292,10 @@ pub fn run() {
             agent_runner::agent_runner_allow,
             agent_runner::agent_runner_forget,
             agent_runner::agent_runner_allowed,
+            agent_runner::agent_runner_open_terminal,
+            agent_installer::agent_installer_catalog,
+            agent_installer::agent_installer_install,
+            agent_installer::agent_installer_remove,
         ])
         .build(context)
         .expect("error while building tauri application")

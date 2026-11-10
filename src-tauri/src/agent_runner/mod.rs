@@ -8,6 +8,7 @@ mod allow_list;
 mod lookup;
 mod process;
 mod stderr_log;
+mod terminal;
 // The runner's tests start shell scripts, so they run on Unix only.
 #[cfg(all(test, unix))]
 mod tests;
@@ -27,10 +28,12 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 
 use crate::desktop_shell::MAIN_WINDOW;
+pub(crate) use allow_list::write_private;
 use allow_list::AllowList;
 pub use allow_list::AllowedProgram;
 use process::{StdoutEnd, StopGraces, WriteRequest};
 use stderr_log::StderrLog;
+pub use terminal::TerminalOutcome;
 
 /// The event that hands the page one line of a run's stdout, with a [`LineEvent`].
 pub(crate) const LINE_EVENT: &str = "agent-runner://line";
@@ -152,22 +155,22 @@ pub struct AllowAnswer {
     allowed: bool,
 }
 
-/// Asks the person whether a program may be started, in a dialog the page cannot draw or answer.
+/// Asks the person a yes-or-no question, in a dialog the page cannot draw or answer.
 pub(crate) trait Confirm: Send + Sync + 'static {
-    /// Shows `message` under `title` with the buttons Allow and Cancel, and blocks until the
+    /// Shows `message` under `title` with the buttons `ok` and Cancel, and blocks until the
     /// person answers.
     ///
     /// # Returns
     ///
-    /// Whether Allow was chosen.
-    fn confirm(&self, title: &str, message: &str) -> bool;
+    /// Whether `ok` was chosen.
+    fn confirm(&self, title: &str, message: &str, ok: &str) -> bool;
 }
 
 /// The native message dialog of the real app, over the main window.
 struct NativeConfirm<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Confirm for NativeConfirm<R> {
-    fn confirm(&self, title: &str, message: &str) -> bool {
+    fn confirm(&self, title: &str, message: &str, ok: &str) -> bool {
         let mut dialog = self
             .0
             .dialog()
@@ -175,7 +178,7 @@ impl<R: Runtime> Confirm for NativeConfirm<R> {
             .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Allow".to_owned(),
+                ok.to_owned(),
                 "Cancel".to_owned(),
             ));
         if let Some(window) = self.0.get_webview_window(MAIN_WINDOW) {
@@ -207,7 +210,8 @@ impl Default for Limits {
     }
 }
 
-/// The running runs, kept in the app's state.
+/// The running runs, kept in the app's state. A clone shares the same runs and allow list.
+#[derive(Clone)]
 pub struct AgentRunner {
     inner: Arc<Inner>,
 }
@@ -221,6 +225,9 @@ struct Inner {
     asking: tokio::sync::Mutex<()>,
     log_dir: Option<PathBuf>,
     limits: Limits,
+    /// The `bin` folder of the Node.js the agent installer installed, put first on the `PATH`
+    /// of every run and terminal.
+    node_bin: Mutex<Option<PathBuf>>,
 }
 
 /// The runs that are running, and how many are being started.
@@ -233,6 +240,7 @@ struct Runs {
 /// One running run.
 struct Run {
     info: RunInfo,
+    args: Vec<String>,
     pid: Option<u32>,
     /// Set to the waits of a stop to stop the run.
     stop: watch::Sender<Option<StopGraces>>,
@@ -274,6 +282,7 @@ impl AgentRunner {
                 asking: tokio::sync::Mutex::new(()),
                 log_dir,
                 limits,
+                node_bin: Mutex::new(None),
             }),
         }
     }
@@ -305,11 +314,7 @@ impl AgentRunner {
             }
         }
         let message = allow_message(&program, &args);
-        let confirm = self.inner.confirm.clone();
-        let allowed = tokio::task::spawn_blocking(move || confirm.confirm(ALLOW_TITLE, &message))
-            .await
-            .map_err(|_| "The question could not be shown.".to_owned())?;
-        if !allowed {
+        if !self.show_question(ALLOW_TITLE, message, "Allow").await? {
             return Ok(false);
         }
         lock(&self.inner.allowed).add(AllowedProgram { program, args })?;
@@ -337,6 +342,76 @@ impl AgentRunner {
         lock(&self.inner.allowed).entries()
     }
 
+    /// Asks the person `message` under `title` with the buttons `ok` and Cancel, after any
+    /// question already open has been answered.
+    ///
+    /// # Errors
+    ///
+    /// A sentence for the page when the question could not be shown.
+    pub(crate) async fn ask(&self, title: &str, message: String, ok: &str) -> Result<bool, String> {
+        let _asking = self.inner.asking.lock().await;
+        self.show_question(title, message, ok).await
+    }
+
+    /// Shows one question; the caller holds [`Inner::asking`].
+    async fn show_question(&self, title: &str, message: String, ok: &str) -> Result<bool, String> {
+        let confirm = self.inner.confirm.clone();
+        let (title, ok) = (title.to_owned(), ok.to_owned());
+        tokio::task::spawn_blocking(move || confirm.confirm(&title, &message, &ok))
+            .await
+            .map_err(|_| "The question could not be shown.".to_owned())
+    }
+
+    /// Checks that one more pair fits on the allow list once `replaced`, when it is there, is
+    /// gone.
+    ///
+    /// # Errors
+    ///
+    /// The sentence the page shows when the list is full.
+    pub(crate) fn check_allow_room(&self, replaced: Option<&AllowedProgram>) -> Result<(), String> {
+        let list = lock(&self.inner.allowed);
+        if list.is_full() && !replaced.is_some_and(|old| list.contains(&old.program, &old.args)) {
+            return Err(allow_list::full_message());
+        }
+        Ok(())
+    }
+
+    /// Takes `old` off the allow list and puts `new` on it, without asking, saving the list once.
+    /// Used for programs the agent installer installed, which the person allowed in its own
+    /// dialog.
+    ///
+    /// # Errors
+    ///
+    /// A sentence for the page when the list is full or could not be saved; it is then unchanged.
+    pub(crate) fn replace_allowed(
+        &self,
+        old: Option<&AllowedProgram>,
+        new: Option<AllowedProgram>,
+    ) -> Result<(), String> {
+        lock(&self.inner.allowed).replace(old, new)
+    }
+
+    /// Whether a run of `program` with exactly `args` is running.
+    pub(crate) fn is_running(&self, program: &str, args: &[String]) -> bool {
+        lock(&self.inner.runs)
+            .active
+            .values()
+            .any(|run| run.info.program == program && run.args == args)
+    }
+
+    /// Sets the folder put first on the `PATH` of runs and terminals started from now on, or
+    /// clears it.
+    pub(crate) fn set_node_bin(&self, dir: Option<PathBuf>) {
+        *lock(&self.inner.node_bin) = dir;
+    }
+
+    /// The `PATH` a run or a terminal gets when it differs from the app's: [`child_path`], with
+    /// the installed Node.js's `bin` folder first when there is one.
+    fn run_path(&self, dirs: &[PathBuf]) -> Option<std::ffi::OsString> {
+        let node_bin = lock(&self.inner.node_bin).clone();
+        with_node_bin(child_path(dirs), node_bin.as_deref())
+    }
+
     /// Starts `program` with `args` in `cwd`, when that program and exactly those arguments were
     /// allowed.
     ///
@@ -358,7 +433,7 @@ impl AgentRunner {
         }
         let _slot = self.reserve()?;
         let run_id = new_run_id()?;
-        let spawned = process::spawn(&program, &args, &cwd, child_path(&dirs))
+        let spawned = process::spawn(&program, &args, &cwd, self.run_path(&dirs))
             .map_err(|error| format!("{} could not be started: {error}.", program.display()))?;
         let pid = spawned.child.id();
 
@@ -378,6 +453,7 @@ impl AgentRunner {
             run_id.clone(),
             Run {
                 info,
+                args,
                 pid,
                 stop: stop_tx,
                 done: done_rx,
@@ -734,6 +810,21 @@ fn child_path(dirs: &[PathBuf]) -> Option<std::ffi::OsString> {
     }
 }
 
+/// `path` with `node_bin` put first, from the app's own `PATH` when `path` is `None`; `path` as it
+/// is without `node_bin`.
+fn with_node_bin(
+    path: Option<std::ffi::OsString>,
+    node_bin: Option<&Path>,
+) -> Option<std::ffi::OsString> {
+    let Some(node_bin) = node_bin else {
+        return path;
+    };
+    let base = path.or_else(crate::host_env::host_path).unwrap_or_default();
+    let mut dirs = vec![node_bin.to_path_buf()];
+    dirs.extend(std::env::split_paths(&base).filter(|dir| dir != node_bin));
+    std::env::join_paths(dirs).ok()
+}
+
 /// A new run id: `ar_` and 16 URL-safe characters.
 fn new_run_id() -> Result<String, String> {
     let mut bytes = [0u8; 12];
@@ -909,4 +1000,23 @@ pub fn agent_runner_allowed<R: Runtime>(
 ) -> Result<Vec<AllowedProgram>, String> {
     from_main_window(&webview)?;
     Ok(runner.allowed())
+}
+
+/// Asks the person, in a native dialog, whether to open the computer's terminal running
+/// `program` with `args` and the variables `env`, then opens it. `program` must be the program
+/// of an allowed pair.
+///
+/// # Errors
+///
+/// A sentence for the page saying why no terminal was asked for.
+#[tauri::command]
+pub async fn agent_runner_open_terminal<R: Runtime>(
+    webview: Webview<R>,
+    runner: State<'_, AgentRunner>,
+    program: String,
+    args: Vec<String>,
+    env: std::collections::BTreeMap<String, String>,
+) -> Result<TerminalOutcome, String> {
+    from_main_window(&webview)?;
+    runner.open_terminal(&program, args, env).await
 }

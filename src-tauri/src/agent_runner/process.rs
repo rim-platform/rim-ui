@@ -12,7 +12,7 @@ use tokio::time::timeout;
 
 /// Keeps a console program from opening a console window of its own on Windows.
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Size of the buffer stdout is read through.
 const STDOUT_BUFFER: usize = 64 * 1024;
 

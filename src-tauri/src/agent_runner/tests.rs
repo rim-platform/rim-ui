@@ -32,7 +32,7 @@ struct Answers {
 }
 
 impl Confirm for Answers {
-    fn confirm(&self, title: &str, message: &str) -> bool {
+    fn confirm(&self, title: &str, message: &str, _ok: &str) -> bool {
         lock(&self.asked).push((title.to_owned(), message.to_owned()));
         self.answer.load(Ordering::SeqCst)
     }
@@ -682,4 +682,76 @@ async fn a_full_list_refuses_without_asking() {
     assert!(error.contains("At most 32 programs"), "{error}");
     assert_eq!(h.questions(), asked);
     assert!(h.runner.allow(&program, strings(&["0"])).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_terminal_opens_only_for_an_allowed_program_with_valid_variables() {
+    let h = harness(test_limits());
+    let error = h
+        .runner
+        .open_terminal(&agent("echo.sh"), strings(&["login"]), Default::default())
+        .await
+        .unwrap_err();
+    assert!(error.contains("Only an allowed program"), "{error}");
+    assert!(h.runner.allow(&agent("echo.sh"), Vec::new()).await.unwrap());
+    let asked = h.questions();
+    for name in ["lower", "1X", "PATH", "LD_PRELOAD"] {
+        let env = [(name.to_owned(), "1".to_owned())].into();
+        let error = h
+            .runner
+            .open_terminal(&agent("echo.sh"), strings(&["login"]), env)
+            .await
+            .unwrap_err();
+        assert!(!error.is_empty(), "{name}");
+    }
+    assert_eq!(h.questions(), asked);
+}
+
+#[tokio::test]
+async fn a_declined_terminal_opens_nothing() {
+    let h = harness(test_limits());
+    assert!(h.runner.allow(&agent("echo.sh"), Vec::new()).await.unwrap());
+    h.answers.answer.store(false, Ordering::SeqCst);
+    let env = [("ACP_LOGIN".to_owned(), "1".to_owned())].into();
+    assert_eq!(
+        h.runner
+            .open_terminal(&agent("echo.sh"), strings(&["--cli", "login"]), env)
+            .await
+            .unwrap(),
+        TerminalOutcome::Declined
+    );
+    let (title, message) = lock(&h.answers.asked).last().cloned().unwrap();
+    assert_eq!(title, "Open a terminal for echo.sh?");
+    assert!(
+        message.contains("--cli\nlogin\n\nWith:\nACP_LOGIN=1"),
+        "{message}"
+    );
+}
+
+#[test]
+fn the_node_folder_goes_first_on_path() {
+    let node = Path::new("/rim/agents/node/1/bin");
+    let path = with_node_bin(
+        Some("/usr/bin:/rim/agents/node/1/bin:/bin".into()),
+        Some(node),
+    );
+    assert_eq!(
+        path.unwrap(),
+        std::ffi::OsString::from("/rim/agents/node/1/bin:/usr/bin:/bin")
+    );
+    assert_eq!(
+        with_node_bin(Some("/usr/bin".into()), None),
+        Some("/usr/bin".into())
+    );
+    assert_eq!(with_node_bin(None, None), None);
+}
+
+#[tokio::test]
+async fn a_run_is_found_by_its_program_and_arguments() {
+    let h = harness(test_limits());
+    let run_id = h.start("echo.sh").await;
+    assert!(h.runner.is_running(&agent("echo.sh"), &[]));
+    assert!(!h.runner.is_running(&agent("echo.sh"), &strings(&["x"])));
+    h.runner.stop(&run_id).await;
+    assert!(!h.runner.is_running(&agent("echo.sh"), &[]));
 }

@@ -22,6 +22,8 @@ accepted = [
   # SQLite's public-domain dedication and libtomcrypt, both in the SQLCipher of sqlcipher-src.
   "blessing",
   "WTFPL",
+  # libbzip2's own BSD-style licence, kept by its Rust port libbz2-rs-sys.
+  "bzip2-1.0.6",
 ]
 # Test-only crates never ship.
 ignore-dev-dependencies = true
