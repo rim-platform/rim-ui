@@ -34,6 +34,7 @@ import { fetchPluginList } from "../api/usePluginList";
 import { recordPluginCommandRun } from "../api/pluginCommandGrants";
 import { usePluginConfirmStore } from "../state/usePluginConfirmStore";
 import type { PluginInfo } from "../types";
+import { relativeBanRefusal } from "../../commands/runtime/relativeBanGuard";
 import { isCommandId, unrunnableByPlugins } from "../../../../sdk/plugin-sdk/src/manifestRules";
 
 /** Why the app did not run a command a plugin asked for. */
@@ -447,6 +448,8 @@ const appRunner = createPluginCommandRunner({
   appCommands: () => offeredLocalCommands(new Set()),
   context: () => currentCommandContext(),
   execute: async ({ commandId, args, commandContext, confirmation }) => {
+    const refusal = await relativeBanRefusal(commandId, args, commandContext.workspaceId);
+    if (refusal) return { status: "ERROR", message: refusal };
     const res = await graphqlClient.request<{ executeCommand: ServerAnswer }>(
       PLUGIN_EXECUTE_COMMAND,
       routedToWorkspace(

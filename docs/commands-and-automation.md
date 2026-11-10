@@ -303,7 +303,9 @@ notifications pause and a timeout offer their presets, a set length and, for a m
 date and time, appears only for the choice that takes it. A length counts from each run, so
 "For 2 hours" saved in a step ends two hours after the macro runs, and "Mute until tomorrow"
 ends at 09:00 tomorrow on your device's clock. A server that does not take lengths for bans and
-mutes offers a fixed end only, and says so. An argument the macro finds where it runs, such as the open workspace, the open
+mutes offers a fixed end only, and says so; a ban for a set length saved elsewhere is not sent
+there, from any surface: "This server can't end a ban after a set time, so the ban wasn't sent.
+Choose a date and time instead." An argument the macro finds where it runs, such as the open workspace, the open
 conversation or the selected message, can be left empty. **Save** stays blocked while a required
 argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
 turns a description into steps with their arguments filled in, which open in the form to check.

@@ -4,11 +4,22 @@ vi.mock("../../../shared/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
+const relativeMinutes = vi.hoisted(() => ({ listed: true }));
+
+vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
+  spaceHasCapability: async (_space: string, capability: string) =>
+    capability === "command_relative_minutes" && relativeMinutes.listed,
+  serverHasCapability: async (capability: string) =>
+    capability === "command_relative_minutes" && relativeMinutes.listed,
+}));
+
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useCommandArgumentsStore } from "../state/useCommandArgumentsStore";
 import type { CommandArgumentInfo, CommandDefinition, CommandResult } from "../types";
 import { dispatchCommand } from "./commandDispatcher";
+import { RELATIVE_BAN_REFUSAL } from "./relativeBanGuard";
 
 function argument(
   name: string,
@@ -99,6 +110,7 @@ function askedNames(): string[] | undefined {
 }
 
 beforeEach(() => {
+  relativeMinutes.listed = true;
   executeBackend.mockClear();
   executeBackend.mockResolvedValue({ executeCommand: SUCCESS });
 });
@@ -187,6 +199,66 @@ describe("dispatchCommand asking for arguments", () => {
 
     await running;
     expect(executeBackend.mock.calls[0][0].args).toEqual({ user_id: "u-9", minutes: 60 });
+  });
+
+  it("sends no ban for a set time from the palette to a server that would ban for good", async () => {
+    relativeMinutes.listed = false;
+    const running = dispatchCommand(BAN, executeBackend, {
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+    await vi.waitFor(() => expect(askedNames()).toEqual(["user_id"]));
+    useCommandArgumentsStore.getState().submit({ user_id: "u-9", minutes: 60 });
+
+    await expect(running).resolves.toMatchObject({
+      status: "ERROR",
+      message: RELATIVE_BAN_REFUSAL,
+    });
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("sends a ban until a date and time to any server", async () => {
+    relativeMinutes.listed = false;
+    await dispatchCommand(BAN, executeBackend, {
+      args: { user_id: "u-9", expires_at: "2999-01-01T00:00:00Z" },
+      commandContext: CONTEXT,
+    });
+
+    expect(executeBackend.mock.calls[0][0].args).toEqual({
+      user_id: "u-9",
+      expires_at: "2999-01-01T00:00:00Z",
+    });
+  });
+
+  it("leaves a mute for a set time to the server, which refuses a length it does not know", async () => {
+    relativeMinutes.listed = false;
+    executeBackend.mockResolvedValueOnce({
+      executeCommand: {
+        status: "ERROR",
+        message: "duration must be one of 1h, 8h, until_tomorrow, forever, until",
+        payload: null,
+        followUpCommands: [],
+      },
+    });
+    const mute = command("notifications.mute_conversation", {
+      arguments: [
+        argument("conversation_id", CommandArgumentType.CONVERSATION_ID),
+        argument("duration", CommandArgumentType.ENUM),
+        argument("minutes", CommandArgumentType.INTEGER, false),
+      ],
+    });
+
+    const result = await dispatchCommand(mute, executeBackend, {
+      args: { duration: "minutes", minutes: 30 },
+      commandContext: CONTEXT,
+      typedArgs: true,
+    });
+
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ duration: "minutes", minutes: 30 });
+    expect(result).toMatchObject({
+      status: "ERROR",
+      message: "duration must be one of 1h, 8h, until_tomorrow, forever, until",
+    });
   });
 
   it("offers no time field under More options once part of it is given", async () => {

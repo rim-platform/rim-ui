@@ -30,6 +30,16 @@ vi.mock("../api/useCommands", () => ({
   reloadCommands: vi.fn(),
 }));
 
+const relativeMinutes = vi.hoisted(() => ({ listed: false }));
+
+vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
+  spaceHasCapability: async (_space: string, capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+  serverHasCapability: async (capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+}));
+
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
@@ -100,6 +110,16 @@ const MUTE = definition("notifications.mute_conversation", {
   ],
 });
 
+const BAN = definition("admin.ban", {
+  title: "Ban Member",
+  category: "Admin",
+  arguments: [
+    { name: "user_id", argumentType: CommandArgumentType.USER_ID, required: true },
+    { name: "expires_at", argumentType: CommandArgumentType.STRING, required: false },
+    { name: "minutes", argumentType: CommandArgumentType.INTEGER, required: false },
+  ],
+});
+
 /** Binds Ctrl+Alt+P to `commandId` on the server, with `presetArgs` saved when given. */
 function bind(commandId: string, presetArgs?: Record<string, unknown>) {
   bound.keybinds = [
@@ -132,7 +152,8 @@ function renderProvider() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  lists.keybind = [CREATE_CHANNEL, REPORT, REPLY, MUTE];
+  lists.keybind = [CREATE_CHANNEL, REPORT, REPLY, MUTE, BAN];
+  relativeMinutes.listed = false;
   useShellStore.getState().reset();
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
 });
@@ -300,6 +321,34 @@ describe("a keybind that mutes until tomorrow", () => {
       conversation_id: "c-1",
       duration: "until",
       until: "2026-11-10T14:00:00.000Z",
+    });
+  });
+});
+
+describe("a keybind that bans for a set time", () => {
+  it("sends nothing to a server that would ban for good, and says why", async () => {
+    bind("admin.ban", { user_id: "u-1", minutes: 60 });
+    renderProvider();
+    press();
+
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("This server can't end a ban after a set time"),
+      ),
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("sends the ban to a server that ends it after the minutes", async () => {
+    relativeMinutes.listed = true;
+    bind("admin.ban", { user_id: "u-1", minutes: 60 });
+    renderProvider();
+    press();
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalled());
+    expect(execute.mock.calls[0][0]).toMatchObject({
+      commandId: "admin.ban",
+      args: { user_id: "u-1", minutes: 60 },
     });
   });
 });

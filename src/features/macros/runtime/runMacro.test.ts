@@ -10,6 +10,16 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 vi.mock("../../../shared/toast", () => ({ toast: mocks.toast }));
 
+const relativeMinutes = vi.hoisted(() => ({ listed: false }));
+
+vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
+  spaceHasCapability: async (_space: string, capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+  serverHasCapability: async (capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+}));
+
 import {
   CommandArgumentType,
   CommandSensitivity,
@@ -75,6 +85,22 @@ const STEP_COMMANDS: MacroStepCommand[] = [
     ],
   }),
   stepCommand("chat.pin_latest", "Pin Latest"),
+  stepCommand("admin.ban", "Ban Member", {
+    arguments: [
+      {
+        name: "user_id",
+        title: "Member",
+        argumentType: CommandArgumentType.USER_ID,
+        required: true,
+      },
+      {
+        name: "minutes",
+        title: "Minutes",
+        argumentType: CommandArgumentType.INTEGER,
+        required: false,
+      },
+    ],
+  }),
   stepCommand("state.set", "Set State", {
     arguments: [
       { name: "key", title: "Key", argumentType: CommandArgumentType.STRING, required: true },
@@ -133,6 +159,7 @@ function executed(): { input: Record<string, unknown>; workspaceId?: string }[] 
 }
 
 beforeEach(() => {
+  relativeMinutes.listed = false;
   mocks.request.mockResolvedValue({ executeCommand: ok });
   useWorkspaceStore.getState().setWorkspaceId("ws-1");
 });
@@ -298,6 +325,35 @@ describe("runMacro", () => {
     expect(executed()[1]?.input.args).toEqual({
       duration: "until",
       until: tomorrowMorning().toISOString(),
+    });
+  });
+
+  it("stops at a step that bans for a set time on a server that would ban for good", async () => {
+    haveMacros(
+      macro({
+        id: "user.ban",
+        steps: [step("admin.ban", { user_id: "u-1", minutes: 60 }), step("chat.pin_latest")],
+      }),
+    );
+
+    await expect(runMacro("user.ban", { workspaceId: "ws-1" })).resolves.toBe(false);
+
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      "Step 1 (Ban Member) failed: This server can't end a ban after a set time, so the ban wasn't sent. Choose a date and time instead.",
+    );
+  });
+
+  it("runs a step that bans for a set time on a server that takes it", async () => {
+    relativeMinutes.listed = true;
+    haveMacros(
+      macro({ id: "user.ban", steps: [step("admin.ban", { user_id: "u-1", minutes: 60 })] }),
+    );
+
+    await expect(runMacro("user.ban", { workspaceId: "ws-1" })).resolves.toBe(true);
+    expect(executed()[0]?.input).toMatchObject({
+      commandId: "admin.ban",
+      args: { user_id: "u-1", minutes: 60 },
     });
   });
 

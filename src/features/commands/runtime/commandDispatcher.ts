@@ -97,6 +97,7 @@ import {
   type HumanConfirmationOutcome,
 } from "./humanConfirmation";
 import { withCommandEffect } from "./commandEffects";
+import { relativeBanRefusal } from "./relativeBanGuard";
 
 interface ConversationItem {
   id: string;
@@ -943,6 +944,16 @@ export async function dispatchCommand(
     !context?.isPipe && !context?.callerPluginId
       ? withLocalTomorrowMorning(command.id, context?.args)
       : context?.args;
+
+  // A server that can't end a ban after a set time would ban for good: nothing is sent to it.
+  const banRefusal = await relativeBanRefusal(
+    command.id,
+    args,
+    contextString(context?.commandContext, "workspaceId"),
+  );
+  if (banRefusal) {
+    return { status: "ERROR", message: banRefusal, payload: null, followUpCommands: [] };
+  }
 
   if (
     !context?.isPipe &&
