@@ -168,22 +168,37 @@ interface RowProps {
   cwd: string | null;
   lastActivityAt: string | null;
   status?: AgentSessionStatus;
+  /** Whether it finished a turn or started waiting since the person last had its page open. */
+  unseen: boolean;
   onOpen: () => void;
   openLabel: string;
   children?: React.ReactNode;
 }
 
-function Row({ name, title, cwd, lastActivityAt, status, onOpen, openLabel, children }: RowProps) {
+function Row({
+  name,
+  title,
+  cwd,
+  lastActivityAt,
+  status,
+  unseen,
+  onOpen,
+  openLabel,
+  children,
+}: RowProps) {
   const shownName = showInvisibleCharacters(name);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-rim-line bg-rim-panel px-4 py-3">
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`${openLabel} ${shownName}: ${title ?? UNTITLED_SESSION}`}
+        aria-label={`${openLabel} ${shownName}: ${title ?? UNTITLED_SESSION}${unseen ? ", new" : ""}`}
         className="min-w-0 flex-[1_1_14rem] rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rim-accent"
       >
         <span className="flex flex-wrap items-center gap-2">
+          {unseen && (
+            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-rim-accent" />
+          )}
           <span className="text-sm font-medium text-rim-text">{shownName}</span>
           {status && <SessionStatusChip status={status} />}
         </span>
@@ -216,8 +231,10 @@ function RunningRow({
   entry: RecentAgentSession | undefined;
 }) {
   const snapshot = session.getSnapshot();
+  const unseen = useRunningAgentSessionsStore((s) => s.unseen[sessionKey] === true);
   return (
     <Row
+      unseen={unseen}
       name={snapshot.name}
       title={entry?.title ?? null}
       cwd={snapshot.cwd}
@@ -234,8 +251,10 @@ function RecentRow({ entry, inMemory }: { entry: RecentAgentSession; inMemory: b
     s.profiles.some((profile) => profile.id === entry.profileId),
   );
   const reopens = !inMemory && entry.canReopen && profileThere;
+  const unseen = useRunningAgentSessionsStore((s) => s.unseen[entry.key] === true);
   return (
     <Row
+      unseen={unseen}
       name={entry.agentName}
       title={entry.title}
       cwd={entry.cwd}

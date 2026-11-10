@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Agent sessions in the desktop app: **Browse…** picks a session's folder in the system's folder
+  dialog; the session's header offers the agent's model and its other settings, and remembers the
+  model per agent; a notice with **Open** says when an agent finishes or waits while you're
+  elsewhere in RIM; and an **Agent sessions** box on Home lists them, running ones first.
+
 - Settings → Agents installs Claude Code, Codex, Gemini CLI, opencode and Goose for you, with
   one confirmation, keeps them up to date and removes their files, shows how big each one is
   before it downloads and how much space they use, and signs you in to them: in a terminal, in

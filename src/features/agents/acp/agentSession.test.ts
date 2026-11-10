@@ -419,6 +419,183 @@ describe("AgentSession", () => {
     expect(subject.currentModeId).toBe("ask");
   });
 
+  describe("the agent's settings", () => {
+    /** A select config option as an agent sends it. */
+    function wireOption(id: string, category: string | null, current: string, values: string[]) {
+      return {
+        id,
+        name: id === "model" ? "Model" : "Effort",
+        ...(category !== null ? { category } : {}),
+        type: "select",
+        currentValue: current,
+        options: values.map((value) => ({ value, name: value.toUpperCase() })),
+      };
+    }
+
+    function scriptOptions(model = "sonnet") {
+      agent
+        .on("initialize", () => helloAnswer())
+        .on("session/new", () => ({
+          sessionId: "sess_1",
+          modes: { currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }] },
+          configOptions: [
+            wireOption("effort", null, "high", ["low", "high"]),
+            wireOption("model", "model", model, ["sonnet", "opus"]),
+          ],
+        }))
+        .on("session/set_config_option", (params) => {
+          const { configId, value } = params as { configId: string; value: string };
+          return {
+            configOptions: [
+              wireOption("effort", null, configId === "effort" ? value : "high", ["low", "high"]),
+              wireOption("model", "model", configId === "model" ? value : model, [
+                "sonnet",
+                "opus",
+              ]),
+            ],
+          };
+        });
+    }
+
+    const current = (subject: AgentSession, id: string) =>
+      subject.getSnapshot().configOptions.find((option) => option.id === id)?.currentValue;
+
+    it("keeps the config options in the agent's order and sets one between turns", async () => {
+      scriptOptions();
+      const subject = session();
+      await subject.start({ profile: PROFILE, cwd: "/p" });
+      expect(subject.getSnapshot().configOptions.map((option) => option.id)).toEqual([
+        "effort",
+        "model",
+      ]);
+      await expect(subject.setConfigOption("model", "opus")).resolves.toBe(true);
+      expect(agent.requests("session/set_config_option")[0].params).toEqual({
+        sessionId: "sess_1",
+        configId: "model",
+        value: "opus",
+      });
+      expect(current(subject, "model")).toBe("opus");
+      await expect(subject.setConfigOption("model", "gpt")).rejects.toThrow(
+        "The agent has no such setting.",
+      );
+    });
+
+    it("follows the agent's own changes of its config options", async () => {
+      scriptOptions();
+      const subject = session();
+      await subject.start({ profile: PROFILE, cwd: "/p" });
+      agent.update("sess_1", {
+        sessionUpdate: "config_option_update",
+        configOptions: [wireOption("model", "model", "opus", ["sonnet", "opus"])],
+      });
+      expect(subject.getSnapshot().configOptions.map((option) => option.id)).toEqual(["model"]);
+      expect(current(subject, "model")).toBe("opus");
+    });
+
+    it("says in the transcript when the agent refuses a setting", async () => {
+      scriptOptions();
+      agent.on("session/set_config_option", (_params, id) => {
+        queueMicrotask(() => agent.fail(id, -32602, "Unknown model"));
+        return undefined;
+      });
+      const subject = session();
+      await subject.start({ profile: PROFILE, cwd: "/p" });
+      await expect(subject.setConfigOption("model", "opus")).resolves.toBe(false);
+      expect(current(subject, "model")).toBe("sonnet");
+      expect(subject.transcript[subject.transcript.length - 1]).toMatchObject({
+        kind: "notice",
+        tone: "error",
+        text: "Model did not change: Unknown model",
+      });
+    });
+
+    it("takes no setting while a turn runs", async () => {
+      scriptOptions();
+      agent.on("session/prompt", () => undefined);
+      const subject = session();
+      await subject.start({ profile: PROFILE, cwd: "/p" });
+      void subject.prompt("Go");
+      await expect(subject.setConfigOption("model", "opus")).rejects.toThrow(
+        "The agent's settings can change only between turns.",
+      );
+      expect(agent.requests("session/set_config_option")).toHaveLength(0);
+    });
+
+    it("switches to the remembered model before the first prompt when the agent offers it", async () => {
+      scriptOptions();
+      const subject = session();
+      const seen = statuses(subject);
+      await subject.start({
+        profile: { ...PROFILE, preferredModel: { configId: "model", value: "opus" } },
+        cwd: "/p",
+      });
+      expect(agent.requests("session/set_config_option")[0].params).toEqual({
+        sessionId: "sess_1",
+        configId: "model",
+        value: "opus",
+      });
+      expect(current(subject, "model")).toBe("opus");
+      expect(seen).toEqual(["starting", "ready"]);
+    });
+
+    it("keeps the agent's default when it does not offer the remembered model", async () => {
+      scriptOptions();
+      const subject = session();
+      await subject.start({
+        profile: { ...PROFILE, preferredModel: { configId: "model", value: "gpt-9" } },
+        cwd: "/p",
+      });
+      expect(agent.requests("session/set_config_option")).toHaveLength(0);
+      expect(current(subject, "model")).toBe("sonnet");
+      expect(subject.transcript).toEqual([]);
+      expect(subject.status).toBe("ready");
+    });
+
+    it("does not set the remembered model in a session it opens again", async () => {
+      scriptOptions();
+      agent.on("session/load", () => ({
+        configOptions: [wireOption("model", "model", "sonnet", ["sonnet", "opus"])],
+      }));
+      const subject = session();
+      await subject.start({
+        profile: { ...PROFILE, preferredModel: { configId: "model", value: "opus" } },
+        cwd: "/p",
+        reopen: "sess_old",
+      });
+      expect(current(subject, "model")).toBe("sonnet");
+      expect(agent.requests("session/set_config_option")).toHaveLength(0);
+    });
+
+    it("uses the older model list of an agent without config options", async () => {
+      agent
+        .on("initialize", () => helloAnswer())
+        .on("session/new", () => ({
+          sessionId: "sess_1",
+          models: {
+            currentModelId: "m1",
+            availableModels: [
+              { modelId: "m1", name: "One" },
+              { modelId: "m2", name: "Two" },
+            ],
+          },
+        }))
+        .on("session/set_model", () => ({}));
+      const subject = session();
+      await subject.start({
+        profile: { ...PROFILE, preferredModel: { configId: null, value: "m2" } },
+        cwd: "/p",
+      });
+      expect(agent.requests("session/set_model")[0].params).toEqual({
+        sessionId: "sess_1",
+        modelId: "m2",
+      });
+      expect(subject.getSnapshot().models?.currentModelId).toBe("m2");
+      await expect(subject.setModel("m1")).resolves.toBe(true);
+      expect(subject.getSnapshot().models?.currentModelId).toBe("m1");
+      await expect(subject.setModel("m3")).rejects.toThrow("The agent has no such model.");
+    });
+  });
+
   it("ends when stopped and fails when the program dies", async () => {
     scriptAgent();
     const stopped = session();

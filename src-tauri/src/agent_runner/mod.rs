@@ -1002,6 +1002,37 @@ pub fn agent_runner_allowed<R: Runtime>(
     Ok(runner.allowed())
 }
 
+/// Asks the person to choose a folder for an agent to work in, in the system's folder dialog,
+/// opening at `start` when it is a folder. `None` when they cancel.
+///
+/// # Errors
+///
+/// A sentence for the page when the call does not come from the main window, or the folder is
+/// not a local one.
+#[tauri::command]
+pub async fn agent_runner_pick_folder<R: Runtime>(
+    webview: Webview<R>,
+    start: Option<String>,
+) -> Result<Option<String>, String> {
+    from_main_window(&webview)?;
+    let app = webview.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file().set_title("Choose the agent's folder");
+        if let Some(start) = start.as_deref().map(Path::new).filter(|path| path.is_dir()) {
+            dialog = dialog.set_directory(start);
+        }
+        match dialog.blocking_pick_folder() {
+            None => Ok(None),
+            Some(path) => path
+                .into_path()
+                .map(|folder| Some(folder.display().to_string()))
+                .map_err(|_| "That folder is not on this computer.".to_owned()),
+        }
+    })
+    .await
+    .map_err(|_| "The folder dialog did not open.".to_owned())?
+}
+
 /// Asks the person, in a native dialog, whether to open the computer's terminal running
 /// `program` with `args` and the variables `env`, then opens it. `program` must be the program
 /// of an allowed pair.

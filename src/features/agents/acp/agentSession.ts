@@ -5,8 +5,9 @@
  * AgentSession.answerPermission} answers the agent's permission requests.
  */
 
+import { logger } from "../../../core/logger";
 import { agentBridgeStatus, type AgentBridgeStatus } from "../api/agentBridge";
-import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
+import type { AgentProgramProfile, PreferredModel } from "../state/useAgentProgramsStore";
 import {
   AcpClient,
   mergeToolCall,
@@ -19,7 +20,10 @@ import {
   type PermissionOutcome,
   type PermissionRequest,
   type PlanEntry,
+  type SessionConfigOption,
   type SessionMode,
+  type SessionModels,
+  type SessionSettings,
   type SessionUpdate,
   type StopReason,
   type ToolCall,
@@ -87,8 +91,13 @@ export interface AgentSessionSnapshot {
   agent: AgentHello | null;
   transcript: readonly TranscriptItem[];
   pendingPermissions: readonly PendingPermission[];
+  /** The agent's older modes; the header shows them only without config options. */
   modes: readonly SessionMode[];
   currentModeId: string | null;
+  /** The agent's `select` config options, in its order, empty when it offers none. */
+  configOptions: readonly SessionConfigOption[];
+  /** The agent's older model list; the header shows it only without config options. */
+  models: SessionModels | null;
   /** The agent's slash commands. */
   commands: readonly AgentCommand[];
   /** Whether RIM's tools are in the session, once it opened. */
@@ -167,6 +176,8 @@ const INITIAL: AgentSessionSnapshot = {
   pendingPermissions: [],
   modes: [],
   currentModeId: null,
+  configOptions: [],
+  models: null,
   commands: [],
   rimTools: null,
   error: null,
@@ -174,6 +185,28 @@ const INITIAL: AgentSessionSnapshot = {
   retryPrompt: null,
   stderrTail: [],
 };
+
+/** The config option category of the model, the one setting RIM remembers per agent. */
+export const MODEL_CATEGORY = "model";
+
+/**
+ * The config option a remembered model applies to: the model option with `configId`, else the
+ * first model option.
+ *
+ * @param configId - The option's id when it was chosen, or `null` for the older model list.
+ */
+function modelOption(
+  options: readonly SessionConfigOption[],
+  configId: string | null,
+): SessionConfigOption | undefined {
+  const models = options.filter((option) => option.category === MODEL_CATEGORY);
+  return models.find((option) => option.id === configId) ?? models[0];
+}
+
+/** Whether `option` offers `value`. */
+function offersValue(option: SessionConfigOption, value: string): boolean {
+  return option.groups.some((group) => group.choices.some((choice) => choice.value === value));
+}
 
 /** Why a profile stored without its program's full path cannot start. */
 export const ADD_AGAIN =
@@ -320,17 +353,16 @@ export class AgentSession {
           throw new Error(cannotReopenSentence(profile.name));
         // The id goes in first, so the replayed updates are heard as this session's.
         this.change({ sessionId: reopen });
-        const modes = await client.loadSession(reopen, { cwd, mcpServers });
-        opened = { sessionId: reopen, modes };
+        const settings = await client.loadSession(reopen, { cwd, mcpServers });
+        opened = { sessionId: reopen, ...settings };
       }
       if (this.isOver()) return;
-      this.change({
-        status: "ready",
-        sessionId: opened.sessionId,
-        rimTools,
-        modes: opened.modes?.availableModes ?? [],
-        currentModeId: opened.modes?.currentModeId ?? null,
-      });
+      this.change({ sessionId: opened.sessionId, rimTools, ...settingsOf(opened) });
+      if (reopen === undefined && profile.preferredModel) {
+        await this.applyPreferredModel(client, opened.sessionId, profile.preferredModel);
+        if (this.isOver()) return;
+      }
+      this.change({ status: "ready" });
     } catch (error) {
       if (this.isOver()) return;
       if (isAuthRequired(error)) this.change({ needsSignIn: true });
@@ -411,6 +443,65 @@ export class AgentSession {
   }
 
   /**
+   * Sets one of the agent's `select` config options, between turns. The agent's answer replaces
+   * every option, as the protocol has it.
+   *
+   * @param configId - The option's id.
+   * @param value - One of its values.
+   * @returns Whether the agent took it; when it did not, the session says why in the transcript.
+   */
+  async setConfigOption(configId: string, value: string): Promise<boolean> {
+    const { sessionId, configOptions, status } = this.snapshot;
+    const client = this.client;
+    if (sessionId === null || client === null || status !== "ready") {
+      throw new Error("The agent's settings can change only between turns.");
+    }
+    const option = configOptions.find((item) => item.id === configId);
+    if (!option || !offersValue(option, value)) throw new Error("The agent has no such setting.");
+    try {
+      const next = await client.setConfigOption(sessionId, configId, value);
+      if (this.isOver()) return false;
+      this.change({
+        configOptions: next ?? withValue(this.snapshot.configOptions, configId, value),
+      });
+      return true;
+    } catch (error) {
+      if (this.isOver()) return false;
+      this.notice(
+        "error",
+        `${option.name} did not change: ${sentence(error, "the agent refused it.")}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Switches to a model of the agent's older model list, between turns.
+   *
+   * @returns Whether the agent took it; when it did not, the session says why in the transcript.
+   */
+  async setModel(modelId: string): Promise<boolean> {
+    const { sessionId, models, status } = this.snapshot;
+    const client = this.client;
+    if (sessionId === null || client === null || status !== "ready") {
+      throw new Error("The agent's settings can change only between turns.");
+    }
+    if (!models?.availableModels.some((model) => model.modelId === modelId)) {
+      throw new Error("The agent has no such model.");
+    }
+    try {
+      await client.setModel(sessionId, modelId);
+      if (this.isOver() || !this.snapshot.models) return false;
+      this.change({ models: { ...this.snapshot.models, currentModelId: modelId } });
+      return true;
+    } catch (error) {
+      if (this.isOver()) return false;
+      this.notice("error", `The model did not change: ${sentence(error, "the agent refused it.")}`);
+      return false;
+    }
+  }
+
+  /**
    * Answers a waiting permission request with one of its options, or `cancelled`.
    *
    * @param requestId - The request, as {@link PendingPermission.requestId} names it.
@@ -469,6 +560,40 @@ export class AgentSession {
     return sentence(error, "The agent could not be started.");
   }
 
+  /**
+   * Sets the model the person chose last for this agent, when the new session offers it. Says
+   * nothing when it does not, or when the agent refuses it: the agent's own default stays.
+   */
+  private async applyPreferredModel(
+    client: AcpClient,
+    sessionId: string,
+    preferred: PreferredModel,
+  ): Promise<void> {
+    const { configOptions, models } = this.snapshot;
+    try {
+      const option = modelOption(configOptions, preferred.configId);
+      if (option) {
+        if (option.currentValue === preferred.value || !offersValue(option, preferred.value)) {
+          return;
+        }
+        const next = await client.setConfigOption(sessionId, option.id, preferred.value);
+        if (this.isOver()) return;
+        this.change({
+          configOptions: next ?? withValue(this.snapshot.configOptions, option.id, preferred.value),
+        });
+        return;
+      }
+      if (configOptions.length > 0 || !models) return;
+      if (models.currentModelId === preferred.value) return;
+      if (!models.availableModels.some((model) => model.modelId === preferred.value)) return;
+      await client.setModel(sessionId, preferred.value);
+      if (this.isOver() || !this.snapshot.models) return;
+      this.change({ models: { ...this.snapshot.models, currentModelId: preferred.value } });
+    } catch (error) {
+      logger.warn("[RIM:agents] the agent did not take the remembered model", error);
+    }
+  }
+
   private ended(end: AcpRunEndedError): void {
     if (this.isOver()) return;
     this.waiting.clear();
@@ -504,6 +629,8 @@ export class AgentSession {
           this.change({ currentModeId: update.currentModeId });
         }
         return;
+      case "config_option_update":
+        return this.change({ configOptions: update.configOptions });
       case "session_info_update":
         if (update.title !== null && update.title.trim() !== "") {
           this.change({ title: update.title });
@@ -624,6 +751,29 @@ export class AgentSession {
         : status;
     this.change({ pendingPermissions, status: next });
   }
+}
+
+/** The snapshot fields of what the agent said a session can be set to. */
+function settingsOf(
+  settings: SessionSettings,
+): Pick<AgentSessionSnapshot, "modes" | "currentModeId" | "configOptions" | "models"> {
+  return {
+    modes: settings.modes?.availableModes ?? [],
+    currentModeId: settings.modes?.currentModeId ?? null,
+    configOptions: settings.configOptions ?? [],
+    models: settings.models,
+  };
+}
+
+/** `options` with the option `configId` set to `value`. */
+function withValue(
+  options: readonly SessionConfigOption[],
+  configId: string,
+  value: string,
+): SessionConfigOption[] {
+  return options.map((option) =>
+    option.id === configId ? { ...option, currentValue: value } : option,
+  );
 }
 
 /** Joins `added` to a message's content: text to the text before it, anything else after. */

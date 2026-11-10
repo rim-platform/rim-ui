@@ -112,6 +112,56 @@ export interface SessionModes {
   availableModes: SessionMode[];
 }
 
+/** One value a config option can take. */
+export interface ConfigChoice {
+  value: string;
+  name: string;
+  description: string | null;
+}
+
+/** A run of a config option's values, under a group name or none. */
+export interface ConfigChoiceGroup {
+  /** The group's name, or `null` for values the agent did not group. */
+  name: string | null;
+  choices: ConfigChoice[];
+}
+
+/**
+ * A setting of a session the agent offers as a choice of values, such as its model, reasoning
+ * effort or mode. Only `select` options are read; RIM does not advertise boolean ones.
+ */
+export interface SessionConfigOption {
+  id: string;
+  name: string;
+  description: string | null;
+  /** `mode`, `model`, `model_config`, `thought_level`, another the agent names, or `null`. */
+  category: string | null;
+  currentValue: string;
+  /** The values, in the agent's order; the current value is always among them. */
+  groups: ConfigChoiceGroup[];
+}
+
+/** A model of the agent's older model list. */
+export interface SessionModel {
+  modelId: string;
+  name: string;
+  description: string | null;
+}
+
+/** The agent's older model list of a session and the model it uses. */
+export interface SessionModels {
+  currentModelId: string;
+  availableModels: SessionModel[];
+}
+
+/** What the agent says a session can be set to when it opens. */
+export interface SessionSettings {
+  modes: SessionModes | null;
+  /** The agent's config options, in its order, or `null` when it sent none. */
+  configOptions: SessionConfigOption[] | null;
+  models: SessionModels | null;
+}
+
 /** A slash command the agent offers. */
 export interface AgentCommand {
   name: string;
@@ -130,6 +180,7 @@ export type SessionUpdate =
   | { kind: "plan"; entries: PlanEntry[] }
   | { kind: "available_commands_update"; commands: AgentCommand[] }
   | { kind: "current_mode_update"; currentModeId: string }
+  | { kind: "config_option_update"; configOptions: SessionConfigOption[] }
   | { kind: "session_info_update"; title: string | null }
   | { kind: "unknown" };
 
@@ -211,9 +262,8 @@ export interface SessionSetup {
 }
 
 /** What an opened session has. */
-export interface OpenedSession {
+export interface OpenedSession extends SessionSettings {
   sessionId: string;
-  modes: SessionModes | null;
 }
 
 /** What the client hands its owner. */
@@ -468,6 +518,100 @@ export function parseModes(value: JsonValue | undefined): SessionModes | null {
   return { currentModeId, availableModes };
 }
 
+function parseChoice(value: JsonValue): ConfigChoice | null {
+  if (!isObject(value)) return null;
+  const choice = text(value, "value");
+  const name = text(value, "name");
+  if (choice === null || name === null) return null;
+  return { value: choice, name, description: text(value, "description") };
+}
+
+/** Reads a select option's values, flat or in groups, into groups in the agent's order. */
+function parseChoiceGroups(value: JsonValue | undefined): ConfigChoiceGroup[] {
+  if (!Array.isArray(value)) return [];
+  const groups: ConfigChoiceGroup[] = [];
+  for (const item of value) {
+    if (isObject(item) && Array.isArray(field(item, "options"))) {
+      const choices = list(field(item, "options"), parseChoice) ?? [];
+      if (choices.length > 0) groups.push({ name: text(item, "name") ?? "", choices });
+      continue;
+    }
+    const choice = parseChoice(item);
+    if (choice === null) continue;
+    const last = groups[groups.length - 1];
+    if (last && last.name === null) last.choices.push(choice);
+    else groups.push({ name: null, choices: [choice] });
+  }
+  return groups;
+}
+
+function parseConfigOption(value: JsonValue): SessionConfigOption | null {
+  if (!isObject(value) || field(value, "type") !== "select") return null;
+  const id = text(value, "id");
+  const name = text(value, "name");
+  const currentValue = text(value, "currentValue");
+  if (id === null || id === "" || name === null || currentValue === null) return null;
+  const groups = parseChoiceGroups(field(value, "options"));
+  const offered = groups.some((group) =>
+    group.choices.some((choice) => choice.value === currentValue),
+  );
+  if (!offered)
+    groups.unshift({
+      name: null,
+      choices: [{ value: currentValue, name: currentValue, description: null }],
+    });
+  return {
+    id,
+    name,
+    description: text(value, "description"),
+    category: text(value, "category"),
+    currentValue,
+    groups,
+  };
+}
+
+/**
+ * Reads a session's config options, keeping the `select` ones in the agent's order.
+ *
+ * @returns The options, or `null` when the value is not a list.
+ */
+export function parseConfigOptions(value: JsonValue | undefined): SessionConfigOption[] | null {
+  return list(value, parseConfigOption);
+}
+
+function parseModel(value: JsonValue): SessionModel | null {
+  if (!isObject(value)) return null;
+  const modelId = text(value, "modelId");
+  const name = text(value, "name");
+  if (modelId === null || modelId === "" || name === null) return null;
+  return { modelId, name, description: text(value, "description") };
+}
+
+/**
+ * Reads the agent's older model list of a session.
+ *
+ * @returns The models, or `null` when there are none or they are not well formed.
+ */
+export function parseModels(value: JsonValue | undefined): SessionModels | null {
+  if (!isObject(value)) return null;
+  const currentModelId = text(value, "currentModelId");
+  const availableModels = list(field(value, "availableModels"), parseModel);
+  if (currentModelId === null || availableModels === null || availableModels.length === 0) {
+    return null;
+  }
+  return { currentModelId, availableModels };
+}
+
+/** Reads what a `session/new`, `session/load` or `session/resume` answer says of the session. */
+function parseSettings(answer: JsonValue | undefined): SessionSettings {
+  const object = isObject(answer) ? answer : {};
+  return {
+    modes: parseModes(field(object, "modes")),
+    configOptions: parseConfigOptions(field(object, "configOptions")),
+    models: parseModels(field(object, "models")),
+  };
+}
+
 function parseCommand(value: JsonValue): AgentCommand | null {
   if (!isObject(value)) return null;
   const name = text(value, "name");
@@ -523,6 +667,10 @@ export function parseSessionUpdate(value: JsonValue | undefined): SessionUpdate 
     case "current_mode_update": {
       const currentModeId = text(value, "currentModeId");
       return currentModeId === null ? UNKNOWN : { kind: "current_mode_update", currentModeId };
+    }
+    case "config_option_update": {
+      const configOptions = parseConfigOptions(field(value, "configOptions"));
+      return configOptions ? { kind: "config_option_update", configOptions } : UNKNOWN;
     }
     case "session_info_update":
       return { kind: "session_info_update", title: text(value, "title") };
@@ -693,7 +841,7 @@ export class AcpClient {
   /**
    * Opens a session. The params carry the MCP servers' headers, so they are never logged.
    *
-   * @returns The session's id and modes.
+   * @returns The session's id, and its modes, config options and models.
    */
   async newSession(setup: SessionSetup): Promise<OpenedSession> {
     const result = await this.connection.request(
@@ -706,16 +854,16 @@ export class AcpClient {
     if (sessionId === null || sessionId === "") {
       throw new Error("The agent did not open a session.");
     }
-    return { sessionId, modes: parseModes(field(answer, "modes")) };
+    return { sessionId, ...parseSettings(answer) };
   }
 
   /**
    * Opens an earlier session again; the agent replays it as updates first. Only for an agent
    * that offers `loadSession`.
    *
-   * @returns The session's modes.
+   * @returns The session's modes, config options and models.
    */
-  async loadSession(sessionId: string, setup: SessionSetup): Promise<SessionModes | null> {
+  async loadSession(sessionId: string, setup: SessionSetup): Promise<SessionSettings> {
     if (!this.hello?.agentCapabilities.loadSession) {
       throw new Error("This agent can't open earlier sessions.");
     }
@@ -724,15 +872,15 @@ export class AcpClient {
       { sessionId, cwd: setup.cwd, mcpServers: mcpServersParam(setup.mcpServers) },
       { timeoutMs: SETUP_TIMEOUT_MS },
     );
-    return parseModes(isObject(result) ? field(result, "modes") : undefined);
+    return parseSettings(result);
   }
 
   /**
    * Continues an earlier session without replaying it. Only for an agent that offers it.
    *
-   * @returns The session's modes.
+   * @returns The session's modes, config options and models.
    */
-  async resumeSession(sessionId: string, setup: SessionSetup): Promise<SessionModes | null> {
+  async resumeSession(sessionId: string, setup: SessionSetup): Promise<SessionSettings> {
     if (!this.hello?.agentCapabilities.resumeSession) {
       throw new Error("This agent can't continue earlier sessions.");
     }
@@ -741,7 +889,7 @@ export class AcpClient {
       { sessionId, cwd: setup.cwd, mcpServers: mcpServersParam(setup.mcpServers) },
       { timeoutMs: SETUP_TIMEOUT_MS },
     );
-    return parseModes(isObject(result) ? field(result, "modes") : undefined);
+    return parseSettings(result);
   }
 
   /**
@@ -771,6 +919,35 @@ export class AcpClient {
   /** Switches the session to another of its modes. */
   async setMode(sessionId: string, modeId: string): Promise<void> {
     await this.connection.request("session/set_mode", { sessionId, modeId });
+  }
+
+  /**
+   * Sets one of the session's `select` config options.
+   *
+   * @param configId - The option's id.
+   * @param value - One of the option's values.
+   * @returns Every config option as the agent now has them, or `null` when its answer has none.
+   */
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: string,
+  ): Promise<SessionConfigOption[] | null> {
+    const result = await this.connection.request(
+      "session/set_config_option",
+      { sessionId, configId, value },
+      { timeoutMs: SETUP_TIMEOUT_MS },
+    );
+    return parseConfigOptions(isObject(result) ? field(result, "configOptions") : undefined);
+  }
+
+  /** Switches the session to another model of the agent's older model list. */
+  async setModel(sessionId: string, modelId: string): Promise<void> {
+    await this.connection.request(
+      "session/set_model",
+      { sessionId, modelId },
+      { timeoutMs: SETUP_TIMEOUT_MS },
+    );
   }
 
   private async askPermission(

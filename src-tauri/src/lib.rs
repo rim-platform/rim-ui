@@ -293,6 +293,7 @@ pub fn run() {
             agent_runner::agent_runner_forget,
             agent_runner::agent_runner_allowed,
             agent_runner::agent_runner_open_terminal,
+            agent_runner::agent_runner_pick_folder,
             agent_installer::agent_installer_catalog,
             agent_installer::agent_installer_install,
             agent_installer::agent_installer_remove,

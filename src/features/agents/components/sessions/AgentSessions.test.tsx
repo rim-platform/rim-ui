@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const runner = vi.hoisted(() => ({ findAgentPrograms: vi.fn() }));
+const runner = vi.hoisted(() => ({ findAgentPrograms: vi.fn(), pickAgentFolder: vi.fn() }));
 vi.mock("../../acp/agentRunner", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../acp/agentRunner")>()),
   ...(await import("../../../../test/fakeAcpAgent")).fakeAcpAgent.module(),
   findAgentPrograms: runner.findAgentPrograms,
+  pickAgentFolder: runner.pickAgentFolder,
 }));
 const platform = vi.hoisted(() => ({ current: "desktop" }));
 vi.mock("../../../../core/runtime/runtime", async (importOriginal) => ({
@@ -239,6 +240,48 @@ describe("agent session screens", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it("fills the folder from the system's folder dialog, which opens at the folder written", async () => {
+      runner.pickAgentFolder.mockResolvedValueOnce("/home/a/picked").mockResolvedValueOnce(null);
+      useShellStore.getState().setMainSurface({ kind: "agent-sessions" });
+      const user = userEvent.setup();
+      render(<Shell />);
+      await user.click(screen.getByRole("button", { name: "Start a session" }));
+      const dialog = await screen.findByRole("dialog", { name: "Start an agent session" });
+      const folder = within(dialog).getByRole("textbox", { name: "Folder" });
+      await user.click(within(dialog).getByRole("button", { name: "Browse for the folder" }));
+      expect(runner.pickAgentFolder).toHaveBeenCalledWith("/home/a/project");
+      await waitFor(() => expect(folder).toHaveValue("/home/a/picked"));
+      await user.click(within(dialog).getByRole("button", { name: "Browse for the folder" }));
+      await waitFor(() => expect(runner.pickAgentFolder).toHaveBeenCalledTimes(2));
+      expect(folder).toHaveValue("/home/a/picked");
+      await user.click(within(dialog).getByRole("button", { name: "Start" }));
+      await waitFor(() =>
+        expect(agent.startAgentRun).toHaveBeenCalledWith({
+          program: "/usr/bin/fake-agent",
+          args: ["acp"],
+          cwd: "/home/a/picked",
+        }),
+      );
+    });
+
+    it("says when the folder dialog could not open, and typing still works", async () => {
+      runner.pickAgentFolder.mockRejectedValueOnce(new Error("The folder dialog did not open."));
+      useShellStore.getState().setMainSurface({ kind: "agent-sessions" });
+      const user = userEvent.setup();
+      render(<Shell />);
+      await user.click(screen.getByRole("button", { name: "Start a session" }));
+      const dialog = await screen.findByRole("dialog", { name: "Start an agent session" });
+      await user.click(within(dialog).getByRole("button", { name: "Browse for the folder" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "The folder dialog did not open.",
+      );
+      const folder = within(dialog).getByRole("textbox", { name: "Folder" });
+      await user.clear(folder);
+      await user.type(folder, "/home/a/typed");
+      expect(within(dialog).queryByRole("alert")).toBeNull();
+      expect(folder).toHaveValue("/home/a/typed");
+    });
+
     it("shows why the start failed, with the program's last output folded", async () => {
       agent.on("initialize", (_params, id) => {
         queueMicrotask(() => agent.exit({ code: 3, stderrTail: ["error: no api key"] }));
@@ -456,6 +499,138 @@ describe("agent session screens", () => {
       await user.click(screen.getByRole("button", { name: "Stop" }));
       expect(screen.queryByRole("dialog")).toBeNull();
       await waitFor(() => expect(agent.stopAgentRun).toHaveBeenCalledTimes(1));
+    });
+
+    describe("the agent's settings", () => {
+      const option = (id: string, name: string, category: string, current: string) => ({
+        id,
+        name,
+        category,
+        type: "select",
+        currentValue: current,
+        options: [
+          { value: `${id}-a`, name: `${name} A` },
+          { value: `${id}-b`, name: `${name} B` },
+        ],
+      });
+
+      beforeEach(() => {
+        agent
+          .on("session/new", () => ({
+            sessionId: "sess_1",
+            modes: { currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }] },
+            configOptions: [
+              option("mode", "Mode", "mode", "mode-a"),
+              option("model", "Model", "model", "model-a"),
+            ],
+          }))
+          .on("session/set_config_option", () => ({
+            configOptions: [
+              option("mode", "Mode", "mode", "mode-a"),
+              option("model", "Model", "model", "model-b"),
+              option("effort", "Effort", "thought_level", "effort-a"),
+            ],
+          }));
+      });
+
+      it("shows a select per config option, the model first, instead of the modes", async () => {
+        const user = userEvent.setup();
+        await startFromDialog(user);
+        const settings = screen.getByRole("group", { name: "Fake Agent's settings" });
+        const selects = within(settings).getAllByRole("combobox");
+        expect(selects.map((select) => select.closest("label")?.firstChild?.textContent)).toEqual([
+          "Model",
+          "Mode",
+        ]);
+        expect(within(settings).getByRole("combobox", { name: "Mode" })).toHaveValue("mode-a");
+        expect(within(settings).queryByRole("option", { name: "Ask" })).toBeNull();
+
+        await user.selectOptions(
+          within(settings).getByRole("combobox", { name: "Model" }),
+          "model-b",
+        );
+        await waitFor(() =>
+          expect(agent.requests("session/set_config_option")[0]?.params).toEqual({
+            sessionId: "sess_1",
+            configId: "model",
+            value: "model-b",
+          }),
+        );
+        expect(await within(settings).findByRole("combobox", { name: "Effort" })).toHaveValue(
+          "effort-a",
+        );
+        expect(within(settings).getByRole("combobox", { name: "Model" })).toHaveValue("model-b");
+        expect(useAgentProgramsStore.getState().profiles[0].preferredModel).toEqual({
+          configId: "model",
+          value: "model-b",
+        });
+      });
+
+      it("shows in the session when the agent refuses a setting", async () => {
+        agent.on("session/set_config_option", (_params, id) => {
+          queueMicrotask(() => agent.fail(id, -32603, "Rate limited"));
+          return undefined;
+        });
+        const user = userEvent.setup();
+        await startFromDialog(user);
+        await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "model-b");
+        expect(await screen.findByText("Model did not change: Rate limited")).toBeInTheDocument();
+        expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("model-a");
+      });
+
+      it("turns the settings off while a turn runs", async () => {
+        const held = { id: 0 };
+        holdPrompt(held);
+        const user = userEvent.setup();
+        const composer = await startFromDialog(user);
+        expect(screen.getByRole("combobox", { name: "Model" })).toBeEnabled();
+        await user.type(composer, "Go{Enter}");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled());
+        act(() => agent.respond(held.id, { stopReason: "end_turn" }));
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toBeEnabled());
+      });
+
+      it("offers the older model list of an agent without config options", async () => {
+        agent
+          .on("session/new", () => ({
+            sessionId: "sess_1",
+            models: {
+              currentModelId: "m1",
+              availableModels: [
+                { modelId: "m1", name: "One" },
+                { modelId: "m2", name: "Two" },
+              ],
+            },
+          }))
+          .on("session/set_model", () => ({}));
+        const user = userEvent.setup();
+        await startFromDialog(user);
+        await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "m2");
+        await waitFor(() =>
+          expect(agent.requests("session/set_model")[0]?.params).toEqual({
+            sessionId: "sess_1",
+            modelId: "m2",
+          }),
+        );
+        await waitFor(() =>
+          expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("m2"),
+        );
+      });
+    });
+
+    it("marks a session in the list that finished since its page was open, until it is opened", async () => {
+      const held = { id: 0 };
+      holdPrompt(held);
+      const user = userEvent.setup();
+      const composer = await startFromDialog(user);
+      await user.type(composer, "Go{Enter}");
+      const key = Object.keys(useRunningAgentSessionsStore.getState().sessions)[0];
+      act(() => useShellStore.getState().setMainSurface({ kind: "agent-sessions" }));
+      act(() => agent.respond(held.id, { stopReason: "end_turn" }));
+      const row = await screen.findByRole("button", { name: "Open Fake Agent: Go, new" });
+      expect(useRunningAgentSessionsStore.getState().unseen).toEqual({ [key]: true });
+      await user.click(row);
+      await waitFor(() => expect(useRunningAgentSessionsStore.getState().unseen).toEqual({}));
     });
 
     it("offers the agent's modes", async () => {

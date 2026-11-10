@@ -185,7 +185,7 @@ describe("Home made of boxes", () => {
     state.stored = null;
     state.save = null;
     server.capabilities = ["home_layout"];
-    available.agent = true;
+    available.agent = false;
     useShellStore.getState().reset();
     useShellStore.setState({ shellWidth: "wide" });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
@@ -207,10 +207,11 @@ describe("Home made of boxes", () => {
   });
 
   it("shows the default layout, with the agents' runs where agents are connected, and saves nothing on opening", async () => {
+    available.agent = true;
     serve();
     renderHome();
     await screen.findByText("Nothing waiting.");
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread", "agentSessions"]);
     await waitFor(() => expect(callsTo(requestMock, "query HomeLayout")).toHaveLength(1));
 
     act(() =>
@@ -228,7 +229,7 @@ describe("Home made of boxes", () => {
       }),
     );
     await waitFor(() =>
-      expect(shownBoxes()).toEqual(["waiting", "mentions", "unread", "agentRuns"]),
+      expect(shownBoxes()).toEqual(["waiting", "mentions", "unread", "agentRuns", "agentSessions"]),
     );
     expect(saves()).toHaveLength(0);
   });

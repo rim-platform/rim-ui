@@ -10,6 +10,7 @@ import { showInvisibleCharacters } from "../../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../../state/useAgentProgramsStore";
 import { startAgentSession } from "../../state/useAgentSessionsStore";
 import { useStartAgentSessionStore } from "../../state/useStartAgentSessionStore";
+import { AgentFolderField } from "../AgentFolderField";
 import { isBareName, programState, useFound } from "../programLookup";
 import {
   ADD_PROGRAM_FIRST,
@@ -19,8 +20,6 @@ import {
   sandboxSentence,
 } from "./sessionText";
 
-const FIELD_CLASS =
-  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
 const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint";
 
 /** The start dialog, while it is open. */
@@ -145,25 +144,17 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
               );
             })}
           </fieldset>
-          <label className="block">
-            <span className={LABEL_CLASS}>Folder</span>
-            <input
-              type="text"
-              value={folderValue}
-              onChange={(event) => {
-                setFolder(event.target.value);
-                setProblem(null);
-              }}
-              placeholder="/home/you/project"
-              spellCheck={false}
-              aria-invalid={problem !== null}
-              aria-describedby={problem !== null ? `${baseId}-problem` : undefined}
-              className={`${FIELD_CLASS} font-mono`}
-            />
-            <span className="mt-1 block text-xs text-rim-text-muted">
-              The full path of the folder the agent works in.
-            </span>
-          </label>
+          <AgentFolderField
+            label="Folder"
+            value={folderValue}
+            onChange={(value) => {
+              setFolder(value);
+              setProblem(null);
+            }}
+            hint="The full path of the folder the agent works in."
+            invalid={problem !== null}
+            describedBy={problem !== null ? `${baseId}-problem` : undefined}
+          />
           <p className="text-xs text-rim-text-muted">
             {sandboxSentence(folderValue.trim() !== "" ? folderValue.trim() : "that folder")}
           </p>

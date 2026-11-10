@@ -29,8 +29,9 @@ export interface HomeLayoutView {
  * Home shows the default there.
  *
  * @param agents - Whether the default layout has Your agents' runs.
+ * @param agentSessions - Whether the default layout has Agent sessions.
  */
-export function useHomeLayout(agents: boolean): HomeLayoutView {
+export function useHomeLayout(agents: boolean, agentSessions = false): HomeLayoutView {
   const editable = hasCapability(useServerInfo().info, HOME_LAYOUT);
   const query = useQuery({
     queryKey: queryKeys.homeLayout,
@@ -56,7 +57,7 @@ export function useHomeLayout(agents: boolean): HomeLayoutView {
 
   const stored = editable ? (pending ?? copy) : null;
   return {
-    layout: stored?.layout ?? defaultLayout(agents),
+    layout: stored?.layout ?? defaultLayout(agents, agentSessions),
     editable,
     unreachable: offline || disconnected || (query.isError && isServerUnreachable(query.error)),
     changedElsewhere: editable && changedElsewhere,

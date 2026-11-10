@@ -19,6 +19,7 @@ import { useAgentProgramsStore } from "../../state/useAgentProgramsStore";
 import {
   dismissAgentSession,
   isLiveStatus,
+  markAgentSessionSeen,
   reopenAgentSession,
   requestStopAgentSession,
   retryAgentSession,
@@ -35,6 +36,7 @@ import { PageBar } from "./AgentSessionsPage";
 import { ApprovalCard } from "./ApprovalCard";
 import { AboutChip, RefusalCards } from "./AskAgentParts";
 import { SessionStatusChip } from "./sessionParts";
+import { SessionSettings } from "./SessionSettings";
 import {
   agentCannotSentence,
   bridgeOffSentence,
@@ -57,6 +59,11 @@ export function AgentSessionPage({ sessionKey }: { sessionKey: string }) {
   const session = useRunningAgentSessionsStore((s) => s.sessions[sessionKey]);
   const entry = useAgentSessionsStore((s) => s.recent.find((item) => item.key === sessionKey));
   const snapshot = useSessionSnapshot(session);
+  const unseen = useRunningAgentSessionsStore((s) => s.unseen[sessionKey] === true);
+  // The page being shown is the person looking at the session.
+  useEffect(() => {
+    markAgentSessionSeen(sessionKey);
+  }, [sessionKey, unseen]);
   if (detectPlatform() !== "desktop") {
     return (
       <div className="flex h-full flex-col">
@@ -187,6 +194,11 @@ function NotRunning({
   );
 }
 
+/** Whether the agent offers settings the header shows. */
+function hasSettings(snapshot: AgentSessionSnapshot): boolean {
+  return snapshot.configOptions.length > 0 || snapshot.models !== null || snapshot.modes.length > 0;
+}
+
 function LiveSession({
   sessionKey,
   session,
@@ -213,29 +225,6 @@ function LiveSession({
       <SessionBar name={name}>
         <SessionStatusChip status={status} />
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {snapshot.modes.length > 0 && live && (
-            <label className="flex items-center gap-1 text-xs text-rim-text-muted">
-              <span className="sr-only">Mode</span>
-              <select
-                value={snapshot.currentModeId ?? ""}
-                disabled={status === "starting"}
-                onChange={(event) => {
-                  session.setMode(event.target.value).catch((error: unknown) => {
-                    toast.error(
-                      error instanceof Error ? error.message : "The mode did not change.",
-                    );
-                  });
-                }}
-                className="rounded border border-rim-line bg-rim-void px-1.5 py-0.5 text-xs text-rim-text"
-              >
-                {snapshot.modes.map((mode) => (
-                  <option key={mode.id} value={mode.id}>
-                    {mode.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {turnRunning && (
             <Button
               type="button"
@@ -285,6 +274,15 @@ function LiveSession({
       </SessionBar>
 
       <div className="space-y-2 border-b border-rim-line px-4 py-2">
+        {live && hasSettings(snapshot) && (
+          <div
+            role="group"
+            aria-label={`${shownName}'s settings`}
+            className="flex flex-wrap items-center gap-x-4 gap-y-1"
+          >
+            <SessionSettings sessionKey={sessionKey} session={session} snapshot={snapshot} />
+          </div>
+        )}
         {cwd && <FolderLine path={cwd} />}
         {cwd && <SandboxNote folder={cwd} />}
       </div>

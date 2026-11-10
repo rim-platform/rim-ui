@@ -24,6 +24,7 @@ import {
   onAgentRunExit,
   openAgentTerminal,
   onAgentRunLine,
+  pickAgentFolder,
   sendAgentLine,
   startAgentRun,
   stopAgentRun,
@@ -75,6 +76,14 @@ describe("agentRunner", () => {
       args: ["configure"],
       env: { A: "1" },
     });
+  });
+
+  it("asks the desktop app for a folder, opening at the one given", async () => {
+    tauri.invoke.mockResolvedValueOnce("/home/a/picked").mockResolvedValueOnce(null);
+    await expect(pickAgentFolder("/home/a")).resolves.toBe("/home/a/picked");
+    expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_pick_folder", { start: "/home/a" });
+    await expect(pickAgentFolder(null)).resolves.toBeNull();
+    expect(tauri.invoke).toHaveBeenLastCalledWith("agent_runner_pick_folder", { start: null });
   });
 
   it("finds programs and lists runs", async () => {

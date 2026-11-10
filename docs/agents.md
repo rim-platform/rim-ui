@@ -217,7 +217,8 @@ while one of its sessions runs.
      (`gemini --acp`), opencode (`opencode acp`) and Goose (`goose acp`).
    - **Custom…** asks for a name, the program (a full path, or a name found on your `PATH`) and
      its arguments, one per line.
-   - Each can have a default folder, the full path of the folder its sessions start in.
+   - Each can have a default folder, the full path of the folder its sessions start in. Write it,
+     or choose **Browse…** to pick it in your system's folder dialog.
 2. Choose **Add**. A system dialog asks whether RIM may start that program with exactly those
    arguments. Only **Allow** saves it. Changing the program or its arguments later asks again;
    changing the name or the folder doesn't.
@@ -260,6 +261,7 @@ Sessions run in the desktop app only; the web app says "Starting agents needs th
 or **Open Agent Sessions** in the command palette. Choose **Start a session**, or run **Start
 Agent Session…**. Pick one of your agent programs (one RIM can't find is shown but can't be
 picked) and the full path of the folder it works in, which starts as the program's default folder.
+Write the path, or choose **Browse…** to pick the folder in your system's folder dialog.
 RIM doesn't sandbox the agent: it runs as you in that folder, with its own tools and permission
 settings. The session says so under its header.
 
@@ -285,6 +287,16 @@ asking while a turn is running; **Stop Agent Session** does the same for the ses
 Quitting RIM stops every session. Closing the window to the tray keeps them running, and signing
 out stops them.
 
+**The agent's settings.** Under the header, the session shows the settings the agent offers, such
+as its model, reasoning effort or mode, each as a list with the agent's name for it, the model
+first. Changing one asks the agent, which answers with all its settings as they now are; when it
+refuses, the session says why. They can't change while a turn is running. An agent that offers no
+such settings but has a list of models gets a **Model** list, and one with only modes a **Mode**
+list. RIM remembers the model you chose last for each agent program, and a new session of it
+switches to that model before your first prompt when the agent still offers it; otherwise the
+agent's own default stays. Only you change these, from the session: nothing an agent or a message
+sends does.
+
 **RIM's tools.** When **Let agents on this computer connect** is on and the agent can reach an
 MCP server over HTTP, the session gets RIM's tools under the agent RIM connected for the program,
 with what you granted it and nothing more. Otherwise the session says that RIM's tools are off, or
@@ -292,13 +304,17 @@ that the agent can't use them, and the agent works with its own tools only.
 
 **Notifications.** When an agent starts waiting for your answer, or finishes a turn, while the RIM
 window isn't in front, the desktop shows "<agent> is waiting for you" or "<agent> finished", with
-the session's title and nothing else from the session. They follow your notification settings,
-and the open workspace's pause and quiet hours. Choosing one opens the session.
+the session's title and nothing else from the session. While RIM is in front but you're not on
+that session, the same words show as a notice in the app with **Open** instead, never both. On
+the session itself nothing shows. They follow your notification settings, and the open
+workspace's pause and quiet hours. Choosing one opens the session.
 
 **Running and recent.** **Agent sessions** lists the sessions running now, as Working, Waiting
 for you, Ready or Failed, and up to 20 recent ones, with the agent, the title, the folder and when
 it last did something. The title is the one the agent gives the session, or the start of your
-first prompt.
+first prompt. A dot marks a session that finished or started waiting since you last had it open.
+The **Agent sessions** box on Home shows the same, up to six, with **New session** and **All
+sessions** ([Home](home.md)).
 
 **Transcripts aren't kept.** RIM keeps a session's transcript in memory while the app runs, and
 never stores it. The recent list keeps only the agent, the folder, the agent's id for the session,

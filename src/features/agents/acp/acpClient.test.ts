@@ -194,6 +194,8 @@ describe("AcpClient", () => {
           { id: "code", name: "Code", description: "Edits files" },
         ],
       },
+      configOptions: null,
+      models: null,
     });
   });
 
@@ -202,7 +204,7 @@ describe("AcpClient", () => {
     const { acp } = await client();
     const opened = await acp.newSession({ cwd: "/p", mcpServers: [] });
     expect(agent.requests("session/new")[0].params).toEqual({ cwd: "/p", mcpServers: [] });
-    expect(opened).toEqual({ sessionId: "sess_2", modes: null });
+    expect(opened).toEqual({ sessionId: "sess_2", modes: null, configOptions: null, models: null });
   });
 
   it("refuses a session answer without a session id", async () => {
@@ -378,7 +380,114 @@ describe("AcpClient", () => {
       modeId: "code",
     });
   });
+
+  it("reads the config options and models of a new and a loaded session", async () => {
+    const answer = {
+      sessionId: "sess_1",
+      configOptions: WIRE_OPTIONS,
+      models: {
+        currentModelId: "m1",
+        availableModels: [
+          { modelId: "m1", name: "One" },
+          { modelId: "", name: "None" },
+        ],
+      },
+    };
+    agent
+      .on("initialize", () => helloAnswer())
+      .on("session/new", () => answer)
+      .on("session/load", () => ({ configOptions: WIRE_OPTIONS }));
+    const { acp } = await client();
+    await acp.initialize();
+    const opened = await acp.newSession({ cwd: "/p", mcpServers: [] });
+    expect(opened.configOptions).toEqual(PARSED_OPTIONS);
+    expect(opened.models).toEqual({
+      currentModelId: "m1",
+      availableModels: [{ modelId: "m1", name: "One", description: null }],
+    });
+    const loaded = await acp.loadSession("sess_1", { cwd: "/p", mcpServers: [] });
+    expect(loaded).toEqual({ modes: null, configOptions: PARSED_OPTIONS, models: null });
+  });
+
+  it("sets a config option and returns every option the agent answers with", async () => {
+    agent.on("session/set_config_option", () => ({ configOptions: WIRE_OPTIONS }));
+    const { acp } = await client();
+    await expect(acp.setConfigOption("sess_1", "model", "opus")).resolves.toEqual(PARSED_OPTIONS);
+    expect(agent.requests("session/set_config_option")[0].params).toEqual({
+      sessionId: "sess_1",
+      configId: "model",
+      value: "opus",
+    });
+    agent.on("session/set_config_option", () => ({}));
+    await expect(acp.setConfigOption("sess_1", "model", "opus")).resolves.toBeNull();
+  });
+
+  it("sets a model of the older model list", async () => {
+    agent.on("session/set_model", () => ({}));
+    const { acp } = await client();
+    await acp.setModel("sess_1", "m2");
+    expect(agent.requests("session/set_model")[0].params).toEqual({
+      sessionId: "sess_1",
+      modelId: "m2",
+    });
+  });
 });
+
+/** Config options as an agent sends them: a model, an effort in groups, and ones RIM skips. */
+const WIRE_OPTIONS = [
+  {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "sonnet",
+    options: [
+      { value: "sonnet", name: "Sonnet", description: "Fast" },
+      { value: "opus", name: "Opus" },
+      { name: "no value" },
+    ],
+  },
+  {
+    id: "effort",
+    name: "Effort",
+    type: "select",
+    currentValue: "max",
+    options: [{ group: "g", name: "Levels", options: [{ value: "low", name: "Low" }] }],
+  },
+  { id: "brave", name: "Brave", type: "boolean", currentValue: true },
+  { id: "broken", type: "select", currentValue: "x", options: [] },
+];
+
+/** {@link WIRE_OPTIONS} as RIM reads them. */
+const PARSED_OPTIONS = [
+  {
+    id: "model",
+    name: "Model",
+    description: null,
+    category: "model",
+    currentValue: "sonnet",
+    groups: [
+      {
+        name: null,
+        choices: [
+          { value: "sonnet", name: "Sonnet", description: "Fast" },
+          { value: "opus", name: "Opus", description: null },
+        ],
+      },
+    ],
+  },
+  {
+    id: "effort",
+    name: "Effort",
+    description: null,
+    category: null,
+    currentValue: "max",
+    groups: [
+      { name: null, choices: [{ value: "max", name: "max", description: null }] },
+      { name: "Levels", choices: [{ value: "low", name: "Low", description: null }] },
+    ],
+  },
+];
 
 describe("parseSessionUpdate", () => {
   it("reads each kind it knows and keeps the rest as unknown", () => {
@@ -410,6 +519,12 @@ describe("parseSessionUpdate", () => {
     expect(
       parseSessionUpdate({ sessionUpdate: "current_mode_update", currentModeId: "x" }),
     ).toEqual({ kind: "current_mode_update", currentModeId: "x" });
+    expect(
+      parseSessionUpdate({ sessionUpdate: "config_option_update", configOptions: WIRE_OPTIONS }),
+    ).toEqual({ kind: "config_option_update", configOptions: PARSED_OPTIONS });
+    expect(parseSessionUpdate({ sessionUpdate: "config_option_update" })).toEqual({
+      kind: "unknown",
+    });
     expect(
       parseSessionUpdate({ sessionUpdate: "agent_thought_chunk", content: { type: "text" } }),
     ).toEqual({ kind: "agent_thought_chunk", content: { type: "unknown" }, messageId: null });

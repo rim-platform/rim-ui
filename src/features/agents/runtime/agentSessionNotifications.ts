@@ -1,7 +1,8 @@
 /**
- * The desktop notifications of agent sessions: when one starts waiting for the person, or a turn
- * ends, while the person is not at the RIM window. They name the agent and the session's title,
- * never anything from the transcript, and follow the device's notification settings and the open
+ * The notices of agent sessions: when one starts waiting for the person, or a turn ends. Away
+ * from the RIM window it is a desktop notification; at the window, away from that session's page,
+ * it is a toast in the app; never both. They name the agent and the session's title, never
+ * anything from the transcript, and follow the device's notification settings and the open
  * workspace's pause and quiet hours.
  */
 
@@ -9,7 +10,9 @@ import { logger } from "../../../core/logger";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { detectPlatform } from "../../../core/runtime/runtime";
+import { toast, useToastStore } from "../../../shared/toast/useToastStore";
 import { windowHasFocus } from "../../../shared/utils/windowFocus";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import type { NotificationSettingsData } from "../../notifications/api/useNotificationSettings";
 import { isPauseActive, toTimeInput } from "../../notifications/rules";
 import { showDesktopNotification } from "../../notifications/runtime/desktopNotification";
@@ -95,11 +98,50 @@ export function agentNoticesQuiet(now: Date = new Date()): boolean {
   return isPauseActive(settings, now.getTime()) || inQuietHours(settings.dnd, now);
 }
 
-/** Raises the notification, unless the person is at the window or notifications are held back. */
+/** Whether the main surface shows the page of the session with `key`. */
+export function isViewingAgentSession(key: string): boolean {
+  const surface = useShellStore.getState().mainSurface;
+  return surface.kind === "agent-session" && surface.key === key;
+}
+
+/** The id of a session's toast, so a newer notice of it replaces the one showing. */
+function toastId(key: string): string {
+  return `agent-session-${key}`;
+}
+
+/** Takes away the toast of the session with `key`, once its page is shown. */
+export function dismissAgentSessionToast(key: string): void {
+  if (useToastStore.getState().toasts.some((item) => item.id === toastId(key))) {
+    toast.dismiss(toastId(key));
+  }
+}
+
+/**
+ * Tells the person about the notice: a toast with Open while they are at the window and not on
+ * that session's page, a desktop notification while they are away from the window, and nothing
+ * while notifications are held back.
+ */
 export function notifyAgentSession(notice: AgentSessionNotice): void {
   if (detectPlatform() !== "desktop" || typeof document === "undefined") return;
-  if (windowHasFocus() || agentNoticesQuiet()) return;
+  if (agentNoticesQuiet()) return;
   const { title, body } = formatAgentSessionNotice(notice);
+  if (windowHasFocus()) {
+    if (isViewingAgentSession(notice.key)) return;
+    // A notice of another kind replaces the one showing, in its own colour.
+    useToastStore.getState().remove(toastId(notice.key));
+    const show = notice.kind === "waiting" ? toast.warning : toast.info;
+    show(title, {
+      id: toastId(notice.key),
+      description: body,
+      action: {
+        label: "Open",
+        ariaLabel: `Open ${body}`,
+        onClick: () =>
+          useShellStore.getState().setMainSurface({ kind: "agent-session", key: notice.key }),
+      },
+    });
+    return;
+  }
   showDesktopNotification({
     title,
     body,
