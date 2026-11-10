@@ -2,6 +2,7 @@
 
 import type { AcpPreset } from "../acp/acpPresets";
 import type { AvailableAgent, CatalogEntry, InstalledAgent } from "../acp/agentInstaller";
+import { startsPair } from "../acp/agentPrograms";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
 
 /** What a supported agent's row shows. */
@@ -44,9 +45,7 @@ export function presetRowState(
     return {
       kind: "installed",
       installed,
-      profile: profiles.find(
-        (profile) => (profile.resolvedProgram ?? profile.program) === installed.program,
-      ),
+      profile: profiles.find((profile) => startsPair(profile, installed)),
       update,
     };
   }

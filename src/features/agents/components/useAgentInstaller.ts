@@ -114,8 +114,8 @@ export function useAgentInstaller(): AgentInstallerState {
     try {
       const outcome = await installAgent(preset.id);
       if (outcome.kind === "installed") {
-        const profile = await adoptInstalledAgent(preset, outcome.agent, outcome.replacedProgram);
-        if (outcome.replacedProgram === null) {
+        const profile = await adoptInstalledAgent(preset, outcome.agent, outcome.replaced);
+        if (outcome.replaced === null) {
           setJustInstalled({ presetId: preset.id, profileId: profile.id });
         }
       }

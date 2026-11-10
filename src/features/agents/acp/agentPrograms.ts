@@ -13,7 +13,7 @@ import {
   type AgentProgramChanges,
   type AgentProgramProfile,
 } from "../state/useAgentProgramsStore";
-import { removeInstalledAgent, type InstalledAgent } from "./agentInstaller";
+import { removeInstalledAgent, type InstalledAgent, type ProgramPair } from "./agentInstaller";
 import {
   allowAgentProgram,
   allowedAgentPrograms,
@@ -212,30 +212,40 @@ async function saveProfile(input: AllowedProfile): Promise<AgentProgramProfile> 
   return profile;
 }
 
-/** The profiles that start this program, by the full path the allowed list holds. */
-export function profilesUsing(program: string): AgentProgramProfile[] {
-  return useAgentProgramsStore
-    .getState()
-    .profiles.filter((profile) => allowedProgramOf(profile) === program);
+/**
+ * Whether a profile starts this program with exactly these arguments, by the full path the
+ * allowed list holds. Agents RIM installs on Node.js share one program and differ only in their
+ * arguments.
+ */
+export function startsPair(
+  profile: Pick<AgentProgramProfile, "program" | "resolvedProgram" | "args">,
+  pair: ProgramPair,
+): boolean {
+  return allowedProgramOf(profile) === pair.program && sameArgs(profile.args, pair.args);
+}
+
+/** The profiles that start this program with exactly these arguments. */
+export function profilesUsing(pair: ProgramPair): AgentProgramProfile[] {
+  return useAgentProgramsStore.getState().profiles.filter((profile) => startsPair(profile, pair));
 }
 
 /**
  * Keeps the profiles in step with an agent RIM installed, which the installer already put on
- * the allowed list. An update moves the profiles that started the old program to the new one;
+ * the allowed list. An update moves the profiles that started the old pair to the new one;
  * otherwise the profile that starts it is kept, or a new one is made with its connected agent.
  *
  * @param preset - The preset it was installed from.
  * @param agent - What RIM installed.
- * @param replacedProgram - The program the install replaced, or `null`.
+ * @param replaced - The program and arguments the install replaced, or `null`.
  * @returns The profile that starts it.
  */
 export async function adoptInstalledAgent(
   preset: { id: string; name: string },
   agent: Pick<InstalledAgent, "program" | "args">,
-  replacedProgram: string | null,
+  replaced: ProgramPair | null,
 ): Promise<AgentProgramProfile> {
   const store = useAgentProgramsStore.getState();
-  const moved = replacedProgram === null ? [] : profilesUsing(replacedProgram);
+  const moved = replaced === null ? [] : profilesUsing(replaced);
   for (const profile of moved) {
     store.update(profile.id, {
       program: agent.program,
@@ -245,10 +255,7 @@ export async function adoptInstalledAgent(
   }
   const current = useAgentProgramsStore
     .getState()
-    .profiles.find(
-      (profile) =>
-        allowedProgramOf(profile) === agent.program && sameArgs(profile.args, agent.args),
-    );
+    .profiles.find((profile) => startsPair(profile, agent));
   if (current) return current;
   return saveProfile({
     name: preset.name,
@@ -314,17 +321,17 @@ export async function removeAgentProgram(id: string): Promise<boolean> {
 }
 
 /**
- * Deletes the files of an agent RIM installed, then removes each profile that starts it and
- * disconnects its agent. Nothing is removed when the installer refuses, such as while one of
+ * Deletes the files of an agent RIM installed, then removes each profile that starts its
+ * program with its arguments and disconnects its agent. Nothing is removed when the installer refuses, such as while one of
  * its sessions runs.
  *
  * @param agent - What RIM installed.
  */
 export async function removeInstalledAgentFiles(
-  agent: Pick<InstalledAgent, "presetId" | "program">,
+  agent: Pick<InstalledAgent, "presetId" | "program" | "args">,
 ): Promise<void> {
   await removeInstalledAgent(agent.presetId);
-  for (const profile of profilesUsing(agent.program)) await removeAgentProgram(profile.id);
+  for (const profile of profilesUsing(agent)) await removeAgentProgram(profile.id);
 }
 
 /**

@@ -8,7 +8,12 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { ACP_PRESETS, commandLine, findPreset, type AcpPreset } from "../acp/acpPresets";
 import type { InstalledAgent } from "../acp/agentInstaller";
-import { addAgentProgram, removeAgentProgram, resolveStoredPrograms } from "../acp/agentPrograms";
+import {
+  addAgentProgram,
+  removeAgentProgram,
+  resolveStoredPrograms,
+  startsPair,
+} from "../acp/agentPrograms";
 import { DESKTOP_ONLY_MESSAGE } from "../acp/agentRunner";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../state/useAgentProgramsStore";
@@ -57,13 +62,8 @@ function ProgramList() {
   } | null>(null);
   const [signingIn, setSigningIn] = useState<AgentProgramProfile | null>(null);
   const installer = useAgentInstaller();
-  const installedPrograms = useMemo(
-    () =>
-      new Set(
-        (installer.catalog ?? []).flatMap((entry) =>
-          entry.installed ? [entry.installed.program] : [],
-        ),
-      ),
+  const installedPairs = useMemo(
+    () => (installer.catalog ?? []).flatMap((entry) => (entry.installed ? [entry.installed] : [])),
     [installer.catalog],
   );
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
@@ -176,7 +176,8 @@ function ProgramList() {
               profile={profile}
               found={programState(profile, found)}
               installed={
-                profile.resolvedProgram !== null && installedPrograms.has(profile.resolvedProgram)
+                profile.resolvedProgram !== null &&
+                installedPairs.some((pair) => startsPair(profile, pair))
               }
               onEdit={() => setDialog({ mode: "edit", profile })}
               onRemove={() => setRemoving(profile)}

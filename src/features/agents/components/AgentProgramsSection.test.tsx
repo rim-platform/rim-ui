@@ -72,7 +72,7 @@ const INSTALLED_CLAUDE = {
   version: "0.5.1",
   program: "/data/agents/claude-code/0.5.1/claude-agent-acp",
   args: [],
-  installedAt: "2026-11-10T10:00:00.000Z",
+  installedAt: 1_762_768_800_000,
 };
 
 /** A catalog where everything can be installed and nothing is, but for `changes`. */
@@ -399,7 +399,7 @@ describe("AgentProgramsSection", () => {
               version: "0.102.0",
               program,
               args: [],
-              installedAt: "2026-11-10T10:00:00.000Z",
+              installedAt: 1_762_768_800_000,
             },
           },
         }),
@@ -407,8 +407,14 @@ describe("AgentProgramsSection", () => {
       await act(async () => {
         finish({
           kind: "installed",
-          agent: { presetId: "codex", version: "0.102.0", program, args: [], installedAt: "" },
-          replacedProgram: null,
+          agent: {
+            presetId: "codex",
+            version: "0.102.0",
+            program,
+            args: [],
+            installedAt: 1_762_768_800_000,
+          },
+          replaced: null,
         });
         await Promise.resolve();
       });
@@ -447,7 +453,7 @@ describe("AgentProgramsSection", () => {
       installer.installAgent.mockResolvedValue({
         kind: "installed",
         agent: { ...INSTALLED_CLAUDE, version: "0.6.0", program: next },
-        replacedProgram: old,
+        replaced: { program: old, args: [] },
       });
       render(<AgentProgramsSection />);
       await user.click(
@@ -569,6 +575,142 @@ describe("AgentProgramsSection", () => {
         "Stop its sessions first.",
       );
       expect(useAgentProgramsStore.getState().profiles).toHaveLength(1);
+    });
+
+    describe("with Codex and Gemini CLI on RIM's own Node.js", () => {
+      const NODE = "/data/agents/node/22.20.0/bin/node";
+      const CODEX_SCRIPT = "/data/agents/codex/0.102.0/node_modules/.bin/codex-acp";
+      const GEMINI_SCRIPT = "/data/agents/gemini-cli/0.9.0/node_modules/.bin/gemini";
+      const codexInstalled = {
+        presetId: "codex",
+        version: "0.102.0",
+        program: NODE,
+        args: [CODEX_SCRIPT],
+        installedAt: 1_762_768_800_000,
+      };
+      const geminiInstalled = {
+        presetId: "gemini-cli",
+        version: "0.9.0",
+        program: NODE,
+        args: [GEMINI_SCRIPT, "--acp"],
+        installedAt: 1_762_768_800_000,
+      };
+      const codexProfile: AgentProgramProfile = {
+        ...PROFILE,
+        id: "codex-profile",
+        name: "Codex",
+        program: NODE,
+        resolvedProgram: NODE,
+        args: [CODEX_SCRIPT],
+        presetId: "codex",
+        agentId: "codex-agent",
+      };
+      const geminiProfile: AgentProgramProfile = {
+        ...PROFILE,
+        id: "gemini-profile",
+        name: "Gemini CLI",
+        program: NODE,
+        resolvedProgram: NODE,
+        args: [GEMINI_SCRIPT, "--acp"],
+        presetId: "gemini-cli",
+        agentId: "gemini-agent",
+      };
+      const customOnNode: AgentProgramProfile = {
+        ...PROFILE,
+        id: "custom-profile",
+        name: "My script",
+        program: NODE,
+        resolvedProgram: NODE,
+        args: ["/home/a/my-agent.js"],
+        presetId: null,
+        agentId: "custom-agent",
+      };
+
+      beforeEach(() => {
+        runner.findAgentPrograms.mockResolvedValue([]);
+        useAgentProgramsStore.setState({ profiles: [codexProfile, geminiProfile, customOnNode] });
+        installer.agentInstallerCatalog.mockResolvedValue(
+          catalog({
+            codex: {
+              installed: codexInstalled,
+              available: { version: "0.103.0", license: "Apache-2.0", source: "npm package x" },
+            },
+            "gemini-cli": {
+              installed: geminiInstalled,
+              available: { version: "0.9.0", license: "Apache-2.0", source: "npm package y" },
+            },
+          }),
+        );
+      });
+
+      it("tells their profiles apart by their arguments", async () => {
+        const user = userEvent.setup();
+        render(<AgentProgramsSection />);
+        await within(supportedRow("Codex")).findByText("Installed by RIM, 0.102.0");
+        expect(
+          within(supportedRow("Codex")).queryByRole("button", { name: "Add Codex" }),
+        ).toBeNull();
+        expect(
+          within(supportedRow("Gemini CLI")).queryByRole("button", { name: "Add Gemini CLI" }),
+        ).toBeNull();
+        const [codex, gemini, custom] = programRows();
+        expect(within(codex).getByText("Installed by RIM")).toBeInTheDocument();
+        expect(within(gemini).getByText("Installed by RIM")).toBeInTheDocument();
+        expect(within(custom).queryByText("Installed by RIM")).not.toBeInTheDocument();
+        expect(within(custom).queryByRole("button", { name: /Sign in/u })).toBeNull();
+        await user.click(within(gemini).getByRole("button", { name: "Sign in to Gemini CLI" }));
+        expect(
+          await screen.findByRole("dialog", { name: "Sign in to Gemini CLI" }),
+        ).toBeInTheDocument();
+      });
+
+      it("removes Codex's files and only Codex's profile", async () => {
+        const user = userEvent.setup();
+        render(<AgentProgramsSection />);
+        await user.click(
+          await within(supportedRow("Codex")).findByRole("button", {
+            name: "Remove Codex's files",
+          }),
+        );
+        installer.agentInstallerCatalog.mockResolvedValue(
+          catalog({ "gemini-cli": { installed: geminiInstalled } }),
+        );
+        await user.click(
+          within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove files" }),
+        );
+        await waitFor(() =>
+          expect(useAgentProgramsStore.getState().profiles.map((profile) => profile.id)).toEqual([
+            "gemini-profile",
+            "custom-profile",
+          ]),
+        );
+        expect(installer.removeInstalledAgent).toHaveBeenCalledWith("codex");
+        expect(runner.forgetAgentProgram).not.toHaveBeenCalledWith(NODE, [GEMINI_SCRIPT, "--acp"]);
+      });
+
+      it("moves only Codex's profile on an update", async () => {
+        const user = userEvent.setup();
+        const nextScript = "/data/agents/codex/0.103.0/node_modules/.bin/codex-acp";
+        installer.installAgent.mockResolvedValue({
+          kind: "installed",
+          agent: { ...codexInstalled, version: "0.103.0", args: [nextScript] },
+          replaced: { program: NODE, args: [CODEX_SCRIPT] },
+        });
+        render(<AgentProgramsSection />);
+        await user.click(
+          await within(supportedRow("Codex")).findByRole("button", {
+            name: "Update Codex to 0.103.0",
+          }),
+        );
+        await waitFor(() =>
+          expect(useAgentProgramsStore.getState().profiles).toEqual([
+            { ...codexProfile, args: [nextScript] },
+            geminiProfile,
+            customOnNode,
+          ]),
+        );
+        expect(runner.allowAgentProgram).not.toHaveBeenCalled();
+      });
     });
   });
 });

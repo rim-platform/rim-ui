@@ -30,8 +30,8 @@ export interface InstalledAgent {
   /** The full path RIM starts, which the runner's allowed list holds. */
   program: string;
   args: string[];
-  /** When it was installed, ISO 8601. */
-  installedAt: string;
+  /** When it was installed, in milliseconds since the Unix epoch. */
+  installedAt: number;
 }
 
 /** One supported agent, as the installer sees it on this computer. */
@@ -46,13 +46,18 @@ export interface CatalogEntry {
   problem: string | null;
 }
 
+/** A program and its exact arguments, as the runner's allowed list holds them. */
+export interface ProgramPair {
+  program: string;
+  args: string[];
+}
+
 /**
- * What became of an install: `installed`, with the program it replaced on an update, or
- * `declined` in the native dialog.
+ * What became of an install: `installed`, with the pair it replaced on an update when that
+ * differs, or `declined` in the native dialog.
  */
 export type InstallOutcome =
-  | { kind: "installed"; agent: InstalledAgent; replacedProgram: string | null }
-  | { kind: "declined" };
+  { kind: "installed"; agent: InstalledAgent; replaced: ProgramPair | null } | { kind: "declined" };
 
 /** Where an install is. */
 export type InstallStage =
