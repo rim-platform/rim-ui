@@ -62,6 +62,7 @@ const PICKERS: Readonly<Record<string, ArgumentPicker>> = {
       until_tomorrow: "Mute until tomorrow",
       forever: "Until I unmute it",
       until: "Until a time",
+      minutes: "For a number of minutes",
     },
   },
   "notifications.dnd.mode": {
