@@ -66,12 +66,13 @@ pub struct CatalogEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum InstallOutcome {
-    /// The agent was installed and allowed; `replaced_program` is the program of the version it
-    /// replaced, when that differs.
+    /// The agent was installed and allowed; `replaced` is the program and arguments of the
+    /// version it replaced, when either differs. npm agents share RIM's `node` as their program
+    /// and differ by their arguments.
     #[serde(rename_all = "camelCase")]
     Installed {
         agent: InstalledAgent,
-        replaced_program: Option<String>,
+        replaced: Option<AllowedProgram>,
     },
     /// The person chose Cancel; nothing was downloaded.
     Declined,
@@ -435,13 +436,9 @@ impl AgentInstaller {
             preset.id,
             agent.version
         );
-        let replaced_program = old
-            .map(|old| old.program)
-            .filter(|program| *program != agent.program);
-        Ok(InstallOutcome::Installed {
-            agent,
-            replaced_program,
-        })
+        let replaced =
+            old_pair.filter(|old| old.program != agent.program || old.args != agent.args);
+        Ok(InstallOutcome::Installed { agent, replaced })
     }
 
     /// Removes leftover staging and old folders of an install that did not finish.

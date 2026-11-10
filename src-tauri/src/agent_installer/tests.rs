@@ -296,12 +296,9 @@ impl Harness {
     }
 }
 
-fn installed(outcome: InstallOutcome) -> (InstalledAgent, Option<String>) {
+fn installed(outcome: InstallOutcome) -> (InstalledAgent, Option<AllowedProgram>) {
     match outcome {
-        InstallOutcome::Installed {
-            agent,
-            replaced_program,
-        } => (agent, replaced_program),
+        InstallOutcome::Installed { agent, replaced } => (agent, replaced),
         InstallOutcome::Declined => panic!("the install was declined"),
     }
 }
@@ -316,15 +313,32 @@ fn the_page_types_have_their_field_names() {
             args: vec!["acp".into()],
             installed_at: 7,
         },
-        replaced_program: None,
+        replaced: Some(AllowedProgram {
+            program: "/a/old".into(),
+            args: vec!["acp".into()],
+        }),
     };
     assert_eq!(
         serde_json::to_value(outcome).unwrap(),
         serde_json::json!({
             "kind": "installed",
             "agent": { "presetId": "goose", "version": "1", "program": "/a/goose", "args": ["acp"], "installedAt": 7 },
-            "replacedProgram": null,
+            "replaced": { "program": "/a/old", "args": ["acp"] },
         })
+    );
+    let fresh = InstallOutcome::Installed {
+        agent: InstalledAgent {
+            preset_id: "goose".into(),
+            version: "1".into(),
+            program: "/a/goose".into(),
+            args: Vec::new(),
+            installed_at: 7,
+        },
+        replaced: None,
+    };
+    assert_eq!(
+        serde_json::to_value(fresh).unwrap()["replaced"],
+        serde_json::Value::Null
     );
     assert_eq!(
         serde_json::to_value(InstallOutcome::Declined).unwrap(),
@@ -535,7 +549,13 @@ async fn an_update_moves_the_allowed_pair_and_deletes_the_old_version() {
     h.registry(vec![h.goose("1.1.0")]);
     let (new, replaced) = installed(h.installer.install("goose").await.unwrap());
     assert_eq!(new.version, "1.1.0");
-    assert_eq!(replaced.as_deref(), Some(old.program.as_str()));
+    assert_eq!(
+        replaced,
+        Some(AllowedProgram {
+            program: old.program.clone(),
+            args: old.args.clone(),
+        })
+    );
     assert!(!h.allowed(&old.program, &["acp"]));
     assert!(h.allowed(&new.program, &["acp"]));
     assert_eq!(h.runner.allowed().len(), 1);
@@ -695,6 +715,33 @@ async fn a_failed_registry_still_lists_what_is_installed() {
         .contains("could not be fetched"));
 }
 
+/// The registry entry of Codex at `version`.
+#[cfg(unix)]
+fn codex_entry(version: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": "codex-acp",
+        "version": version,
+        "license": "Apache-2.0",
+        "distribution": { "npx": { "package": format!("@agentclientprotocol/codex-acp@{version}") } }
+    })
+}
+
+/// Installs `preset`, trying again while the fake `node` unpacked a moment ago is still busy
+/// for exec in a process another test thread forked.
+#[cfg(unix)]
+async fn install_retrying(h: &Harness, preset: &str) -> (InstalledAgent, Option<AllowedProgram>) {
+    for _ in 0..20 {
+        match h.installer.install(preset).await {
+            Ok(done) => return installed(done),
+            Err(error) if error.contains("busy") => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(error) => panic!("{error}"),
+        }
+    }
+    panic!("the install did not finish");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn an_npm_agent_installs_with_rims_node() {
@@ -702,26 +749,9 @@ async fn an_npm_agent_installs_with_rims_node() {
     if h.platform.ends_with("-musl") {
         return;
     }
-    h.registry(vec![serde_json::json!({
-        "id": "codex-acp",
-        "version": "2.6.0",
-        "license": "Apache-2.0",
-        "distribution": { "npx": { "package": "@agentclientprotocol/codex-acp@2.6.0" } }
-    })]);
-    let mut outcome = None;
-    for _ in 0..20 {
-        match h.installer.install("codex").await {
-            Ok(done) => {
-                outcome = Some(done);
-                break;
-            }
-            Err(error) if error.contains("busy") => {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            }
-            Err(error) => panic!("{error}"),
-        }
-    }
-    let (agent, _) = installed(outcome.expect("the install finishes"));
+    h.registry(vec![codex_entry("2.6.0")]);
+    let (agent, replaced) = install_retrying(&h, "codex").await;
+    assert_eq!(replaced, None);
     let node_dir = h.root().join(NODE_FOLDER).join("1.0.0");
     assert_eq!(agent.program, node_dir.join("bin/node").to_string_lossy());
     let script = h
@@ -747,6 +777,35 @@ async fn an_npm_agent_installs_with_rims_node() {
             .as_deref(),
         Some("1.0.0")
     );
+
+    h.registry(vec![codex_entry("2.7.0")]);
+    let (updated, replaced) = install_retrying(&h, "codex").await;
+    assert_eq!(updated.program, agent.program);
+    assert_eq!(
+        replaced,
+        Some(AllowedProgram {
+            program: agent.program.clone(),
+            args: agent.args.clone(),
+        })
+    );
+    let new_script = h
+        .root()
+        .join("codex/2.7.0/node_modules/@agentclientprotocol/codex-acp/bin/codex-acp.js");
+    assert_eq!(
+        updated.args,
+        vec![new_script.to_string_lossy().into_owned()]
+    );
+    assert!(!h.allowed(&agent.program, &[&script.to_string_lossy()]));
+    assert!(h.allowed(&updated.program, &[&new_script.to_string_lossy()]));
+    assert_eq!(h.runner.allowed().len(), 1);
+    assert_eq!(h.preset_folder("codex"), vec!["2.7.0".to_owned()]);
+    let node_downloads = h
+        .server
+        .downloads()
+        .iter()
+        .filter(|path| path.starts_with("/nodejs.org/"))
+        .count();
+    assert_eq!(node_downloads, 1);
 
     h.installer.remove("codex").await.unwrap();
     assert!(!h.root().join(NODE_FOLDER).exists());
