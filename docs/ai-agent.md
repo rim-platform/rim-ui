@@ -58,12 +58,19 @@ over the app. Sending `/agent` with some text from the composer opens it too; th
 passed on, so ask in the agent itself. The first time, "AI Agent — Data Sharing Notice" says what
 goes to the provider: **I understand** goes on, **Cancel** closes the agent.
 
-**A conversation.** The header shows the provider and the model, **+** for a new conversation,
-and the close button. Type in "Ask the agent..." and press <kbd>Enter</kbd>. The answer streams
+**A conversation.** The header shows the model, **+** for a new conversation, and the close
+button. Type in "Ask the agent..." and press <kbd>Enter</kbd>. The answer streams
 in as Markdown. While it runs, the stop button or <kbd>Esc</kbd> stops it; otherwise
 <kbd>Esc</kbd> closes the window. After an answer the footer shows the tokens it used, as
 "\<n\> in / \<n\> out tokens". Further prompts continue the conversation while the window stays
 open; opening it again after an answer starts a new one.
+
+**Switching models.** The model's name in the header opens the models you can use now: those of
+each provider with a key set, from its live list when it has been fetched, else the built-in
+one, grouped by provider, with **Model settings…** last to open Settings → AI Agent. Choosing one
+sets the model Settings → AI Agent shows, and the next prompt goes to it; the conversation
+carries on, also with another provider, since only its text is sent. "Switched to \<model\>"
+marks the place in the conversation. The model cannot be switched while an answer is coming.
 
 **What it knows.** Each run tells the model the ids of the open workspace and conversation and
 whether a thread is open, and every command it runs gets the same context: the workspace, the
