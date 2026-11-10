@@ -19,6 +19,26 @@ vi.mock("../../../notifications/runtime/desktopNotification", () => ({
 vi.mock("../../../../shared/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
+vi.mock("../AgentSignInDialog", () => ({
+  AgentSignInDialog: ({
+    profile,
+    onClose,
+    onFinished,
+  }: {
+    profile: { name: string };
+    onClose: () => void;
+    onFinished?: () => void;
+  }) => (
+    <div role="dialog" aria-label={`Sign in to ${profile.name}`}>
+      <button type="button" onClick={() => onFinished?.()}>
+        Signed in
+      </button>
+      <button type="button" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  ),
+}));
 
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { fakeAcpAgent as agent, helloAnswer } from "../../../../test/fakeAcpAgent";
@@ -486,6 +506,67 @@ describe("agent session screens", () => {
         await startFromDialog(userEvent.setup());
         expect(screen.getByText("Fake Agent can't use RIM's tools.")).toBeInTheDocument();
       });
+    });
+  });
+
+  describe("signing in", () => {
+    it("offers Sign in when the agent needs it to open a session, then tries again", async () => {
+      const user = userEvent.setup();
+      let signedIn = false;
+      agent.on("session/new", (_params, id) => {
+        if (signedIn) return { sessionId: "sess_2" };
+        queueMicrotask(() => agent.fail(id, -32000, "Authentication required"));
+        return undefined;
+      });
+      useShellStore.getState().setMainSurface({ kind: "agent-sessions" });
+      render(<Shell />);
+      await user.click(screen.getByRole("button", { name: "Start a session" }));
+      const start = await screen.findByRole("dialog", { name: "Start an agent session" });
+      await user.click(within(start).getByRole("button", { name: "Start" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Fake Agent needs you to sign in first.",
+      );
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Sign in to Fake Agent" }));
+      const dialog = await screen.findByRole("dialog", { name: "Sign in to Fake Agent" });
+      await user.click(within(dialog).getByRole("button", { name: "Signed in" }));
+      await user.click(within(dialog).getByRole("button", { name: "Close" }));
+      signedIn = true;
+      const runs = agent.startAgentRun.mock.calls.length;
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      const composer = await screen.findByRole("textbox", { name: "Prompt for Fake Agent" });
+      await waitFor(() => expect(composer).toBeEnabled());
+      expect(agent.startAgentRun).toHaveBeenCalledTimes(runs + 1);
+      expect(agent.startAgentRun).toHaveBeenLastCalledWith({
+        program: "/usr/bin/fake-agent",
+        args: ["acp"],
+        cwd: "/home/a/project",
+      });
+      expect(
+        screen.queryByRole("button", { name: "Sign in to Fake Agent" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends the refused prompt again in the new session after signing in", async () => {
+      const user = userEvent.setup();
+      let signedIn = false;
+      agent.on("session/prompt", (_params, id) => {
+        if (signedIn) return { stopReason: "end_turn" };
+        queueMicrotask(() => agent.fail(id, -32000, "Authentication required"));
+        return undefined;
+      });
+      const composer = await startFromDialog(user);
+      await user.type(composer, "Fix the build{Enter}");
+      expect(await screen.findByText("Fake Agent needs you to sign in first.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Sign in to Fake Agent" }));
+      await user.click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "Signed in" }),
+      );
+      signedIn = true;
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(prompts()).toHaveLength(2));
+      expect(prompts()[1]).toEqual([{ type: "text", text: "Fix the build" }]);
+      expect(agent.stopAgentRun).toHaveBeenCalled();
     });
   });
 

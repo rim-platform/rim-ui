@@ -30,7 +30,6 @@ import {
   openAcpConnection,
   type AcpConnection,
 } from "./acpConnection";
-import { findPreset } from "./acpPresets";
 
 /** Where a session is. */
 export type AgentSessionStatus = "starting" | "ready" | "working" | "waiting" | "ended" | "failed";
@@ -96,6 +95,13 @@ export interface AgentSessionSnapshot {
   rimTools: RimToolsState | null;
   /** Why the session failed, as a sentence. */
   error: string | null;
+  /**
+   * Whether the agent answered that the person has to sign in first, when opening the session
+   * or taking a prompt.
+   */
+  needsSignIn: boolean;
+  /** The prompt the agent refused for want of signing in, sent again on a retry, or `null`. */
+  retryPrompt: RetryPrompt | null;
   /** The last lines the program wrote to stderr, when it ended. */
   stderrTail: readonly string[];
 }
@@ -115,6 +121,12 @@ export interface PromptContext {
   label: string;
   /** The blocks sent after the person's text: only `text` and `resource_link`. */
   blocks: readonly ContentBlock[];
+}
+
+/** A prompt as the person sent it, to send again in a new session. */
+export interface RetryPrompt {
+  text: string;
+  context?: PromptContext;
 }
 
 /** What starting a session needs. */
@@ -158,6 +170,8 @@ const INITIAL: AgentSessionSnapshot = {
   commands: [],
   rimTools: null,
   error: null,
+  needsSignIn: false,
+  retryPrompt: null,
   stderrTail: [],
 };
 
@@ -165,8 +179,21 @@ const INITIAL: AgentSessionSnapshot = {
 export const ADD_AGAIN =
   "RIM can't tell which program to start. Remove this agent and add it again.";
 
-/** The JSON-RPC code an agent answers `session/new` with when it needs signing in. */
-const AUTH_REQUIRED = -32000;
+/** The JSON-RPC code an agent answers `session/new` or a prompt with when it needs signing in. */
+export const AUTH_REQUIRED = -32000;
+
+/**
+ * The sentence for an agent that needs the person to sign in first.
+ *
+ * @param name - What the person calls the agent.
+ */
+export function needsSignInSentence(name: string): string {
+  return `${name} needs you to sign in first.`;
+}
+
+function isAuthRequired(error: unknown): boolean {
+  return error instanceof AcpRemoteError && error.code === AUTH_REQUIRED;
+}
 
 const STOP_NOTICES: Partial<Record<StopReason, string>> = {
   cancelled: "Stopped.",
@@ -306,6 +333,7 @@ export class AgentSession {
       });
     } catch (error) {
       if (this.isOver()) return;
+      if (isAuthRequired(error)) this.change({ needsSignIn: true });
       this.fail(this.startFailure(error, profile));
       await this.connection?.stop().catch(() => {});
     }
@@ -340,10 +368,19 @@ export class AgentSession {
       if (reason === "cancelled") this.cancelUnfinishedCalls();
       const notice = STOP_NOTICES[reason];
       if (notice) this.notice("info", notice);
-      this.change({ status: "ready" });
+      this.change({ status: "ready", needsSignIn: false, retryPrompt: null });
       return reason;
     } catch (error) {
       if (this.isOver()) return null;
+      if (isAuthRequired(error)) {
+        this.notice("error", needsSignInSentence(this.snapshot.name));
+        this.change({
+          status: "ready",
+          needsSignIn: true,
+          retryPrompt: context ? { text, context } : { text },
+        });
+        return null;
+      }
       this.notice("error", sentence(error, "The agent could not finish this turn."));
       this.change({ status: "ready" });
       return null;
@@ -428,12 +465,7 @@ export class AgentSession {
   }
 
   private startFailure(error: unknown, profile: AgentProgramProfile): string {
-    if (error instanceof AcpRemoteError && error.code === AUTH_REQUIRED) {
-      const preset = findPreset(profile.presetId);
-      return preset
-        ? `${profile.name} needs you to sign in first. ${preset.signIn.text}`
-        : `${profile.name} needs you to sign in first, in its own way.`;
-    }
+    if (isAuthRequired(error)) return needsSignInSentence(profile.name);
     return sentence(error, "The agent could not be started.");
   }
 

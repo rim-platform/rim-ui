@@ -172,26 +172,78 @@ Agents**, **Agents RIM can start**. The web app can't: it says "Starting agents 
 app". Each one is a program that speaks the Agent Client Protocol, and RIM starts it as you, with
 access to your files.
 
+**The supported agents.** The section lists Claude Code, opencode, Goose, Codex and Gemini CLI,
+one row each, with what RIM finds for it on this computer:
+
+- **Install**, with the version and licence RIM would install and where it comes from, when it
+  isn't installed and isn't on your `PATH`.
+- **Installed by RIM** and its version, with **Update to** a newer version when there is one, and
+  **Remove files**.
+- **Found on this computer**, when it's on your `PATH` because you installed it yourself.
+- **Not available on this computer**, with the reason, when RIM can't install it here.
+
+**RIM installs it for you.** **Install** shows one system dialog, not a page of RIM, that names
+the agent, its version, its licence and where it's downloaded from. Only **Install** goes on:
+
+- RIM takes the version from the Agent Client Protocol registry, and downloads only from the
+  source fixed for each agent: the agent's own release on GitHub for Claude Code, opencode and
+  Goose, the npm package for Codex and Gemini CLI. A registry entry that points elsewhere is
+  refused.
+- It checks each download against its checksum before it unpacks it, and npm checks its packages
+  itself.
+- Codex and Gemini CLI run on Node.js. RIM downloads its own Node.js once, from nodejs.org, and
+  uses it even when your computer has its own. Their packages install without running their
+  install scripts.
+- Everything goes into RIM's own folder; nothing is installed for the whole computer.
+- RIM may then start the program it installed, so no second dialog asks. RIM adds it to
+  **Your agent programs** and connects an agent for it, with nothing granted.
+
+The row says how far it got: downloading Node.js, downloading with how much of it arrived,
+checking, unpacking and installing. **Update to** installs the new version the same way, moves
+the agent to it and only then deletes the old one. **Remove files** asks first, deletes the
+agent's files, removes it from **Your agent programs** and disconnects its agent; RIM refuses
+while one of its sessions runs.
+
+**Or use one you installed.** An agent on your `PATH` keeps working as before.
+
 1. Choose **Add**, then a preset or **Custom…**.
    - The presets are Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Gemini CLI
      (`gemini --acp`), opencode (`opencode acp`) and Goose (`goose acp`).
    - **Custom…** asks for a name, the program (a full path, or a name found on your `PATH`) and
      its arguments, one per line.
    - Each can have a default folder, the full path of the folder its sessions start in.
-2. Choose **Add**. A system dialog, not a page of RIM, asks whether RIM may start that program
-   with exactly those arguments. Only **Allow** saves it. Changing the program or its arguments
-   later asks again; changing the name or the folder doesn't.
+2. Choose **Add**. A system dialog asks whether RIM may start that program with exactly those
+   arguments. Only **Allow** saves it. Changing the program or its arguments later asks again;
+   changing the name or the folder doesn't.
 3. RIM connects an agent for it, with nothing granted, as **Connect an agent** does. It's in the
    list above with the others, and you choose what it may read the same way.
 
-**Install and sign in once, yourself.** RIM never installs or downloads an agent. A program that
-isn't on your `PATH` shows **Not found**, with its install command or a pointer to its own
-instructions, and how to sign in to it once in a terminal, each with **Copy**. RIM can't add a
-program that isn't installed. The agent keeps its own settings, its own tools and its own
-permission rules.
+A program that RIM can't find on your `PATH` any more shows **Not found**: install it from its
+row, or **Edit** it to point at the one you installed.
 
-**Remove** stops RIM starting the program and disconnects its agent. Disconnecting that agent in
-the list above removes the program from this list too.
+**Sign in.** Each agent needs you to sign in to its own service once. Choose **Sign in** next to
+an agent in **Your agent programs**, or right after installing it. RIM starts the agent for a
+moment, asks how it signs in, and shows each way it offers, with its name and description:
+
+- **Open terminal** opens your computer's terminal running the agent's own sign-in, after a
+  system dialog that shows the exact command. Finish signing in there, then come back. When RIM
+  finds no terminal, it shows the command to copy and run in one. RIM doesn't open a terminal
+  that would change variables such as `PATH`, `LD_PRELOAD`, `NODE_OPTIONS` or a proxy.
+- **Sign in** asks the agent to sign in itself: it usually opens your browser, and RIM waits up
+  to ten minutes while you finish there.
+- A way that reads environment variables names them. Set them before starting RIM: RIM doesn't
+  set them for you.
+- Goose and opencode set up with `goose configure` and `opencode auth login`; when they name no
+  way of their own, **Open terminal** runs those.
+
+What you sign in with stays with the agent: RIM never sees your passwords, keys or tokens. When a
+session finds the agent isn't signed in, it shows **Sign in to** the agent; once you have,
+**Try again** starts the agent again in the same folder and sends the prompt it refused.
+
+The agent keeps its own settings, its own tools and its own permission rules. **Remove** stops
+RIM starting the program and disconnects its agent; the files of one RIM installed stay until
+you choose **Remove files**. Disconnecting that agent in the list above removes the program from
+this list too.
 
 ## Sessions
 

@@ -145,10 +145,31 @@ describe("AgentSession", () => {
     const subject = session();
     await subject.start({ profile: { ...PROFILE, presetId: "codex" }, cwd: "/p" });
     expect(subject.status).toBe("failed");
-    expect(subject.getSnapshot().error).toBe(
-      "Fake Agent needs you to sign in first. Sign in once: run codex login in a terminal, or set CODEX_API_KEY.",
-    );
+    expect(subject.getSnapshot().error).toBe("Fake Agent needs you to sign in first.");
+    expect(subject.getSnapshot().needsSignIn).toBe(true);
+    expect(subject.getSnapshot().retryPrompt).toBeNull();
     expect(agent.stopAgentRun).toHaveBeenCalled();
+  });
+
+  it("keeps a prompt the agent refused for want of signing in, to send again", async () => {
+    scriptAgent();
+    agent.on("session/prompt", (_params, id) => {
+      queueMicrotask(() => agent.fail(id, -32000, "Authentication required"));
+      return undefined;
+    });
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p" });
+    expect(subject.getSnapshot().needsSignIn).toBe(false);
+    expect(await subject.prompt("Fix the build")).toBeNull();
+    const snapshot = subject.getSnapshot();
+    expect(snapshot.status).toBe("ready");
+    expect(snapshot.needsSignIn).toBe(true);
+    expect(snapshot.retryPrompt).toEqual({ text: "Fix the build" });
+    expect(snapshot.transcript.at(-1)).toMatchObject({
+      kind: "notice",
+      tone: "error",
+      text: "Fake Agent needs you to sign in first.",
+    });
   });
 
   it("fails without starting anything when the profile's full path is not known", async () => {

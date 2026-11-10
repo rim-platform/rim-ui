@@ -22,6 +22,7 @@ import {
   forgetAgentProgram,
   listAgentRuns,
   onAgentRunExit,
+  openAgentTerminal,
   onAgentRunLine,
   sendAgentLine,
   startAgentRun,
@@ -62,6 +63,18 @@ describe("agentRunner", () => {
     });
     await stopAgentRun("ar_abc");
     expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_stop", { runId: "ar_abc" });
+  });
+
+  it("opens a terminal for an allowed program and returns what became of it", async () => {
+    tauri.invoke.mockResolvedValue({ kind: "noTerminal", commandLine: "goose configure" });
+    await expect(
+      openAgentTerminal({ program: "/usr/bin/goose", args: ["configure"], env: { A: "1" } }),
+    ).resolves.toEqual({ kind: "noTerminal", commandLine: "goose configure" });
+    expect(tauri.invoke).toHaveBeenCalledWith("agent_runner_open_terminal", {
+      program: "/usr/bin/goose",
+      args: ["configure"],
+      env: { A: "1" },
+    });
   });
 
   it("finds programs and lists runs", async () => {

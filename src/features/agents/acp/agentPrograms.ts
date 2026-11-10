@@ -1,7 +1,8 @@
 /**
  * Adding, changing and removing the agent programs RIM may start. Each program and its exact
- * arguments are asked about in the runner's native dialog before they are saved, and each
- * profile is a connected agent of its own, made with nothing granted.
+ * arguments are asked about in the runner's native dialog before they are saved, or in the
+ * installer's when RIM installs it, and each profile is a connected agent of its own, made with
+ * nothing granted.
  */
 
 import { logger } from "../../../core/logger";
@@ -12,6 +13,7 @@ import {
   type AgentProgramChanges,
   type AgentProgramProfile,
 } from "../state/useAgentProgramsStore";
+import { removeInstalledAgent, type InstalledAgent, type ProgramPair } from "./agentInstaller";
 import {
   allowAgentProgram,
   allowedAgentPrograms,
@@ -165,15 +167,41 @@ export async function addAgentProgram(input: NewAgentProgram): Promise<AgentProg
   const defaultFolder = cleanFolder(input.defaultFolder);
   const resolvedProgram = await allowAndResolve(program, args);
   if (resolvedProgram === null) return null;
-  const minted = await mintAgent(name);
-  if (minted === null) throw new Error(NAME_NEEDED);
-  const profile: AgentProgramProfile = {
-    id: crypto.randomUUID(),
-    name: minted.agent.name,
+  return saveProfile({
+    name,
     program,
     resolvedProgram,
     args,
     defaultFolder,
+    presetId: input.presetId,
+  });
+}
+
+/** What saving a profile needs, its program already on the runner's allowed list. */
+interface AllowedProfile {
+  name: string;
+  program: string;
+  resolvedProgram: string;
+  args: string[];
+  defaultFolder: string | null;
+  presetId: string | null;
+}
+
+/**
+ * Makes the connected agent for a program already on the allowed list, and saves its profile.
+ *
+ * @returns The new profile. Throws {@link NAME_NEEDED} when the name is nothing once cleaned.
+ */
+async function saveProfile(input: AllowedProfile): Promise<AgentProgramProfile> {
+  const minted = await mintAgent(input.name);
+  if (minted === null) throw new Error(NAME_NEEDED);
+  const profile: AgentProgramProfile = {
+    id: crypto.randomUUID(),
+    name: minted.agent.name,
+    program: input.program,
+    resolvedProgram: input.resolvedProgram,
+    args: [...input.args],
+    defaultFolder: input.defaultFolder,
     presetId: input.presetId,
     agentId: minted.agent.id,
     token: minted.token,
@@ -182,6 +210,61 @@ export async function addAgentProgram(input: NewAgentProgram): Promise<AgentProg
   useConnectedAgentsStore.getState().add(minted.agent);
   useAgentProgramsStore.getState().add(profile);
   return profile;
+}
+
+/**
+ * Whether a profile starts this program with exactly these arguments, by the full path the
+ * allowed list holds. Agents RIM installs on Node.js share one program and differ only in their
+ * arguments.
+ */
+export function startsPair(
+  profile: Pick<AgentProgramProfile, "program" | "resolvedProgram" | "args">,
+  pair: ProgramPair,
+): boolean {
+  return allowedProgramOf(profile) === pair.program && sameArgs(profile.args, pair.args);
+}
+
+/** The profiles that start this program with exactly these arguments. */
+export function profilesUsing(pair: ProgramPair): AgentProgramProfile[] {
+  return useAgentProgramsStore.getState().profiles.filter((profile) => startsPair(profile, pair));
+}
+
+/**
+ * Keeps the profiles in step with an agent RIM installed, which the installer already put on
+ * the allowed list. An update moves the profiles that started the old pair to the new one;
+ * otherwise the profile that starts it is kept, or a new one is made with its connected agent.
+ *
+ * @param preset - The preset it was installed from.
+ * @param agent - What RIM installed.
+ * @param replaced - The program and arguments the install replaced, or `null`.
+ * @returns The profile that starts it.
+ */
+export async function adoptInstalledAgent(
+  preset: { id: string; name: string },
+  agent: Pick<InstalledAgent, "program" | "args">,
+  replaced: ProgramPair | null,
+): Promise<AgentProgramProfile> {
+  const store = useAgentProgramsStore.getState();
+  const moved = replaced === null ? [] : profilesUsing(replaced);
+  for (const profile of moved) {
+    store.update(profile.id, {
+      program: agent.program,
+      resolvedProgram: agent.program,
+      args: [...agent.args],
+    });
+  }
+  const current = useAgentProgramsStore
+    .getState()
+    .profiles.find((profile) => startsPair(profile, agent));
+  if (current) return current;
+  return saveProfile({
+    name: preset.name,
+    program: agent.program,
+    resolvedProgram: agent.program,
+    args: agent.args,
+    defaultFolder: null,
+    presetId: preset.id,
+  });
 }
 
 /**
@@ -235,6 +318,20 @@ export async function removeAgentProgram(id: string): Promise<boolean> {
   useConnectedAgentsStore.getState().revoke(profile.agentId);
   useAgentProgramsStore.getState().remove(id);
   return forgetPair(allowedProgramOf(profile), profile.args, id);
+}
+
+/**
+ * Deletes the files of an agent RIM installed, then removes each profile that starts its
+ * program with its arguments and disconnects its agent. Nothing is removed when the installer
+ * refuses, such as while one of its sessions runs.
+ *
+ * @param agent - What RIM installed.
+ */
+export async function removeInstalledAgentFiles(
+  agent: Pick<InstalledAgent, "presetId" | "program" | "args">,
+): Promise<void> {
+  await removeInstalledAgent(agent.presetId);
+  for (const profile of profilesUsing(agent)) await removeAgentProgram(profile.id);
 }
 
 /**

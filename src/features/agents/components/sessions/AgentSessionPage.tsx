@@ -21,6 +21,7 @@ import {
   isLiveStatus,
   reopenAgentSession,
   requestStopAgentSession,
+  retryAgentSession,
   stopAgentSession,
   useAgentSessionsStore,
   useRunningAgentSessionsStore,
@@ -28,6 +29,7 @@ import {
 } from "../../state/useAgentSessionsStore";
 import { removeAbout, setAbout, useAskAgentStore } from "../../state/useAskAgentStore";
 import { useStartAgentSessionStore } from "../../state/useStartAgentSessionStore";
+import { AgentSignInDialog } from "../AgentSignInDialog";
 import { AgentTranscript } from "./AgentTranscript";
 import { PageBar } from "./AgentSessionsPage";
 import { ApprovalCard } from "./ApprovalCard";
@@ -299,6 +301,10 @@ function LiveSession({
         />
       )}
 
+      {snapshot.needsSignIn && (
+        <SignInBar sessionKey={sessionKey} snapshot={snapshot} agentName={shownName} />
+      )}
+
       {snapshot.pendingPermissions.length > 0 && (
         <Approvals session={session} snapshot={snapshot} agentName={name} />
       )}
@@ -318,6 +324,61 @@ function LiveSession({
           danger
           onConfirm={() => void stopAgentSession(sessionKey)}
           onClose={() => useRunningAgentSessionsStore.setState({ stopConfirmKey: null })}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Signing in to the session's agent when it said it needs it, then trying again in a new run of
+ * it, which sends the refused prompt again.
+ */
+function SignInBar({
+  sessionKey,
+  snapshot,
+  agentName,
+}: {
+  sessionKey: string;
+  snapshot: AgentSessionSnapshot;
+  agentName: string;
+}) {
+  const profile = useAgentProgramsStore((s) =>
+    s.profiles.find((item) => item.id === snapshot.profileId),
+  );
+  const [open, setOpen] = useState(false);
+  const [finished, setFinished] = useState(false);
+  if (!profile) return null;
+  const retry = () => {
+    void retryAgentSession(sessionKey).then((refused) => {
+      if (refused === "profile_gone") toast.error(PROFILE_GONE);
+    });
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-rim-line bg-rim-panel px-4 py-2">
+      <p className="min-w-0 flex-[1_1_16rem] text-xs text-rim-warm">
+        {finished
+          ? `Once you've signed in, try again: RIM starts ${agentName} again in the same folder.`
+          : `Sign in once so ${agentName} can work, then try again.`}
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        variant={finished ? "secondary" : "primary"}
+        onClick={() => setOpen(true)}
+      >
+        Sign in to {agentName}
+      </Button>
+      {finished && (
+        <Button type="button" size="sm" onClick={retry}>
+          Try again
+        </Button>
+      )}
+      {open && (
+        <AgentSignInDialog
+          profile={profile}
+          onClose={() => setOpen(false)}
+          onFinished={() => setFinished(true)}
         />
       )}
     </div>

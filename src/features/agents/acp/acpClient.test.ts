@@ -37,7 +37,7 @@ describe("AcpClient", () => {
     agent.reset();
   });
 
-  it("initializes with version 1, no file system or terminal, and RIM's name", async () => {
+  it("initializes with version 1, no file system or terminal, terminal sign-in, and RIM's name", async () => {
     agent.on("initialize", () => helloAnswer(true, { sessionCapabilities: { resume: {} } }));
     const { acp } = await client();
     const hello = await acp.initialize();
@@ -46,6 +46,7 @@ describe("AcpClient", () => {
     expect(params.clientCapabilities).toEqual({
       fs: { readTextFile: false, writeTextFile: false },
       terminal: false,
+      auth: { terminal: true },
     });
     expect(params.clientInfo).toMatchObject({ name: "rim", title: "RIM" });
     expect(typeof (params.clientInfo as { version: unknown }).version).toBe("string");
@@ -56,6 +57,94 @@ describe("AcpClient", () => {
     });
     expect(hello.agentInfo).toEqual({ name: "fake-agent", title: "Fake Agent", version: "1.0.0" });
     expect(hello.authMethods).toEqual([]);
+  });
+
+  it("reads each sign-in method with its kind, terminal arguments and variables", async () => {
+    agent.on("initialize", () => ({
+      ...helloAnswer(),
+      authMethods: [
+        { id: "browser", name: "Log in", description: "Opens the browser" },
+        {
+          id: "claude-ai-login",
+          name: "Claude account",
+          type: "terminal",
+          args: ["--cli", "auth", "login", 7],
+          env: { ACP_LOGIN: "1", BAD: 2 },
+        },
+        { id: "plain-terminal", name: "Terminal", type: "terminal" },
+        { id: "key", name: "API key", type: "env_var", vars: [{ name: "CODEX_API_KEY" }] },
+        { id: "old-key", name: "Old key", type: "env_var", varName: "GEMINI_API_KEY" },
+        { id: "no-name" },
+      ],
+    }));
+    const { acp } = await client();
+    const hello = await acp.initialize();
+    expect(hello.authMethods).toEqual([
+      {
+        id: "browser",
+        name: "Log in",
+        description: "Opens the browser",
+        type: "agent",
+        args: [],
+        env: {},
+        vars: [],
+      },
+      {
+        id: "claude-ai-login",
+        name: "Claude account",
+        description: null,
+        type: "terminal",
+        args: ["--cli", "auth", "login"],
+        env: { ACP_LOGIN: "1" },
+        vars: [],
+      },
+      {
+        id: "plain-terminal",
+        name: "Terminal",
+        description: null,
+        type: "terminal",
+        args: [],
+        env: {},
+        vars: [],
+      },
+      {
+        id: "key",
+        name: "API key",
+        description: null,
+        type: "env_var",
+        args: [],
+        env: {},
+        vars: ["CODEX_API_KEY"],
+      },
+      {
+        id: "old-key",
+        name: "Old key",
+        description: null,
+        type: "env_var",
+        args: [],
+        env: {},
+        vars: ["GEMINI_API_KEY"],
+      },
+    ]);
+  });
+
+  it("asks the agent to sign in with a method it offered, never a terminal one", async () => {
+    agent
+      .on("initialize", () => ({
+        ...helloAnswer(),
+        authMethods: [
+          { id: "browser", name: "Log in" },
+          { id: "tty", name: "Terminal", type: "terminal" },
+        ],
+      }))
+      .on("authenticate", () => ({}));
+    const { acp } = await client();
+    await acp.initialize();
+    await acp.authenticate("browser");
+    expect(agent.requests("authenticate")[0].params).toEqual({ methodId: "browser" });
+    await expect(acp.authenticate("tty")).rejects.toThrow("runs in a terminal");
+    await expect(acp.authenticate("other")).rejects.toThrow("did not offer");
+    expect(agent.requests("authenticate")).toHaveLength(1);
   });
 
   it("refuses an agent that speaks another protocol version", async () => {

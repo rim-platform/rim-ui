@@ -3,8 +3,10 @@
  * initializes the agent, opens sessions, sends prompts and turns the agent's `session/update`
  * notifications and `session/request_permission` requests into typed values. RIM offers the
  * agent no file system and no terminal: the agent works with its own tools and RIM shows what
- * it does. Everything parsed here came from the agent and is untrusted; fields that are missing
- * or of the wrong type are left out or given their protocol default.
+ * it does. RIM can run the agent's own sign-in in a terminal, so it says so, and asks the agent
+ * to sign in itself with `authenticate`. Everything parsed here came from the agent and is
+ * untrusted; fields that are missing or of the wrong type are left out or given their protocol
+ * default.
  */
 
 import type { AcpConnection, JsonValue } from "./acpConnection";
@@ -14,6 +16,9 @@ export const ACP_PROTOCOL_VERSION = 1;
 
 /** How long `initialize`, `session/new`, `session/load` and `session/resume` may take. */
 export const SETUP_TIMEOUT_MS = 60_000;
+
+/** How long `authenticate` may take, while the person signs in in their browser. */
+export const AUTHENTICATE_TIMEOUT_MS = 10 * 60_000;
 
 /** The version this bundle was built as. */
 const CLIENT_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
@@ -162,6 +167,12 @@ export interface AuthMethod {
   description: string | null;
   /** `agent`, `terminal`, `env_var` or another kind the agent names. */
   type: string;
+  /** For `terminal`: the arguments to add to the agent's own, empty when none. */
+  args: string[];
+  /** For `terminal`: the environment variables to set, empty when none. */
+  env: Record<string, string>;
+  /** For `env_var`: the names of the variables the agent reads, empty when it names none. */
+  vars: string[];
 }
 
 /** What the agent said about itself in `initialize`. */
@@ -531,6 +542,23 @@ function parseOption(value: JsonValue): PermissionOption | null {
   return { optionId, name, kind };
 }
 
+function parseEnv(value: JsonValue | undefined): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (!isObject(value)) return env;
+  for (const [key, item] of Object.entries(value)) {
+    if (key !== "" && typeof item === "string") env[key] = item;
+  }
+  return env;
+}
+
+function parseVarNames(method: JsonObject): string[] {
+  const names = list(field(method, "vars"), (item) =>
+    isObject(item) ? text(item, "name") : typeof item === "string" ? item : null,
+  );
+  const single = text(method, "varName");
+  return [...(names ?? []), ...(single !== null ? [single] : [])].filter((name) => name !== "");
+}
+
 function parseAuthMethod(value: JsonValue): AuthMethod | null {
   if (!isObject(value)) return null;
   const id = text(value, "id");
@@ -541,6 +569,9 @@ function parseAuthMethod(value: JsonValue): AuthMethod | null {
     name,
     description: text(value, "description"),
     type: text(value, "type") ?? "agent",
+    args: list(field(value, "args"), (item) => (typeof item === "string" ? item : null)) ?? [],
+    env: parseEnv(field(value, "env")),
+    vars: parseVarNames(value),
   };
 }
 
@@ -618,6 +649,7 @@ export class AcpClient {
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
           terminal: false,
+          auth: { terminal: true },
         },
         clientInfo: { name: "rim", title: "RIM", version: CLIENT_VERSION },
       },
@@ -639,6 +671,23 @@ export class AcpClient {
       authMethods: list(field(answer, "authMethods"), parseAuthMethod) ?? [],
     };
     return this.hello;
+  }
+
+  /**
+   * Asks the agent to sign in with one of the ways it offered, which it does itself, often by
+   * opening the browser. Never for a `terminal` method, which runs outside this connection.
+   *
+   * @param methodId - The method's id, as the agent sent it.
+   */
+  async authenticate(methodId: string): Promise<void> {
+    const method = this.hello?.authMethods.find((item) => item.id === methodId);
+    if (!method) throw new Error("This agent did not offer that way of signing in.");
+    if (method.type === "terminal") throw new Error("That way of signing in runs in a terminal.");
+    await this.connection.request(
+      "authenticate",
+      { methodId },
+      { timeoutMs: AUTHENTICATE_TIMEOUT_MS },
+    );
   }
 
   /**

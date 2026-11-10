@@ -1,84 +1,66 @@
 /**
- * The agent programs RIM knows how to start. Each one runs the program the person installed;
- * RIM never installs or downloads one, and only shows how to.
+ * The agents RIM knows how to start. RIM can install each one itself, from the source its
+ * installer fixes; one the person installed themselves is started by its bare program name,
+ * looked up on the computer's `PATH`.
  */
 
-/** A hint the person follows in a terminal, with the command to copy when there is one. */
-export interface PresetHint {
-  text: string;
-  /** The command the Copy button copies, or `null`. */
-  command: string | null;
-}
-
-/** An agent program RIM knows how to start. */
+/** An agent RIM knows how to start. */
 export interface AcpPreset {
   id: "claude-code" | "codex" | "gemini-cli" | "opencode" | "goose";
   name: string;
-  /** The bare program name, looked up on the computer's `PATH`. */
+  /** The bare program name of one the person installed, looked up on the computer's `PATH`. */
   program: string;
   args: string[];
-  /** How to install it. */
-  install: PresetHint;
-  /** How to sign in to it, once. */
-  signIn: PresetHint;
+  /**
+   * The arguments that run the program's own sign-in or setup in a terminal, used when the
+   * agent names no way to sign in, or `null`.
+   */
+  setupArgs: string[] | null;
+  /** How to sign in to it, for when RIM can't do it from the agent's own answer. */
+  signIn: string;
 }
 
-/** The presets, in the order the Add menu shows them. */
+/** The presets, in the order Settings shows them. */
 export const ACP_PRESETS: readonly AcpPreset[] = [
   {
     id: "claude-code",
     name: "Claude Code",
     program: "claude-agent-acp",
     args: [],
-    install: {
-      text: "Install Claude Code's ACP adapter:",
-      command: "npm install -g @agentclientprotocol/claude-agent-acp",
-    },
-    signIn: { text: "Sign in once: run claude in a terminal and log in.", command: "claude" },
+    setupArgs: null,
+    signIn: "Sign in once: run claude in a terminal and log in.",
   },
   {
     id: "codex",
     name: "Codex",
     program: "codex-acp",
     args: [],
-    install: {
-      text: "Install Codex's ACP adapter:",
-      command: "npm install -g @agentclientprotocol/codex-acp",
-    },
-    signIn: {
-      text: "Sign in once: run codex login in a terminal, or set CODEX_API_KEY.",
-      command: "codex login",
-    },
+    setupArgs: null,
+    signIn: "Sign in once: run codex login in a terminal, or set CODEX_API_KEY.",
   },
   {
     id: "gemini-cli",
     name: "Gemini CLI",
     program: "gemini",
     args: ["--acp"],
-    install: { text: "Install Gemini CLI the way its own instructions say.", command: null },
-    signIn: { text: "Sign in once: run gemini in a terminal and log in.", command: "gemini" },
+    setupArgs: null,
+    signIn: "Sign in once: run gemini in a terminal and log in.",
   },
   {
     id: "opencode",
     name: "opencode",
     program: "opencode",
     args: ["acp"],
-    install: { text: "Install opencode the way its own instructions say.", command: null },
-    signIn: {
-      text: "Sign in once: run opencode auth login in a terminal.",
-      command: "opencode auth login",
-    },
+    setupArgs: ["auth", "login"],
+    signIn: "Sign in once: run opencode auth login in a terminal.",
   },
   {
     id: "goose",
     name: "Goose",
     program: "goose",
     args: ["acp"],
-    install: { text: "Install Goose the way its own instructions say.", command: null },
-    signIn: {
-      text: "Set it up once: run goose configure in a terminal.",
-      command: "goose configure",
-    },
+    setupArgs: ["configure"],
+    signIn: "Set it up once: run goose configure in a terminal.",
   },
 ];
 
