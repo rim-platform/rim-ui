@@ -51,7 +51,10 @@ export interface CommandDefinition {
   dangerous: boolean;
   /** Server classification; a `RESTRICTED` command needs its verb typed to confirm. */
   sensitivity?: CommandSensitivity;
-  /** The arguments the server declares for the command; absent on commands the client defines. */
+  /**
+   * The arguments the command takes: those the server declares, or, for a command this app
+   * defines, those its handler reads; absent when it takes none.
+   */
   arguments?: CommandArgumentInfo[];
   /**
    * Set on an app command a plugin may be granted: one that only opens, shows, or moves

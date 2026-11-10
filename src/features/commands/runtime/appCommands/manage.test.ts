@@ -9,6 +9,7 @@ vi.mock("../../../../core/runtime/runtime", async (importOriginal) => ({
 }));
 
 import {
+  CommandArgumentType,
   ConversationTypeEnum,
   DmRequestStatus,
   ServerMemberRoleGql,
@@ -29,6 +30,8 @@ import { COMMAND_CATEGORIES } from "../commandCategories";
 import { dispatchCommand } from "../commandDispatcher";
 import { currentCommandContext } from "../commandContext";
 import { LOCAL_COMMANDS } from "../localCommands";
+import { stepFields } from "../../../macros/runtime/macroSteps";
+import { presetFields } from "../argumentValues";
 import { MANAGE_COMMANDS, MANAGE_HANDLERS } from "./manage";
 
 const executeBackend = vi.fn();
@@ -273,6 +276,29 @@ describe("plugin commands", () => {
 });
 
 describe("people commands", () => {
+  it("declare the arguments their handlers read, so keybinds and macro steps can fix them", () => {
+    const fieldsOf = (id: string) => {
+      const command = MANAGE_COMMANDS.find((candidate) => candidate.id === id);
+      return stepFields(command).map((field) => [field.name, field.argumentType, field.required]);
+    };
+    for (const id of ["people.add_contact", "people.remove_contact", "people.block"]) {
+      expect(fieldsOf(id), id).toEqual([["user_id", CommandArgumentType.USER_ID, false]]);
+    }
+    expect(fieldsOf("people.report_request")).toEqual([
+      ["reason", CommandArgumentType.STRING, false],
+    ]);
+    const install = MANAGE_COMMANDS.find((command) => command.id === "plugins.install");
+    expect(presetFields(install!)).toMatchObject([
+      { name: "source", allowedValues: ["folder", "git"], required: false },
+    ]);
+  });
+
+  it("act on the person a saved argument names", async () => {
+    relayOn();
+    await run("people.remove_contact", { user_id: "u-kim" });
+    expect(requested()).toEqual({ kind: "person", purpose: "remove-contact", userId: "u-kim" });
+  });
+
   it("need the relay account", async () => {
     expect(workspaceCommandOffered("people.block")).toBe(false);
     await run("people.block");

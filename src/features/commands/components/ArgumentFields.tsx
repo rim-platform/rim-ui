@@ -3,7 +3,6 @@ import { useId } from "react";
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
-import { MemberPicker } from "../../conversations/components/MemberPicker";
 import { useHomeWorkspaces } from "../../home/api/useHomeWorkspaces";
 import { argumentPicker, argumentPickerKind } from "../runtime/argumentPickers";
 import {
@@ -23,89 +22,10 @@ import {
 } from "./argumentControlParts";
 import { PickerControl } from "./ArgumentPickerFields";
 import { ChoiceSelect } from "./ChoiceSelect";
-import { useChannelTargets, useJoinableTargets } from "./paletteTargets";
+import { ConversationSelect } from "./ConversationArgumentFields";
+import { MemberField } from "./MemberArgumentFields";
 
 export type { ArgumentFormMode } from "./argumentControlParts";
-
-/**
- * A conversation select: in a preset form also the public channels the viewer has not joined,
- * else the viewer's own conversations.
- */
-function ConversationSelect(props: ControlProps) {
-  return props.mode === "preset" ? (
-    <PresetConversationSelect {...props} />
-  ) : (
-    <JoinedConversationSelect {...props} />
-  );
-}
-
-/** The workspace's channels, DMs and groups the viewer is in, as a select. */
-function JoinedConversationSelect(props: ControlProps) {
-  const { items, isPending } = useChannelTargets(props.workspaceId);
-  return (
-    <ConversationChoice
-      props={props}
-      options={items.map((item) => ({
-        value: item.id,
-        label: showInvisibleCharacters(item.label),
-      }))}
-      isPending={isPending}
-    />
-  );
-}
-
-/**
- * The conversations a saved step can name: the viewer's own, then the workspace's public
- * channels the viewer has not joined, so the step can join them.
- */
-function PresetConversationSelect(props: ControlProps) {
-  const own = useChannelTargets(props.workspaceId);
-  const joinable = useJoinableTargets(props.workspaceId);
-  const options = [
-    ...own.items.map((item) => ({
-      value: item.id,
-      label: showInvisibleCharacters(item.label),
-      group: "Your conversations",
-    })),
-    ...joinable.items.map((item) => ({
-      value: item.id,
-      label: showInvisibleCharacters(item.label),
-      group: "Other public channels",
-    })),
-  ];
-  return (
-    <ConversationChoice
-      props={props}
-      options={options}
-      isPending={own.isPending || joinable.isPending}
-    />
-  );
-}
-
-/** A conversation select over `options`. */
-function ConversationChoice({
-  props,
-  options,
-  isPending,
-}: {
-  props: ControlProps;
-  options: { value: string; label: string; group?: string }[];
-  isPending: boolean;
-}) {
-  return (
-    <ChoiceSelect
-      {...selectPropsOf(props)}
-      value={typeof props.value === "string" ? props.value : ""}
-      onChange={props.onChange}
-      options={options}
-      emptyLabel={selectEmptyLabel(
-        props.argument,
-        props.mode,
-        isPending ? "Loading conversations…" : "Choose a conversation",
-      )}
-    />
-  );
-}
 
 /** This account's workspaces, as a select. */
 function WorkspaceSelect(props: ControlProps) {
@@ -126,41 +46,6 @@ function WorkspaceSelect(props: ControlProps) {
         isPending ? "Loading workspaces…" : "Choose a workspace",
       )}
     />
-  );
-}
-
-/** One member of the workspace, picked by searching its members. */
-function MemberField({
-  value,
-  onChange,
-  controlId,
-  describedBy,
-  autoFocus,
-  workspaceId,
-  onSubmit,
-  mode,
-  argument,
-}: ControlProps) {
-  const selected = typeof value === "string" && value !== "" ? [value] : [];
-  return (
-    <div className="rounded-lg border border-rim-line bg-rim-void">
-      <MemberPicker
-        workspaceId={workspaceId}
-        selectedUserIds={selected}
-        onChange={(ids) => onChange(ids[0] ?? "")}
-        includeBots
-        single
-        rowsInTabOrder={false}
-        inputId={controlId}
-        inputDescribedBy={describedBy}
-        autoFocus={autoFocus}
-        onConfirm={onSubmit}
-        placeholder={
-          mode === "preset" && !argument.required ? "Search members (optional)" : "Search members"
-        }
-        listClassName="max-h-40"
-      />
-    </div>
   );
 }
 

@@ -74,6 +74,23 @@ async function spaceDirect(principalId: string): Promise<ConversationSummary | u
   return undefined;
 }
 
+/**
+ * The direct space of this account that holds `conversationId`, by the spaces' conversation
+ * lists, read from the server when not loaded yet.
+ *
+ * @param conversationId - A DM's or a group's id.
+ * @returns The space's id, or `undefined` when none of the direct spaces holds it.
+ */
+export async function directSpaceOf(conversationId: string): Promise<string | undefined> {
+  const { info, spaces, forked } = useRelayStore.getState();
+  const spaceIds = directSpaceIdsOf(info?.directSpaceId ?? null, spaces, forked);
+  for (const spaceId of spaceIds) {
+    const items = await inboxOf(spaceId).catch(() => []);
+    if (items.some((item) => item.id === conversationId)) return spaceId;
+  }
+  return undefined;
+}
+
 /** How many {@link openDirectWith} calls are still finding the conversation to open. */
 let opening = 0;
 /** Text typed outside any field while the conversation to open is still being found. */

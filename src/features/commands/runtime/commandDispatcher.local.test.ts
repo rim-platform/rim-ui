@@ -30,6 +30,7 @@ import type { CommandDefinition } from "../types";
 import type { PluginInfo } from "../../plugins/types";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { toast } from "../../../shared/toast";
 
 function serveConversations(ids: string[]) {
@@ -206,12 +207,89 @@ describe("this app's own commands", () => {
   it("takes a navigation target under either spelling of its argument", () => {
     runDesktopLocalCommand("workspace.navigate_to_channel", { conversation_id: "c-snake" });
     expect(useShellStore.getState().selectedConversationId).toBe("c-snake");
-    runDesktopLocalCommand("workspace.navigate_to_dm", { conversationId: "c-camel" });
+    runDesktopLocalCommand("workspace.navigate_to_dm", {
+      conversationId: "c-camel",
+      serverId: "ws-1",
+    });
     expect(useShellStore.getState().selectedConversationId).toBe("c-camel");
     runDesktopLocalCommand("workspace.switch_workspace", { workspace_id: "ws-snake" });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-snake");
     runDesktopLocalCommand("workspace.switch_workspace", { workspaceId: "ws-camel" });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-camel");
+  });
+
+  describe("a DM named by its id alone, as a saved keybind or macro step names it", () => {
+    const dm: CommandDefinition = {
+      id: "workspace.navigate_to_dm",
+      title: "Navigate to DM",
+      description: "",
+      category: "Workspace",
+      sourceKind: "BUILT_IN",
+      executionTarget: "DESKTOP_LOCAL",
+      requiredContext: [],
+      requiredCapabilities: [],
+      visibleInPalette: true,
+      visibleInContextMenus: false,
+      keybindCapable: true,
+      dangerous: false,
+    };
+    const inbox = (ids: string[]) => ({
+      items: ids.map((id) => ({ id, serverId: "", conversationType: "DIRECT" })),
+      pageInfo: { hasNext: false, hasPrev: false },
+    });
+
+    beforeEach(() => {
+      useRelayStore.setState({
+        info: { directSpaceId: "direct-1" } as never,
+        spaces: {
+          "direct-2": { spaceId: "direct-2", kind: "direct", hostServerId: "relay-2" } as never,
+        },
+        forked: [],
+      });
+    });
+
+    afterEach(() => {
+      useRelayStore.setState({ info: null, spaces: {}, forked: [] });
+    });
+
+    it("opens it in the direct space that holds it", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox(["dm-bob"]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox(["dm-alice"]));
+
+      const result = await dispatchCommand(dm, vi.fn(), {
+        args: { conversation_id: "dm-alice" },
+        typedArgs: true,
+      });
+
+      expect(result?.status).toBe("SUCCESS");
+      expect(useWorkspaceStore.getState().workspaceId).toBe("direct-2");
+      expect(useShellStore.getState().selectedConversationId).toBe("dm-alice");
+    });
+
+    it("opens a DM of the open workspace there", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("ws-1"), inbox(["dm-here"]));
+
+      await dispatchCommand(dm, vi.fn(), { args: { conversation_id: "dm-here" } });
+
+      expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+      expect(useShellStore.getState().selectedConversationId).toBe("dm-here");
+    });
+
+    it("says so when no space of the person's holds it", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox([]));
+      useShellStore.getState().setSelectedConversationId("c-here");
+
+      const result = await dispatchCommand(dm, vi.fn(), { args: { conversation_id: "dm-gone" } });
+
+      expect(result).toMatchObject({
+        status: "ERROR",
+        message: "That direct message isn't among your conversations",
+      });
+      expect(useShellStore.getState().selectedConversationId).toBe("c-here");
+    });
   });
 
   it("navigates nowhere without a target", () => {

@@ -1,7 +1,13 @@
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { stateKeyProblem } from "../../workspace-state/stateKeyRules";
 import type { CommandArgumentInfo, CommandDefinition } from "../types";
-import { argumentPicker, CLEARED_FIELD, sendsEmptyText } from "./argumentPickers";
+import {
+  argumentPicker,
+  argumentPickerKind,
+  CLEARED_FIELD,
+  memberIdsOf,
+  sendsEmptyText,
+} from "./argumentPickers";
 import { camelCaseName, formAsksFor } from "./commandArguments";
 import { argumentPromptName } from "./commandDispatcher";
 import { normalizeStateValue, stateValueProblem } from "./stateValueKinds";
@@ -62,6 +68,14 @@ export function toFieldValue(
   const kind = argumentPicker(commandId, argument.name)?.kind;
   if (kind === "clearableText" && value === "") return CLEARED_FIELD;
   if (kind === "stateValue" && typeof value === "string") return normalizeStateValue(value);
+  if (kind === "members") {
+    if (Array.isArray(value)) {
+      return value.every((id) => typeof id === "string")
+        ? memberIdsOf(value.join(",")).join(",")
+        : null;
+    }
+    return typeof value === "string" ? memberIdsOf(value).join(",") : null;
+  }
   switch (argument.argumentType) {
     case CommandArgumentType.BOOLEAN:
       return typeof value === "boolean" ? value : null;
@@ -143,7 +157,12 @@ export function argumentValueOf(
   if (isEmptyField(value)) return undefined;
   if (typeof value === "boolean") return value;
   const text = (value ?? "").trim();
-  if (argumentPicker(commandId, argument.name)?.kind === "stateKey") return text;
+  const kind = argumentPickerKind(commandId, argument.name);
+  if (kind === "stateKey") return text;
+  if (kind === "members") {
+    const ids = memberIdsOf(text);
+    return ids.length > 0 ? ids.join(",") : undefined;
+  }
   switch (argument.argumentType) {
     case CommandArgumentType.INTEGER:
       return Number.parseInt(text, 10);
@@ -291,9 +310,10 @@ export function presetWorkspace(
 
 /**
  * The preset arguments a keybind or quick action saves from its fields: the filled ones, and,
- * when a member or conversation is among them, the workspace they are in.
+ * when a member, members or a conversation are among them, the workspace they are in.
  *
- * @param command - The command the arguments are saved for.
+ * @param command - The command the arguments are saved for; its id names the fields that hold
+ *   members as text.
  * @param args - The arguments the fields send, as `readFields` returns them.
  * @param workspaceId - The workspace whose members and conversations the fields offered.
  * @returns The arguments, or `undefined` when none are filled in.
@@ -308,7 +328,8 @@ export function presetArgsOf(
     (field) =>
       args[field.name] !== undefined &&
       (field.argumentType === CommandArgumentType.USER_ID ||
-        field.argumentType === CommandArgumentType.CONVERSATION_ID),
+        field.argumentType === CommandArgumentType.CONVERSATION_ID ||
+        argumentPickerKind(command.id, field.name) === "members"),
   );
   if (!pinsWorkspace || !workspaceId) return args;
   const pinned = { ...args };

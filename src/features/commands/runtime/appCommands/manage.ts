@@ -18,7 +18,8 @@ import { incomingRequestOf } from "../../../relay/components/useDmRequestActions
 import { isDirectSpace } from "../../../relay/state/useRelayStore";
 import { clearMessageFlagOptions } from "../../../workspaces/api/useModeration";
 import { useWorkspaceStore } from "../../../workspaces/state/useWorkspaceStore";
-import type { CommandDefinition } from "../../types";
+import { CommandArgumentType } from "../../../../core/graphql/generated/schema-types";
+import type { CommandArgumentInfo, CommandDefinition } from "../../types";
 import { currentCommandContext } from "../commandContext";
 import type { LocalHandler } from "../commandDispatcher";
 import {
@@ -31,6 +32,21 @@ import { localCommand } from "./localCommand";
 import { refuseManage } from "./manageAvailability";
 import { showWorkspace, targetWorkspaceOf } from "./targetWorkspace";
 import { OPEN_A_CONVERSATION, SELECT_A_MESSAGE, selectedMessageOf } from "./messageContext";
+
+/** The person a contact or block command acts on, when it is not the open DM's other person. */
+function personArgument(description: string): { arguments: CommandArgumentInfo[] } {
+  return {
+    arguments: [
+      {
+        name: "user_id",
+        title: "Person",
+        description,
+        argumentType: CommandArgumentType.USER_ID,
+        required: false,
+      },
+    ],
+  };
+}
 
 export const MANAGE_COMMANDS: CommandDefinition[] = [
   localCommand(
@@ -119,7 +135,25 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
     "Revoke Webhook…",
     "Choose an incoming webhook and stop its URL working",
   ),
-  localCommand("plugins.install", "Plugins", "Install Plugin…", "Choose how to install a plugin"),
+  localCommand(
+    "plugins.install",
+    "Plugins",
+    "Install Plugin…",
+    "Choose how to install a plugin",
+    true,
+    {
+      arguments: [
+        {
+          name: "source",
+          title: "From",
+          description: "Where the plugin comes from; asked when left out.",
+          argumentType: CommandArgumentType.STRING,
+          required: false,
+          allowedValues: ["folder", "git"],
+        },
+      ],
+    },
+  ),
   localCommand(
     "plugins.toggle",
     "Plugins",
@@ -149,18 +183,24 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
     "People",
     "Add to Contacts",
     "Add the person in this direct message, or one you choose, to your contacts",
+    true,
+    personArgument("The person to add; else the one in the open direct message, or asked."),
   ),
   localCommand(
     "people.remove_contact",
     "People",
     "Remove from Contacts",
     "Remove the person in this direct message, or one you choose, from your contacts",
+    true,
+    personArgument("The person to remove; else the one in the open direct message, or asked."),
   ),
   localCommand(
     "people.block",
     "People",
     "Block…",
     "Block the person in this direct message, or one you choose",
+    true,
+    personArgument("The person to block; else the one in the open direct message, or asked."),
   ),
   localCommand(
     "people.unblock",
@@ -185,6 +225,18 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
     "People",
     "Report Message Request…",
     "Report the open message request to your relay's operators",
+    true,
+    {
+      arguments: [
+        {
+          name: "reason",
+          title: "Reason",
+          description: "Why you report it; asked when left out.",
+          argumentType: CommandArgumentType.STRING,
+          required: false,
+        },
+      ],
+    },
   ),
   localCommand(
     "people.read_request_first",

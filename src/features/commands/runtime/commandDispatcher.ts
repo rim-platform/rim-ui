@@ -49,6 +49,7 @@ import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
+import { directSpaceOf } from "../../conversations/state/openDirect";
 import { sendsEmptyText } from "./argumentPickers";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
@@ -159,6 +160,37 @@ function spaceOf(args: Record<string, unknown>): string | null {
   return argString(args, "serverId", "server_id") ?? useWorkspaceStore.getState().workspaceId;
 }
 
+/** What opening a DM says when none of the person's conversations is the one named. */
+const DM_NOT_FOUND = "That direct message isn't among your conversations";
+
+/** Opens the DM or group `conversationId` of `spaceId`, unless the app hides it as blocked. */
+function openDirectConversation(spaceId: string | null, conversationId: string): void {
+  if (refuseBlockedConversation(spaceId, conversationId)) return;
+  if (spaceId) selectDirectConversation(spaceId, conversationId);
+  else useShellStore.getState().setSelectedConversationId(conversationId);
+}
+
+/**
+ * Opens a DM or group named only by its id, as a saved keybind or macro step names it: in the
+ * direct space that holds it, else in the open workspace when it holds it.
+ *
+ * @returns An error result when no space of the person's holds it.
+ */
+async function openFoundDirectConversation(conversationId: string): Promise<CommandResult | void> {
+  const direct = await directSpaceOf(conversationId);
+  if (direct) return openDirectConversation(direct, conversationId);
+  const open = useWorkspaceStore.getState().workspaceId;
+  if (open && !findCachedConversation(queryClient, open, conversationId)) {
+    return resultError(DM_NOT_FOUND);
+  }
+  openDirectConversation(open, conversationId);
+}
+
+/** The result of a local command that could not do what it was asked. */
+function resultError(message: string): CommandResult {
+  return { status: "ERROR", message, payload: null, followUpCommands: [] };
+}
+
 /**
  * The first non-blank string among `args[names]`: a command's argument under either of its
  * spellings, the camelCase of the client's own callers and the snake_case the server declares.
@@ -207,7 +239,7 @@ function focusInConversation(selector: string): void {
 export type LocalHandler = (
   args: Record<string, unknown> | undefined,
   commandContext: Record<string, unknown> | undefined,
-) => void | CommandResult | Promise<void>;
+) => void | CommandResult | Promise<void | CommandResult>;
 
 const localHandlers: Record<string, LocalHandler> = {
   ...CONVERSATION_HANDLERS,
@@ -346,10 +378,12 @@ const localHandlers: Record<string, LocalHandler> = {
   "workspace.navigate_to_dm": (args) => {
     const conversationId = argString(args, "conversationId", "conversation_id");
     if (!args || !conversationId) return;
-    const spaceId = spaceOf(args);
-    if (refuseBlockedConversation(spaceId, conversationId)) return;
-    if (spaceId) selectDirectConversation(spaceId, conversationId);
-    else useShellStore.getState().setSelectedConversationId(conversationId);
+    const named = argString(args, "serverId", "server_id");
+    if (named) {
+      openDirectConversation(named, conversationId);
+      return;
+    }
+    return openFoundDirectConversation(conversationId);
   },
   "workspace.switch_workspace": (args) => {
     const workspaceId = argString(args, "workspaceId", "workspace_id");
