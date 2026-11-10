@@ -29,6 +29,11 @@ vi.mock("./AgentPluginsDialog", () => ({
   ),
 }));
 
+// Its own tests cover it; here it would ask the installer and the runner too.
+vi.mock("./AgentProgramsSection", () => ({
+  AgentProgramsSection: () => <h2>Agents RIM can start</h2>,
+}));
+
 vi.mock("./AgentRunsDialog", () => ({
   AgentRunsDialog: ({ agent }: { agent: { name: string } | null }) => (
     <h2>{agent ? `Runs of ${agent.name}` : "All runs"}</h2>

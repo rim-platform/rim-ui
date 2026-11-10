@@ -307,6 +307,42 @@ export function reopenAgentSession(key: string): ReopenRefusal | null {
   return null;
 }
 
+/** Why a session was not started again after signing in. */
+export type RetryRefusal = "profile_gone" | "unknown";
+
+/**
+ * Starts a session again in a new run of its agent program, in the same folder, after the
+ * person signed in: the old run is stopped first, and the prompt the agent refused for want of
+ * signing in is sent again once the new session is ready. It keeps its key, so its page stays
+ * open.
+ *
+ * @returns `null` once the new run is starting, or why it was not started.
+ */
+export async function retryAgentSession(key: string): Promise<RetryRefusal | null> {
+  const current = agentSessionOf(key);
+  if (!current) return "unknown";
+  const { profileId, cwd, retryPrompt } = current.getSnapshot();
+  if (cwd === null) return "unknown";
+  const profile = useAgentProgramsStore
+    .getState()
+    .profiles.find((candidate) => candidate.id === profileId);
+  if (!profile) return "profile_gone";
+  await current.stop().catch((error: unknown) => {
+    logger.warn("[RIM:agents] could not stop an agent session", error);
+  });
+  const entry = useAgentSessionsStore.getState().recent.find((item) => item.key === key);
+  const session = new AgentSession(sessionDeps);
+  hold(key, session, entry?.startedAt ?? new Date().toISOString());
+  useRunningAgentSessionsStore.setState({ focusComposerKey: key });
+  void begin(session, profile, cwd).then(() => {
+    if (retryPrompt === null || session.status !== "ready") return;
+    session.prompt(retryPrompt.text, retryPrompt.context).catch((error: unknown) => {
+      logger.warn("[RIM:agents] could not send the prompt again", error);
+    });
+  });
+  return null;
+}
+
 /** The session in memory under `key`, if any. */
 export function agentSessionOf(key: string): AgentSession | undefined {
   return useRunningAgentSessionsStore.getState().sessions[key];

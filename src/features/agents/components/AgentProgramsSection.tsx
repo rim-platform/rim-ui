@@ -6,13 +6,17 @@ import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
-import { ACP_PRESETS, commandLine, findPreset } from "../acp/acpPresets";
-import { removeAgentProgram, resolveStoredPrograms } from "../acp/agentPrograms";
+import { ACP_PRESETS, commandLine, findPreset, type AcpPreset } from "../acp/acpPresets";
+import type { InstalledAgent } from "../acp/agentInstaller";
+import { addAgentProgram, removeAgentProgram, resolveStoredPrograms } from "../acp/agentPrograms";
 import { DESKTOP_ONLY_MESSAGE } from "../acp/agentRunner";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../state/useAgentProgramsStore";
-import { AgentProgramDialog, HintLine, type AgentProgramDialogTarget } from "./AgentProgramDialog";
+import { AgentCatalogList } from "./AgentCatalogList";
+import { AgentProgramDialog, type AgentProgramDialogTarget } from "./AgentProgramDialog";
+import { AgentSignInDialog } from "./AgentSignInDialog";
 import { isBareName, programState, useFound, type ProgramState } from "./programLookup";
+import { useAgentInstaller } from "./useAgentInstaller";
 
 /** What the section says about what RIM starts. */
 export const PROGRAMS_NOTE =
@@ -27,7 +31,10 @@ const STATE_LABELS: Record<Exclude<ProgramState, "unknown">, string> = {
   add_again: "Not found, add it again",
 };
 
-/** Settings > Agents, Agents RIM can start: the agent programs RIM may start, and adding more. */
+/**
+ * Settings > Agents, Agents RIM can start: the supported agents, which RIM can install, and the
+ * agent programs RIM may start, with adding more and signing in to them.
+ */
 export function AgentProgramsSection() {
   if (detectPlatform() !== "desktop") {
     return (
@@ -44,6 +51,21 @@ function ProgramList() {
   const profiles = useAgentProgramsStore((s) => s.profiles);
   const [dialog, setDialog] = useState<AgentProgramDialogTarget | null>(null);
   const [removing, setRemoving] = useState<AgentProgramProfile | null>(null);
+  const [removingFiles, setRemovingFiles] = useState<{
+    preset: AcpPreset;
+    installed: InstalledAgent;
+  } | null>(null);
+  const [signingIn, setSigningIn] = useState<AgentProgramProfile | null>(null);
+  const installer = useAgentInstaller();
+  const installedPrograms = useMemo(
+    () =>
+      new Set(
+        (installer.catalog ?? []).flatMap((entry) =>
+          entry.installed ? [entry.installed.program] : [],
+        ),
+      ),
+    [installer.catalog],
+  );
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const addRef = useRef<HTMLButtonElement>(null);
   const names = useMemo(() => {
@@ -56,6 +78,18 @@ function ProgramList() {
   useEffect(() => {
     if (unresolved) void resolveStoredPrograms();
   }, [unresolved]);
+
+  const addInstalled = (preset: AcpPreset, installed: InstalledAgent) => {
+    addAgentProgram({
+      name: preset.name,
+      program: installed.program,
+      args: installed.args,
+      defaultFolder: null,
+      presetId: preset.id,
+    }).catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : `${preset.name} was not added.`);
+    });
+  };
 
   const menuItems = [
     ...ACP_PRESETS.map((preset) => ({
@@ -116,20 +150,37 @@ function ProgramList() {
         </div>
       </div>
 
+      <AgentCatalogList
+        installer={installer}
+        found={found}
+        profiles={profiles}
+        onAddFound={(preset) =>
+          setDialog({ mode: "add", preset, found: found.get(preset.program) != null })
+        }
+        onAddInstalled={addInstalled}
+        onRemoveFiles={(preset, installed) => setRemovingFiles({ preset, installed })}
+        onSignIn={setSigningIn}
+      />
+
+      <h3 className="pt-2 text-sm font-medium text-rim-text">Your agent programs</h3>
       {profiles.length === 0 ? (
         <p className="text-sm text-rim-text-muted">
-          None yet. Add Claude Code, Codex, Gemini CLI, opencode, Goose or another program that
-          speaks the Agent Client Protocol.
+          None yet. Install one above, or choose Add for one you installed yourself or another
+          program that speaks the Agent Client Protocol.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul aria-label="Your agent programs" className="space-y-2">
           {profiles.map((profile) => (
             <ProgramRow
               key={profile.id}
               profile={profile}
               found={programState(profile, found)}
+              installed={
+                profile.resolvedProgram !== null && installedPrograms.has(profile.resolvedProgram)
+              }
               onEdit={() => setDialog({ mode: "edit", profile })}
               onRemove={() => setRemoving(profile)}
+              onSignIn={() => setSigningIn(profile)}
             />
           ))}
         </ul>
@@ -147,6 +198,23 @@ function ProgramList() {
       )}
 
       {dialog && <AgentProgramDialog target={dialog} onClose={() => setDialog(null)} />}
+
+      {signingIn && <AgentSignInDialog profile={signingIn} onClose={() => setSigningIn(null)} />}
+
+      {removingFiles && (
+        <ConfirmActionDialog
+          title={`Remove ${removingFiles.preset.name}'s files from this computer?`}
+          description={`Its sessions stop working until you install it again. RIM also stops starting it and disconnects the agent it made for it.`}
+          confirmLabel="Remove files"
+          danger
+          onConfirm={() => {
+            const { installed } = removingFiles;
+            setRemovingFiles(null);
+            void installer.remove(installed);
+          }}
+          onClose={() => setRemovingFiles(null)}
+        />
+      )}
 
       {removing && (
         <ConfirmActionDialog
@@ -171,22 +239,33 @@ function ProgramList() {
 function ProgramRow({
   profile,
   found,
+  installed,
   onEdit,
   onRemove,
+  onSignIn,
 }: {
   profile: AgentProgramProfile;
   found: ProgramState;
+  /** Whether RIM installed the program it starts. */
+  installed: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  onSignIn: () => void;
 }) {
   const name = showInvisibleCharacters(profile.name);
   const preset = findPreset(profile.presetId);
+  const canSignIn = preset !== undefined && (installed || found === "found");
   return (
     <li className="rounded-lg border border-rim-line bg-rim-panel px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 basis-48 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="break-words text-sm font-medium text-rim-text">{name}</span>
+            {installed && (
+              <span className="rounded-full border border-rim-success/30 px-2 text-xs text-rim-success">
+                Installed by RIM
+              </span>
+            )}
             {found !== "unknown" && (
               <span
                 className={
@@ -207,6 +286,17 @@ function ProgramRow({
           </span>
         </div>
         <div className="flex shrink-0 gap-2">
+          {canSignIn && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-label={`Sign in to ${name}`}
+              onClick={onSignIn}
+            >
+              Sign in
+            </Button>
+          )}
           <Button
             type="button"
             variant="secondary"
@@ -228,10 +318,10 @@ function ProgramRow({
         </div>
       </div>
       {found === "not_found" && preset && (
-        <div className="mt-3 space-y-2 border-t border-rim-line pt-3">
-          <HintLine hint={preset.install} label="install command" />
-          <HintLine hint={preset.signIn} label="sign-in command" />
-        </div>
+        <p className="mt-3 border-t border-rim-line pt-3 text-xs text-rim-text-muted">
+          RIM can&apos;t find {profile.program} on this computer. Install {preset.name} above, or
+          choose Edit to point at the one you installed.
+        </p>
       )}
     </li>
   );

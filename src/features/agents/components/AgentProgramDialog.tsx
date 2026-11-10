@@ -1,9 +1,8 @@
 import { useId, useState } from "react";
 
 import { Button } from "../../../shared/ui/Button";
-import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { Dialog } from "../../../shared/ui/Dialog";
-import type { AcpPreset, PresetHint } from "../acp/acpPresets";
+import type { AcpPreset } from "../acp/acpPresets";
 import { addAgentProgram, editAgentProgram, parseArgsText } from "../acp/agentPrograms";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
 
@@ -13,31 +12,6 @@ const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider tex
 
 /** What the person sees when the native dialog was answered Don't allow. */
 export const REFUSED_LINE = "Not allowed, so nothing was saved.";
-
-/** A hint with its command in a box and a Copy button. */
-export function HintLine({ hint, label }: { hint: PresetHint; label: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs text-rim-text-muted">{hint.text}</p>
-      {hint.command !== null && (
-        <div className="flex items-start gap-2">
-          <code className="min-w-0 flex-1 whitespace-pre-wrap break-all rounded-lg border border-rim-line bg-rim-void px-3 py-1.5 font-mono text-xs text-rim-text">
-            {hint.command}
-          </code>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            aria-label={`Copy ${label}`}
-            onClick={() => copyToClipboard(hint.command ?? "")}
-          >
-            Copy
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** What the dialog adds or changes. */
 export type AgentProgramDialogTarget =
@@ -125,13 +99,10 @@ export function AgentProgramDialog({
         }}
       >
         {notFound && (
-          <div className="space-y-2 rounded-lg border border-rim-line bg-rim-panel px-3 py-2">
-            <p className="text-sm text-rim-text">
-              {preset.program} is not found on this computer. RIM never installs agents.
-            </p>
-            <HintLine hint={preset.install} label="install command" />
-            <HintLine hint={preset.signIn} label="sign-in command" />
-          </div>
+          <p className="rounded-lg border border-rim-line bg-rim-panel px-3 py-2 text-sm text-rim-text">
+            {preset.program} is not found on this computer. Close this and choose Install next to{" "}
+            {preset.name}, or write the full path of the one you installed.
+          </p>
         )}
         <label className="block">
           <span className={LABEL_CLASS}>Name</span>

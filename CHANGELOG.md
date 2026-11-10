@@ -24,6 +24,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Settings → Agents installs Claude Code, Codex, Gemini CLI, opencode and Goose for you, with
+  one confirmation, keeps them up to date and removes their files, and signs you in to them:
+  in a terminal, in your browser or by naming the variables to set. A session that finds its
+  agent signed out offers **Sign in** and **Try again**.
 - **Connect an agent** in Settings → Agents, and the **Connect an Agent…** command, connect Codex,
   opencode, Gemini CLI, Cursor, VS Code or any other MCP tool to the desktop app without a helper:
   name it, and RIM shows its address, its token and a ready-made setup for that tool, once.

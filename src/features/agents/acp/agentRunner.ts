@@ -1,21 +1,23 @@
 /**
  * The agent runner's commands and events (`src-tauri/src/agent_runner`): starting agent programs
- * on this computer, writing lines to their stdin and hearing their stdout lines and their end.
+ * on this computer, writing lines to their stdin and hearing their stdout lines and their end,
+ * and opening a terminal running one of them.
  * Every function throws an `Error` whose message the UI can show: the runner's own sentence, or
  * {@link DESKTOP_ONLY_MESSAGE} off the desktop app.
  */
 
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import {
+  callDesktop as call,
+  DESKTOP_ONLY_MESSAGE,
+  listenDesktop as subscribe,
+} from "./desktopIpc";
 
-import { logger } from "../../../core/logger";
+export { DESKTOP_ONLY_MESSAGE };
 
 /** The event with one stdout line of a run. */
 export const AGENT_RUN_LINE_EVENT = "agent-runner://line";
 /** The event that says a run has ended. */
 export const AGENT_RUN_EXIT_EVENT = "agent-runner://exit";
-/** The message of every function's error off the desktop app. */
-export const DESKTOP_ONLY_MESSAGE = "Starting agents needs the desktop app";
 
 /** One line of a run's stdout, without its line break. */
 export interface AgentRunLine {
@@ -62,21 +64,6 @@ export interface AllowedAgentProgram {
   /** The program's full path. */
   program: string;
   args: string[];
-}
-
-/** Throws the off-desktop error when there is no desktop app to ask. */
-function requireDesktop(): void {
-  if (!isTauri()) throw new Error(DESKTOP_ONLY_MESSAGE);
-}
-
-async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  requireDesktop();
-  try {
-    return await invoke<T>(command, args);
-  } catch (error) {
-    if (error instanceof Error) throw error;
-    throw new Error(typeof error === "string" ? error : JSON.stringify(error), { cause: error });
-  }
 }
 
 /**
@@ -154,32 +141,42 @@ export function findAgentPrograms(names: string[]): Promise<(string | null)[]> {
   return call("agent_runner_find", { names });
 }
 
+/** What opening a terminal for an agent program needs. */
+export interface AgentTerminalOptions {
+  /** An allowed program's full path, exactly as the allowed list holds it. */
+  program: string;
+  args: string[];
+  /** Environment variables to set for it, on top of RIM's own. */
+  env: Record<string, string>;
+}
+
+/**
+ * What became of opening a terminal: `opened`, `declined` in the native dialog, or
+ * `noTerminal` when the computer has no terminal RIM can open, with the command line to run in
+ * one.
+ */
+export type AgentTerminalOutcome =
+  { kind: "opened" } | { kind: "declined" } | { kind: "noTerminal"; commandLine: string };
+
+/**
+ * Opens the computer's terminal running an allowed agent program with these arguments, after
+ * the person agrees in a native dialog that shows the command line. RIM does not see what
+ * happens in the terminal.
+ *
+ * @param options - The program, its arguments and the variables to set.
+ * @returns Whether it opened, was declined, or found no terminal.
+ */
+export function openAgentTerminal(options: AgentTerminalOptions): Promise<AgentTerminalOutcome> {
+  return call("agent_runner_open_terminal", {
+    program: options.program,
+    args: options.args,
+    env: options.env,
+  });
+}
+
 /** @returns The runs that are running, oldest first. */
 export function listAgentRuns(): Promise<AgentRunInfo[]> {
   return call("agent_runner_list");
-}
-
-/** Listens for `event` and returns a function that stops listening, also before it started. */
-function subscribe<T>(event: string, callback: (payload: T) => void): () => void {
-  requireDesktop();
-  let stopped = false;
-  let unlisten: (() => void) | undefined;
-  void listen<T>(event, (e) => {
-    if (!stopped) callback(e.payload);
-  }).then(
-    (stop) => {
-      if (stopped) stop();
-      else unlisten = stop;
-    },
-    (error: unknown) => {
-      logger.warn(`[RIM:agents] could not listen for ${event}:`, error);
-    },
-  );
-  return () => {
-    stopped = true;
-    unlisten?.();
-    unlisten = undefined;
-  };
 }
 
 /**
