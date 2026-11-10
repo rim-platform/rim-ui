@@ -571,6 +571,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "cairo-rs"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3084,6 +3093,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libbz2-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f454fd6831a29c0e827ed075bca2a15be201bd57f4168f0fd1041124eab17e"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5058,10 +5073,12 @@ dependencies = [
  "auto-launch",
  "base64 0.22.1",
  "bip39",
+ "bzip2",
  "chacha20poly1305",
  "chrono",
  "dirs 7.0.0",
  "ed25519-dalek 3.0.0",
+ "flate2",
  "futures-util",
  "getrandom 0.3.4",
  "hex",
@@ -5083,6 +5100,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -5100,6 +5118,7 @@ dependencies = [
  "uuid",
  "zbus 5.14.0",
  "zeroize",
+ "zip",
 ]
 
 [[package]]
@@ -8295,6 +8314,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e408c6cc4699dd017d53dc080cd51c2cea2b5354af57a1479bd265ed42911487"
 dependencies = [
  "crc32fast",
+ "flate2",
  "getrandom 0.4.3",
  "indexmap 2.13.0",
  "libc",
