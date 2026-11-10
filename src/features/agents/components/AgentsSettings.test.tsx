@@ -38,6 +38,7 @@ vi.mock("./AgentRunsDialog", () => ({
 import { toast } from "../../../shared/toast";
 import { useAgentRecordStore } from "../state/useAgentRecordStore";
 import { useAgentsSettingsRequestStore } from "../state/useAgentsSettingsRequestStore";
+import { useAgentProgramsStore } from "../state/useAgentProgramsStore";
 import { useConnectedAgentsStore, type ConnectedAgent } from "../state/useConnectedAgentsStore";
 import { usePendingPairingStore } from "../state/usePendingPairingStore";
 import { AgentsSettings } from "./AgentsSettings";
@@ -114,6 +115,7 @@ describe("AgentsSettings", () => {
       }
     });
     useConnectedAgentsStore.setState({ agents: [] });
+    useAgentProgramsStore.setState({ profiles: [] });
     usePendingPairingStore.setState({ reset });
   });
 
@@ -308,6 +310,45 @@ describe("AgentsSettings", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
     expect(screen.getByText(NOTHING)).toBeInTheDocument();
+  });
+
+  it("removes the agent RIM can start along with the agent it made for it", async () => {
+    useConnectedAgentsStore.setState({ agents: [AGENT] });
+    useAgentProgramsStore.setState({
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Claude Code",
+          program: "claude-agent-acp",
+          args: [],
+          defaultFolder: null,
+          presetId: "claude-code",
+          agentId: AGENT.id,
+          token: "rimagent_settings-token",
+          addedAt: AGENT.pairedAt,
+        },
+      ],
+    });
+    const fallback = invoke.getMockImplementation();
+    invoke.mockImplementation((command: string, args?: { enabled?: boolean }) =>
+      command === "agent_runner_forget" ? Promise.resolve(null) : fallback?.(command, args),
+    );
+    const user = userEvent.setup();
+    await renderedSwitch();
+    await user.click(screen.getByRole("button", { name: "Disconnect Claude Code" }));
+    const dialog = screen.getByRole("dialog", { name: "Disconnect Claude Code?" });
+    expect(dialog).toHaveTextContent("RIM removes it from Agents RIM can start.");
+    await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
+    expect(useConnectedAgentsStore.getState().agents).toEqual([]);
+    expect(useAgentProgramsStore.getState().profiles).toEqual([]);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("agent_runner_forget", {
+        program: "claude-agent-acp",
+        args: [],
+      }),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("rimagent_settings-token");
   });
 
   it("moves focus to the switch after the last agent is disconnected", async () => {
