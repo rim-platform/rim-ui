@@ -4,6 +4,8 @@ import { CommandArgumentType } from "../../../core/graphql/generated/schema-type
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import type { CommandDefinition } from "../../commands/types";
+import { presetFieldValues, presetFields } from "../../commands/runtime/argumentValues";
+import { LOCAL_COMMANDS } from "../../commands/runtime/localCommands";
 import { newStepDraft, readStep, requiredStepFields, stepDraftOf, stepFields } from "./macroSteps";
 
 function command(overrides: Partial<CommandDefinition> & { id: string }): CommandDefinition {
@@ -262,5 +264,26 @@ describe("steps with argument pickers", () => {
     expect(
       readStep({ ...draft, values: { key: "a.b", value: "twelve" } }, SET_STATE, "ws-1"),
     ).toEqual({ ok: false, problems: { value: "Enter a valid number or JSON value" } });
+  });
+});
+
+describe("the fields of a command this app asks a target for", () => {
+  const prompted = [
+    ["people.view_profile", "user_id", CommandArgumentType.USER_ID],
+    ["people.message", "user_id", CommandArgumentType.USER_ID],
+    ["app.run_macro", "macro_id", CommandArgumentType.STRING],
+    ["app.toggle_pipeline", "pipeline_id", CommandArgumentType.STRING],
+  ] as const;
+
+  it.each(prompted)("are the same for a keybind as for a macro step: %s", (id, name, type) => {
+    const definition = LOCAL_COMMANDS.find((candidate) => candidate.id === id);
+    expect(definition).toBeDefined();
+    expect(presetFields(definition!)).toEqual(stepFields(definition));
+    expect(presetFields(definition!)).toEqual([{ name, argumentType: type, required: false }]);
+  });
+
+  it("show a saved target in a keybind's fields", () => {
+    const viewProfile = LOCAL_COMMANDS.find((candidate) => candidate.id === "people.view_profile")!;
+    expect(presetFieldValues(viewProfile, { user_id: "u-1" })).toEqual({ user_id: "u-1" });
   });
 });

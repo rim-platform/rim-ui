@@ -154,7 +154,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     }
 
     // A search with its query given opens the search overlay on that query.
-    const presetArgs = match.presetArgs as Record<string, unknown> | undefined;
+    const presetArgs = (match.presetArgs ?? undefined) as Record<string, unknown> | undefined;
     const presetQuery = presetArgs?.query;
     if (
       match.commandId === "chat.search_messages" &&
@@ -172,9 +172,12 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       let ranWith = args;
       const execute = (input: Parameters<typeof executeMutationRef.current.mutateAsync>[0]) =>
         executeMutationRef.current.mutateAsync({ ...input, initiator: CommandInitiator.KEYBIND });
+      // Saved arguments are used as given, as a macro step's are: a server command runs with
+      // them even when this app has a dialog for it, which opens only when none are saved.
       dispatchCommand(command, execute, {
         args,
         commandContext,
+        typedArgs: true,
         askForArguments: true,
         onArguments: (filled) => {
           ranWith = filled;

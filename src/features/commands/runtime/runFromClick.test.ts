@@ -284,17 +284,86 @@ describe("a run with the arguments saved with its control", () => {
     useCommandArgumentsStore.getState().cancel();
   });
 
-  it("runs this app's handler of a server command with them, where typed ones go to the server", async () => {
+  it("sends a server command with them, past the dialog this app has for it", async () => {
     servePalette("ws-1", [command("chat.create_channel")]);
 
     await runCommandFromClick("chat.create_channel", { name: "news" }, { savedArgs: true });
-    expect(request).not.toHaveBeenCalled();
-    expect(useShellStore.getState().showNewChannelDialog).toBe(true);
-
-    await runCommandFromClick("chat.create_channel", { name: "news" });
     expect(sentInputs()).toEqual([
       expect.objectContaining({ commandId: "chat.create_channel", args: { name: "news" } }),
     ]);
+    expect(useShellStore.getState().showNewChannelDialog).toBe(false);
+  });
+
+  it("opens this app's dialog when none are saved", async () => {
+    servePalette("ws-1", [command("chat.create_channel")]);
+
+    await runCommandFromClick("chat.create_channel", undefined, { savedArgs: true });
+    expect(request).not.toHaveBeenCalled();
+    expect(useShellStore.getState().showNewChannelDialog).toBe(true);
+  });
+
+  it("sends a quick action's saved reply to the selected message", async () => {
+    const reply = vi.fn(() => true);
+    servePalette("ws-1", [
+      command("chat.reply_to_selected_message", {
+        requiredContext: ["workspace", "conversation", "selected_message"],
+        arguments: [{ name: "text", argumentType: CommandArgumentType.STRING, required: true }],
+      }),
+    ]);
+    useShellStore.getState().setSelectedConversationId("c-1");
+    useSelectedMessageStore.getState().setActions({
+      conversationId: "c-1",
+      textOf: () => "hello",
+      reply,
+      edit: vi.fn(() => true),
+      report: vi.fn(() => true),
+    });
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "c-1", messageId: "msg-1" });
+
+    const outcome = await runCommandFromClick(
+      "chat.reply_to_selected_message",
+      { text: "On it" },
+      { savedArgs: true },
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(reply).not.toHaveBeenCalled();
+    expect(sentInputs()).toEqual([
+      expect.objectContaining({
+        commandId: "chat.reply_to_selected_message",
+        args: { text: "On it" },
+        commandContext: expect.objectContaining({ selectedMessageId: "msg-1" }),
+      }),
+    ]);
+  });
+
+  it("asks for what saved arguments of a command with a dialog leave out", async () => {
+    servePalette("ws-1", [
+      command("chat.create_channel", {
+        arguments: [
+          { name: "name", argumentType: CommandArgumentType.STRING, required: true },
+          { name: "topic", argumentType: CommandArgumentType.STRING, required: false },
+        ],
+      }),
+    ]);
+
+    const pending = runCommandFromClick(
+      "chat.create_channel",
+      { topic: "Releases" },
+      { savedArgs: true },
+    );
+    await vi.waitFor(() =>
+      expect(
+        useCommandArgumentsStore.getState().request?.arguments.map((asked) => asked.name),
+      ).toEqual(["name"]),
+    );
+    useCommandArgumentsStore.getState().submit({ name: "news" });
+
+    expect((await pending).ok).toBe(true);
+    expect(sentInputs()[0].args).toEqual({ topic: "Releases", name: "news" });
+    expect(useShellStore.getState().showNewChannelDialog).toBe(false);
   });
 
   it("asks for the arguments the saved ones leave out, then sends them all", async () => {

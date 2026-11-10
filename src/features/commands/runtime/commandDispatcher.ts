@@ -766,8 +766,9 @@ export async function dispatchCommand(
     /** Set when a plugin panel asks to run a command; the host then refuses other plugins' commands. */
     callerPluginId?: string;
     /**
-     * Set when `args` were typed in the message box: a backend command then runs on the server
-     * with them, even when this app has a handler that would run it without them.
+     * Set when `args` were typed in the message box or saved with a keybind, a quick action or a
+     * macro step: a backend command then runs on the server with them, even when this app has a
+     * handler that would run it without them. Without arguments, that handler still runs.
      */
     typedArgs?: boolean;
     /**
@@ -898,14 +899,15 @@ export async function dispatchCommand(
       context.onArguments?.(asked.args);
       return dispatchCommand(command, executeBackend, {
         ...context,
-        args: withLocalTomorrowMorning(command.id, asked.args),
+        args: asked.args,
         askForArguments: false,
       });
     }
   }
+  // Every run the person starts, saved or typed, ends "until tomorrow" at their own 09:00.
   const args =
-    context?.askForArguments && !context.isPipe && !context.callerPluginId
-      ? withLocalTomorrowMorning(command.id, context.args)
+    !context?.isPipe && !context?.callerPluginId
+      ? withLocalTomorrowMorning(command.id, context?.args)
       : context?.args;
 
   if (

@@ -3,6 +3,7 @@ import { stateKeyProblem } from "../../workspace-state/stateKeyRules";
 import type { CommandArgumentInfo, CommandDefinition } from "../types";
 import { argumentPicker, CLEARED_FIELD, sendsEmptyText } from "./argumentPickers";
 import { camelCaseName, formAsksFor } from "./commandArguments";
+import { argumentPromptName } from "./commandDispatcher";
 import { normalizeStateValue, stateValueProblem } from "./stateValueKinds";
 
 /**
@@ -194,17 +195,50 @@ export function requiredFirst(fields: readonly CommandArgumentInfo[]): CommandAr
 }
 
 /**
- * The arguments a keybind or quick action may save for `command`: those the argument form has a
- * field for, required ones first. A workspace argument is left out: it follows the member or
- * conversation picked, else the workspace open when the command runs.
+ * The type of an argument a command does not declare, from its name: a conversation, a workspace
+ * or a member for the names that hold one, else text.
  */
-export function presetFields(command: Pick<CommandDefinition, "arguments">): CommandArgumentInfo[] {
-  return requiredFirst(
+export function argumentTypeOfName(name: string): CommandArgumentType {
+  switch (name) {
+    case "conversation_id":
+    case "conversationId":
+      return CommandArgumentType.CONVERSATION_ID;
+    case "workspace_id":
+    case "workspaceId":
+    case "server_id":
+    case "serverId":
+      return CommandArgumentType.WORKSPACE_ID;
+    case "user_id":
+    case "userId":
+      return CommandArgumentType.USER_ID;
+    default:
+      return CommandArgumentType.STRING;
+  }
+}
+
+/**
+ * The arguments a keybind, a quick action or a macro step may save for `command`: those the
+ * argument form has a field for, required ones first, and the argument this app asks for with a
+ * picker when the command runs without it. A workspace argument is left out: it follows the
+ * member or conversation picked, else the workspace open when the command runs.
+ */
+export function presetFields(
+  command: Pick<CommandDefinition, "arguments"> & Partial<Pick<CommandDefinition, "id">>,
+): CommandArgumentInfo[] {
+  const fields = requiredFirst(
     (command.arguments ?? []).filter(
       (argument) =>
         formAsksFor(argument) && argument.argumentType !== CommandArgumentType.WORKSPACE_ID,
     ),
   );
+  const prompted = command.id === undefined ? undefined : argumentPromptName(command.id);
+  if (prompted && !fields.some((field) => field.name === prompted)) {
+    const argumentType = argumentTypeOfName(prompted);
+    if (argumentType !== CommandArgumentType.WORKSPACE_ID) {
+      fields.push({ name: prompted, argumentType, required: false });
+    }
+  }
+  return fields;
 }
 
 /** The workspace arguments of `command`, which a saved member or conversation pins. */
@@ -265,7 +299,7 @@ export function presetWorkspace(
  * @returns The arguments, or `undefined` when none are filled in.
  */
 export function presetArgsOf(
-  command: Pick<CommandDefinition, "arguments">,
+  command: Pick<CommandDefinition, "arguments"> & Partial<Pick<CommandDefinition, "id">>,
   args: Record<string, unknown>,
   workspaceId: string | undefined,
 ): Record<string, unknown> | undefined {

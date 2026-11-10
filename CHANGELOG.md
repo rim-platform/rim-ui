@@ -220,6 +220,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- A keybind or a Home quick action can now save arguments for commands that open a dialog, such
+  as Create Channel, New Message, Invite Member, Reply, Edit and Report, in the same fields a macro
+  step offers, and runs with them instead of opening the dialog; with none saved, the dialog opens
+  as before. "Until tomorrow" in a macro step's mute now also ends at 09:00 tomorrow in your
+  timezone, not the server's.
 - In a workspace hosted on another server, the palette, keybinds, quick boxes, the message box,
   context menus and plugins now list and run that server's commands.
 - Turning a keybind off or giving it other keys no longer drops the arguments saved with it.

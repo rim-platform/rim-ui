@@ -59,7 +59,7 @@ confirmation still asks, and its outcome shows as it would from the palette. The
 are those a key can be bound to, with optional arguments as for a personal keybind: a server
 command's in the same fields as Settings > Keybinds, with a required one left empty asked for when
 the button is pressed, and a plugin command's, or saved arguments the fields cannot show, as a
-JSON object of at most 4096 bytes. Edit Home is never one of them. A command not offered on this device,
+JSON object of at most 4096 bytes. Saved arguments are used as given, as a keybind's are. Edit Home is never one of them. A command not offered on this device,
 such as one of a plugin that isn't installed here or one that needs the desktop app, is a
 disabled button with the reason beneath it.
 
