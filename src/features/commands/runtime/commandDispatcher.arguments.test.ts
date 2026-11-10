@@ -423,4 +423,73 @@ describe("dispatchCommand asking for a topic", () => {
 
     expect(executeBackend.mock.calls[0][0].args).toEqual({ topic: "" });
   });
+
+  it("gives the form the preset arguments for the fields that follow them", async () => {
+    const running = dispatchCommand(TIMEOUT, executeBackend, {
+      args: { user_id: "u-2", reason: "spam" },
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+
+    await vi.waitFor(() => expect(askedNames()).toEqual(["minutes"]));
+    const request = useCommandArgumentsStore.getState().request;
+    expect(request?.givenValues).toEqual({ user_id: "u-2", reason: "spam" });
+    expect(request?.startValues).toBeUndefined();
+    useCommandArgumentsStore.getState().cancel();
+    await running;
+  });
+
+  it("shows typed arguments with what was typed, and replaces them with the form's", async () => {
+    const running = dispatchCommand(TIMEOUT, executeBackend, {
+      args: { user_id: "u-2", reason: "spam", message_id: "m-1" },
+      commandContext: CONTEXT,
+      askForArguments: true,
+      typedArgs: true,
+      showTypedArguments: true,
+    });
+
+    await vi.waitFor(() => expect(askedNames()).toEqual(["user_id", "minutes", "reason"]));
+    const request = useCommandArgumentsStore.getState().request;
+    expect(request?.startValues).toEqual({ user_id: "u-2", reason: "spam" });
+    expect(request?.problems).toEqual({});
+    useCommandArgumentsStore.getState().submit({ user_id: "u-3", minutes: 5 });
+    await running;
+
+    expect(executeBackend.mock.calls[0][0].args).toEqual({
+      message_id: "m-1",
+      user_id: "u-3",
+      minutes: 5,
+    });
+  });
+
+  it("asks again for a typed value its field cannot take, with the problem", async () => {
+    const running = dispatchCommand(TIMEOUT, executeBackend, {
+      args: { user_id: "u-2", minutes: "soon" },
+      commandContext: CONTEXT,
+      askForArguments: true,
+      typedArgs: true,
+      showTypedArguments: true,
+    });
+
+    await vi.waitFor(() => expect(askedNames()).toEqual(["user_id", "minutes"]));
+    const request = useCommandArgumentsStore.getState().request;
+    expect(request?.startValues).toEqual({ user_id: "u-2", minutes: "soon" });
+    expect(request?.problems).toEqual({ minutes: "Enter a whole number" });
+    useCommandArgumentsStore.getState().cancel();
+    await running;
+    expect(executeBackend).not.toHaveBeenCalled();
+  });
+
+  it("runs typed arguments its fields all take without asking", async () => {
+    await dispatchCommand(TIMEOUT, executeBackend, {
+      args: { user_id: "u-2", minutes: 5 },
+      commandContext: CONTEXT,
+      askForArguments: true,
+      typedArgs: true,
+      showTypedArguments: true,
+    });
+
+    expect(useCommandArgumentsStore.getState().request).toBeNull();
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ user_id: "u-2", minutes: 5 });
+  });
 });

@@ -1,39 +1,13 @@
 import { toast } from "../../../shared/toast";
-import type { CommandContextInput, CommandDefinition, CommandResult } from "../types";
-import { argString, commandResultOf, dispatchCommand } from "./commandDispatcher";
+import type { CommandContextInput, CommandDefinition } from "../types";
+import { argString, commandResultOf } from "./commandDispatcher";
 import { currentCommandContext } from "./commandContext";
-import { showCommandOutcome } from "./commandOutcome";
-import { missingArgumentNames } from "./commandRunnable";
-import { runWithHumanConfirmation, type ConfirmationProof } from "./humanConfirmation";
+import { runWithHumanConfirmation } from "./humanConfirmation";
 import { appOnlyStageError, pipeConfirmationSubject } from "./pipeStages";
 import { conversationEncrypted } from "../../plugins/chat/appMessageService";
-import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
+import { CANCELLED_PAYLOAD, isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { showCommandRefusal } from "./refusal";
-
-/** Sends one command to the server, as the mutation of the surface that runs it does. */
-export type ExecuteBackend = (input: {
-  commandId: string;
-  args?: Record<string, unknown>;
-  commandContext?: Record<string, unknown>;
-  isPipe?: boolean;
-  confirmation?: ConfirmationProof;
-}) => Promise<{ executeCommand: CommandResult }>;
-
-/**
- * Whether `command` still lacks arguments after `given`; when it does, says which and the form to
- * type, in an error toast.
- */
-export function lacksArguments(
-  command: CommandDefinition,
-  given: Record<string, unknown> = {},
-): boolean {
-  const missing = missingArgumentNames(command, currentCommandContext(), given);
-  if (missing.length === 0) return false;
-  toast.error(
-    `${command.title} needs ${missing.join(", ")}. Type /${command.id} ${missing.map((n) => `${n}=...`).join(" ")}`,
-  );
-  return true;
-}
+import { runPersonCommand, type ExecuteBackend } from "./runPersonCommand";
 
 /** Commands that carry a message's text, which an encrypted conversation must not receive in plain. */
 const MESSAGE_TEXT_COMMANDS: ReadonlySet<string> = new Set([
@@ -73,9 +47,15 @@ async function refusedForEncryption(
 }
 
 /**
- * Runs a command picked or typed in the message box, with the arguments typed after it, and tells
- * the person how it went: its result or a refusal card. Its confirmation, argument prompt and
- * target picker open as they do from the palette.
+ * Runs a command picked or typed in the message box as the command palette runs it, with the
+ * arguments typed after its name, and tells the person how it went. The argument form asks for
+ * what the typed arguments leave out or cannot be taken, starting with what was typed; with none
+ * typed it is the palette's form. Message text is never sent in plain to an end-to-end encrypted
+ * conversation, neither from the typed arguments nor from the form.
+ *
+ * @param command - The command picked in the box's list.
+ * @param executeBackend - Sends it to the server, when the server runs it.
+ * @param args - The arguments typed after its name, if any.
  */
 export async function runComposerCommand(
   command: CommandDefinition,
@@ -84,19 +64,22 @@ export async function runComposerCommand(
 ): Promise<void> {
   const commandContext = currentCommandContext();
   if (await refusedForEncryption(command, args, commandContext)) return;
-  const run = async (): Promise<void> => {
-    try {
-      const result = await dispatchCommand(command, executeBackend, {
-        args,
-        commandContext,
-        typedArgs: true,
-      });
-      await showCommandOutcome(command, result, args, commandContext);
-    } catch (err: unknown) {
-      showCommandRefusal(command.title, err, () => void run());
+  // The form may have named another conversation: what reaches the server is checked again.
+  const guarded: ExecuteBackend = async (input) => {
+    const context = (input.commandContext ?? {}) as CommandContextInput;
+    if (await refusedForEncryption(command, input.args, context)) {
+      return {
+        executeCommand: {
+          status: "ERROR",
+          message: "",
+          payload: CANCELLED_PAYLOAD,
+          followUpCommands: [],
+        },
+      };
     }
+    return executeBackend(input);
   };
-  await run();
+  await runPersonCommand(command, guarded, args, { commandContext, typed: true });
 }
 
 /**

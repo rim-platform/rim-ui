@@ -170,6 +170,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A command picked from the message box's `/` list with nothing typed after it does what the
+  command palette does: it opens the palette's argument form, with the same fields and pickers
+  (state keys with their values, members, conversations, emoji, times, "More options"), instead of
+  leaving `key=value` to type. Typed `key=value` arguments still run; when they leave a required
+  one out or give a value its field cannot take, the same form opens with them filled in.
 - A pipeline action's arguments are fields for its command, with a picker where it has one, instead of a JSON box; a required argument the trigger cannot supply must be filled before Save, and saved arguments the fields cannot show are kept and can be removed.
 - A plugin manifest listing `agents.connect_agent`, `agents.start_session`, `agents.stop_session`,
   `agents.ask_about_message`, `agents.ask_about_conversation` or `workspace.open_agent_sessions`

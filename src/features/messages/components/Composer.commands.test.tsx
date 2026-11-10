@@ -8,6 +8,7 @@ import { queryClient } from "../../../core/query/queryClient";
 import { useDraftStore } from "../state/useDraftStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useCommandResultStore } from "../../commands/state/useCommandResultStore";
+import { useCommandArgumentsStore } from "../../commands/state/useCommandArgumentsStore";
 import {
   baseReadHandlers,
   callsTo,
@@ -217,6 +218,7 @@ describe("Composer — commands", () => {
   });
 
   afterEach(() => {
+    act(() => useCommandArgumentsStore.getState().cancel());
     vi.restoreAllMocks();
     useWorkspaceStore.setState({ workspaceId: null });
     useShellStore.setState({ selectedConversationId: null });
@@ -293,31 +295,22 @@ describe("Composer — commands", () => {
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
   });
 
-  it("offers a command that needs arguments with its hint, and leaves its name to finish", async () => {
+  it("offers a command that needs arguments with its hint, and asks for them in a form", async () => {
     const box = await renderBox();
     type(box, "/admin.b");
     const option = await screen.findByRole("option", { name: /Ban Member/ });
     expect(option).toHaveTextContent("Needs user_id.");
     press(box, "Enter");
 
-    expect(box.value).toBe("/admin.ban ");
-    expect(await screen.findByRole("option", { name: /Ban Member/ })).toBeInTheDocument();
-    expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
-  });
-
-  it("says what a command lacks, with the form to type, and sends nothing", async () => {
-    const spy = vi.spyOn(toast, "error");
-    const box = await renderBox();
-    type(box, "/admin.ban ");
-    await screen.findByRole("option", { name: /Ban Member/ });
-    press(box, "Enter");
-
     await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith("Ban Member needs user_id. Type /admin.ban user_id=..."),
+      expect(useCommandArgumentsStore.getState().request).toMatchObject({
+        commandId: "admin.ban",
+        arguments: [expect.objectContaining({ name: "user_id" })],
+      }),
     );
+    expect(box.value).toBe("");
     expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(0);
     expect(callsTo(requestMock, "mutation SendMessage")).toHaveLength(0);
-    expect(box.value).toBe("/admin.ban ");
   });
 
   it("runs the highlighted command with the arguments typed after its name", async () => {

@@ -128,6 +128,23 @@ export function toFieldValue(
   }
 }
 
+/**
+ * Arguments a command already has as field values, for fields that follow them, such as the
+ * current value of a given state key. A value no field holds, such as an object, is left out.
+ *
+ * @param args - The arguments, by name.
+ * @returns Their texts, numbers as text, and checkbox states, by name.
+ */
+export function givenFieldValues(args: Readonly<Record<string, unknown>>): FieldValues {
+  return Object.fromEntries(
+    Object.entries(args).flatMap(([name, value]): [string, FieldValue][] => {
+      if (typeof value === "string" || typeof value === "boolean") return [[name, value]];
+      if (typeof value === "number") return [[name, String(value)]];
+      return [];
+    }),
+  );
+}
+
 /** Whether a field holds nothing, so its argument is left out. */
 export function isEmptyField(value: FieldValue | undefined): boolean {
   return value === undefined || value === "";

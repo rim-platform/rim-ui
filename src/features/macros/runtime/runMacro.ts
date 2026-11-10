@@ -3,11 +3,7 @@ import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { executeCommandAt } from "../../commands/api/useCommands";
 import { takenArguments, withTakenArguments } from "../../commands/runtime/argumentPickers";
-import {
-  argumentTypeOfName,
-  type FieldValue,
-  type FieldValues,
-} from "../../commands/runtime/argumentValues";
+import { argumentTypeOfName, givenFieldValues } from "../../commands/runtime/argumentValues";
 import { camelCaseName } from "../../commands/runtime/commandArguments";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
@@ -109,20 +105,6 @@ function askedField(name: string, command: CommandDefinition | undefined): Comma
     required: pluginArgument?.required ?? true,
     ...(pluginArgument?.description ? { description: pluginArgument.description } : {}),
   };
-}
-
-/**
- * A step's fixed arguments as field values, for asked fields that follow them, such as the
- * current value of a fixed state key.
- */
-function givenFieldValues(args: Record<string, unknown>): FieldValues {
-  return Object.fromEntries(
-    Object.entries(args).flatMap(([name, value]): [string, FieldValue][] => {
-      if (typeof value === "string" || typeof value === "boolean") return [[name, value]];
-      if (typeof value === "number") return [[name, String(value)]];
-      return [];
-    }),
-  );
 }
 
 /**

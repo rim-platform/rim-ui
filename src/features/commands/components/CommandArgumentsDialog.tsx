@@ -51,14 +51,20 @@ function groupsOf(request: CommandArgumentsRequest): FormGroup[] {
 }
 
 function startValues(group: FormGroup): FieldValues {
+  const given = group.group.startValues ?? {};
   return Object.fromEntries(
-    [...group.fields, ...group.more].map((field) => [field.name, defaultFieldValue(field)]),
+    [...group.fields, ...group.more].map((field) => [
+      field.name,
+      Object.prototype.hasOwnProperty.call(given, field.name)
+        ? given[field.name]
+        : defaultFieldValue(field),
+    ]),
   );
 }
 
 /**
- * The form of one request: the fields of each group, prefilled with their defaults, the optional
- * ones folded under "More options", and Run and Cancel.
+ * The form of one request: the fields of each group, prefilled with the values given for them or
+ * their defaults, the optional ones folded under "More options", and Run and Cancel.
  */
 function ArgumentsForm({ request }: { request: CommandArgumentsRequest }) {
   const submit = useCommandArgumentsStore((s) => s.submit);
@@ -66,7 +72,9 @@ function ArgumentsForm({ request }: { request: CommandArgumentsRequest }) {
   const [groups] = useState(() => groupsOf(request));
   const [values, setValues] = useState<FieldValues[]>(() => groups.map(startValues));
   const [touched, setTouched] = useState<Set<string>[]>(() => groups.map(() => new Set()));
-  const [problems, setProblems] = useState<Record<string, string>[]>(() => groups.map(() => ({})));
+  const [problems, setProblems] = useState<Record<string, string>[]>(() =>
+    groups.map((group) => ({ ...group.group.problems })),
+  );
   const [moreOpen, setMoreOpen] = useState<boolean[]>(() => groups.map(() => false));
 
   function run() {

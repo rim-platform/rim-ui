@@ -30,11 +30,10 @@ import { useConversation } from "../../conversations/api/useConversation";
 import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
-import { lacksArguments, runComposerCommand } from "../../commands/runtime/composerCommand";
+import { runComposerCommand } from "../../commands/runtime/composerCommand";
 import {
   commandArguments,
   commandsMatching,
-  namesCommand,
   splitCommandLine,
 } from "../../commands/runtime/commandLine";
 import { missingArgumentNames, NOT_FROM_MESSAGE_BOX } from "../../commands/runtime/commandRunnable";
@@ -134,7 +133,9 @@ export function ComposerInput({
   // The server's commands with this app's titles, then this app's own and the plugins', as the
   // palette lists them.
   const allCommands = useMemo(() => {
-    const server = (serverCommands ?? []).map(withClientLabel);
+    const server = (serverCommands ?? [])
+      .filter((cmd) => cmd.visibleInPalette)
+      .map(withClientLabel);
     const serverIds = new Set(server.map((cmd) => cmd.id));
     const seen = new Set<string>();
     const plugins = pluginCommands.filter((cmd) => {
@@ -362,29 +363,20 @@ export function ComposerInput({
   }
 
   /**
-   * Runs a command picked from the list with the arguments typed after its name. A picked command
-   * that still needs arguments is left as `/id ` to finish, with the list open; typed out in
-   * full, it says which are missing and sends nothing.
+   * Runs a command picked from the list as the command palette runs it, with the arguments typed
+   * after its name. Without any, the palette's argument form asks for those it needs; typed ones
+   * that leave some out, or that a field cannot take, open the same form starting with them. A
+   * line whose arguments cannot be read stays to be fixed.
    */
   function applyCommandSuggestion(suggestion: CommandSuggestion) {
     const { command } = suggestion;
     const typed = splitCommandLine(text);
     if (typed.error) {
       toast.error(`${command.title}: ${typed.error}`);
-      return;
-    }
-    const args = commandArguments(command, typed.pairs);
-    if (missingArgumentNames(command, currentCommandContext(), args).length > 0) {
-      if (namesCommand(command, typed.head)) {
-        lacksArguments(command, args);
-      } else {
-        const next = `/${command.id} `;
-        onTextChange(next);
-        showSlashList(next);
-      }
       textareaRef.current?.focus();
       return;
     }
+    const args = commandArguments(command, typed.pairs);
     onTextChange("");
     commandListClosedRef.current = false;
     setSlashItems([]);
