@@ -15,6 +15,7 @@ import {
   AGENT_INSTALL_PROGRESS_EVENT,
   agentInstallerCatalog,
   DESKTOP_ONLY_MESSAGE,
+  formatSize,
   installAgent,
   onInstallProgress,
   progressLine,
@@ -36,8 +37,9 @@ describe("agentInstaller", () => {
   });
 
   it("reads the catalog, installs and removes by preset id", async () => {
-    tauri.invoke.mockResolvedValueOnce([]);
-    await expect(agentInstallerCatalog()).resolves.toEqual([]);
+    const catalog = { agents: [], node: null, nodeDownload: 62_900_000, totalBytes: 0 };
+    tauri.invoke.mockResolvedValueOnce(catalog);
+    await expect(agentInstallerCatalog()).resolves.toEqual(catalog);
     expect(tauri.invoke).toHaveBeenCalledWith("agent_installer_catalog", undefined);
     tauri.invoke.mockResolvedValueOnce({ kind: "declined" });
     await expect(installAgent("goose")).resolves.toEqual({ kind: "declined" });
@@ -64,6 +66,19 @@ describe("agentInstaller", () => {
     const payload = { presetId: "codex", stage: "checking", received: null, total: null };
     events.handlers.get(AGENT_INSTALL_PROGRESS_EVENT)?.({ payload });
     expect(heard).toEqual([payload]);
+  });
+
+  it("reads sizes in decimal units, rounded as the installer rounds them", () => {
+    expect(formatSize(0)).toBe("0.0 MB");
+    expect(formatSize(49_999)).toBe("0.0 MB");
+    expect(formatSize(2_250_000)).toBe("2.3 MB");
+    expect(formatSize(9_949_999)).toBe("9.9 MB");
+    expect(formatSize(9_950_000)).toBe("10 MB");
+    expect(formatSize(120_400_000)).toBe("120 MB");
+    expect(formatSize(999_499_999)).toBe("999 MB");
+    expect(formatSize(999_500_000)).toBe("1.0 GB");
+    expect(formatSize(1_249_999_999)).toBe("1.2 GB");
+    expect(formatSize(1_250_000_000)).toBe("1.3 GB");
   });
 
   it("says where an install is", () => {

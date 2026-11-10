@@ -8,11 +8,13 @@
 mod net;
 mod node;
 mod presets;
+mod size;
 mod state;
 #[cfg(test)]
 mod tests;
 mod unpack;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -24,6 +26,7 @@ use crate::desktop_shell::MAIN_WINDOW;
 use net::Net;
 use node::NodeRelease;
 use presets::{Available, Preset, Resolved, Target, NOT_AVAILABLE};
+use size::{NpmPlatform, Size, SizeCache, SizeKind};
 use state::Installed;
 pub use state::InstalledAgent;
 
@@ -35,8 +38,9 @@ const AGENTS_FOLDER: &str = "agents";
 const DOWNLOADS_FOLDER: &str = ".downloads";
 /// The folder in the agents folder that holds RIM's Node.js versions.
 const NODE_FOLDER: &str = "node";
-/// npm's cache folder in the agents folder.
-const NPM_CACHE_FOLDER: &str = ".npm-cache";
+/// The start of the name of the folder in the agents folder an npm install keeps its cache in,
+/// deleted after the install.
+const NPM_CACHE_PREFIX: &str = ".npm-cache";
 /// The start of the name of a folder an install is unpacked into before it is moved in place.
 const STAGING_PREFIX: &str = ".staging-";
 /// The start of the name a replaced version's folder is moved to until the new one is in place.
@@ -58,8 +62,84 @@ pub struct CatalogEntry {
     preset_id: String,
     name: String,
     available: Option<Available>,
-    installed: Option<InstalledAgent>,
+    installed: Option<CatalogInstalled>,
     problem: Option<String>,
+}
+
+/// An installed agent as the page lists it: its record and what its version's folder uses on
+/// disk, `None` when that could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogInstalled {
+    #[serde(flatten)]
+    agent: InstalledAgent,
+    disk_bytes: Option<u64>,
+}
+
+/// RIM's installed Node.js and what its folder uses on disk, `None` when that could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogNode {
+    version: String,
+    disk_bytes: Option<u64>,
+}
+
+/// What the page lists: every supported agent, RIM's Node.js when it is installed, what Node.js
+/// would download when it is not, and what the whole agents folder uses on disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Catalog {
+    agents: Vec<CatalogEntry>,
+    node: Option<CatalogNode>,
+    node_download: Option<u64>,
+    total_bytes: u64,
+}
+
+/// What the agents folder uses on disk.
+struct DiskUse {
+    /// By preset id, each installed agent's version folder.
+    agents: HashMap<String, Option<u64>>,
+    /// RIM's recorded Node.js folder.
+    node: Option<u64>,
+    /// The whole agents folder.
+    total: u64,
+}
+
+impl DiskUse {
+    /// Measures what `installed` records in the agents folder `root`; nothing without a folder.
+    fn measure(root: Option<&Path>, installed: &Installed) -> Self {
+        let Some(root) = root else {
+            return Self {
+                agents: HashMap::new(),
+                node: None,
+                total: 0,
+            };
+        };
+        Self {
+            agents: installed
+                .agents
+                .iter()
+                .map(|agent| {
+                    let dir = root.join(&agent.preset_id).join(&agent.version);
+                    (agent.preset_id.clone(), size::disk_size(&dir))
+                })
+                .collect(),
+            node: installed
+                .node
+                .as_ref()
+                .and_then(|version| size::disk_size(&AgentInstaller::node_dir(root, version))),
+            total: size::disk_size_readable(root),
+        }
+    }
+}
+
+/// A folder deleted, with everything in it, when this is dropped.
+struct ScratchFolder(PathBuf);
+
+impl Drop for ScratchFolder {
+    fn drop(&mut self) {
+        remove_all(&self.0);
+    }
 }
 
 /// What came of an install.
@@ -148,6 +228,8 @@ pub struct AgentInstaller {
     root: Option<PathBuf>,
     sources: Sources,
     installed: Mutex<Installed>,
+    /// The sizes of the versions the registry offers and of RIM's Node.js download.
+    sizes: SizeCache,
     /// Held by the one install or removal that runs.
     busy: tokio::sync::Mutex<()>,
 }
@@ -233,6 +315,7 @@ impl AgentInstaller {
             root,
             sources,
             installed: Mutex::new(installed),
+            sizes: SizeCache::default(),
             busy: tokio::sync::Mutex::new(()),
         };
         installer.share_node_bin();
@@ -279,38 +362,140 @@ impl AgentInstaller {
         Ok(())
     }
 
-    /// Every supported agent, in table order, with the registry's offer for this computer and
-    /// what is installed. When the registry cannot be fetched, each entry says why.
-    pub(crate) async fn catalog(&self) -> Vec<CatalogEntry> {
-        let registry = self.sources.net.registry().await;
+    /// Every supported agent, in table order, with the registry's offer for this computer and its
+    /// size, and what is installed with what it uses on disk; RIM's Node.js; and what the agents
+    /// folder uses. When the registry cannot be fetched, each entry says why. The registry, the
+    /// sizes and the disk are read at once.
+    pub(crate) async fn catalog(&self) -> Catalog {
         let installed = lock(&self.installed).clone();
-        presets::PRESETS
+        let root = self.root.clone();
+        let recorded = installed.clone();
+        let disk =
+            tokio::task::spawn_blocking(move || DiskUse::measure(root.as_deref(), &recorded));
+        let offers = async {
+            let (registry, node_download) =
+                tokio::join!(self.sources.net.registry(), self.node_download());
+            let offers: Vec<Result<Resolved, String>> = presets::PRESETS
+                .iter()
+                .map(|preset| {
+                    registry
+                        .as_ref()
+                        .map_err(Clone::clone)
+                        .and_then(|registry| {
+                            presets::resolve(
+                                preset,
+                                registry.entry(preset.registry_id),
+                                self.sources.platform.as_deref(),
+                                &self.sources.node,
+                            )
+                        })
+                })
+                .collect();
+            let sizes = futures_util::future::join_all(presets::PRESETS.iter().zip(&offers).map(
+                |(preset, offer)| async move {
+                    match offer {
+                        Ok(resolved) => self.size(preset, resolved).await,
+                        Err(_) => None,
+                    }
+                },
+            ))
+            .await;
+            (offers, sizes, node_download)
+        };
+        let (disk, (offers, sizes, node_download)) = tokio::join!(disk, offers);
+        let disk = disk.unwrap_or_else(|_| DiskUse::measure(None, &installed));
+        let agents = presets::PRESETS
             .iter()
-            .map(|preset| {
-                let offer = registry
-                    .as_ref()
-                    .map_err(Clone::clone)
-                    .and_then(|registry| {
-                        presets::resolve(
-                            preset,
-                            registry.entry(preset.registry_id),
-                            self.sources.platform.as_deref(),
-                            &self.sources.node,
-                        )
-                    });
+            .zip(offers)
+            .zip(sizes)
+            .map(|((preset, offer), size)| {
                 let (available, problem) = match offer {
-                    Ok(resolved) => (Some(resolved.available), None),
+                    Ok(resolved) => (
+                        Some(Available {
+                            size,
+                            ..resolved.available
+                        }),
+                        None,
+                    ),
                     Err(problem) => (None, Some(problem)),
                 };
                 CatalogEntry {
                     preset_id: preset.id.to_owned(),
                     name: preset.name.to_owned(),
                     available,
-                    installed: installed.agent(preset.id).cloned(),
+                    installed: installed
+                        .agent(preset.id)
+                        .cloned()
+                        .map(|agent| CatalogInstalled {
+                            disk_bytes: disk.agents.get(preset.id).copied().flatten(),
+                            agent,
+                        }),
                     problem,
                 }
             })
-            .collect()
+            .collect();
+        Catalog {
+            agents,
+            node: installed.node.clone().map(|version| CatalogNode {
+                version,
+                disk_bytes: disk.node,
+            }),
+            node_download,
+            total_bytes: disk.total,
+        }
+    }
+
+    /// How big `resolved`, the registry's offer for `preset`, is: its archive's download, or for
+    /// npm what it takes once installed. Kept by version.
+    async fn size(&self, preset: &Preset, resolved: &Resolved) -> Option<Size> {
+        let key = format!("{}@{}", preset.id, resolved.available.version);
+        match &resolved.target {
+            Target::Binary { url, .. } => {
+                let bytes = self
+                    .sizes
+                    .get_or(key, self.sources.net.head_size(url))
+                    .await?;
+                Some(Size {
+                    bytes,
+                    kind: SizeKind::Download,
+                })
+            }
+            Target::Npm { package } => {
+                let platform = self
+                    .sources
+                    .platform
+                    .as_deref()
+                    .and_then(NpmPlatform::from_key)?;
+                let work = size::npm_size(
+                    &self.sources.net,
+                    package,
+                    &resolved.available.version,
+                    platform,
+                );
+                let bytes = self.sizes.get_or(key, work).await?;
+                Some(Size {
+                    bytes,
+                    kind: SizeKind::Installed,
+                })
+            }
+        }
+    }
+
+    /// What RIM's Node.js downloads, when it is not installed yet and has a build here. Kept by
+    /// version.
+    async fn node_download(&self) -> Option<u64> {
+        let root = self.root.as_deref()?;
+        if self.node_ready(root) {
+            return None;
+        }
+        let release = &self.sources.node;
+        let archive = release.archive_for(self.sources.platform.as_deref()?)?;
+        self.sizes
+            .get_or(
+                format!("node@{}", release.version),
+                self.sources.net.head_size(&release.url(archive)),
+            )
+            .await
     }
 
     /// Whether RIM's pinned Node.js is installed and recorded.
@@ -347,11 +532,20 @@ impl AgentInstaller {
         });
         self.runner.check_allow_room(old_pair.as_ref())?;
         let needs_node = preset.is_npm() && !self.node_ready(root);
-        let message = install_message(
-            preset,
-            &resolved.available,
-            needs_node.then_some(self.sources.node.version.as_str()),
-        );
+        let size = self.size(preset, &resolved).await;
+        let node = if needs_node {
+            Some(NodeOffer {
+                version: &self.sources.node.version,
+                download: self.node_download().await,
+            })
+        } else {
+            None
+        };
+        let available = Available {
+            size,
+            ..resolved.available.clone()
+        };
+        let message = install_message(preset, &available, node);
         if !self
             .runner
             .ask(&format!("Install {}?", preset.name), message, "Install")
@@ -367,6 +561,7 @@ impl AgentInstaller {
 
         let preset_dir = root.join(preset.id);
         remove_all(&root.join(DOWNLOADS_FOLDER));
+        remove_npm_caches(root);
         self.remove_scratch(&preset_dir);
         let node_dir = if preset.is_npm() {
             Some(self.ensure_node(root, preset).await?)
@@ -490,14 +685,18 @@ impl AgentInstaller {
             Target::Npm { package } => {
                 let node_dir = node_dir.ok_or(NOT_AVAILABLE)?;
                 self.progress(preset, Stage::Installing, None, None);
-                node::npm_install(
+                let cache =
+                    ScratchFolder(root.join(format!("{NPM_CACHE_PREFIX}-{}", random_name()?)));
+                let installed = node::npm_install(
                     node_dir,
                     staging,
-                    &root.join(NPM_CACHE_FOLDER),
+                    &cache.0,
                     package,
                     &resolved.available.version,
                 )
-                .await?;
+                .await;
+                drop(cache);
+                installed?;
                 let script = node::package_bin(staging, package)?;
                 let relative = script
                     .strip_prefix(staging)
@@ -750,18 +949,72 @@ fn make_runnable(program: &Path) -> Result<(), String> {
     }
 }
 
-/// The install dialog's message: what is downloaded, from where and under which licence, and,
-/// when `node` is given, that Node.js at that version is downloaded too.
-fn install_message(preset: &Preset, available: &Available, node: Option<&str>) -> String {
+/// Removes the npm cache folders an install left in the agents folder `root`.
+fn remove_npm_caches(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(NPM_CACHE_PREFIX)
+        {
+            remove_all(&entry.path());
+        }
+    }
+}
+
+/// RIM's Node.js as an install downloads it: its version and its archive's size when known.
+#[derive(Debug, Clone, Copy)]
+struct NodeOffer<'a> {
+    version: &'a str,
+    download: Option<u64>,
+}
+
+/// The install dialog's message: what is downloaded, from where and under which licence; when
+/// `node` is given, that Node.js at that version is downloaded too; and the sizes that are
+/// known.
+fn install_message(preset: &Preset, available: &Available, node: Option<NodeOffer<'_>>) -> String {
     let mut message = format!(
         "RIM will download {} {} from {} (licence: {}), check it and install it in RIM's own \
          folder. RIM can then start it on this computer.",
         preset.name, available.version, available.source, available.license
     );
-    if let Some(version) = node {
+    if let Some(node) = node {
         message.push_str(&format!(
-            "\n\nIt also downloads Node.js {version} from nodejs.org, once."
+            "\n\nIt also downloads Node.js {} from nodejs.org, once.",
+            node.version
         ));
+    }
+    let mut sizes = Vec::new();
+    match available.size {
+        Some(Size {
+            bytes,
+            kind: SizeKind::Download,
+        }) => sizes.push(format!("Download: about {}.", size::size_text(bytes))),
+        Some(Size {
+            bytes,
+            kind: SizeKind::Installed,
+        }) => sizes.push(format!(
+            "It takes about {} once installed.",
+            size::size_text(bytes)
+        )),
+        None => {}
+    }
+    if let Some(NodeOffer {
+        version,
+        download: Some(bytes),
+    }) = node
+    {
+        sizes.push(format!(
+            "Node.js {version} adds about {} to download.",
+            size::size_text(bytes)
+        ));
+    }
+    if !sizes.is_empty() {
+        message.push_str("\n\n");
+        message.push_str(&sizes.join(" "));
     }
     message
 }
@@ -804,8 +1057,8 @@ pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
     ));
 }
 
-/// Every agent RIM can install, with the registry's version for this computer and what is
-/// installed.
+/// Every agent RIM can install, with the registry's version for this computer and its size, what
+/// is installed and what it uses on disk, RIM's Node.js, and what the agents folder uses.
 ///
 /// # Errors
 ///
@@ -814,7 +1067,7 @@ pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
 pub async fn agent_installer_catalog<R: Runtime>(
     webview: Webview<R>,
     installer: State<'_, AgentInstaller>,
-) -> Result<Vec<CatalogEntry>, String> {
+) -> Result<Catalog, String> {
     from_main_window(&webview)?;
     Ok(installer.catalog().await)
 }

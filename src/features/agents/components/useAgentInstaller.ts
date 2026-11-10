@@ -7,7 +7,7 @@ import {
   agentInstallerCatalog,
   installAgent,
   onInstallProgress,
-  type CatalogEntry,
+  type InstallerCatalog,
   type InstalledAgent,
   type InstallProgress,
 } from "../acp/agentInstaller";
@@ -27,8 +27,8 @@ export interface JustInstalled {
 
 /** The installer's state and what the page can ask of it. */
 export interface AgentInstallerState {
-  /** The catalog, or `null` until it loads or when it could not. */
-  catalog: CatalogEntry[] | null;
+  /** The catalog with what RIM's agents use on disk, or `null` until it loads or when it could not. */
+  catalog: InstallerCatalog | null;
   /** Why the catalog could not load, as a sentence, or `null`. */
   catalogError: string | null;
   busy: InstallerBusy | null;
@@ -55,7 +55,7 @@ function sentence(error: unknown, fallback: string): string {
  * @returns The state and its actions.
  */
 export function useAgentInstaller(): AgentInstallerState {
-  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
+  const [catalog, setCatalog] = useState<InstallerCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [busy, setBusy] = useState<InstallerBusy | null>(null);
   const [progress, setProgress] = useState<InstallProgress | null>(null);
@@ -64,8 +64,8 @@ export function useAgentInstaller(): AgentInstallerState {
 
   const load = useCallback(async () => {
     try {
-      const entries = await agentInstallerCatalog();
-      setCatalog(entries);
+      const loaded = await agentInstallerCatalog();
+      setCatalog(loaded);
       setCatalogError(null);
     } catch (error) {
       setCatalogError(sentence(error, "RIM could not check which agents it can install."));
@@ -75,9 +75,9 @@ export function useAgentInstaller(): AgentInstallerState {
   useEffect(() => {
     let live = true;
     agentInstallerCatalog().then(
-      (entries) => {
+      (loaded) => {
         if (!live) return;
-        setCatalog(entries);
+        setCatalog(loaded);
         setCatalogError(null);
       },
       (error: unknown) => {

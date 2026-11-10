@@ -1,5 +1,5 @@
-//! The installer's downloads: the ACP registry, kept for a while, and archives streamed to a file
-//! while they are hashed.
+//! The installer's downloads: the ACP registry, kept for a while, archives streamed to a file
+//! while they are hashed, and the small requests that tell how big a download is.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ const REGISTRY_TIMEOUT: Duration = Duration::from_secs(20);
 /// Largest registry accepted.
 const MAX_REGISTRY: u64 = 8 * MIB;
 /// How long a fetched registry is used before it is fetched again.
-const REGISTRY_KEPT: Duration = Duration::from_secs(10 * 60);
+pub(crate) const REGISTRY_KEPT: Duration = Duration::from_secs(10 * 60);
 /// Largest download accepted.
 const MAX_DOWNLOAD: u64 = 1024 * MIB;
 /// How long a download may go without receiving anything.
@@ -28,6 +28,8 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Most redirects one request follows.
 const MAX_REDIRECTS: usize = 10;
+/// How long working out one size may take in all.
+pub(crate) const SIZE_TIMEOUT: Duration = Duration::from_secs(20);
 /// Least time between two progress reports of one download.
 pub(crate) const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 
@@ -196,6 +198,67 @@ impl Net {
         self.cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The size of the file at `url` from the `Content-Length` of a `HEAD` request, which follows
+    /// redirects as a download does. `None` when the link is refused, the request fails or takes
+    /// longer than [`SIZE_TIMEOUT`], or the server does not say.
+    pub(crate) async fn head_size(&self, url: &str) -> Option<u64> {
+        let url = self.fetched_url(url);
+        if !url.starts_with(&format!("{}://", self.scheme)) {
+            return None;
+        }
+        let response = self
+            .client
+            .head(&url)
+            .timeout(SIZE_TIMEOUT)
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)?
+            .to_str()
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    /// The JSON document at `url`, asked for with `accept`. `None` when the link is refused, the
+    /// request fails or the server answers other than success, the body is over `max` bytes, or
+    /// it is not JSON.
+    pub(crate) async fn json(
+        &self,
+        url: &str,
+        accept: &str,
+        max: u64,
+    ) -> Option<serde_json::Value> {
+        let url = self.fetched_url(url);
+        if !url.starts_with(&format!("{}://", self.scheme)) {
+            return None;
+        }
+        let mut response = self
+            .client
+            .get(&url)
+            .header(reqwest::header::ACCEPT, accept)
+            .timeout(SIZE_TIMEOUT)
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() || response.content_length().is_some_and(|n| n > max) {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.ok()? {
+            if bytes.len() as u64 + chunk.len() as u64 > max {
+                return None;
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&bytes).ok()
     }
 
     /// Streams `url` to a new file in `dir` while hashing it, and keeps it only when its SHA-256

@@ -7,6 +7,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 use super::node::NodeRelease;
+use super::size::Size;
 use super::unpack::{self, Format};
 
 /// The problem of an agent with no build for this computer.
@@ -109,6 +110,8 @@ pub struct Available {
     pub(crate) license: String,
     /// `github.com/<owner>/<repo>` or `npm package <name>`.
     pub(crate) source: String,
+    /// How big it is, when that is known.
+    pub(crate) size: Option<Size>,
 }
 
 /// What to fetch for a preset.
@@ -225,6 +228,7 @@ pub(crate) fn resolve(
                     version: entry.version,
                     license,
                     source: github_source(url_prefix),
+                    size: None,
                 },
                 target: Target::Binary {
                     url: build.archive,
@@ -259,6 +263,7 @@ pub(crate) fn resolve(
                     version: entry.version,
                     license,
                     source: format!("npm package {package}"),
+                    size: None,
                 },
                 target: Target::Npm { package },
             })
@@ -390,6 +395,7 @@ mod tests {
                 version: "1.58.0".into(),
                 license: "Apache-2.0".into(),
                 source: "github.com/block/goose".into(),
+                size: None,
             }
         );
         assert_eq!(
