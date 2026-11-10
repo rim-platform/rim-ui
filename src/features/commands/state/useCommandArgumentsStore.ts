@@ -1,19 +1,44 @@
 import { create } from "zustand";
 
+import type { FieldValues } from "../runtime/argumentValues";
 import type { CommandArgumentInfo } from "../types";
 
-/** A command waiting for the person to fill in the arguments it still lacks. */
-export interface CommandArgumentsRequest {
-  /** The command's title, shown as the dialog's title. */
-  title: string;
+/** The arguments of one command the dialog asks for. */
+export interface ArgumentGroup {
   /** The arguments to ask for, in the order the dialog shows them. */
   arguments: CommandArgumentInfo[];
+  /**
+   * Optional arguments shown under "More options", folded until opened; only those the person
+   * sets are sent.
+   */
+  moreArguments?: CommandArgumentInfo[];
   /** The workspace whose members and conversations the fields offer. */
   workspaceId?: string;
   /** The command the arguments are of, which picks the field for some of them. */
   commandId?: string;
   /** The conversation the command runs in, when known: the one given, else the open one. */
   conversationId?: string;
+  /** Values the command already has, for fields that follow them, such as a state key. */
+  givenValues?: Readonly<FieldValues>;
+}
+
+/** One step of a macro whose arguments the dialog asks for. */
+export interface ArgumentStepGroup extends ArgumentGroup {
+  /** What the step's values are named by in the answer: `<key>:<argument name>`. */
+  key: string;
+  /** Text put before each label, such as "Step 2 · Mute Conversation: ". */
+  labelPrefix: string;
+}
+
+/** A command, or the steps of a macro, waiting for the person to fill in arguments. */
+export interface CommandArgumentsRequest extends ArgumentGroup {
+  /** The command's or the macro's title, shown as the dialog's title. */
+  title: string;
+  /**
+   * The steps of a macro, each asked with its own command's fields, in place of the request's
+   * own arguments. The answer names each value `<step key>:<argument name>`.
+   */
+  steps?: ArgumentStepGroup[];
 }
 
 interface CommandArgumentsState {

@@ -11,6 +11,13 @@ import {
 import { camelCaseName, formAsksFor } from "./commandArguments";
 import { argumentPromptName } from "./commandDispatcher";
 import { normalizeStateValue, stateValueProblem } from "./stateValueKinds";
+import {
+  isTimeFieldKind,
+  timeField,
+  timeFieldProblem,
+  unusedTimeArguments,
+  type TimeField,
+} from "./timeChoices";
 
 /**
  * What an argument field holds: a checkbox's state, or the text of any other field. A field
@@ -30,6 +37,35 @@ export type FieldValues = Record<string, FieldValue>;
 export function humanizeValue(value: string): string {
   const words = value.replace(/[_-]+/g, " ").trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : value;
+}
+
+/**
+ * The label of an argument's field: the one its picker gives, else its title, else its name as
+ * words.
+ */
+export function argumentLabel(
+  argument: Pick<CommandArgumentInfo, "name" | "title">,
+  commandId?: string,
+): string {
+  return (
+    argumentPicker(commandId, argument.name)?.label ||
+    argument.title ||
+    humanizeValue(argument.name)
+  );
+}
+
+/** The text under an argument's field: the one its picker gives, else its description. */
+export function argumentHint(
+  argument: Pick<CommandArgumentInfo, "name" | "description">,
+  commandId?: string,
+): string {
+  return argumentPicker(commandId, argument.name)?.hint ?? argument.description ?? "";
+}
+
+/** The time field of an argument, when its picker is one. */
+export function timeFieldOf(commandId: string | undefined, argumentName: string): TimeField | null {
+  const picker = argumentPicker(commandId, argumentName);
+  return isTimeFieldKind(picker?.kind) ? timeField(picker.kind, picker.valueLabels) : null;
 }
 
 /** Whether `argument` is answered by picking one of a fixed set of values. */
@@ -111,8 +147,8 @@ export function fieldProblem(
   mustFill: boolean,
   commandId?: string,
 ): string | null {
-  if (isEmptyField(value))
-    return mustFill ? `${argument.title || argument.name} is required` : null;
+  const label = argumentLabel(argument, commandId);
+  if (isEmptyField(value)) return mustFill ? `${label} is required` : null;
   if (typeof value === "boolean") return null;
   const text = (value ?? "").trim();
   const picker = argumentPicker(commandId, argument.name);
@@ -133,7 +169,7 @@ export function fieldProblem(
       if (hasChoices(argument) && !argument.allowedValues?.includes(text)) {
         return "Choose one of the options";
       }
-      return mustFill && text === "" ? `${argument.title || argument.name} is required` : null;
+      return mustFill && text === "" ? `${label} is required` : null;
   }
 }
 
@@ -180,7 +216,8 @@ export type ReadFields =
   { ok: true; args: Record<string, unknown> } | { ok: false; problems: Record<string, string> };
 
 /**
- * Reads a form's fields into arguments.
+ * Reads a form's fields into arguments. A time field is checked as a whole, its problem shown on
+ * its own argument, and sends only the arguments its choice sets.
  *
  * @param fields - The arguments the form shows.
  * @param values - What each field holds.
@@ -196,14 +233,24 @@ export function readFields(
 ): ReadFields {
   const args: Record<string, unknown> = {};
   const problems: Record<string, string> = {};
+  const timeFields = fields.flatMap((field) => {
+    const time = timeFieldOf(commandId, field.name);
+    return time ? [{ name: field.name, time }] : [];
+  });
   for (const field of fields) {
-    const problem = fieldProblem(field, values[field.name], mustFill && field.required, commandId);
+    const time = timeFields.find((candidate) => candidate.name === field.name)?.time;
+    const problem =
+      (time ? timeFieldProblem(time, values) : null) ??
+      fieldProblem(field, values[field.name], mustFill && field.required, commandId);
     if (problem) {
       problems[field.name] = problem;
       continue;
     }
     const value = argumentValueOf(field, values[field.name], commandId);
     if (value !== undefined) args[field.name] = value;
+  }
+  for (const { time } of timeFields) {
+    for (const name of unusedTimeArguments(time, values)) delete args[name];
   }
   return Object.keys(problems).length > 0 ? { ok: false, problems } : { ok: true, args };
 }

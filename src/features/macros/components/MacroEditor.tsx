@@ -10,7 +10,13 @@ import {
   useUpdateUserCommandMutation,
 } from "../../commands/api/useUserCommands";
 import { argumentPromptName } from "../../commands/runtime/commandDispatcher";
-import { isEmptyField, type FieldValue } from "../../commands/runtime/argumentValues";
+import { takenArguments, takingArgument } from "../../commands/runtime/argumentPickers";
+import {
+  argumentLabel,
+  isEmptyField,
+  type FieldValue,
+  type FieldValues,
+} from "../../commands/runtime/argumentValues";
 import type { UserCommandStepInput } from "../../commands/types";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { AccountMacro } from "../api/useAccountMacros";
@@ -349,14 +355,28 @@ function StepRow({
   const opensPicker =
     prompted !== undefined && !step.ask.includes(prompted) && isEmptyField(step.values?.[prompted]);
 
+  // A field another field sets, such as a mute's `until`, has no row of its own, unless it is
+  // asked for on its own while the field that sets it is not.
+  const shown = fields.filter((field) => {
+    const taking = takingArgument(step.commandId, field.name, fields);
+    return taking === undefined || (step.ask.includes(field.name) && !step.ask.includes(taking));
+  });
+
   function setValue(name: string, value: FieldValue) {
-    onChange((s) => (s.values ? { ...s, values: { ...s.values, [name]: value } } : s));
+    setValues({ [name]: value });
+  }
+
+  function setValues(changes: Readonly<FieldValues>) {
+    onChange((s) => (s.values ? { ...s, values: { ...s.values, ...changes } } : s));
   }
 
   function setAsked(name: string, asked: boolean) {
+    const taken = takenArguments(step.commandId, name);
     onChange((s) => ({
       ...s,
-      ask: asked ? [...s.ask.filter((n) => n !== name), name] : s.ask.filter((n) => n !== name),
+      ask: asked
+        ? [...s.ask.filter((n) => n !== name && !taken.includes(n)), name]
+        : s.ask.filter((n) => n !== name),
     }));
   }
 
@@ -397,21 +417,22 @@ function StepRow({
             kept as they are.
           </p>
         )}
-        {command && step.values !== null && fields.length > 0 && (
+        {command && step.values !== null && shown.length > 0 && (
           <div className="space-y-3">
-            {fields.map((field) => {
+            {shown.map((field) => {
               const asked = step.ask.includes(field.name);
               return (
                 <div key={field.name} className="space-y-1">
                   {asked ? (
                     <p className="text-xs text-rim-text-muted">
-                      {field.title || field.name}: asked when the macro runs
+                      {argumentLabel(field, step.commandId)}: asked when the macro runs
                     </p>
                   ) : (
                     <ArgumentField
                       argument={field}
                       value={step.values?.[field.name] ?? ""}
                       onChange={(value) => setValue(field.name, value)}
+                      onChangeFields={setValues}
                       mode="preset"
                       problem={problems[field.name] ?? null}
                       workspaceId={workspaceId}
@@ -424,7 +445,7 @@ function StepRow({
                       type="checkbox"
                       checked={asked}
                       onChange={(e) => setAsked(field.name, e.target.checked)}
-                      aria-label={`Ask for ${field.title || field.name} when I run it`}
+                      aria-label={`Ask for ${argumentLabel(field, step.commandId)} when I run it`}
                     />
                     Ask when I run it
                   </label>

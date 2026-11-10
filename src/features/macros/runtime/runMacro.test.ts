@@ -10,6 +10,16 @@ vi.mock("../../../core/graphql/client", () => ({
 }));
 vi.mock("../../../shared/toast", () => ({ toast: mocks.toast }));
 
+const relativeMinutes = vi.hoisted(() => ({ listed: false }));
+
+vi.mock("../../updater/api/serverCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../updater/api/serverCapabilities")>()),
+  spaceHasCapability: async (_space: string, capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+  serverHasCapability: async (capability: string) =>
+    capability !== "command_relative_minutes" || relativeMinutes.listed,
+}));
+
 import {
   CommandArgumentType,
   CommandSensitivity,
@@ -17,6 +27,7 @@ import {
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { tomorrowMorning } from "../../notifications/rules";
 import { useCommandArgumentsStore } from "../../commands/state/useCommandArgumentsStore";
 import type { CommandResult } from "../../commands/types";
 import type { SpaceRecord } from "../../relay/state/relayDb";
@@ -74,6 +85,46 @@ const STEP_COMMANDS: MacroStepCommand[] = [
     ],
   }),
   stepCommand("chat.pin_latest", "Pin Latest"),
+  stepCommand("admin.ban", "Ban Member", {
+    arguments: [
+      {
+        name: "user_id",
+        title: "Member",
+        argumentType: CommandArgumentType.USER_ID,
+        required: true,
+      },
+      {
+        name: "minutes",
+        title: "Minutes",
+        argumentType: CommandArgumentType.INTEGER,
+        required: false,
+      },
+    ],
+  }),
+  stepCommand("state.set", "Set State", {
+    arguments: [
+      { name: "key", title: "Key", argumentType: CommandArgumentType.STRING, required: true },
+      { name: "value", title: "Value", argumentType: CommandArgumentType.STRING, required: true },
+    ],
+  }),
+  stepCommand("notifications.mute_conversation", "Mute Conversation", {
+    arguments: [
+      {
+        name: "duration",
+        title: "Duration",
+        argumentType: CommandArgumentType.ENUM,
+        required: true,
+        allowedValues: ["1h", "8h", "until_tomorrow", "forever", "until", "minutes"],
+      },
+      { name: "until", title: "Until", argumentType: CommandArgumentType.STRING, required: false },
+      {
+        name: "minutes",
+        title: "Minutes",
+        argumentType: CommandArgumentType.INTEGER,
+        required: false,
+      },
+    ],
+  }),
 ];
 
 function macro(overrides: Partial<AccountMacro> & { id: string }): AccountMacro {
@@ -108,6 +159,7 @@ function executed(): { input: Record<string, unknown>; workspaceId?: string }[] 
 }
 
 beforeEach(() => {
+  relativeMinutes.listed = false;
   mocks.request.mockResolvedValue({ executeCommand: ok });
   useWorkspaceStore.getState().setWorkspaceId("ws-1");
 });
@@ -204,12 +256,20 @@ describe("runMacro", () => {
     const request = useCommandArgumentsStore.getState().request;
     expect(request?.title).toBe("Topic");
     expect(request?.workspaceId).toBe("ws-1");
-    expect(request?.arguments).toEqual([
+    expect(request?.arguments).toEqual([]);
+    expect(request?.steps).toEqual([
       expect.objectContaining({
-        name: "1:topic",
-        title: "Step 2 · Set Topic: Topic",
-        argumentType: CommandArgumentType.STRING,
-        required: true,
+        key: "1",
+        labelPrefix: "Step 2 · Set Topic: ",
+        commandId: "chat.set_topic",
+        workspaceId: "ws-1",
+        arguments: [
+          expect.objectContaining({
+            name: "topic",
+            argumentType: CommandArgumentType.STRING,
+            required: true,
+          }),
+        ],
       }),
     ]);
     useCommandArgumentsStore.getState().cancel();
@@ -227,6 +287,85 @@ describe("runMacro", () => {
     await run;
 
     expect(executed()[0]?.input.args).toEqual({ topic: "Launch" });
+  });
+
+  it("asks each step with its own command's fields, and what they follow", async () => {
+    haveMacros(
+      macro({
+        id: "user.quiet",
+        title: "Quiet",
+        steps: [
+          step("state.set", { key: "counter" }, ["value"]),
+          step("notifications.mute_conversation", { until: "2999-01-01T00:00:00Z" }, ["duration"]),
+        ],
+      }),
+    );
+
+    const run = runMacro("user.quiet", { workspaceId: "ws-1", conversationId: "conv-1" });
+    await vi.waitFor(() => expect(useCommandArgumentsStore.getState().request).not.toBeNull());
+    const steps = useCommandArgumentsStore.getState().request?.steps ?? [];
+    expect(steps[0]).toMatchObject({
+      key: "0",
+      commandId: "state.set",
+      givenValues: { key: "counter" },
+      conversationId: "conv-1",
+    });
+    expect(steps[0].arguments.map((a) => a.name)).toEqual(["value"]);
+    expect(steps[1]).toMatchObject({
+      key: "1",
+      labelPrefix: "Step 2 · Mute Conversation: ",
+      commandId: "notifications.mute_conversation",
+    });
+    expect(steps[1].arguments.map((a) => a.name)).toEqual(["duration", "until", "minutes"]);
+
+    useCommandArgumentsStore.getState().submit({ "0:value": "42", "1:duration": "until_tomorrow" });
+    await expect(run).resolves.toBe(true);
+
+    expect(executed()[0]?.input.args).toEqual({ key: "counter", value: "42" });
+    expect(executed()[1]?.input.args).toEqual({
+      duration: "until",
+      until: tomorrowMorning().toISOString(),
+    });
+  });
+
+  it("stops at a step that bans for a set time on a server that would ban for good", async () => {
+    haveMacros(
+      macro({
+        id: "user.ban",
+        steps: [step("admin.ban", { user_id: "u-1", minutes: 60 }), step("chat.pin_latest")],
+      }),
+    );
+
+    await expect(runMacro("user.ban", { workspaceId: "ws-1" })).resolves.toBe(false);
+
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      "Step 1 (Ban Member) failed: This server can't end a ban after a set time, so the ban wasn't sent. Choose a date and time instead.",
+    );
+  });
+
+  it("runs a step that bans for a set time on a server that takes it", async () => {
+    relativeMinutes.listed = true;
+    haveMacros(
+      macro({ id: "user.ban", steps: [step("admin.ban", { user_id: "u-1", minutes: 60 })] }),
+    );
+
+    await expect(runMacro("user.ban", { workspaceId: "ws-1" })).resolves.toBe(true);
+    expect(executed()[0]?.input).toMatchObject({
+      commandId: "admin.ban",
+      args: { user_id: "u-1", minutes: 60 },
+    });
+  });
+
+  it("runs a step with a topic cleared in the form", async () => {
+    haveMacros(macro({ id: "user.topic", steps: [step("chat.set_topic", {}, ["topic"])] }));
+
+    const run = runMacro("user.topic", { workspaceId: "ws-1" });
+    await vi.waitFor(() => expect(useCommandArgumentsStore.getState().request).not.toBeNull());
+    useCommandArgumentsStore.getState().submit({ "0:topic": "" });
+    await run;
+
+    expect(executed()[0]?.input.args).toEqual({ topic: "" });
   });
 
   it("stops at the first step that fails and says which it was and why", async () => {

@@ -9,6 +9,7 @@ import {
 } from "../../workspace-state/api/useWorkspaceState";
 import { stateKeyProblem } from "../../workspace-state/stateKeyRules";
 import { CLEARED_FIELD, type ArgumentPicker } from "../runtime/argumentPickers";
+import { isTimeFieldKind } from "../runtime/timeChoices";
 import {
   decodeStateValue,
   encodeStateValue,
@@ -32,6 +33,7 @@ import { ConversationPoolSelect } from "./ConversationArgumentFields";
 import { EmojiField } from "./EmojiArgumentField";
 import { MemberPoolField } from "./MemberArgumentFields";
 import { useMacroTargets, usePipelineTargets } from "./paletteTargets";
+import { TimeChoiceField } from "./TimeArgumentFields";
 
 /** The most keys the key field suggests at once. */
 const MAX_SUGGESTIONS = 50;
@@ -424,7 +426,9 @@ function ClearableTextField(props: ControlProps & { picker: ArgumentPicker }) {
  * The field `picker` names for an argument, or `null` when the argument's type gives its field.
  */
 export function PickerControl(props: ControlProps & { picker: ArgumentPicker }) {
-  switch (props.picker.kind) {
+  const kind = props.picker.kind;
+  if (isTimeFieldKind(kind)) return <TimeChoiceField {...props} kind={kind} />;
+  switch (kind) {
     case "stateKey":
     case "statePrefix":
       return <StateKeyField {...props} />;

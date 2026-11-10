@@ -33,6 +33,7 @@ import { registerGetCurrentContextTool } from "./getCurrentContext";
 import { buildAiToolFromCommand, buildAiToolRegistrationOptions } from "./generator";
 import { registerTool, getAllTools, getTool, unregisterTool } from "./registry";
 import type { AiToolHandler, RegisteredTool } from "./types";
+import { relativeBanRefusal } from "../../commands/runtime/relativeBanGuard";
 
 function clearRegistry(): void {
   for (const tool of getAllTools()) {
@@ -141,6 +142,16 @@ async function callExecuteCommand(
   confirmation?: ConfirmationProofInput,
 ): Promise<CommandResult> {
   const commandContext = getCurrentCommandContext();
+  // The request goes to the connected server, whose capabilities the guard reads.
+  const refusal = await relativeBanRefusal(commandId, args, undefined);
+  if (refusal) {
+    return {
+      status: CommandResultStatus.ERROR,
+      message: refusal,
+      payload: null,
+      followUpCommands: [],
+    };
+  }
   const res = await graphqlClient.request<{ executeCommand: CommandResult }>(
     EXECUTE_COMMAND_MUTATION,
     {

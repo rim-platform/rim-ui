@@ -35,7 +35,12 @@ conversation gets the open one; with none open, the palette leaves it out and it
 that lacks a required argument opens a form titled with the command, with a field for each missing
 argument: a text field, a number field, a checkbox, a list of the allowed values, a search of the
 workspace's members, a list of its conversations or a list of your workspaces, each labelled with
-the argument's title, its description beneath and its default filled in. The first field has the
+the argument's title, its description beneath and its default filled in. The command's optional
+arguments, such as a ban's end or a kick's reason, wait folded under **More options**; only those
+you set are sent, and the form never opens for them alone. A field that changes a setting starts
+with its current value: a channel's topic, slow mode and who may post, your notification level for
+the conversation, and a state key's value as "Now: …"; a role change shows the member's role as
+"Now: …" once you pick them. The first field has the
 focus, <kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> runs the command, and
 <kbd>Escape</kbd> or **Cancel** runs nothing. A dangerous command still asks for confirmation after
 the form. A message, a thread or selected text is never asked for: without one the command says
@@ -291,7 +296,16 @@ and for an invite, which leaves out those already in the conversation; Unban lis
 banned and Clear Timeout those timed out. A conversation field lists only what its command acts
 on: archived channels to unarchive, channels to join, channels and groups to leave, your direct
 messages to open, and a reaction is picked with the emoji picker or typed, a custom emoji as
-`:name:`. An argument the macro finds where it runs, such as the open workspace, the open
+`:name:`. A time is picked as a choice: a ban ends "Until unbanned", after a preset such as
+"For 7 days", after a set length in minutes, hours or days, or at a date and time; a mute, a
+notifications pause and a timeout offer their presets, a set length and, for a mute and a pause,
+"Until a time"; and a state entry "Never expires" or expires after a length. The number, or the
+date and time, appears only for the choice that takes it. A length counts from each run, so
+"For 2 hours" saved in a step ends two hours after the macro runs, and "Mute until tomorrow"
+ends at 09:00 tomorrow on your device's clock. A server that does not take lengths for bans and
+mutes offers a fixed end only, and says so; a ban for a set length saved elsewhere is not sent
+there, from any surface: "This server can't end a ban after a set time, so the ban wasn't sent.
+Choose a date and time instead." An argument the macro finds where it runs, such as the open workspace, the open
 conversation or the selected message, can be left empty. **Save** stays blocked while a required
 argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
 turns a description into steps with their arguments filled in, which open in the form to check.
@@ -302,7 +316,9 @@ whatever the letter case. The app runs it step by step, in the workspace, conver
 thread you are in when it starts:
 
 - **Asked arguments come first.** One form asks for every argument the steps ask for, each
-  labelled "Step \<n\> · \<command\>: \<argument\>". Cancelling it runs nothing.
+  labelled "Step \<n\> · \<command\>: \<argument\>", with the same fields as the step's own
+  form: a state key's current value, a mute's choices, a topic cleared with **No topic**.
+  Cancelling it runs nothing.
 - **Each step runs as it would on its own.** A server command goes to the server that hosts the
   workspace, with its own confirmation when it needs one; an app or plugin command runs in the
   app. Steps do not pipe: each gets its own arguments.
@@ -341,8 +357,8 @@ Two macros, as examples:
 - **Standup.** `chat.post_message` with the conversation set to #standup and the text
   "Standup: yesterday, today, blockers?", then `state.incr` with the key `standup.count`, which
   counts the standups in workspace state.
-- **Heads down.** `notifications.mark_all_read`, then `notifications.dnd` with the mode `until`
-  and **Ask when I run it** on its minutes: each run asks how long to pause your notifications.
+- **Heads down.** `notifications.mark_all_read`, then `notifications.dnd` with **Ask when I run
+  it** on its pause: each run asks how long to pause your notifications.
 
 ## Pipelines
 

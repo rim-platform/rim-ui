@@ -94,9 +94,14 @@ function presetDraftOf(command: CommandDefinition | undefined, presetArgs: unkno
 
 /** `draft` with the field `name` holding `value`, and its problem cleared. */
 function withFieldValue(draft: PresetDraft, name: string, value: FieldValue): PresetDraft {
+  return withFieldValues(draft, { [name]: value });
+}
+
+/** `draft` with several fields set at once, their problems cleared. */
+function withFieldValues(draft: PresetDraft, changes: Readonly<FieldValues>): PresetDraft {
   const problems = { ...draft.problems };
-  delete problems[name];
-  return { values: { ...(draft.values ?? {}), [name]: value }, problems };
+  for (const name of Object.keys(changes)) delete problems[name];
+  return { values: { ...(draft.values ?? {}), ...changes }, problems };
 }
 
 /** Keys re-recorded on a listed binding that wait for the user to confirm taking them over. */
@@ -742,6 +747,7 @@ export function KeybindSettings() {
               commandId={newCommandId}
               values={newPreset.values}
               onChange={(name, value) => setNewPreset(withFieldValue(newPreset, name, value))}
+              onChangeFields={(changes) => setNewPreset(withFieldValues(newPreset, changes))}
               problems={newPreset.problems}
               workspaceId={workspaceId ?? undefined}
               emptyNote={ASKED_ON_PRESS}
@@ -891,6 +897,9 @@ export function KeybindSettings() {
                             saved={kb.presetArgs}
                             onChange={(name, value) =>
                               setEditPreset(withFieldValue(editPreset, name, value))
+                            }
+                            onChangeFields={(changes) =>
+                              setEditPreset(withFieldValues(editPreset, changes))
                             }
                             problems={editPreset.problems}
                             workspaceId={

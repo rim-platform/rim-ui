@@ -18,6 +18,8 @@ export interface ControlProps {
   argument: CommandArgumentInfo;
   value: FieldValue;
   onChange: (value: FieldValue) => void;
+  /** Sets several of the form's fields at once, for a field that sets other arguments too. */
+  onChangeFields: (changes: Readonly<FieldValues>) => void;
   mode: ArgumentFormMode;
   controlId: string;
   describedBy: string | undefined;

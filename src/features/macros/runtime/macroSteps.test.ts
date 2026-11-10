@@ -106,7 +106,7 @@ describe("requiredStepFields", () => {
 });
 
 describe("stepDraftOf and readStep", () => {
-  it("shows saved arguments in their fields and saves them back with what is asked", () => {
+  it("shows saved arguments in their fields and saves back those their choice uses", () => {
     const draft = stepDraftOf(
       {
         commandId: MUTE.id,
@@ -122,9 +122,21 @@ describe("stepDraftOf and readStep", () => {
       ok: true,
       input: {
         commandId: MUTE.id,
-        args: { workspace_id: "ws-1", duration: "1h", minutes: 5 },
+        args: { workspace_id: "ws-1", duration: "1h" },
         ask: ["conversation_id"],
       },
+    });
+  });
+
+  it("saves nothing a field sets when that field is asked for", () => {
+    const draft = stepDraftOf(
+      { commandId: MUTE.id, args: { conversation_id: "c-1", minutes: 30 }, ask: [] },
+      MUTE,
+    );
+
+    expect(readStep({ ...draft, ask: ["duration"] }, MUTE, undefined)).toEqual({
+      ok: true,
+      input: { commandId: MUTE.id, args: { conversation_id: "c-1" }, ask: ["duration"] },
     });
   });
 
@@ -143,7 +155,7 @@ describe("stepDraftOf and readStep", () => {
     expect(readStep(draft, MUTE, undefined)).toEqual({
       ok: false,
       problems: {
-        duration: "For how long needs a value, or ask for it when the macro runs",
+        duration: "How long needs a value, or ask for it when the macro runs",
       },
     });
 

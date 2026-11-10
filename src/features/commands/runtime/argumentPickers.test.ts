@@ -82,7 +82,7 @@ describe("argumentPicker", () => {
       until_tomorrow: "Mute until tomorrow",
       forever: "Until I unmute it",
       until: "Until a time",
-      minutes: "For a number of minutes",
+      minutes: "For a set length",
     });
     expect(labels("notifications.dnd.mode")).toEqual({
       on: "Until I turn it back on",

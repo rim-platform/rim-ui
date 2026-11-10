@@ -40,6 +40,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   what to do, follow its answers, tool calls, diffs and plan as it works, approve or refuse each
   step it asks about, and cancel or stop it. Desktop notifications say when it waits for you or
   finishes. RIM keeps no transcripts; recent sessions reopen when the agent supports it.
+- Command forms pick times as choices: a ban's end, a mute, a notifications pause, a timeout and
+  a state entry's expiry offer their presets, a length in minutes, hours or days and, where it
+  fits, a date and time, so a macro step saved as "For 2 hours" counts from each run. The form a
+  command opens to ask for arguments starts with the current topic, slow mode, posting rule or
+  notification level, folds optional arguments under **More options**, and a macro's own form
+  asks each step with the same fields as its editor, a cleared topic included.
 - Command forms pick people and conversations from fitting lists: the members of a new group or
   channel, or people to invite, by name as chips; Unban lists the people banned, Clear Timeout
   those timed out and Remove Member the conversation's members; a step that archives, unarchives,

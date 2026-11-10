@@ -6,8 +6,8 @@ import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { QUICK_ACCESS_SHORTCUT } from "../../commands/state/useQuickAccessStore";
 import { unreadTotal, useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useNotificationSettings } from "../../notifications/api/useNotificationSettings";
-import { pauseArguments } from "../../notifications/pauseCommand";
-import { inOneHour, isPauseActive, tomorrowMorning } from "../../notifications/rules";
+import { PAUSE_DURATIONS, pauseArguments } from "../../notifications/pauseCommand";
+import { isPauseActive } from "../../notifications/rules";
 import { joinRequestBadge, useJoinRequestCount } from "../api/publicJoinLink";
 import { useCanHavePublicLink } from "./useCanHavePublicLink";
 import { useIsDefaultWorkspace } from "./useIsDefaultWorkspace";
@@ -16,16 +16,6 @@ import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { canCreateChannel, canModerate, isGuest, isOwner } from "../role";
 import { canLeaveWorkspace, canRenameWorkspace } from "../workspaceActions";
-
-const PAUSES: { id: string; label: string; until: () => Date }[] = [
-  { id: "pause-1h", label: "For 1 hour", until: () => inOneHour() },
-  {
-    id: "pause-8h",
-    label: "For 8 hours",
-    until: () => new Date(Date.now() + 8 * 60 * 60 * 1000),
-  },
-  { id: "pause-tomorrow", label: "Until tomorrow morning", until: () => tomorrowMorning() },
-];
 
 interface UseWorkspaceMenuItemsOptions {
   workspaceId: string;
@@ -99,7 +89,7 @@ export function useWorkspaceMenuItems({
           : paused
             ? "Paused"
             : undefined,
-      submenu: PAUSES.map((p) => ({
+      submenu: PAUSE_DURATIONS.map((p) => ({
         id: p.id,
         label: p.label,
         onSelect: () => pause(p.until()),

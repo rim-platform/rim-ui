@@ -1,3 +1,5 @@
+import type { TimeFieldKind } from "./timeChoices";
+
 /**
  * The field an argument gets when its type alone does not say enough:
  * - `stateKey`: a workspace state key, typed or picked from the keys in the form's scope.
@@ -10,6 +12,8 @@
  * - `member`: one person, picked from the pool `members` names.
  * - `conversation`: one conversation, picked from the pool `conversations` names.
  * - `emoji`: an emoji, or a custom emoji as `:name:`, typed or picked.
+ * - `banEnd`, `muteDuration`, `pauseMode`, `ttl`, `timeoutMinutes`: when something ends or how
+ *   long it lasts, picked from presets, typed as a length or as a date and time.
  */
 export type ArgumentPickerKind =
   | "stateKey"
@@ -22,7 +26,8 @@ export type ArgumentPickerKind =
   | "members"
   | "member"
   | "conversation"
-  | "emoji";
+  | "emoji"
+  | TimeFieldKind;
 
 /**
  * The people a member field offers:
@@ -48,6 +53,16 @@ export type MemberPool = "people" | "notInConversation" | "inConversation" | "ti
 export type ConversationPool =
   "channels" | "channelsAndGroups" | "archivedChannels" | "joinableChannels" | "direct";
 
+/**
+ * Where the ask form finds an argument's current value, to start the field with or to show
+ * beside it:
+ * - `slowMode`: the form's conversation's slow mode, in seconds.
+ * - `postingPolicy`: who may post in the form's channel.
+ * - `notificationLevel`: the viewer's notification level for the form's conversation.
+ * - `memberRole`: the role of the member the form's `user_id` names, shown, never filled in.
+ */
+export type CurrentValueSource = "slowMode" | "postingPolicy" | "notificationLevel" | "memberRole";
+
 /** How the argument form shows one argument of one command. */
 export interface ArgumentPicker {
   /** The field to use instead of the one the argument's type gives. */
@@ -65,6 +80,14 @@ export interface ArgumentPicker {
   members?: MemberPool;
   /** For `conversation`: the conversations the field offers. */
   conversations?: ConversationPool;
+  /** The other arguments the field sets along with its own; they get no field of their own. */
+  takes?: readonly string[];
+  /** The field's label, in place of the argument's title. */
+  label?: string;
+  /** The text under the field, in place of the argument's description; empty for none. */
+  hint?: string;
+  /** Where the ask form finds the argument's current value. */
+  current?: CurrentValueSource;
 }
 
 const STATE_SCOPE_LABELS = { server: "Workspace (everyone)", user: "Only me" } as const;
@@ -91,6 +114,7 @@ const PICKERS: Readonly<Record<string, ArgumentPicker>> = {
   "state.list.prefix": { kind: "statePrefix" },
   "state.list.scope": STATE_SCOPE,
   "notifications.set_level.level": {
+    current: "notificationLevel",
     valueLabels: {
       all: "All messages",
       mentions: "Mentions only",
@@ -99,16 +123,24 @@ const PICKERS: Readonly<Record<string, ArgumentPicker>> = {
     },
   },
   "notifications.mute_conversation.duration": {
+    kind: "muteDuration",
+    takes: ["until", "minutes"],
+    label: "How long",
+    hint: "",
     valueLabels: {
       "1h": "Mute for 1 hour",
       "8h": "Mute for 8 hours",
       until_tomorrow: "Mute until tomorrow",
       forever: "Until I unmute it",
       until: "Until a time",
-      minutes: "For a number of minutes",
+      minutes: "For a set length",
     },
   },
   "notifications.dnd.mode": {
+    kind: "pauseMode",
+    takes: ["until", "minutes"],
+    label: "Pause",
+    hint: "Notifications still reach your inbox, without toasts or sounds.",
     valueLabels: { on: "Until I turn it back on", off: "Off", until: "Until a time" },
   },
   "admin.delete_member_messages.window": {
@@ -120,8 +152,14 @@ const PICKERS: Readonly<Record<string, ArgumentPicker>> = {
     },
   },
   "chat.set_channel_posting.policy": {
+    current: "postingPolicy",
     valueLabels: { everyone: "Everyone", moderators: "Owner and moderators" },
   },
+  "chat.set_slow_mode.seconds": { current: "slowMode" },
+  "admin.set_role.role": { current: "memberRole" },
+  "admin.ban.expires_at": { kind: "banEnd", takes: ["minutes"], label: "Ban ends", hint: "" },
+  "admin.timeout.minutes": { kind: "timeoutMinutes", label: "How long", hint: "" },
+  "state.set.ttl": { kind: "ttl", label: "Expires", hint: "" },
   "app.run_macro.macro_id": { kind: "macro" },
   "app.toggle_pipeline.pipeline_id": { kind: "pipeline" },
   "workspace.switch_workspace.workspace_id": { kind: "targetWorkspace" },
@@ -174,6 +212,60 @@ export function argumentPickerKind(
   argumentName: string,
 ): ArgumentPickerKind | undefined {
   return argumentPicker(commandId, argumentName)?.kind;
+}
+
+/**
+ * The other arguments the field of `argumentName` sets along with its own, such as a mute's
+ * `until` and `minutes` for its `duration`.
+ */
+export function takenArguments(commandId: string | undefined, argumentName: string): string[] {
+  return [...(argumentPicker(commandId, argumentName)?.takes ?? [])];
+}
+
+/**
+ * The argument among `fields` whose field sets `argumentName` along with its own, if any.
+ *
+ * @param commandId - The command the fields are of.
+ * @param argumentName - The argument that may be set by another's field.
+ * @param fields - The arguments of one form.
+ * @returns The name of the argument whose field sets it.
+ */
+export function takingArgument(
+  commandId: string | undefined,
+  argumentName: string,
+  fields: readonly { name: string }[],
+): string | undefined {
+  return fields.find((field) => takenArguments(commandId, field.name).includes(argumentName))?.name;
+}
+
+/** The arguments among `fields` that get a field of their own: those no other field sets. */
+export function shownFields<T extends { name: string }>(
+  commandId: string | undefined,
+  fields: readonly T[],
+): T[] {
+  return fields.filter((field) => takingArgument(commandId, field.name, fields) === undefined);
+}
+
+/**
+ * `fields` with the arguments each one's field sets added after it, taken from `declared`, the
+ * command's arguments, when they are not among `fields` yet.
+ */
+export function withTakenArguments<T extends { name: string }>(
+  commandId: string | undefined,
+  fields: readonly T[],
+  declared: readonly T[],
+): T[] {
+  const names = new Set(fields.map((field) => field.name));
+  return fields.flatMap((field) => {
+    const taken = takenArguments(commandId, field.name).flatMap((name) => {
+      if (names.has(name)) return [];
+      const argument = declared.find((candidate) => candidate.name === name);
+      if (!argument) return [];
+      names.add(name);
+      return [argument];
+    });
+    return [field, ...taken];
+  });
 }
 
 /**

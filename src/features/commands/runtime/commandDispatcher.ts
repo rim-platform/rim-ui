@@ -50,7 +50,12 @@ import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
 import { directSpaceOf } from "../../conversations/state/openDirect";
-import { sendsEmptyText } from "./argumentPickers";
+import {
+  sendsEmptyText,
+  takenArguments,
+  takingArgument,
+  withTakenArguments,
+} from "./argumentPickers";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
 import { confirmConversationCommand } from "./conversationActionGate";
@@ -92,6 +97,7 @@ import {
   type HumanConfirmationOutcome,
 } from "./humanConfirmation";
 import { withCommandEffect } from "./commandEffects";
+import { relativeBanRefusal } from "./relativeBanGuard";
 
 interface ConversationItem {
   id: string;
@@ -939,6 +945,16 @@ export async function dispatchCommand(
       ? withLocalTomorrowMorning(command.id, context?.args)
       : context?.args;
 
+  // A server that can't end a ban after a set time would ban for good: nothing is sent to it.
+  const banRefusal = await relativeBanRefusal(
+    command.id,
+    args,
+    contextString(context?.commandContext, "workspaceId"),
+  );
+  if (banRefusal) {
+    return { status: "ERROR", message: banRefusal, payload: null, followUpCommands: [] };
+  }
+
   if (
     !context?.isPipe &&
     !context?.confirmedByCaller &&
@@ -999,8 +1015,9 @@ function contextString(context: Record<string, unknown> | undefined, key: string
 
 /**
  * Asks for the required arguments of `command` that neither `args`, `commandContext` nor an
- * argument prompt supplies. One that only the context can supply (a message, a thread, selected
- * text) is never asked for: the command is refused with what to select first.
+ * argument prompt supplies, with the optional ones not given under "More options". One that only
+ * the context can supply (a message, a thread, selected text) is never asked for: the command is
+ * refused with what to select first. Nothing is asked when nothing required is missing.
  *
  * @returns `complete` when nothing is missing, `filled` with `args` and the submitted values,
  *   `cancelled` when the person dismissed the form, or `refused` with the reason.
@@ -1016,7 +1033,8 @@ async function askForMissingArguments(
     selectedMessageId: contextString(commandContext, "selectedMessageId"),
   };
   const prompted = argumentPromptName(command.id);
-  const missing = (command.arguments ?? []).filter(
+  const declared = command.arguments ?? [];
+  const missing = declared.filter(
     (argument) =>
       argument.required &&
       argument.name !== prompted &&
@@ -1029,6 +1047,27 @@ async function askForMissingArguments(
   if (contextOnly) {
     return { kind: "refused", message: contextOnlyArgumentMessage(contextOnly.argumentType) };
   }
+  const asked = withTakenArguments(command.id, missing, declared);
+  const askedNames = new Set(asked.map((argument) => argument.name));
+  // The optional arguments the form can show, each with those its field sets, unless one of
+  // them is given already.
+  const more = withTakenArguments(
+    command.id,
+    declared.filter(
+      (argument) =>
+        !argument.required &&
+        !askedNames.has(argument.name) &&
+        argument.name !== prompted &&
+        argument.argumentType !== CommandArgumentType.WORKSPACE_ID &&
+        formAsksFor(argument) &&
+        takingArgument(command.id, argument.name, declared) === undefined &&
+        ![argument.name, ...takenArguments(command.id, argument.name)].some((name) =>
+          argumentGiven(args, name),
+        ) &&
+        !contextSuppliesArgument(argument, argumentContext),
+    ),
+    declared,
+  );
   // The members and conversations offered are those of the workspace the command runs in.
   const givenWorkspace = (command.arguments ?? [])
     .filter((argument) => argument.argumentType === CommandArgumentType.WORKSPACE_ID)
@@ -1036,7 +1075,8 @@ async function askForMissingArguments(
     .find((value) => value !== undefined);
   const values = await useCommandArgumentsStore.getState().ask({
     title: withClientLabel(command).title || command.id,
-    arguments: missing,
+    arguments: asked,
+    ...(more.length > 0 ? { moreArguments: more } : {}),
     workspaceId: givenWorkspace ?? argumentContext.workspaceId,
     commandId: command.id,
     conversationId:
