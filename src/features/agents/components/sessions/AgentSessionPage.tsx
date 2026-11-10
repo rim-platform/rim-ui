@@ -13,6 +13,7 @@ import {
   type AgentSession,
   type AgentSessionSnapshot,
 } from "../../acp/agentSession";
+import { askContext } from "../../runtime/askContext";
 import { showInvisibleCharacters } from "../../runtime/invisibleCharacters";
 import { useAgentProgramsStore } from "../../state/useAgentProgramsStore";
 import {
@@ -25,10 +26,12 @@ import {
   useRunningAgentSessionsStore,
   type RecentAgentSession,
 } from "../../state/useAgentSessionsStore";
+import { removeAbout, setAbout, useAskAgentStore } from "../../state/useAskAgentStore";
 import { useStartAgentSessionStore } from "../../state/useStartAgentSessionStore";
 import { AgentTranscript } from "./AgentTranscript";
 import { PageBar } from "./AgentSessionsPage";
 import { ApprovalCard } from "./ApprovalCard";
+import { AboutChip, RefusalCards } from "./AskAgentParts";
 import { SessionStatusChip } from "./sessionParts";
 import {
   agentCannotSentence,
@@ -288,6 +291,14 @@ function LiveSession({
 
       <Transcript snapshot={snapshot} agentName={name} />
 
+      {live && (
+        <RefusalCards
+          sessionKey={sessionKey}
+          profileId={snapshot.profileId}
+          agentName={shownName}
+        />
+      )}
+
       {snapshot.pendingPermissions.length > 0 && (
         <Approvals session={session} snapshot={snapshot} agentName={name} />
       )}
@@ -498,7 +509,10 @@ function composerHint(snapshot: AgentSessionSnapshot, agentName: string): string
   }
 }
 
-/** Where the person writes the next prompt: only what is typed here is sent. */
+/**
+ * Where the person writes the next prompt: only what is typed here is sent, with the link and
+ * hint of what the chip above says it is about.
+ */
 function Composer({
   sessionKey,
   session,
@@ -522,12 +536,16 @@ function Composer({
     useRunningAgentSessionsStore.setState({ focusComposerKey: null });
   }, [ready, focusWanted]);
 
+  const about = useAskAgentStore((s) => s.about[sessionKey]);
+
   const send = () => {
     if (!ready || text.trim() === "") return;
     const prompt = text;
     setText("");
-    session.prompt(prompt).catch((error: unknown) => {
+    if (about) removeAbout(sessionKey);
+    session.prompt(prompt, about ? askContext(about) : undefined).catch((error: unknown) => {
       setText(prompt);
+      if (about) setAbout(sessionKey, about);
       toast.error(error instanceof Error ? error.message : "The prompt did not reach the agent.");
     });
   };
@@ -535,6 +553,7 @@ function Composer({
   return (
     <div className="shrink-0 border-t border-rim-line px-4 py-3">
       <div className="mx-auto max-w-3xl space-y-1">
+        <AboutChip sessionKey={sessionKey} />
         <textarea
           ref={inputRef}
           rows={3}

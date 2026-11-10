@@ -15,6 +15,7 @@ import { fetchMyServers } from "../../workspaces/api/useMyServers";
 import { useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import { createAgentReads, type AgentChannel } from "./agentReads";
+import { missingGrantWanted, reportMissingGrant } from "./grantRefusals";
 import type { GrantChannel } from "./grants";
 import { newRunId, runIdFor } from "./runs";
 
@@ -95,4 +96,5 @@ export const appAgentReads = createAgentReads({
   isDirectSpace,
   connected,
   record,
+  missingGrant: { wanted: missingGrantWanted, report: reportMissingGrant },
 });

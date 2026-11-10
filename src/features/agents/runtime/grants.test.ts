@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { grantCovers, grantMayCover, hasGrantIn, type AgentGrants } from "./grants";
+import {
+  grantCovers,
+  grantMayCover,
+  hasGrantIn,
+  withChannelGrant,
+  type AgentGrants,
+} from "./grants";
 
 const CHANNEL = { id: "c1", isChannel: true, encrypted: false };
 const DM = { id: "c1", isChannel: false, encrypted: false };
@@ -75,5 +81,29 @@ describe("hasGrantIn", () => {
   it("counts all and a listed channel", () => {
     expect(hasGrantIn(ALL, "w1")).toBe(true);
     expect(hasGrantIn(BY_ID, "w1")).toBe(true);
+  });
+});
+
+describe("withChannelGrant", () => {
+  it("adds exactly the one channel and leaves every other grant as it was", () => {
+    const grants: AgentGrants = {
+      w1: { all: false, channelIds: ["c1"] },
+      w2: { all: true, channelIds: [] },
+    };
+    expect(withChannelGrant(grants, "w1", "c2")).toEqual({
+      w1: { all: false, channelIds: ["c1", "c2"] },
+      w2: { all: true, channelIds: [] },
+    });
+    expect(withChannelGrant({}, "w3", "c9")).toEqual({ w3: { all: false, channelIds: ["c9"] } });
+    expect(grants.w1.channelIds).toEqual(["c1"]);
+  });
+
+  it("changes nothing when the channel is covered already", () => {
+    const grants: AgentGrants = {
+      w1: { all: false, channelIds: ["c1"] },
+      w2: { all: true, channelIds: [] },
+    };
+    expect(withChannelGrant(grants, "w1", "c1")).toBe(grants);
+    expect(withChannelGrant(grants, "w2", "c5")).toBe(grants);
   });
 });

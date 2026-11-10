@@ -34,6 +34,14 @@ import {
   useRunningAgentSessionsStore,
 } from "../../../agents/state/useAgentSessionsStore";
 import { useStartAgentSessionStore } from "../../../agents/state/useStartAgentSessionStore";
+import { resetAskAgent, useAskAgentStore } from "../../../agents/state/useAskAgentStore";
+import { NOT_FOR_DIRECT, NOT_FOR_ENCRYPTED } from "../../../agents/runtime/askContext";
+import { ConversationTypeEnum } from "../../../../core/graphql/generated/schema-types";
+import { queryKeys } from "../../../../core/query/keys";
+import { queryClient } from "../../../../core/query/queryClient";
+import { makeConversation } from "../../../conversations/__fixtures__/conversations";
+import { useRelayStore } from "../../../relay/state/useRelayStore";
+import { OPEN_A_CONVERSATION, SELECT_A_MESSAGE } from "./messageContext";
 import {
   AGENT_COMMANDS,
   CONNECT_DESKTOP_ONLY_MESSAGE,
@@ -56,10 +64,9 @@ const IDS = [
   "workspace.open_agent_sessions",
   "agents.start_session",
   "agents.stop_session",
+  "agents.ask_about_message",
+  "agents.ask_about_conversation",
 ];
-
-/** Agent session commands no macro, plugin or agent may run, listed before they exist. */
-const SESSION_IDS = ["agents.ask_about_message", "agents.ask_about_conversation"];
 
 const executeBackend = vi.fn();
 
@@ -118,7 +125,7 @@ describe("agent commands", () => {
 
   it("defines each command in Agents, run on this device, keybindable, with a handler", () => {
     expect(AGENT_COMMANDS.map((c) => c.id)).toEqual(IDS);
-    expect([...AGENT_MANAGEMENT_COMMAND_IDS].sort()).toEqual([...IDS, ...SESSION_IDS].sort());
+    expect([...AGENT_MANAGEMENT_COMMAND_IDS].sort()).toEqual([...IDS].sort());
     for (const id of IDS) {
       const command = LOCAL_COMMANDS.find((c) => c.id === id);
       expect(command, id).toBeDefined();
@@ -169,6 +176,8 @@ describe("agent commands", () => {
       "workspace.open_agent_sessions",
       "agents.start_session",
       "agents.stop_session",
+      "agents.ask_about_message",
+      "agents.ask_about_conversation",
     ];
 
     /** A session in memory under `key`, reporting `status`. */
@@ -240,6 +249,7 @@ describe("agent commands", () => {
         expect(toast.info, id).toHaveBeenCalledWith("Starting agents needs the desktop app");
       }
       expect(useStartAgentSessionStore.getState().open).toBe(false);
+      expect(useAskAgentStore.getState().choosing).toBeNull();
       expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key: "s1" });
     });
 
@@ -252,7 +262,79 @@ describe("agent commands", () => {
         expect(LOCAL_COMMANDS.find((c) => c.id === id)?.pluginRunnable, id).toBeUndefined();
       }
       expect(useStartAgentSessionStore.getState().open).toBe(false);
+      expect(useAskAgentStore.getState().choosing).toBeNull();
       expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key: "s1" });
+    });
+  });
+
+  describe("ask_about_message and ask_about_conversation", () => {
+    const CHANNEL = { workspaceId: "ws-1", conversationId: "conv-1" };
+
+    function runIn(id: string, commandContext: Record<string, unknown>) {
+      const command = LOCAL_COMMANDS.find((c) => c.id === id)!;
+      return dispatchCommand(command, executeBackend, { commandContext });
+    }
+
+    function cache(overrides: Parameters<typeof makeConversation>[0] = {}) {
+      queryClient.setQueryData(queryKeys.conversations("ws-1"), {
+        items: [makeConversation(overrides)],
+      });
+      queryClient.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme" }]);
+    }
+
+    afterEach(() => {
+      queryClient.clear();
+      resetAskAgent();
+      useRelayStore.setState({ info: null });
+    });
+
+    it("opens the session chooser for the open channel", async () => {
+      cache();
+      await runIn("agents.ask_about_conversation", CHANNEL);
+      expect(useAskAgentStore.getState().choosing).toEqual({
+        ...CHANNEL,
+        messageId: null,
+        channelName: "general",
+        workspaceName: "Acme",
+      });
+    });
+
+    it("opens the session chooser for the selected message", async () => {
+      cache();
+      await runIn("agents.ask_about_message", { ...CHANNEL, selectedMessageId: "msg-7" });
+      expect(useAskAgentStore.getState().choosing).toMatchObject({ messageId: "msg-7" });
+    });
+
+    it("asks for a message, and for a conversation, first", async () => {
+      cache();
+      await runIn("agents.ask_about_message", CHANNEL);
+      expect(toast.info).toHaveBeenLastCalledWith(SELECT_A_MESSAGE);
+      await runIn("agents.ask_about_conversation", { workspaceId: "ws-1" });
+      expect(toast.info).toHaveBeenLastCalledWith(OPEN_A_CONVERSATION);
+      expect(useAskAgentStore.getState().choosing).toBeNull();
+    });
+
+    it.each([
+      ["a direct message", { conversationType: ConversationTypeEnum.DIRECT }, NOT_FOR_DIRECT],
+      ["a group", { conversationType: ConversationTypeEnum.GROUP }, NOT_FOR_DIRECT],
+      ["an encrypted channel", { encryptedAt: "2026-10-01T09:00:00Z" }, NOT_FOR_ENCRYPTED],
+    ])("refuses %s", async (_what, overrides, sentence) => {
+      cache(overrides);
+      for (const id of ["agents.ask_about_conversation", "agents.ask_about_message"]) {
+        vi.mocked(toast.info).mockClear();
+        await runIn(id, { ...CHANNEL, selectedMessageId: "msg-7" });
+        expect(toast.info, id).toHaveBeenCalledWith(sentence);
+      }
+      expect(useAskAgentStore.getState().choosing).toBeNull();
+      expect(NOT_FOR_DIRECT).toBe("Agents can't be given direct messages or groups yet.");
+    });
+
+    it("refuses a channel in the direct space", async () => {
+      cache();
+      useRelayStore.setState({ info: { serverId: "relay", roles: [], directSpaceId: "ws-1" } });
+      await runIn("agents.ask_about_conversation", CHANNEL);
+      expect(toast.info).toHaveBeenCalledWith(NOT_FOR_DIRECT);
+      expect(useAskAgentStore.getState().choosing).toBeNull();
     });
   });
 

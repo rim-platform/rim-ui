@@ -349,16 +349,19 @@ describe("runCommand", () => {
       expect(deps.execute).not.toHaveBeenCalled();
     });
 
-    it.each(["agents.start_session", "agents.stop_session", "workspace.open_agent_sessions"])(
-      "never runs the agent session command %s, even approved and listed",
-      async (id) => {
-        agent = agentWith([id]);
-        deps.commands.mockResolvedValue([command(id), ...COMMANDS]);
-        expect(await run(id)).toEqual(NOT_APPROVED);
-        expect(deps.confirm).not.toHaveBeenCalled();
-        expect(deps.execute).not.toHaveBeenCalled();
-      },
-    );
+    it.each([
+      "agents.start_session",
+      "agents.stop_session",
+      "workspace.open_agent_sessions",
+      "agents.ask_about_message",
+      "agents.ask_about_conversation",
+    ])("never runs the agent session command %s, even approved and listed", async (id) => {
+      agent = agentWith([id]);
+      deps.commands.mockResolvedValue([command(id), ...COMMANDS]);
+      expect(await run(id)).toEqual(NOT_APPROVED);
+      expect(deps.confirm).not.toHaveBeenCalled();
+      expect(deps.execute).not.toHaveBeenCalled();
+    });
 
     it("never runs an approved command that names agent management or sending", async () => {
       agent = agentWith(["agents.disconnect", "chat.post_message"]);

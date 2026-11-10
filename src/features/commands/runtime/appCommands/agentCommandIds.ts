@@ -17,6 +17,11 @@ export const START_AGENT_SESSION = "agents.start_session";
 /** Stops the agent session that is open. */
 export const STOP_AGENT_SESSION = "agents.stop_session";
 
+/** Asks an agent session about the selected message. */
+export const ASK_AGENT_ABOUT_MESSAGE = "agents.ask_about_message";
+/** Asks an agent session about the open conversation. */
+export const ASK_AGENT_ABOUT_CONVERSATION = "agents.ask_about_conversation";
+
 /** The commands that answer a waiting agent: its request, or its asking to connect. */
 export const AGENT_ANSWER_COMMAND_IDS: readonly string[] = [
   APPROVE_AGENT_REQUEST,
@@ -40,7 +45,7 @@ export const AGENT_MANAGEMENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   CONNECT_AGENT,
   START_AGENT_SESSION,
   STOP_AGENT_SESSION,
-  "agents.ask_about_message",
-  "agents.ask_about_conversation",
+  ASK_AGENT_ABOUT_MESSAGE,
+  ASK_AGENT_ABOUT_CONVERSATION,
   OPEN_AGENT_SESSIONS,
 ]);

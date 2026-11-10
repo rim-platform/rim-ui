@@ -23,6 +23,7 @@ import {
 } from "../__fixtures__/conversations";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
+import { resetAskAgent, useAskAgentStore } from "../../agents/state/useAskAgentStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { queryClient } from "../../../core/query/queryClient";
 import { useBlockPersonStore } from "../../relay/blocking/useBlockPersonStore";
@@ -807,6 +808,53 @@ describe("ConversationActionsMenu — the agent in an encrypted conversation", (
     serve(ServerMemberRoleGql.MEMBER);
     await openMenu(encrypted(), ServerMemberRoleGql.MEMBER);
     expect(menuLabels().some((l) => l.startsWith("Agent"))).toBe(false);
+  });
+});
+
+describe("ConversationActionsMenu — ask an agent", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    platform.current = "desktop";
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    platform.current = "web";
+    resetAskAgent();
+    useAuthStore.setState({ session: null });
+  });
+
+  it("asks about the menu's channel, through its command, in the desktop app", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Ask agent about #general" }));
+    await waitFor(() =>
+      expect(useAskAgentStore.getState().choosing).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "conv-1",
+        messageId: null,
+        channelName: "general",
+        workspaceName: "this workspace",
+      }),
+    );
+  });
+
+  it("is not offered in the web app", async () => {
+    platform.current = "web";
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels().some((l) => l.startsWith("Ask agent"))).toBe(false);
+  });
+
+  it.each([
+    ["a direct message", { conversationType: ConversationTypeEnum.DIRECT, title: null }],
+    ["a group", { conversationType: ConversationTypeEnum.GROUP, title: "crew" }],
+    ["an encrypted channel", { encryptedAt: "2026-10-01T09:00:00Z" }],
+    ["an archived channel", { isArchived: true }],
+  ])("is not offered for %s", async (_what, overrides) => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await openMenu(makeConversation(overrides), ServerMemberRoleGql.MEMBER);
+    expect(menuLabels().some((l) => l.startsWith("Ask agent"))).toBe(false);
   });
 });
 

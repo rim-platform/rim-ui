@@ -6,6 +6,7 @@ import { ConversationTypeEnum, PostingPolicy } from "../../../core/graphql/gener
 import { queryKeys } from "../../../core/query/keys";
 import { detectPlatform } from "../../../core/runtime/runtime";
 import { AgentEncryptedWarning } from "../../agent/encrypted/AgentEncryptedSwitch";
+import { cannotAskAbout } from "../../agents/runtime/askContext";
 import { agentSwitchLabel, useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { runCommandFromClick, type ClickOptions } from "../../commands/runtime/runFromClick";
@@ -65,7 +66,8 @@ type PendingDialog = {
  * - A channel: Join channel first for a public one the viewer is not in, then Mark as read
  *   (when unread) or Mark as unread (when read, on a host with read markers, unless what is
  *   loaded shows nothing by someone else), Notifications, Members, Invite people…, Edit topic…
- *   (Owner, Moderator or a private channel's creator), Assign keybind…, the
+ *   (Owner, Moderator or a private channel's creator), Ask agent about #name (in the desktop
+ *   app, on a channel that isn't encrypted), Assign keybind…, the
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
  *   posting policies, New webhook… on a plaintext channel when the server has incoming webhooks,
  *   Archive channel… or Unarchive channel),
@@ -240,6 +242,20 @@ export function useConversationMenuItems(workspaceId: string | null): {
       }
 
       const blockTarget = peer ? blockTargetOf(peer.userId, serverId) : null;
+
+      // Agent sessions run in the desktop app only, and only a channel a grant could cover is
+      // offered: never a direct message, a group or anything encrypted.
+      if (
+        !archived &&
+        detectPlatform() === "desktop" &&
+        cannotAskAbout(conversation, isDirectSpace(serverId)) === null
+      ) {
+        items.push({
+          id: "ask-agent",
+          label: `Ask agent about ${name}`,
+          onSelect: () => run("agents.ask_about_conversation"),
+        });
+      }
 
       // The agent runs in the desktop app only.
       if (header && detectPlatform() === "desktop" && conversation.encryptedAt) {

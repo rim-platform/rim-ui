@@ -52,6 +52,22 @@ export function agentCannotSentence(agentName: string): string {
   return `${agentName} can't use RIM's tools.`;
 }
 
+/**
+ * What the session chooser of "Ask agent…" says of a session without RIM's tools.
+ *
+ * @param state - Why RIM's tools are not in the session.
+ */
+export function cannotReadRimSentence(
+  agentName: string,
+  state: "bridge_off" | "agent_cannot",
+): string {
+  const reason =
+    state === "bridge_off"
+      ? "RIM's tools are off in Settings → Agents."
+      : "it can't use RIM's tools.";
+  return `${agentName} can't read RIM in this session: ${reason}`;
+}
+
 /** What the session says when the program for it was removed. */
 export const PROFILE_GONE =
   "The agent program for this session was removed from Settings → Agents.";

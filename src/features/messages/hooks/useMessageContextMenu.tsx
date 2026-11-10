@@ -1,9 +1,14 @@
 import { useCallback, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
+import { detectPlatform } from "../../../core/runtime/runtime";
 import type { MessageItem } from "../../../core/types/messages";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { cannotAskAbout } from "../../agents/runtime/askContext";
+import { knownConversation } from "../../conversations/api/useConversation";
 import { useSpaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
+import { isDirectSpace } from "../../relay/state/useRelayStore";
 import { usePluginContextMenuCommands } from "../../plugins/api/usePluginCommands";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
@@ -74,7 +79,8 @@ function selectedTextIn(messageId: string): string | null {
  * The message context menu of a conversation, in this order: Add reaction, Copy selection
  * (while text of the message is selected) and Copy text, Reply, Reply in thread, Forward, Pin or
  * Unpin, Mark unread from here (a top-level message of the main timeline, on a host with read
- * markers); then Edit and Delete on the viewer's own message, Report on someone else's; a
+ * markers), Ask agent… (in the desktop app, in a channel that isn't encrypted); then Edit and
+ * Delete on the viewer's own message, Report on someone else's; a
  * Moderation section with Delete for an Owner or Moderator; then the plugins' message actions.
  * Add reaction, Reply in thread and Pin or Unpin are left out where the channel's posting policy
  * keeps the viewer from them. Each item runs its command as a context-menu run on the message it
@@ -106,6 +112,7 @@ export function useMessageContextMenu({
   const canModerate = useCanModerate(workspaceId ?? undefined);
   const rights = usePostingRights(workspaceId, conversationId);
   const marksUnread = useSpaceMarksUnread(workspaceId);
+  const qc = useQueryClient();
 
   const getItems = useCallback(
     (target: MessageMenuTarget): DropdownMenuItem[] => {
@@ -190,6 +197,22 @@ export function useMessageContextMenu({
         });
       }
 
+      // Agent sessions run in the desktop app only, and only a channel a grant could cover is
+      // offered: never a direct message, a group or anything encrypted.
+      const conversation = knownConversation(qc, workspaceId, conversationId);
+      if (
+        detectPlatform() === "desktop" &&
+        !message?.isDeleted &&
+        conversation &&
+        cannotAskAbout(conversation, isDirectSpace(workspaceId)) === null
+      ) {
+        result.push({
+          id: "ask-agent",
+          label: "Ask agent…",
+          onSelect: () => run("agents.ask_about_message"),
+        });
+      }
+
       if (isOwnMessage) {
         const edit = onEdit
           ? () => onEdit(messageId)
@@ -250,6 +273,7 @@ export function useMessageContextMenu({
       return result;
     },
     [
+      qc,
       workspaceId,
       conversationId,
       onForward,

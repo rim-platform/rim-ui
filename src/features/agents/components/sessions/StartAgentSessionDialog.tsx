@@ -71,8 +71,10 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
       return;
     }
     const key = startAgentSession(chosen, path);
+    const { onStarted } = useStartAgentSessionStore.getState();
     onClose();
     openAgentSession(key);
+    onStarted?.(key);
   };
 
   return (

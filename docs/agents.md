@@ -252,6 +252,50 @@ the agent to open that session, when the agent can: it shows the history it kept
 can't says "<agent> can't reopen past sessions. Start a new one." **Remove** only takes a session
 off the list.
 
+## Ask agent about a message or channel
+
+In the desktop app, a channel's menu has **Ask agent about #channel**, and a message's menu has
+**Ask agent…**. The commands **Ask Agent About Conversation…** and **Ask Agent About Message…** do
+the same for the open channel and the selected message; the web app says "Starting agents needs
+the desktop app". Direct messages, groups and encrypted conversations can't be given to agents yet,
+so their menus don't offer it, and the commands say "Agents can't be given direct messages or
+groups yet." or "Agents can't read encrypted conversations yet."
+
+1. **Choose a session.** RIM lists the sessions that are ready or working, with the agent, the
+   title and the folder, and **New session…**, which opens **Start an agent session** and goes on
+   once the new session is ready. A session without RIM's tools says "<agent> can't read RIM in
+   this session", with the reason; you can still pick it, since the agent may have other ways.
+2. **Let it read the channel.** When nothing you let that agent read covers the channel, RIM asks
+   "<agent> can't read #channel yet. Let it read #channel?". **Let it read #channel** adds that
+   one channel to what the agent can read, as ticking it in **Choose what it can read** does, and
+   nothing else. **Not now** adds nothing, and the agent will be refused the channel.
+3. **Write your question.** The session opens with "About: #channel" or "About: a message in
+   #channel" above the box; × takes it off. Nothing is sent until you press Enter.
+
+The prompt holds your words and a link to the channel or the message, never its messages: the
+agent reads them through RIM's tools, under what you let it read, and the record shows what it
+was given.
+
+**When the agent is refused a channel.** If an agent in a session asks RIM's tools for a channel
+you haven't let it read, the session shows "<agent> asked to read #channel, which it can't read."
+with **Let it read #channel**, which asks as above, and **Dismiss**. Each channel is offered once
+per session. Only that button grants: no command, and nothing the agent sends, can.
+
+### The reference an agent is given
+
+For tool authors: the prompt carries an ACP `resource_link` block whose `uri` is
+
+```
+rim://workspace/<workspaceId>/conversation/<conversationId>
+rim://workspace/<workspaceId>/conversation/<conversationId>/message/<messageId>
+```
+
+with each id percent-encoded, and whose `name` is "#channel in <workspace>" or "Message in
+#channel". A text block after it repeats the ids: "About this RIM conversation: workspace <id>,
+conversation <id>, message <id>. Use RIM's tools to read it." The ids are the ones RIM's tools
+take: `workspaceId` and `channelId` for `rim_read_messages`, and the message's `id` in what it
+returns. RIM doesn't resolve `rim://` links itself; an agent reads them with its RIM tools.
+
 ## Choose what it can read
 
 A new agent can read nothing. In **Settings > Agents**, pick the agent, then **Choose what it can

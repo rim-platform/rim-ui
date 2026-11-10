@@ -130,8 +130,16 @@ describe("runCommandForPlugin", () => {
     const t = setup(
       {},
       {
-        runs_commands: ["plugin.dev.example.other.wipe", "agents.approve_request"],
-        granted_commands: ["plugin.dev.example.other.wipe", "agents.approve_request"],
+        runs_commands: [
+          "plugin.dev.example.other.wipe",
+          "agents.approve_request",
+          "agents.ask_about_message",
+        ],
+        granted_commands: [
+          "plugin.dev.example.other.wipe",
+          "agents.approve_request",
+          "agents.ask_about_message",
+        ],
       },
     );
     for (const id of [
@@ -140,6 +148,8 @@ describe("runCommandForPlugin", () => {
       "agents.approve_request",
       "agents.clear_record",
       "agents.connect_agent",
+      "agents.ask_about_message",
+      "agents.ask_about_conversation",
     ]) {
       expect(await t.run(id), id).toMatchObject({ status: "refused", code: "NOT_ALLOWED" });
     }
