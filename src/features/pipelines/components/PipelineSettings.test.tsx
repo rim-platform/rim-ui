@@ -58,6 +58,16 @@ vi.mock("../../commands/api/useCommands", () => ({
           },
         ],
       }),
+      command("chat.describe_conversation", "Describe conversation", {
+        arguments: [
+          {
+            name: "conversation_id",
+            title: "Conversation",
+            argumentType: "CONVERSATION_ID",
+            required: true,
+          },
+        ],
+      }),
       command("workspace.open_settings", "Open settings", { executionTarget: "DESKTOP_LOCAL" }),
     ],
   }),
@@ -252,6 +262,34 @@ describe("PipelineSettings create flow", () => {
       expect(toastTitles()).toContain("Fix the actions marked in red before saving."),
     );
     expect(screen.getByText("Key is required")).toBeInTheDocument();
+    expect(callsTo("CreatePipeline")).toHaveLength(0);
+  });
+
+  it("takes a required conversation from a message trigger", async () => {
+    handlers.CreatePipeline = () => ({ createPipeline: basePipeline });
+    await openCreate();
+    await pickCommand("chat.describe_conversation");
+    expect(screen.getByText("From the trigger")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(callsTo("CreatePipeline")).toHaveLength(1));
+    expect((callsTo("CreatePipeline")[0].input as { actions: unknown[] }).actions).toEqual([
+      { commandId: "chat.describe_conversation", args: undefined },
+    ]);
+  });
+
+  it("requires a conversation when the trigger has none", async () => {
+    await openCreate();
+    await pickCommand("chat.describe_conversation");
+    fireEvent.change(screen.getByDisplayValue("New Message"), {
+      target: { value: PipelineTriggerKindGql.MEMBER_JOINED },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(toastTitles()).toContain("Fix the actions marked in red before saving."),
+    );
+    expect(screen.getByText("Conversation is required")).toBeInTheDocument();
     expect(callsTo("CreatePipeline")).toHaveLength(0);
   });
 
