@@ -1,8 +1,14 @@
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
+import { stateKeyProblem } from "../../workspace-state/stateKeyRules";
 import type { CommandArgumentInfo, CommandDefinition } from "../types";
+import { argumentPicker, CLEARED_FIELD, sendsEmptyText } from "./argumentPickers";
 import { camelCaseName, formAsksFor } from "./commandArguments";
+import { normalizeStateValue, stateValueProblem } from "./stateValueKinds";
 
-/** What an argument field holds: a checkbox's state, or the text of any other field. */
+/**
+ * What an argument field holds: a checkbox's state, or the text of any other field. A field
+ * that can be cleared holds `true` while cleared.
+ */
 export type FieldValue = string | boolean;
 
 /** The values of a form's fields, by argument name. */
@@ -41,9 +47,20 @@ export function defaultFieldValue(argument: CommandArgumentInfo): FieldValue {
 /**
  * The field value that shows `value` as a field of `argument` can, or `null` when it cannot:
  * a number for a text field, a string outside an enum's values, an object.
+ *
+ * @param argument - The argument the field is for.
+ * @param value - The saved value.
+ * @param commandId - The command the argument is of, whose picker may show the value its way.
  */
-export function toFieldValue(argument: CommandArgumentInfo, value: unknown): FieldValue | null {
+export function toFieldValue(
+  argument: CommandArgumentInfo,
+  value: unknown,
+  commandId?: string,
+): FieldValue | null {
   if (value === undefined || value === null) return null;
+  const kind = argumentPicker(commandId, argument.name)?.kind;
+  if (kind === "clearableText" && value === "") return CLEARED_FIELD;
+  if (kind === "stateValue" && typeof value === "string") return normalizeStateValue(value);
   switch (argument.argumentType) {
     case CommandArgumentType.BOOLEAN:
       return typeof value === "boolean" ? value : null;
@@ -71,16 +88,27 @@ export function isEmptyField(value: FieldValue | undefined): boolean {
  * @param argument - The argument the field is for.
  * @param value - What the field holds.
  * @param mustFill - Whether the field must not be left empty.
+ * @param commandId - The command the argument is of, whose picker may check the value too.
  */
 export function fieldProblem(
   argument: CommandArgumentInfo,
   value: FieldValue | undefined,
   mustFill: boolean,
+  commandId?: string,
 ): string | null {
   if (isEmptyField(value))
     return mustFill ? `${argument.title || argument.name} is required` : null;
   if (typeof value === "boolean") return null;
   const text = (value ?? "").trim();
+  const picker = argumentPicker(commandId, argument.name);
+  if (picker?.kind === "stateKey" && text !== "") {
+    const problem = stateKeyProblem(text, { allowSystem: picker.keyAccess === "read" });
+    if (problem) return problem;
+  }
+  if (picker?.kind === "stateValue") {
+    const problem = stateValueProblem(value ?? "");
+    if (problem) return problem;
+  }
   switch (argument.argumentType) {
     case CommandArgumentType.INTEGER:
       return /^-?\d+$/.test(text) ? null : "Enter a whole number";
@@ -96,15 +124,25 @@ export function fieldProblem(
 
 /**
  * The argument value a field sends, or `undefined` when it sends none: a number for a number
- * field, `true` or `false` for a checkbox, the text for any other.
+ * field, `true` or `false` for a checkbox, the text for any other, and `""` for a cleared field.
+ *
+ * @param argument - The argument the field is for.
+ * @param value - What the field holds.
+ * @param commandId - The command the argument is of, whose picker may send an empty string.
  */
 export function argumentValueOf(
   argument: CommandArgumentInfo,
   value: FieldValue | undefined,
+  commandId?: string,
 ): unknown {
+  if (sendsEmptyText(commandId, argument.name)) {
+    if (value === CLEARED_FIELD) return "";
+    if (typeof value === "boolean") return undefined;
+  }
   if (isEmptyField(value)) return undefined;
   if (typeof value === "boolean") return value;
   const text = (value ?? "").trim();
+  if (argumentPicker(commandId, argument.name)?.kind === "stateKey") return text;
   switch (argument.argumentType) {
     case CommandArgumentType.INTEGER:
       return Number.parseInt(text, 10);
@@ -128,21 +166,23 @@ export type ReadFields =
  * @param values - What each field holds.
  * @param mustFill - Whether the form's required fields must be filled in; a preset form leaves
  *   an empty one to be asked for when the command runs.
+ * @param commandId - The command the fields are of, whose pickers may read some their way.
  */
 export function readFields(
   fields: readonly CommandArgumentInfo[],
   values: FieldValues,
   mustFill: boolean,
+  commandId?: string,
 ): ReadFields {
   const args: Record<string, unknown> = {};
   const problems: Record<string, string> = {};
   for (const field of fields) {
-    const problem = fieldProblem(field, values[field.name], mustFill && field.required);
+    const problem = fieldProblem(field, values[field.name], mustFill && field.required, commandId);
     if (problem) {
       problems[field.name] = problem;
       continue;
     }
-    const value = argumentValueOf(field, values[field.name]);
+    const value = argumentValueOf(field, values[field.name], commandId);
     if (value !== undefined) args[field.name] = value;
   }
   return Object.keys(problems).length > 0 ? { ok: false, problems } : { ok: true, args };
@@ -183,7 +223,7 @@ function workspaceArguments(command: Pick<CommandDefinition, "arguments">): Comm
  * @param presetArgs - The saved arguments, when there are any.
  */
 export function presetFieldValues(
-  command: Pick<CommandDefinition, "arguments">,
+  command: Pick<CommandDefinition, "arguments"> & Partial<Pick<CommandDefinition, "id">>,
   presetArgs: unknown,
 ): FieldValues | null {
   const fields = presetFields(command);
@@ -194,7 +234,7 @@ export function presetFieldValues(
   for (const [key, value] of Object.entries(presetArgs as Record<string, unknown>)) {
     if (workspaceNames.has(key) && typeof value === "string") continue;
     const field = fields.find((f) => f.name === key);
-    const shown = field ? toFieldValue(field, value) : null;
+    const shown = field ? toFieldValue(field, value, command.id) : null;
     if (shown === null) return null;
     values[key] = shown;
   }

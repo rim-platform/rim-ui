@@ -25,19 +25,16 @@ import type { WorkspaceStateEntryGql, SetWorkspaceStateInput } from "../index";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { stateKeyProblem } from "../stateKeyRules";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_KEY_LENGTH = 512;
 const MAX_VALUE_SIZE_KB = 64;
 const MAX_TTL_DAYS = 30;
 const MAX_TTL_SECONDS = MAX_TTL_DAYS * 24 * 60 * 60;
 const DEFAULT_LIST_LIMIT = 100;
-
-/** Key format: starts with a-z, body a-z0-9_./:-, ends with a-z0-9, max MAX_KEY_LENGTH chars total. */
-const KEY_REGEX = new RegExp(`^[a-z][a-z0-9_.:-]{0,${MAX_KEY_LENGTH - 2}}[a-z0-9]$`);
 
 /** The name each scope goes by in the page's copy; the `SERVER` scope is the workspace's. */
 const SCOPE_LABELS: Record<WorkspaceStateScopeGql, string> = {
@@ -84,9 +81,7 @@ function isExpired(entry: WorkspaceStateEntryGql): boolean {
 
 /** Validate key format against backend rules. */
 function isValidKey(key: string): boolean {
-  if (key.length < 2 || key.length > MAX_KEY_LENGTH) return false;
-  if (key.startsWith("system.")) return false;
-  return KEY_REGEX.test(key);
+  return stateKeyProblem(key) === null;
 }
 
 // ---------------------------------------------------------------------------

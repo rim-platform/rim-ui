@@ -162,3 +162,105 @@ describe("stepDraftOf and readStep", () => {
     });
   });
 });
+
+describe("steps with argument pickers", () => {
+  const SWITCH = command({
+    id: "workspace.switch_workspace",
+    category: "Navigation",
+    executionTarget: "DESKTOP_LOCAL",
+    arguments: [
+      {
+        name: "workspace_id",
+        title: "Workspace",
+        argumentType: CommandArgumentType.WORKSPACE_ID,
+        required: true,
+      },
+    ],
+  });
+  const SET_TOPIC = command({
+    id: "chat.set_topic",
+    arguments: [
+      { name: "server_id", argumentType: CommandArgumentType.WORKSPACE_ID, required: true },
+      {
+        name: "conversation_id",
+        argumentType: CommandArgumentType.CONVERSATION_ID,
+        required: true,
+      },
+      { name: "topic", title: "Topic", argumentType: CommandArgumentType.STRING, required: true },
+    ],
+  });
+  const SET_STATE = command({
+    id: "state.set",
+    arguments: [
+      { name: "server_id", argumentType: CommandArgumentType.WORKSPACE_ID, required: true },
+      { name: "key", title: "Key", argumentType: CommandArgumentType.STRING, required: true },
+      { name: "value", title: "Value", argumentType: CommandArgumentType.STRING, required: true },
+    ],
+  });
+
+  it("gives switching workspace a field for the workspace to go to, and saves it", () => {
+    expect(stepFields(SWITCH).map((f) => f.name)).toEqual(["workspace_id"]);
+    expect(requiredStepFields(SWITCH)).toEqual([]);
+
+    const draft = newStepDraft(SWITCH.id, SWITCH);
+    const filled = { ...draft, values: { workspace_id: "ws-2" } };
+    expect(readStep(filled, SWITCH, "ws-1")).toEqual({
+      ok: true,
+      input: { commandId: SWITCH.id, args: { workspace_id: "ws-2" }, ask: [] },
+    });
+
+    const reopened = stepDraftOf({ commandId: SWITCH.id, args: { workspace_id: "ws-2" } }, SWITCH);
+    expect(reopened.values).toEqual({ workspace_id: "ws-2" });
+    expect(reopened.kept).toEqual({});
+  });
+
+  it("still leaves the workspace a step runs in out of its fields", () => {
+    expect(stepFields(SET_TOPIC).map((f) => f.name)).toEqual(["conversation_id", "topic"]);
+  });
+
+  it("saves a cleared topic as an empty topic and shows it cleared again", () => {
+    const draft = newStepDraft(SET_TOPIC.id, SET_TOPIC);
+    const cleared = { ...draft, values: { conversation_id: "conv-1", topic: true } };
+    const read = readStep(cleared, SET_TOPIC, "ws-1");
+    expect(read).toEqual({
+      ok: true,
+      input: {
+        commandId: SET_TOPIC.id,
+        args: { conversation_id: "conv-1", topic: "", server_id: "ws-1" },
+        ask: [],
+      },
+    });
+    const reopened = stepDraftOf(
+      { commandId: SET_TOPIC.id, args: { conversation_id: "conv-1", topic: "" } },
+      SET_TOPIC,
+    );
+    expect(reopened.values).toEqual({ conversation_id: "conv-1", topic: true });
+  });
+
+  it("keeps a stored value's kind when the step is saved and opened again", () => {
+    for (const value of ["true", "42", '"42"', '"hello"', '{"a":1}']) {
+      const draft = stepDraftOf(
+        { commandId: SET_STATE.id, args: { key: "a.b", value } },
+        SET_STATE,
+      );
+      expect(draft.values).toEqual({ key: "a.b", value });
+      expect(readStep(draft, SET_STATE, "ws-1")).toEqual({
+        ok: true,
+        input: { commandId: SET_STATE.id, args: { key: "a.b", value }, ask: [] },
+      });
+    }
+  });
+
+  it("refuses to save a key under system. or a value that is not JSON", () => {
+    const draft = newStepDraft(SET_STATE.id, SET_STATE);
+    expect(
+      readStep({ ...draft, values: { key: "system.x", value: "1" } }, SET_STATE, "ws-1"),
+    ).toEqual({
+      ok: false,
+      problems: { key: "Keys starting with system. are kept for the workspace itself" },
+    });
+    expect(
+      readStep({ ...draft, values: { key: "a.b", value: "twelve" } }, SET_STATE, "ws-1"),
+    ).toEqual({ ok: false, problems: { value: "Enter a valid number or JSON value" } });
+  });
+});

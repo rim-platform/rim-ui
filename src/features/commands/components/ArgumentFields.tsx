@@ -5,6 +5,7 @@ import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { MemberPicker } from "../../conversations/components/MemberPicker";
 import { useHomeWorkspaces } from "../../home/api/useHomeWorkspaces";
+import { argumentPicker, argumentPickerKind } from "../runtime/argumentPickers";
 import {
   hasChoices,
   humanizeValue,
@@ -12,102 +13,19 @@ import {
   type FieldValues,
 } from "../runtime/argumentValues";
 import type { CommandArgumentInfo } from "../types";
+import {
+  CONTROL_CLASS,
+  emptyPresetLabel,
+  selectEmptyLabel,
+  selectPropsOf,
+  type ArgumentFormMode,
+  type ControlProps,
+} from "./argumentControlParts";
+import { PickerControl } from "./ArgumentPickerFields";
+import { ChoiceSelect } from "./ChoiceSelect";
 import { useChannelTargets, useJoinableTargets } from "./paletteTargets";
 
-/**
- * The form a field is in: `ask` fills in a command about to run, `preset` saves arguments with a
- * keybind or quick action, where an empty field is asked for, or left to its default, when the
- * command runs.
- */
-export type ArgumentFormMode = "ask" | "preset";
-
-const CONTROL_CLASS =
-  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none placeholder:text-rim-text-faint focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent aria-[invalid=true]:border-rim-danger";
-
-/** What an empty preset field does when the command runs. */
-function emptyPresetLabel(argument: CommandArgumentInfo): string {
-  return argument.required ? "Ask when run" : "Default";
-}
-
-interface ControlProps {
-  argument: CommandArgumentInfo;
-  value: FieldValue;
-  onChange: (value: FieldValue) => void;
-  mode: ArgumentFormMode;
-  controlId: string;
-  describedBy: string | undefined;
-  invalid: boolean;
-  autoFocus: boolean;
-  workspaceId: string | undefined;
-  onSubmit?: () => void;
-}
-
-/**
- * A select over `options`, with an empty first option when `emptyLabel` is given. Options with a
- * `group` are listed under a heading, the groups in the order they first appear.
- */
-function ChoiceSelect({
-  options,
-  emptyLabel,
-  value,
-  onChange,
-  controlId,
-  describedBy,
-  invalid,
-  autoFocus,
-}: {
-  options: { value: string; label: string; group?: string }[];
-  emptyLabel: string | null;
-  value: string;
-  onChange: (value: string) => void;
-} & Pick<ControlProps, "controlId" | "describedBy" | "invalid" | "autoFocus">) {
-  const known = value === "" || options.some((option) => option.value === value);
-  const groups = [...new Set(options.flatMap((option) => (option.group ? [option.group] : [])))];
-  const renderOption = (option: { value: string; label: string }) => (
-    <option key={option.value} value={option.value}>
-      {option.label}
-    </option>
-  );
-  return (
-    <select
-      id={controlId}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-describedby={describedBy}
-      aria-invalid={invalid || undefined}
-      autoFocus={autoFocus}
-      className={CONTROL_CLASS}
-    >
-      {emptyLabel !== null && <option value="">{emptyLabel}</option>}
-      {!known && <option value={value}>{value}</option>}
-      {groups.length === 0
-        ? options.map(renderOption)
-        : [
-            ...options.filter((option) => !option.group).map(renderOption),
-            ...groups.map((group) => (
-              <optgroup key={group} label={group}>
-                {options.filter((option) => option.group === group).map(renderOption)}
-              </optgroup>
-            )),
-          ]}
-    </select>
-  );
-}
-
-/** The props every select passes on from its field. */
-function selectPropsOf(props: ControlProps) {
-  return {
-    controlId: props.controlId,
-    describedBy: props.describedBy,
-    invalid: props.invalid,
-    autoFocus: props.autoFocus,
-  };
-}
-
-/** The empty option of a select: what an empty preset does, or a prompt to choose. */
-function selectEmptyLabel(argument: CommandArgumentInfo, mode: ArgumentFormMode, prompt: string) {
-  return mode === "preset" ? emptyPresetLabel(argument) : prompt;
-}
+export type { ArgumentFormMode } from "./argumentControlParts";
 
 /**
  * A conversation select: in a preset form also the public channels the viewer has not joined,
@@ -246,10 +164,17 @@ function MemberField({
   );
 }
 
-/** The control of one argument, by its type. */
+/**
+ * The control of one argument: the field the argument picker map names for it, else the one its
+ * type gives.
+ */
 function ArgumentControl(props: ControlProps) {
   const { argument, value, onChange, mode, controlId, describedBy, invalid, autoFocus } = props;
   const describe = { "aria-describedby": describedBy, "aria-invalid": invalid || undefined };
+  const picker = argumentPicker(props.commandId, argument.name);
+  if (picker?.kind && picker.kind !== "targetWorkspace") {
+    return <PickerControl {...props} picker={picker} />;
+  }
   if (hasChoices(argument)) {
     return (
       <ChoiceSelect
@@ -258,7 +183,7 @@ function ArgumentControl(props: ControlProps) {
         onChange={onChange}
         options={(argument.allowedValues ?? []).map((allowed) => ({
           value: allowed,
-          label: humanizeValue(allowed),
+          label: picker?.valueLabels?.[allowed] ?? humanizeValue(allowed),
         }))}
         emptyLabel={
           mode === "preset" || !argument.required || value === ""
@@ -361,10 +286,16 @@ export interface ArgumentFieldProps {
   problem?: string | null;
   /** The workspace whose members and conversations the field offers; the open one when left out. */
   workspaceId?: string;
+  /** The command the argument is of, which picks the field for some arguments. */
+  commandId?: string;
+  /** What the form's fields hold now, for a field that follows another, such as a scope. */
+  formValues?: Readonly<FieldValues>;
   autoFocus?: boolean;
   /** Runs the form, for a field that takes Enter for itself, such as the member search. */
   onSubmit?: () => void;
 }
+
+const NO_VALUES: Readonly<FieldValues> = {};
 
 /**
  * One argument of a command as a form field: its title as the label, its description as the
@@ -377,6 +308,8 @@ export function ArgumentField({
   mode,
   problem = null,
   workspaceId,
+  commandId,
+  formValues = NO_VALUES,
   autoFocus = false,
   onSubmit,
 }: ArgumentFieldProps) {
@@ -400,6 +333,8 @@ export function ArgumentField({
       invalid={problem !== null}
       autoFocus={autoFocus}
       workspaceId={workspaceId}
+      commandId={commandId}
+      formValues={formValues}
       onSubmit={onSubmit}
     />
   );
@@ -443,6 +378,13 @@ export interface ArgumentFieldListProps {
   problems?: Readonly<Record<string, string>>;
   /** The workspace whose members and conversations the fields offer, unless a field picks one. */
   workspaceId?: string;
+  /** The command the fields are of, which picks the field for some arguments. */
+  commandId?: string;
+  /**
+   * Values the command already has that the form does not show, such as the conversation it
+   * runs in, for fields that follow them.
+   */
+  givenValues?: Readonly<FieldValues>;
   /** Whether the first field takes focus when the list appears. */
   autoFocusFirst?: boolean;
   onSubmit?: () => void;
@@ -450,7 +392,7 @@ export interface ArgumentFieldListProps {
 
 /**
  * A field for each of `fields`. A member or conversation field offers those of the workspace a
- * workspace field among them picks, else of `workspaceId`.
+ * workspace field among them picks, else of `workspaceId`; a workspace to go to picks none.
  */
 export function ArgumentFieldList({
   fields,
@@ -459,11 +401,18 @@ export function ArgumentFieldList({
   mode,
   problems = {},
   workspaceId,
+  commandId,
+  givenValues,
   autoFocusFirst = false,
   onSubmit,
 }: ArgumentFieldListProps) {
+  const formValues = givenValues ? { ...givenValues, ...values } : values;
   const pickedWorkspace = fields
-    .filter((field) => field.argumentType === CommandArgumentType.WORKSPACE_ID)
+    .filter(
+      (field) =>
+        field.argumentType === CommandArgumentType.WORKSPACE_ID &&
+        argumentPickerKind(commandId, field.name) !== "targetWorkspace",
+    )
     .map((field) => values[field.name])
     .find((value): value is string => typeof value === "string" && value !== "");
   return (
@@ -477,6 +426,8 @@ export function ArgumentFieldList({
           mode={mode}
           problem={problems[field.name] ?? null}
           workspaceId={pickedWorkspace ?? workspaceId}
+          commandId={commandId}
+          formValues={formValues}
           autoFocus={autoFocusFirst && index === 0}
           onSubmit={onSubmit}
         />
@@ -495,6 +446,8 @@ export interface PresetArgumentsSectionProps {
   problems?: Readonly<Record<string, string>>;
   /** The workspace whose members and conversations the fields offer. */
   workspaceId?: string;
+  /** The command the arguments are saved for, which picks the field for some of them. */
+  commandId?: string;
   /** What happens to an empty required field, such as "asked for when the key is pressed". */
   emptyNote: string;
   /** The text size of the section: `xs` in the compact keybind list, `sm` in a dialog. */
@@ -513,6 +466,7 @@ export function PresetArgumentsSection({
   saved,
   problems,
   workspaceId,
+  commandId,
   emptyNote,
   size = "sm",
 }: PresetArgumentsSectionProps) {
@@ -539,6 +493,7 @@ export function PresetArgumentsSection({
             mode="preset"
             problems={problems}
             workspaceId={workspaceId}
+            commandId={commandId}
           />
         </>
       )}

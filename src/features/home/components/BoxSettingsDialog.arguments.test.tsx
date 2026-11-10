@@ -85,7 +85,7 @@ describe("BoxSettingsDialog quick action arguments", () => {
     const section = within(dialog).getByRole("group", { name: "Arguments" });
     expect(within(dialog).queryByLabelText("Arguments (optional JSON)")).toBeNull();
     expect(within(section).getByText(/asked for when the action runs/)).toBeInTheDocument();
-    await user.selectOptions(within(section).getByLabelText("Mode"), "On");
+    await user.selectOptions(within(section).getByLabelText("Mode"), "Until I turn it back on");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(onSave).toHaveBeenCalledWith({

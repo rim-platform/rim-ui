@@ -10,6 +10,10 @@ export interface CommandArgumentsRequest {
   arguments: CommandArgumentInfo[];
   /** The workspace whose members and conversations the fields offer. */
   workspaceId?: string;
+  /** The command the arguments are of, which picks the field for some of them. */
+  commandId?: string;
+  /** The conversation the command runs in, when known: the one given, else the open one. */
+  conversationId?: string;
 }
 
 interface CommandArgumentsState {

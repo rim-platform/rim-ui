@@ -27,6 +27,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - **Connect an agent** in Settings → Agents, and the **Connect an Agent…** command, connect Codex,
   opencode, Gemini CLI, Cursor, VS Code or any other MCP tool to the desktop app without a helper:
   name it, and RIM shows its address, its token and a ready-made setup for that tool, once.
+- Command forms pick more for you: a workspace state key comes from the workspace's keys with
+  their current values, a value to store gets its kind (Text, Number, Yes/No or JSON), a macro
+  step can name the workspace to switch to, the macro to run and the pipeline to turn on or off
+  from lists, a topic can be cleared with **No topic**, and choices such as a mute's length or a
+  scope read as they do elsewhere in the app ("Until I unmute it", "Only me").
 - A macro step that takes a channel now also offers the public channels of the workspace you have
   not joined, so a macro can join them and set their notifications, and a step's message text can
   have several lines (Ctrl+Enter or Cmd+Enter sends it from a form).

@@ -49,6 +49,7 @@ import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
+import { sendsEmptyText } from "./argumentPickers";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
 import { confirmConversationCommand } from "./conversationActionGate";
@@ -989,6 +990,7 @@ async function askForMissingArguments(
       argument.required &&
       argument.name !== prompted &&
       !argumentGiven(args, argument.name) &&
+      !(sendsEmptyText(command.id, argument.name) && args?.[argument.name] === "") &&
       !contextSuppliesArgument(argument, argumentContext),
   );
   if (missing.length === 0) return { kind: "complete" };
@@ -1005,6 +1007,9 @@ async function askForMissingArguments(
     title: withClientLabel(command).title || command.id,
     arguments: missing,
     workspaceId: givenWorkspace ?? argumentContext.workspaceId,
+    commandId: command.id,
+    conversationId:
+      argString(args, "conversation_id", "conversationId") ?? argumentContext.conversationId,
   });
   if (values === null) return { kind: "cancelled" };
   return { kind: "filled", args: { ...args, ...values } };

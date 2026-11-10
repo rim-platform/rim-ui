@@ -279,7 +279,11 @@ are not offered. Under the command is a
 field for each of its arguments. Fill one in to fix it, or tick **Ask when I run it** to be
 asked each time. A step that takes a channel also offers the workspace's public channels you
 have not joined, so a macro can join them and set their notifications, and message text can
-have several lines. An argument the macro finds where it runs, such as the open workspace, the open
+have several lines. A workspace state key is picked from the workspace's keys, each shown with
+its current value, or typed as a new one; a value to store first gets its kind (Text, Number,
+Yes/No or JSON), so `42` typed as text stays text. A step that switches workspace names the
+workspace, one that runs a macro or turns a pipeline on or off picks it from a list, and a topic
+can be cleared with **No topic**. An argument the macro finds where it runs, such as the open workspace, the open
 conversation or the selected message, can be left empty. **Save** stays blocked while a required
 argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
 turns a description into steps with their arguments filled in, which open in the form to check.
@@ -414,6 +418,10 @@ can be edited and deleted, and shows when it expires.
 
 - A key starts with a lowercase letter, uses `a-z`, `0-9`, `.`, `_`, `:` and `-`, and ends with
   a letter or digit. Keys starting with `system.` belong to the server.
+- In a macro step, a keybind or the palette, the state commands' key field lists the keys of the
+  scope picked, **Workspace (everyone)** or **Only me**, with their values, says when a typed key
+  is new or breaks these rules, and refuses `system.` keys to `state.set`, `state.incr` and
+  `state.delete`. `state.set` shows the key's value now under its value field.
 - A value has at most 64 KB and lives at most 30 days when it has a TTL. The workspace's scope
   holds 10,000 entries and yours 1,000.
 - Anything that reads a scope sees its values, the AI agent and its model provider included. Do

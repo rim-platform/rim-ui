@@ -1,5 +1,6 @@
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { argumentPromptName } from "../../commands/runtime/commandDispatcher";
+import { argumentPickerKind } from "../../commands/runtime/argumentPickers";
 import {
   contextSuppliesArgument,
   formAsksFor,
@@ -10,6 +11,7 @@ import {
   presetArgsOf,
   presetFields,
   readFields,
+  requiredFirst,
   toFieldValue,
   type FieldValues,
 } from "../../commands/runtime/argumentValues";
@@ -62,7 +64,8 @@ function pluginArgumentType(type: string | undefined): CommandArgumentType {
  * The arguments a step running `command` can fix or ask for, as fields: a plugin command's from
  * its manifest; a built-in's or an app command's those the argument form has a field for,
  * required ones first, and the argument this app asks for with a picker when the step runs
- * without it. A workspace argument is left out: it is the workspace the macro runs in.
+ * without it. A workspace argument is left out, being the workspace the macro runs in, unless
+ * it names a workspace to go to.
  */
 export function stepFields(command: CommandDefinition | undefined): CommandArgumentInfo[] {
   if (!command) return [];
@@ -74,7 +77,12 @@ export function stepFields(command: CommandDefinition | undefined): CommandArgum
       ...(argument.description ? { description: argument.description } : {}),
     }));
   }
-  const fields = presetFields(command);
+  const targets = (command.arguments ?? []).filter(
+    (argument) =>
+      argument.argumentType === CommandArgumentType.WORKSPACE_ID &&
+      argumentPickerKind(command.id, argument.name) === "targetWorkspace",
+  );
+  const fields = requiredFirst([...presetFields(command), ...targets]);
   const prompted = argumentPromptName(command.id);
   if (prompted && !fields.some((field) => field.name === prompted)) {
     const argumentType = argumentTypeOfName(prompted);
@@ -166,7 +174,7 @@ export function stepDraftOf(
       }
       return { commandId: step.commandId, values: null, kept: args, ask };
     }
-    const shown = toFieldValue(field, value);
+    const shown = toFieldValue(field, value, command.id);
     if (shown === null) return { commandId: step.commandId, values: null, kept: args, ask };
     values[name] = shown;
   }
@@ -214,7 +222,7 @@ export function readStep(
   }
   const values = draft.values;
   const fields = stepFields(command).filter((field) => !ask.includes(field.name));
-  const read = readFields(fields, values, false);
+  const read = readFields(fields, values, false, command.id);
   const problems: Record<string, string> = read.ok ? {} : { ...read.problems };
   for (const field of requiredStepFields(command)) {
     if (ask.includes(field.name) || problems[field.name]) continue;
