@@ -79,13 +79,13 @@ describe("AgentOverlay model label", () => {
   it("names the model by its display name from the live list", () => {
     useLiveModelsStore.setState({ byProvider: { anthropic: [opus] } });
     render(<AgentOverlay />, { wrapper: withServerInfo() });
-    expect(screen.getByText("anthropic / Claude Opus 5.5")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Model: Claude Opus 5.5" })).toBeInTheDocument();
   });
 
   it("names the model by its whole id when the live list lacks it", () => {
     useLiveModelsStore.setState({ byProvider: { openai: [{ ...opus, id: "gpt-5.4" }] } });
     render(<AgentOverlay />, { wrapper: withServerInfo() });
-    expect(screen.getByText("anthropic / claude-opus-5-5")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Model: claude-opus-5-5" })).toBeInTheDocument();
   });
 });
 

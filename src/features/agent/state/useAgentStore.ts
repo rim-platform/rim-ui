@@ -11,11 +11,25 @@ interface AgentSettings {
   systemPrompt: string;
 }
 
-export interface AgentMessage {
+/** A prompt or an answer of an agent conversation, sent to the model with the later prompts. */
+export interface AgentChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
 }
+
+/**
+ * A line of the transcript where the person switched models: `content` is the new model's name.
+ * It is shown only and never sent to a model.
+ */
+export interface AgentModelSwitch {
+  role: "model-switch";
+  content: string;
+  timestamp: string;
+}
+
+/** One entry of an agent conversation's transcript. */
+export type AgentMessage = AgentChatMessage | AgentModelSwitch;
 
 export interface AgentConversation {
   id: string;
@@ -54,6 +68,7 @@ interface AgentState {
   setUsage: (usage: { inputTokens: number; outputTokens: number }) => void;
   reset: () => void;
   updateSettings: (patch: Partial<AgentSettings>) => void;
+  switchModel: (providerId: string, modelId: string, modelName: string) => void;
 }
 
 function generateId(): string {
@@ -218,6 +233,30 @@ export const useAgentStore = create<AgentState>()(
         set((state) => ({
           settings: { ...state.settings, ...patch },
         }));
+      },
+
+      // Sets the model the next turn uses, the same setting the settings panel sets, and marks
+      // the switch in the open conversation's transcript once it has messages. Refused while a
+      // turn runs. Two switches in a row leave one line, naming the last model chosen.
+      switchModel: (providerId, modelId, modelName) => {
+        const state = get();
+        if (state.status === "streaming") return;
+        const { settings } = state;
+        if (settings.providerId === providerId && settings.modelId === modelId) return;
+        const line: AgentModelSwitch = {
+          role: "model-switch",
+          content: modelName,
+          timestamp: new Date().toISOString(),
+        };
+        set({
+          settings: { ...settings, providerId, modelId },
+          conversations: state.conversations.map((c) => {
+            if (c.id !== state.activeConversationId || c.messages.length === 0) return c;
+            const last = c.messages[c.messages.length - 1];
+            const kept = last.role === "model-switch" ? c.messages.slice(0, -1) : c.messages;
+            return { ...c, messages: [...kept, line] };
+          }),
+        });
       },
     }),
     {
