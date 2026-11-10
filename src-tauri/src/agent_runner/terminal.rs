@@ -383,7 +383,7 @@ async fn launch(
 
 /// The terminals tried on Linux and the BSDs, in order, each with the arguments that come before
 /// the command.
-#[cfg(any(all(unix, not(target_os = "macos")), test))]
+#[cfg(any(all(unix, not(target_os = "macos")), all(test, unix)))]
 const TERMINALS: &[(&str, &[&str])] = &[
     ("x-terminal-emulator", &["-e"]),
     ("gnome-terminal", &["--"]),
@@ -399,7 +399,7 @@ const TERMINALS: &[(&str, &[&str])] = &[
 /// The full command of each terminal found in `dirs`, in the order they are tried: first
 /// `terminal` (the `TERMINAL` variable, a bare name), with the arguments of the known terminal
 /// of that name or `-e`, then [`TERMINALS`].
-#[cfg(any(all(unix, not(target_os = "macos")), test))]
+#[cfg(any(all(unix, not(target_os = "macos")), all(test, unix)))]
 fn terminal_commands(
     terminal: Option<&str>,
     dirs: &[std::path::PathBuf],
