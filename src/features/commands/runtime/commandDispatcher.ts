@@ -1,4 +1,9 @@
-import type { CommandContextInput, CommandDefinition, CommandResult } from "../types";
+import type {
+  CommandArgumentInfo,
+  CommandContextInput,
+  CommandDefinition,
+  CommandResult,
+} from "../types";
 import {
   argumentGiven,
   argumentTypesOf,
@@ -56,6 +61,7 @@ import {
   takingArgument,
   withTakenArguments,
 } from "./argumentPickers";
+import { fieldProblem, givenFieldValues, toFieldValue, type FieldValue } from "./argumentValues";
 import { cycleRecentActivity } from "./cycleRecentActivity";
 import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
 import { confirmConversationCommand } from "./conversationActionGate";
@@ -812,6 +818,12 @@ export async function dispatchCommand(
      * and runs with what is filled in there.
      */
     askForArguments?: boolean;
+    /**
+     * Set by the message box along with `askForArguments`: the form also opens for a typed value
+     * its field cannot take, and shows the typed arguments it has fields for with what was typed,
+     * so they can be changed there.
+     */
+    showTypedArguments?: boolean;
     /** Called with the arguments a command runs with once the argument form has added to them. */
     onArguments?: (args: Record<string, unknown>) => void;
     /**
@@ -918,7 +930,12 @@ export async function dispatchCommand(
 
   // A person's surface asks for the arguments it lacks, then runs the command with them.
   if (context?.askForArguments && !context.isPipe && !context.callerPluginId) {
-    const asked = await askForMissingArguments(command, context.args, context.commandContext);
+    const asked = await askForMissingArguments(
+      command,
+      context.args,
+      context.commandContext,
+      context.showTypedArguments === true,
+    );
     if (asked.kind === "refused") {
       return { status: "ERROR", message: asked.message, payload: null, followUpCommands: [] };
     }
@@ -936,6 +953,7 @@ export async function dispatchCommand(
         ...context,
         args: asked.args,
         askForArguments: false,
+        showTypedArguments: false,
       });
     }
   }
@@ -1013,11 +1031,73 @@ function contextString(context: Record<string, unknown> | undefined, key: string
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/** A typed argument the argument form shows: its field's value and the problem it has, if any. */
+interface TypedField {
+  argument: CommandArgumentInfo;
+  value: FieldValue;
+  problem: string | null;
+}
+
+/**
+ * The arguments of `command` typed in `args` that the argument form has a field for, each with
+ * what was typed as its field's value and why that field cannot take it, if it cannot. The
+ * workspace, the prompted argument and those another field sets are left out.
+ */
+function typedFields(
+  command: CommandDefinition,
+  args: Record<string, unknown> | undefined,
+): TypedField[] {
+  const declared = command.arguments ?? [];
+  const prompted = argumentPromptName(command.id);
+  return declared.flatMap((argument): TypedField[] => {
+    if (
+      argument.name === prompted ||
+      argument.argumentType === CommandArgumentType.WORKSPACE_ID ||
+      !formAsksFor(argument) ||
+      takingArgument(command.id, argument.name, declared) !== undefined ||
+      !argumentGiven(args, argument.name)
+    ) {
+      return [];
+    }
+    const value = typedFieldValue(command.id, argument, args);
+    const problem = fieldProblem(argument, value, argument.required, command.id);
+    return [{ argument, value, problem }];
+  });
+}
+
+/**
+ * What the field of `argument` starts with for the value typed for it in `args`: the value as
+ * its field shows it, else as it was typed.
+ */
+function typedFieldValue(
+  commandId: string,
+  argument: CommandArgumentInfo,
+  args: Record<string, unknown> | undefined,
+): FieldValue {
+  const typed = args?.[argument.name] ?? args?.[camelCaseName(argument.name)];
+  return (
+    toFieldValue(argument, typed, commandId) ?? (typeof typed === "boolean" ? typed : String(typed))
+  );
+}
+
+/** `args` without the arguments `names` name, under either spelling. */
+function withoutArguments(
+  args: Record<string, unknown> | undefined,
+  names: readonly string[],
+): Record<string, unknown> {
+  const dropped = new Set(names.flatMap((name) => [name, camelCaseName(name)]));
+  return Object.fromEntries(Object.entries(args ?? {}).filter(([name]) => !dropped.has(name)));
+}
+
 /**
  * Asks for the required arguments of `command` that neither `args`, `commandContext` nor an
  * argument prompt supplies, with the optional ones not given under "More options". One that only
  * the context can supply (a message, a thread, selected text) is never asked for: the command is
  * refused with what to select first. Nothing is asked when nothing required is missing.
+ *
+ * With `showTyped`, a value in `args` that its field cannot take is asked for too, and the form
+ * shows each argument in `args` it has a field for, starting with that value; what the form
+ * gives replaces them.
  *
  * @returns `complete` when nothing is missing, `filled` with `args` and the submitted values,
  *   `cancelled` when the person dismissed the form, or `refused` with the reason.
@@ -1026,6 +1106,7 @@ async function askForMissingArguments(
   command: CommandDefinition,
   args: Record<string, unknown> | undefined,
   commandContext: Record<string, unknown> | undefined,
+  showTyped: boolean,
 ): Promise<AskedArguments> {
   const argumentContext = {
     workspaceId: contextString(commandContext, "workspaceId"),
@@ -1042,12 +1123,21 @@ async function askForMissingArguments(
       !(sendsEmptyText(command.id, argument.name) && args?.[argument.name] === "") &&
       !contextSuppliesArgument(argument, argumentContext),
   );
-  if (missing.length === 0) return { kind: "complete" };
+  const typed = showTyped ? typedFields(command, args) : [];
+  const invalid = typed.filter((field) => field.problem !== null);
+  if (missing.length === 0 && invalid.length === 0) return { kind: "complete" };
   const contextOnly = missing.find((argument) => !formAsksFor(argument));
   if (contextOnly) {
     return { kind: "refused", message: contextOnlyArgumentMessage(contextOnly.argumentType) };
   }
-  const asked = withTakenArguments(command.id, missing, declared);
+  const shownNames = new Set(
+    [...missing, ...typed.map((field) => field.argument)].map((a) => a.name),
+  );
+  const asked = withTakenArguments(
+    command.id,
+    declared.filter((argument) => shownNames.has(argument.name)),
+    declared,
+  );
   const askedNames = new Set(asked.map((argument) => argument.name));
   // The optional arguments the form can show, each with those its field sets, unless one of
   // them is given already.
@@ -1081,9 +1171,25 @@ async function askForMissingArguments(
     commandId: command.id,
     conversationId:
       argString(args, "conversation_id", "conversationId") ?? argumentContext.conversationId,
+    ...(args ? { givenValues: givenFieldValues(args) } : {}),
+    ...(typed.length > 0
+      ? {
+          // Each shown field starts with what was typed, those another field sets included.
+          startValues: Object.fromEntries(
+            asked
+              .filter((argument) => argumentGiven(args, argument.name))
+              .map((argument) => [argument.name, typedFieldValue(command.id, argument, args)]),
+          ),
+          problems: Object.fromEntries(
+            invalid.map((field) => [field.argument.name, field.problem as string]),
+          ),
+        }
+      : {}),
   });
   if (values === null) return { kind: "cancelled" };
-  return { kind: "filled", args: { ...args, ...values } };
+  // Typed arguments the form showed are replaced by what it gives, a cleared one dropped.
+  const kept = showTyped ? withoutArguments(args, [...askedNames]) : args;
+  return { kind: "filled", args: { ...kept, ...values } };
 }
 
 /** Opens the plugin panel an open-panel command names, when its plugin is running. */

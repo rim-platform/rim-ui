@@ -20,6 +20,10 @@ export interface ArgumentGroup {
   conversationId?: string;
   /** Values the command already has, for fields that follow them, such as a state key. */
   givenValues?: Readonly<FieldValues>;
+  /** What fields start with in place of their defaults, such as values typed in the message box. */
+  startValues?: Readonly<FieldValues>;
+  /** The problem of each field to show as the form opens, such as a typed value it cannot take. */
+  problems?: Readonly<Record<string, string>>;
 }
 
 /** One step of a macro whose arguments the dialog asks for. */

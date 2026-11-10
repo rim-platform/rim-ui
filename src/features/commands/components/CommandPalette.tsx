@@ -14,9 +14,8 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { commandResultOf, dispatchCommand, targetPickerKind } from "../runtime/commandDispatcher";
 import { serverRunsWithContext, type ArgumentContext } from "../runtime/commandArguments";
-import { showCommandOutcome } from "../runtime/commandOutcome";
 import { runsFromPalette } from "../runtime/commandRunnable";
-import { showCommandRefusal } from "../runtime/refusal";
+import { runPersonCommand } from "../runtime/runPersonCommand";
 import { currentCommandContext } from "../runtime/commandContext";
 import { CONFIRMATION_REQUIRED, runWithHumanConfirmation } from "../runtime/humanConfirmation";
 import {
@@ -343,39 +342,17 @@ function CommandPaletteDialog() {
 
   // Run a command and tell the person how it went.
   const runCommand = useCallback(
-    async (
+    (
       command: CommandDefinition,
       args?: Record<string, unknown>,
       options?: { commandContext?: CommandContextInput; onSuccess?: () => void },
-    ) => {
-      // A retry runs where the command was started, wherever the person is by then.
-      const commandContext = options?.commandContext ?? currentCommandContext();
-      // The arguments it ran with, with any the argument form asked for.
-      let ranWith = args;
-      try {
-        const result = await dispatchCommand(
-          command,
-          (input) => executeCommandMutation.mutateAsync(input),
-          {
-            args,
-            commandContext,
-            askForArguments: true,
-            onArguments: (filled) => {
-              ranWith = filled;
-            },
-          },
-        );
-        if (await showCommandOutcome(command, result, ranWith, commandContext)) {
-          options?.onSuccess?.();
-        }
-      } catch (err) {
-        showCommandRefusal(
-          command.title,
-          err,
-          () => void runCommand(command, ranWith, { ...options, commandContext }),
-        );
-      }
-    },
+    ) =>
+      runPersonCommand(
+        command,
+        (input) => executeCommandMutation.mutateAsync(input),
+        args,
+        options,
+      ),
     [executeCommandMutation],
   );
 

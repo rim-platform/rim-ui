@@ -31,8 +31,8 @@ with none open it needs the conversation's id in its arguments. A plugin command
 conversation gets the open one; with none open, the palette leaves it out and its keybind says
 "Open a conversation first".
 
-**The argument form.** A server command run from the palette, a keybind or a Home quick action
-that lacks a required argument opens a form titled with the command, with a field for each missing
+**The argument form.** A server command run from the palette, the message box, a keybind or a Home
+quick action that lacks a required argument opens a form titled with the command, with a field for each missing
 argument: a text field, a number field, a checkbox, a list of the allowed values, a search of the
 workspace's members, a list of its conversations or a list of your workspaces, each labelled with
 the argument's title, its description beneath and its default filled in. The command's optional
@@ -45,7 +45,7 @@ focus, <kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> runs the command, a
 <kbd>Escape</kbd> or **Cancel** runs nothing. A dangerous command still asks for confirmation after
 the form. A message, a thread or selected text is never asked for: without one the command says
 "Select a message first" (or "Open a thread first", "Select some text first"). Pipes, plugin panels
-and agents get no form; they name the missing argument, as the message box does.
+and agents get no form; they name the missing argument.
 
 **From the message box.** The suggestion list decides: a command runs only when it is picked from
 the open list, with Enter or Tab on the highlighted row or a click. Type `/` and the words of a
@@ -55,16 +55,24 @@ closed for that line, until the line is emptied or the conversation changes; Ent
 text as an ordinary message, `/list members` included. Text that matches no command shows no list
 and is sent as a message as well.
 
-Arguments follow the name as `key=value` pairs, with a value that has spaces in double quotes:
-`/chat.post_message text="two words"`. The command stays listed while you type them, and Enter runs
-it with them. Picking a command that needs arguments leaves `/admin.kick ` to finish, keeps the list
-open and shows what the command needs in its row; Enter on a line that still lacks one says which
-and gives the form to type, and sends nothing. A thread's reply box has the same list and rule.
+A command picked with nothing typed after its name runs as it does from the palette: one that needs
+arguments opens the palette's argument form, with the same fields, pickers, current values and
+**More options**; one that picks its target in the palette, such as `workspace.navigate_to_channel`,
+opens the palette's list; any other runs at once. The row of a command that needs arguments says
+which. Arguments can also follow the name as `key=value` pairs, with a value that has spaces in
+double quotes: `/chat.post_message text="two words"`. The command stays listed while you type them,
+and Enter runs it with them. When they leave a required argument out, or give one a value its field
+cannot take (`seconds=soon`), the same form opens with the typed values filled in and the problem
+shown beside its field; nothing runs until you press **Run**. A line whose quotes are not closed
+stays in the box with what is wrong. A thread's reply box has the same list and rule, in the open
+conversation and its thread.
 A command that carries a message's text (`chat.post_message`, `chat.edit_message`, and any command
-with a `text` argument) refuses to run for an end-to-end encrypted conversation, so that text never
-reaches the server in plain; text sent after Esc goes through normal encrypted sending.
-`chat.mark_as_unread` needs a `message_id=`, and `chat.reply_to_selected_message`, which acts on a
-selected message the box cannot have, is not listed.
+with a `text` argument) refuses to run for an end-to-end encrypted conversation before any form opens, and again with
+what the form gives, so that text never reaches the server in plain; text sent after Esc goes
+through normal encrypted sending. A command on a message (`chat.pin_message`,
+`chat.toggle_reaction`) takes the message selected in the list, or a typed `message_id=`; without
+either it says "Select a message first". `chat.reply_to_selected_message` is not listed: writing in
+the box is how you reply.
 
 A pipe (`/a | b`) has no list: a line with `|` that starts with a known command runs as a pipe on
 Enter, and after Esc, or in a thread, it is sent as text. The server reads a pipe's arguments
