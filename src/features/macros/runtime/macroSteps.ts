@@ -1,12 +1,13 @@
 import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 import { argumentPromptName } from "../../commands/runtime/commandDispatcher";
-import { argumentPickerKind } from "../../commands/runtime/argumentPickers";
+import { argumentPickerKind, takenArguments } from "../../commands/runtime/argumentPickers";
 import {
   contextSuppliesArgument,
   formAsksFor,
   type ArgumentContext,
 } from "../../commands/runtime/commandArguments";
 import {
+  argumentLabel,
   argumentTypeOfName,
   isEmptyField,
   presetArgsOf,
@@ -164,8 +165,8 @@ export type ReadStep =
   { ok: true; input: StepInput } | { ok: false; problems: Record<string, string> };
 
 /**
- * Reads a step for saving: its fixed arguments from the fields not asked for, and the names it
- * asks for. A required argument that is neither fixed nor asked for, or a field that cannot be
+ * Reads a step for saving: its fixed arguments from the fields not asked for, nor set by a field
+ * asked for, and the names it asks for. A required argument that is neither fixed nor asked for, or a field that cannot be
  * sent, keeps it from saving.
  *
  * @param draft - The step as edited.
@@ -192,14 +193,17 @@ export function readStep(
     };
   }
   const values = draft.values;
-  const fields = stepFields(command).filter((field) => !ask.includes(field.name));
+  const askedTaken = new Set(ask.flatMap((name) => takenArguments(command.id, name)));
+  const fields = stepFields(command).filter(
+    (field) => !ask.includes(field.name) && !askedTaken.has(field.name),
+  );
   const read = readFields(fields, values, false, command.id);
   const problems: Record<string, string> = read.ok ? {} : { ...read.problems };
   for (const field of requiredStepFields(command)) {
     if (ask.includes(field.name) || problems[field.name]) continue;
     if (isEmptyField(values[field.name])) {
       problems[field.name] =
-        `${field.title || field.name} needs a value, or ask for it when the macro runs`;
+        `${argumentLabel(field, command.id)} needs a value, or ask for it when the macro runs`;
     }
   }
   if (!read.ok || Object.keys(problems).length > 0) return { ok: false, problems };

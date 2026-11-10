@@ -4,8 +4,15 @@ import { CommandArgumentType } from "../../../core/graphql/generated/schema-type
 import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useHomeWorkspaces } from "../../home/api/useHomeWorkspaces";
-import { argumentPicker, argumentPickerKind } from "../runtime/argumentPickers";
 import {
+  argumentPicker,
+  argumentPickerKind,
+  shownFields,
+  takenArguments,
+} from "../runtime/argumentPickers";
+import {
+  argumentHint,
+  argumentLabel,
   hasChoices,
   humanizeValue,
   type FieldValue,
@@ -23,6 +30,7 @@ import {
 import { PickerControl } from "./ArgumentPickerFields";
 import { ChoiceSelect } from "./ChoiceSelect";
 import { ConversationSelect } from "./ConversationArgumentFields";
+import { WithCurrentValue } from "./CurrentValueFields";
 import { MemberField } from "./MemberArgumentFields";
 
 export type { ArgumentFormMode } from "./argumentControlParts";
@@ -51,15 +59,29 @@ function WorkspaceSelect(props: ControlProps) {
 
 /**
  * The control of one argument: the field the argument picker map names for it, else the one its
- * type gives.
+ * type gives, which the ask form starts with the argument's current value when the map says
+ * where to find it.
  */
 function ArgumentControl(props: ControlProps) {
-  const { argument, value, onChange, mode, controlId, describedBy, invalid, autoFocus } = props;
-  const describe = { "aria-describedby": describedBy, "aria-invalid": invalid || undefined };
-  const picker = argumentPicker(props.commandId, argument.name);
+  const picker = argumentPicker(props.commandId, props.argument.name);
   if (picker?.kind && picker.kind !== "targetWorkspace") {
     return <PickerControl {...props} picker={picker} />;
   }
+  if (picker?.current && props.mode === "ask") {
+    return (
+      <WithCurrentValue props={props} picker={picker} source={picker.current}>
+        <TypeControl {...props} />
+      </WithCurrentValue>
+    );
+  }
+  return <TypeControl {...props} />;
+}
+
+/** The control the argument's type gives it, with its picker's value labels on a select. */
+function TypeControl(props: ControlProps) {
+  const { argument, value, onChange, mode, controlId, describedBy, invalid, autoFocus } = props;
+  const describe = { "aria-describedby": describedBy, "aria-invalid": invalid || undefined };
+  const picker = argumentPicker(props.commandId, argument.name);
   if (hasChoices(argument)) {
     return (
       <ChoiceSelect
@@ -166,7 +188,14 @@ export interface ArgumentFieldProps {
   argument: CommandArgumentInfo;
   value: FieldValue;
   onChange: (value: FieldValue) => void;
+  /**
+   * Sets several of the form's fields at once, for a field that sets other arguments too; when
+   * left out, only this field's own value is set.
+   */
+  onChangeFields?: (changes: Readonly<FieldValues>) => void;
   mode: ArgumentFormMode;
+  /** Text put before the label, such as "Step 2 · Mute Conversation: ". */
+  labelPrefix?: string;
   /** Why the value cannot be used, shown under the field. */
   problem?: string | null;
   /** The workspace whose members and conversations the field offers; the open one when left out. */
@@ -190,7 +219,9 @@ export function ArgumentField({
   argument,
   value,
   onChange,
+  onChangeFields,
   mode,
+  labelPrefix = "",
   problem = null,
   workspaceId,
   commandId,
@@ -202,16 +233,22 @@ export function ArgumentField({
   const controlId = `${baseId}-control`;
   const hintId = `${baseId}-hint`;
   const problemId = `${baseId}-problem`;
+  const hint = argumentHint(argument, commandId);
   const describedBy =
-    [argument.description ? hintId : null, problem ? problemId : null].filter(Boolean).join(" ") ||
-    undefined;
-  const label = argument.title || humanizeValue(argument.name);
+    [hint ? hintId : null, problem ? problemId : null].filter(Boolean).join(" ") || undefined;
+  const label = labelPrefix + argumentLabel(argument, commandId);
   const checkbox = argument.argumentType === CommandArgumentType.BOOLEAN && mode === "ask";
+  const changeFields =
+    onChangeFields ??
+    ((changes: Readonly<FieldValues>) => {
+      if (argument.name in changes) onChange(changes[argument.name]);
+    });
   const control = (
     <ArgumentControl
       argument={argument}
       value={value}
       onChange={onChange}
+      onChangeFields={changeFields}
       mode={mode}
       controlId={controlId}
       describedBy={describedBy}
@@ -241,9 +278,9 @@ export function ArgumentField({
           {control}
         </>
       )}
-      {argument.description && (
+      {hint && (
         <p id={hintId} className={cn("text-xs text-rim-text-faint", checkbox && "pl-6")}>
-          {argument.description}
+          {hint}
         </p>
       )}
       {problem && (
@@ -259,8 +296,15 @@ export interface ArgumentFieldListProps {
   fields: readonly CommandArgumentInfo[];
   values: FieldValues;
   onChange: (name: string, value: FieldValue) => void;
+  /**
+   * Sets several fields at once, for a field that sets other arguments too; when left out, each
+   * is set with `onChange` in turn.
+   */
+  onChangeFields?: (changes: Readonly<FieldValues>) => void;
   mode: ArgumentFormMode;
   problems?: Readonly<Record<string, string>>;
+  /** Text put before each label, such as "Step 2 · Mute Conversation: ". */
+  labelPrefix?: string;
   /** The workspace whose members and conversations the fields offer, unless a field picks one. */
   workspaceId?: string;
   /** The command the fields are of, which picks the field for some arguments. */
@@ -276,15 +320,19 @@ export interface ArgumentFieldListProps {
 }
 
 /**
- * A field for each of `fields`. A member or conversation field offers those of the workspace a
- * workspace field among them picks, else of `workspaceId`; a workspace to go to picks none.
+ * A field for each of `fields` but those another field among them sets, such as a mute's `until`,
+ * which its duration's field sets. That field shows their problems too. A member or conversation
+ * field offers those of the workspace a workspace field among them picks, else of `workspaceId`;
+ * a workspace to go to picks none.
  */
 export function ArgumentFieldList({
   fields,
   values,
   onChange,
+  onChangeFields,
   mode,
   problems = {},
+  labelPrefix,
   workspaceId,
   commandId,
   givenValues,
@@ -300,16 +348,25 @@ export function ArgumentFieldList({
     )
     .map((field) => values[field.name])
     .find((value): value is string => typeof value === "string" && value !== "");
+  const changeFields =
+    onChangeFields ??
+    ((changes: Readonly<FieldValues>) => {
+      for (const [name, value] of Object.entries(changes)) onChange(name, value);
+    });
+  const problemOf = (name: string) =>
+    [name, ...takenArguments(commandId, name)].map((n) => problems[n]).find(Boolean) ?? null;
   return (
     <div className="space-y-3">
-      {fields.map((field, index) => (
+      {shownFields(commandId, fields).map((field, index) => (
         <ArgumentField
           key={field.name}
           argument={field}
           value={values[field.name] ?? ""}
           onChange={(value) => onChange(field.name, value)}
+          onChangeFields={changeFields}
           mode={mode}
-          problem={problems[field.name] ?? null}
+          labelPrefix={labelPrefix}
+          problem={problemOf(field.name)}
           workspaceId={pickedWorkspace ?? workspaceId}
           commandId={commandId}
           formValues={formValues}
@@ -326,6 +383,8 @@ export interface PresetArgumentsSectionProps {
   /** The fields' values, or `null` when the saved arguments do not fit the fields. */
   values: FieldValues | null;
   onChange: (name: string, value: FieldValue) => void;
+  /** Sets several fields at once, for a field that sets other arguments too. */
+  onChangeFields?: (changes: Readonly<FieldValues>) => void;
   /** The saved arguments, shown as they are when they do not fit the fields. */
   saved?: unknown;
   problems?: Readonly<Record<string, string>>;
@@ -350,6 +409,7 @@ export function PresetArgumentsSection({
   fields,
   values,
   onChange,
+  onChangeFields,
   saved,
   problems,
   workspaceId,
@@ -378,6 +438,7 @@ export function PresetArgumentsSection({
             fields={fields}
             values={values}
             onChange={onChange}
+            onChangeFields={onChangeFields}
             mode="preset"
             problems={problems}
             workspaceId={workspaceId}

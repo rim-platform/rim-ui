@@ -30,6 +30,9 @@ vi.mock("../api/useKeybindSettings", () => ({
   useDeleteKeybindMutation: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() })),
 }));
 
+vi.mock("../../updater/hooks/useSpaceHasCapability", () => ({
+  useSpaceHasCapability: () => false,
+}));
 vi.mock("../../workspaces/state/useWorkspaceStore", () => ({
   useWorkspaceStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ workspaceId: "ws-1" }),
@@ -136,15 +139,26 @@ describe("KeybindSettings arguments", () => {
     startAdding();
 
     const section = argumentsSection();
-    const mode = within(section).getByLabelText("Mode");
+    const pause = within(section).getByLabelText("Pause");
     expect(
-      within(mode)
+      within(pause)
         .getAllByRole("option")
         .map((o) => o.textContent),
-    ).toEqual(["Ask when run", "Until I turn it back on", "Off", "Until a time"]);
+    ).toEqual([
+      "Ask when run",
+      "Until I turn it back on",
+      "Off",
+      "For 1 hour",
+      "For 8 hours",
+      "For a set length",
+      "Until a time",
+    ]);
     expect(within(section).queryByLabelText("Workspace")).toBeNull();
-    fireEvent.change(mode, { target: { value: "until" } });
-    fireEvent.change(within(section).getByLabelText(/Minutes/), { target: { value: "30" } });
+    expect(within(section).queryByLabelText(/Minutes/)).toBeNull();
+    fireEvent.change(pause, { target: { value: "for" } });
+    fireEvent.change(within(section).getByLabelText("Pause: how many"), {
+      target: { value: "30" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createKeybind).toHaveBeenCalledTimes(1);
@@ -169,12 +183,15 @@ describe("KeybindSettings arguments", () => {
   it("keeps the form open and names a field that cannot be saved", () => {
     serve([]);
     startAdding();
-    const minutes = within(argumentsSection()).getByLabelText(/Minutes/);
-    fireEvent.change(minutes, { target: { value: "soon" } });
+    const pause = within(argumentsSection()).getByLabelText("Pause");
+    fireEvent.change(pause, { target: { value: "for" } });
+    fireEvent.change(within(argumentsSection()).getByLabelText("Pause: how many"), {
+      target: { value: "soon" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createKeybind).not.toHaveBeenCalled();
-    expect(minutes).toHaveAccessibleDescription("Enter a whole number");
+    expect(pause).toHaveAccessibleDescription(/Enter how long/);
   });
 
   it("shows a keybind's saved arguments filled in, and saves the change", () => {
@@ -183,9 +200,10 @@ describe("KeybindSettings arguments", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit keybind" }));
 
     const section = argumentsSection();
-    expect(within(section).getByLabelText("Mode")).toHaveValue("until");
-    const minutes = within(section).getByLabelText(/Minutes/);
+    expect(within(section).getByLabelText("Pause")).toHaveValue("for");
+    const minutes = within(section).getByLabelText("Pause: how many");
     expect(minutes).toHaveValue("15");
+    expect(within(section).getByLabelText("Pause: unit")).toHaveValue("minutes");
     fireEvent.change(minutes, { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

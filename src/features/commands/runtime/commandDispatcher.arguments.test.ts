@@ -55,6 +55,18 @@ const DND = command("notifications.dnd", {
   ],
 });
 
+const BAN = command("admin.ban", {
+  title: "Ban Member",
+  arguments: [
+    argument("server_id", CommandArgumentType.WORKSPACE_ID),
+    argument("user_id", CommandArgumentType.USER_ID),
+    argument("reason", CommandArgumentType.STRING, false),
+    argument("expires_at", CommandArgumentType.STRING, false),
+    argument("minutes", CommandArgumentType.INTEGER, false),
+    argument("message_id", CommandArgumentType.MESSAGE_ID, false),
+  ],
+});
+
 const PIN = command("chat.pin_message", {
   title: "Pin Message",
   arguments: [
@@ -75,6 +87,11 @@ const executeBackend = vi.fn(async (_input: { args?: Record<string, unknown> }) 
 }));
 
 const CONTEXT = { workspaceId: "ws-1", conversationId: "conv-1" };
+
+/** The names of the optional arguments the open form folds under "More options". */
+function moreNames(): string[] | undefined {
+  return useCommandArgumentsStore.getState().request?.moreArguments?.map((a) => a.name);
+}
 
 /** The names of the arguments the open form asks for. */
 function askedNames(): string[] | undefined {
@@ -159,12 +176,46 @@ describe("dispatchCommand asking for arguments", () => {
     expect(executeBackend.mock.calls[0][0].args).toEqual({ mode: "on" });
   });
 
+  it("offers the optional arguments under More options, each time field whole", async () => {
+    const running = dispatchCommand(BAN, executeBackend, {
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+    await vi.waitFor(() => expect(askedNames()).toEqual(["user_id"]));
+    expect(moreNames()).toEqual(["reason", "expires_at", "minutes"]);
+    useCommandArgumentsStore.getState().submit({ user_id: "u-9", minutes: 60 });
+
+    await running;
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ user_id: "u-9", minutes: 60 });
+  });
+
+  it("offers no time field under More options once part of it is given", async () => {
+    void dispatchCommand(BAN, executeBackend, {
+      args: { minutes: 30 },
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+    await vi.waitFor(() => expect(askedNames()).toEqual(["user_id"]));
+    expect(moreNames()).toEqual(["reason"]);
+  });
+
+  it("does not open the form only for optional arguments", async () => {
+    await dispatchCommand(TIMEOUT, executeBackend, {
+      args: { user_id: "u-1", minutes: 10 },
+      commandContext: CONTEXT,
+      askForArguments: true,
+    });
+
+    expect(useCommandArgumentsStore.getState().request).toBeNull();
+    expect(executeBackend.mock.calls[0][0].args).toEqual({ user_id: "u-1", minutes: 10 });
+  });
+
   it("runs nothing when the form is cancelled", async () => {
     const running = dispatchCommand(DND, executeBackend, {
       commandContext: CONTEXT,
       askForArguments: true,
     });
-    await vi.waitFor(() => expect(askedNames()).toEqual(["mode"]));
+    await vi.waitFor(() => expect(askedNames()).toEqual(["mode", "minutes"]));
     useCommandArgumentsStore.getState().cancel();
 
     const result = await running;

@@ -90,6 +90,13 @@ export const ACCOUNT_MACROS = "account_macros";
  */
 export const COMMAND_INITIATOR_UI = "command_initiator_ui";
 
+/**
+ * The capability of a server whose `admin.ban` takes `minutes` and whose
+ * `notifications.mute_conversation` takes the duration `minutes`, both ending that many minutes
+ * from the run.
+ */
+export const COMMAND_RELATIVE_MINUTES = "command_relative_minutes";
+
 /** Whether `info` lists `capability`; false while unknown or for an older server. */
 export function hasCapability(info: KnownServerInfo | undefined, capability: string): boolean {
   return info?.capabilities?.includes(capability) ?? false;

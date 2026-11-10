@@ -426,6 +426,9 @@ function QuickForm({
                   onChange={(name, value) =>
                     change(index, { fields: { ...fieldValues, [name]: value } })
                   }
+                  onChangeFields={(changes) =>
+                    change(index, { fields: { ...fieldValues, ...changes } })
+                  }
                   problems={fieldProblems}
                   workspaceId={fieldsWorkspaceOf(draft)}
                   emptyNote="asked for when the action runs"

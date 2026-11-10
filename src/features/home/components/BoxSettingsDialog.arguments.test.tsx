@@ -50,6 +50,9 @@ const POLL = definition("plugin.chat.rim.poll.create", {
   executionTarget: "DESKTOP_LOCAL",
 });
 
+vi.mock("../../updater/hooks/useSpaceHasCapability", () => ({
+  useSpaceHasCapability: () => false,
+}));
 vi.mock("../../commands/api/useKeybindableCommands", () => ({
   useKeybindableCommands: () => ({
     builtIn: [DND],
@@ -85,7 +88,7 @@ describe("BoxSettingsDialog quick action arguments", () => {
     const section = within(dialog).getByRole("group", { name: "Arguments" });
     expect(within(dialog).queryByLabelText("Arguments (optional JSON)")).toBeNull();
     expect(within(section).getByText(/asked for when the action runs/)).toBeInTheDocument();
-    await user.selectOptions(within(section).getByLabelText("Mode"), "Until I turn it back on");
+    await user.selectOptions(within(section).getByLabelText("Pause"), "Until I turn it back on");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(onSave).toHaveBeenCalledWith({
@@ -97,7 +100,7 @@ describe("BoxSettingsDialog quick action arguments", () => {
     const { dialog } = renderQuick([
       { commandId: "notifications.dnd", presetArgs: { mode: "off" } },
     ]);
-    expect(within(dialog).getByLabelText("Mode")).toHaveValue("off");
+    expect(within(dialog).getByLabelText("Pause")).toHaveValue("off");
   });
 
   it("keeps the JSON input for a plugin command", async () => {

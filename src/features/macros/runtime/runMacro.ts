@@ -2,12 +2,20 @@ import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { executeCommandAt } from "../../commands/api/useCommands";
-import { argumentTypeOfName } from "../../commands/runtime/argumentValues";
+import { takenArguments, withTakenArguments } from "../../commands/runtime/argumentPickers";
+import {
+  argumentTypeOfName,
+  type FieldValue,
+  type FieldValues,
+} from "../../commands/runtime/argumentValues";
 import { camelCaseName } from "../../commands/runtime/commandArguments";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { LOCAL_COMMANDS } from "../../commands/runtime/localCommands";
-import { useCommandArgumentsStore } from "../../commands/state/useCommandArgumentsStore";
+import {
+  useCommandArgumentsStore,
+  type ArgumentStepGroup,
+} from "../../commands/state/useCommandArgumentsStore";
 import type {
   CommandArgumentInfo,
   CommandContextInput,
@@ -85,39 +93,89 @@ function plannedSteps(macro: AccountMacro, registry: MacroRegistry): PlannedStep
   return planned;
 }
 
-/** The field an argument a step asks for is filled in, named `<step index>:<name>`. */
-function askedField(
-  index: number,
-  name: string,
-  command: CommandDefinition | undefined,
-  title: string,
-): CommandArgumentInfo {
+/** The field an argument a step asks for is filled in: the one its command declares, if any. */
+function askedField(name: string, command: CommandDefinition | undefined): CommandArgumentInfo {
   const declared = command?.arguments?.find(
     (argument) => argument.name === name || camelCaseName(argument.name) === name,
   );
+  if (declared) return { ...declared, name };
   const pluginArgument =
     command?.sourceKind === "PLUGIN"
       ? findPluginCommand(command.id)?.arguments.find((argument) => argument.name === name)
       : undefined;
-  const label = `Step ${index + 1} · ${title}: ${declared?.title || name}`;
-  if (declared) return { ...declared, name: `${index}:${name}`, title: label };
   return {
-    name: `${index}:${name}`,
-    title: label,
+    name,
     argumentType: argumentTypeOfName(name),
     required: pluginArgument?.required ?? true,
     ...(pluginArgument?.description ? { description: pluginArgument.description } : {}),
   };
 }
 
-/** The values the form gave for step `index`, by argument name, leaving out empty ones. */
+/**
+ * A step's fixed arguments as field values, for asked fields that follow them, such as the
+ * current value of a fixed state key.
+ */
+function givenFieldValues(args: Record<string, unknown>): FieldValues {
+  return Object.fromEntries(
+    Object.entries(args).flatMap(([name, value]): [string, FieldValue][] => {
+      if (typeof value === "string" || typeof value === "boolean") return [[name, value]];
+      if (typeof value === "number") return [[name, String(value)]];
+      return [];
+    }),
+  );
+}
+
+/**
+ * The form group that asks for what step `index` asks: its command's fields, with those a field
+ * among them sets, in the workspace and conversation the step runs in.
+ */
+function askedGroup(
+  index: number,
+  step: PlannedStep,
+  command: CommandDefinition | undefined,
+  title: string,
+  commandContext: CommandContextInput,
+): ArgumentStepGroup {
+  const fields = step.ask.map((name) => askedField(name, command));
+  const conversationId = step.args.conversation_id ?? step.args.conversationId;
+  return {
+    key: String(index),
+    labelPrefix: `Step ${index + 1} · ${title}: `,
+    commandId: command?.id ?? step.commandId,
+    arguments: withTakenArguments(command?.id, fields, command?.arguments ?? []),
+    workspaceId: commandContext.workspaceId,
+    conversationId:
+      typeof conversationId === "string" && conversationId !== ""
+        ? conversationId
+        : (commandContext.conversationId ?? undefined),
+    givenValues: givenFieldValues(step.args),
+  };
+}
+
+/** The values the form gave for step `index`, by argument name, an empty text kept. */
 function askedValues(index: number, values: Record<string, unknown>): Record<string, unknown> {
   const prefix = `${index}:`;
   return Object.fromEntries(
     Object.entries(values)
-      .filter(([field, value]) => field.startsWith(prefix) && value !== undefined && value !== "")
+      .filter(([field, value]) => field.startsWith(prefix) && value !== undefined)
       .map(([field, value]) => [field.slice(prefix.length), value]),
   );
+}
+
+/**
+ * The arguments step `index` runs with: its fixed ones, less those an asked field sets, such as a
+ * mute's `until` when its duration is asked, and then what the form gave for it.
+ */
+function stepArgs(
+  index: number,
+  step: PlannedStep,
+  asked: Record<string, unknown>,
+): Record<string, unknown> {
+  const fixed = { ...step.args };
+  for (const name of step.ask) {
+    for (const taken of takenArguments(step.commandId, name)) delete fixed[taken];
+  }
+  return { ...fixed, ...askedValues(index, asked) };
 }
 
 function stepFailed(index: number, title: string, reason: string): void {
@@ -126,7 +184,8 @@ function stepFailed(index: number, title: string, reason: string): void {
 
 /**
  * Runs one of the person's macros, step by step, and says how it went. Every argument the steps
- * ask for is asked in one form first; cancelling it runs nothing. Each step then runs as it would
+ * ask for is asked in one form first, each step's with its own command's fields; cancelling it
+ * runs nothing. Each step then runs as it would
  * from the palette, with the context the run started in: a server step on the server that hosts
  * the workspace, with initiator `MACRO`, its own confirmation and audit entry; an app or plugin
  * step in this app. The first step that fails or is cancelled stops the rest.
@@ -171,14 +230,15 @@ export async function runMacro(
   const commands = steps.map((step) => registry.command(step.commandId));
   const titles = steps.map((step, i) => commands[i]?.title || stepTitle(step.commandId, registry));
 
-  const fields = steps.flatMap((step, i) =>
-    step.ask.map((name) => askedField(i, name, commands[i], titles[i])),
+  const groups = steps.flatMap((step, i) =>
+    step.ask.length > 0 ? [askedGroup(i, step, commands[i], titles[i], commandContext)] : [],
   );
   let asked: Record<string, unknown> = {};
-  if (fields.length > 0) {
+  if (groups.length > 0) {
     const values = await useCommandArgumentsStore.getState().ask({
       title,
-      arguments: fields,
+      arguments: [],
+      steps: groups,
       workspaceId: commandContext.workspaceId,
     });
     if (values === null) return false;
@@ -200,7 +260,7 @@ export async function runMacro(
       );
       return false;
     }
-    const args = { ...step.args, ...askedValues(i, asked) };
+    const args = stepArgs(i, step, asked);
     let result: CommandResult | null;
     try {
       result = await dispatchCommand(command, executeStep, {
