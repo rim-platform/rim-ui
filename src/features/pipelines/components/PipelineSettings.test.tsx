@@ -45,6 +45,19 @@ vi.mock("../../commands/api/useCommands", () => ({
       command("chat.post_message", "Post message", { sensitivity: "MUTATING" }),
       command("chat.delete_message", "Delete message", { sensitivity: "RESTRICTED" }),
       command("member.kick", "Kick member", { dangerous: true }),
+      command("state.get", "Read state", {
+        arguments: [
+          { name: "server_id", title: "Workspace", argumentType: "WORKSPACE_ID", required: true },
+          { name: "key", title: "Key", argumentType: "STRING", required: true },
+          {
+            name: "scope",
+            title: "Scope",
+            argumentType: "STRING",
+            required: false,
+            allowedValues: ["server", "user"],
+          },
+        ],
+      }),
       command("workspace.open_settings", "Open settings", { executionTarget: "DESKTOP_LOCAL" }),
     ],
   }),
@@ -218,22 +231,99 @@ describe("PipelineSettings create flow", () => {
     expect(callsTo("CreatePipeline")).toHaveLength(0);
   });
 
-  it("refuses to save when action args are not valid JSON", async () => {
-    await openCreate();
+  async function pickCommand(id: string) {
     fireEvent.change(screen.getByPlaceholderText("My pipeline"), { target: { value: "Ping" } });
-    fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
-      target: { value: "chat.pin" },
-    });
-    fireEvent.change(screen.getByPlaceholderText('{"key": "value"} (optional)'), {
-      target: { value: "{not json" },
-    });
+    fireEvent.change(screen.getByPlaceholderText("Search commands..."), { target: { value: id } });
+  }
+
+  it("shows no argument box for a command with no fields", async () => {
+    await openCreate();
+    await pickCommand("chat.pin");
+    expect(screen.queryByText("Arguments")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/key.*value/)).not.toBeInTheDocument();
+  });
+
+  it("blocks Save on a required argument the trigger cannot supply", async () => {
+    await openCreate();
+    await pickCommand("state.get");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(toastTitles()).toContain('Invalid JSON in args for action "chat.pin"'),
+      expect(toastTitles()).toContain("Fix the actions marked in red before saving."),
     );
+    expect(screen.getByText("Key is required")).toBeInTheDocument();
     expect(callsTo("CreatePipeline")).toHaveLength(0);
-    expect(screen.getByText("Create Pipeline")).toBeInTheDocument();
+  });
+
+  it("saves the key and scope an action for state.get is given", async () => {
+    handlers.CreatePipeline = () => ({ createPipeline: basePipeline });
+    await openCreate();
+    await pickCommand("state.get");
+    fireEvent.change(screen.getByRole("combobox", { name: "Key" }), {
+      target: { value: "deploy.count" },
+    });
+    fireEvent.change(screen.getByLabelText("Scope (optional)"), {
+      target: { value: "user" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(callsTo("CreatePipeline")).toHaveLength(1));
+    const input = callsTo("CreatePipeline")[0].input as { actions: unknown[] };
+    expect(input.actions).toEqual([
+      { commandId: "state.get", args: { key: "deploy.count", scope: "user" } },
+    ]);
+  });
+
+  it("loads saved arguments into the fields and keeps what the fields cannot show", async () => {
+    handlers.Pipelines = () => ({
+      pipelines: [
+        {
+          ...basePipeline,
+          actions: [
+            {
+              actionType: "COMMAND",
+              commandId: "state.get",
+              args: { key: "deploy.count", scope: "user", note: "old" },
+            },
+          ],
+        },
+      ],
+    });
+    handlers.UpdatePipeline = () => ({ updatePipeline: basePipeline });
+    render(<PipelineSettings />);
+    await screen.findByText("Escalate urgent");
+    fireEvent.click(screen.getAllByTitle("Edit pipeline")[0]);
+
+    expect(await screen.findByRole("combobox", { name: "Key" })).toHaveValue("deploy.count");
+    expect(screen.getByLabelText("Scope (optional)")).toHaveValue("user");
+    expect(screen.getByText(/Saved arguments the form can't show/)).toHaveTextContent(
+      '"note":"old"',
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo("UpdatePipeline")).toHaveLength(1));
+    expect((callsTo("UpdatePipeline")[0].input as { actions: unknown[] }).actions).toEqual([
+      { commandId: "state.get", args: { key: "deploy.count", scope: "user", note: "old" } },
+    ]);
+  });
+
+  it("drops saved arguments the fields cannot show when they are removed", async () => {
+    handlers.UpdatePipeline = () => ({ updatePipeline: basePipeline });
+    render(<PipelineSettings />);
+    await screen.findByText("Escalate urgent");
+    fireEvent.click(screen.getAllByTitle("Edit pipeline")[0]);
+
+    expect(await screen.findByText(/Saved arguments the form can't show/)).toHaveTextContent(
+      '"silent":true',
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.queryByText(/Saved arguments the form can't show/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo("UpdatePipeline")).toHaveLength(1));
+    expect((callsTo("UpdatePipeline")[0].input as { actions: unknown[] }).actions).toEqual([
+      { commandId: "chat.pin", args: undefined },
+    ]);
   });
 
   it("creates a pipeline with trigger, filter, actions and cooldown, then refreshes the list", async () => {
@@ -262,10 +352,10 @@ describe("PipelineSettings create flow", () => {
       target: { value: "sev1" },
     });
     fireEvent.change(screen.getByPlaceholderText("Search commands..."), {
-      target: { value: "chat.notify" },
+      target: { value: "state.get" },
     });
-    fireEvent.change(screen.getByPlaceholderText('{"key": "value"} (optional)'), {
-      target: { value: '{"level":2}' },
+    fireEvent.change(screen.getByRole("combobox", { name: "Key" }), {
+      target: { value: "deploy.count" },
     });
     fireEvent.change(screen.getByPlaceholderText("e.g. 60"), { target: { value: "30" } });
 
@@ -289,7 +379,7 @@ describe("PipelineSettings create flow", () => {
               },
             ],
           },
-          actions: [{ commandId: "chat.notify", args: { level: 2 } }],
+          actions: [{ commandId: "state.get", args: { key: "deploy.count" } }],
           cooldownSecs: 30,
         },
       },
@@ -433,7 +523,9 @@ describe("PipelineSettings edit, toggle and delete", () => {
     expect(screen.getByDisplayValue("Pin anything urgent")).toBeInTheDocument();
     expect(screen.getByDisplayValue("urgent")).toBeInTheDocument();
     expect(screen.getByDisplayValue("chat.pin")).toBeInTheDocument();
-    expect(screen.getByDisplayValue('{"silent":true}')).toBeInTheDocument();
+    expect(screen.getByText(/Saved arguments the form can't show/)).toHaveTextContent(
+      '{"silent":true}',
+    );
     expect(screen.getByDisplayValue("60")).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue("Escalate urgent"), {

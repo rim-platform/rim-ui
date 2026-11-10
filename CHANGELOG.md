@@ -150,6 +150,7 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A pipeline action's arguments are fields for its command, with a picker where it has one, instead of a JSON box; a required argument the trigger cannot supply must be filled before Save, and saved arguments the fields cannot show are kept and can be removed.
 - A plugin manifest listing `agents.connect_agent`, `agents.start_session`, `agents.stop_session`,
   `agents.ask_about_message`, `agents.ask_about_conversation` or `workspace.open_agent_sessions`
   in `runs_commands` is refused at install, and by the plugin SDK's `validateManifest`, like the

@@ -31,9 +31,22 @@ export interface ControlProps {
   onSubmit?: () => void;
 }
 
+/** An argument whose empty preset field says `emptyLabel`, for a form that is never asked. */
+type LabelledArgument = CommandArgumentInfo & { emptyLabel?: string };
+
+/** `argument` with the text its empty preset field shows. */
+export function withEmptyLabel(
+  argument: CommandArgumentInfo,
+  emptyLabel: string,
+): CommandArgumentInfo {
+  return { ...argument, emptyLabel } as LabelledArgument;
+}
+
 /** What an empty preset field does when the command runs. */
 export function emptyPresetLabel(argument: CommandArgumentInfo): string {
-  return argument.required ? "Ask when run" : "Default";
+  return (
+    (argument as LabelledArgument).emptyLabel ?? (argument.required ? "Ask when run" : "Default")
+  );
 }
 
 /** The props every select passes on from its field. */

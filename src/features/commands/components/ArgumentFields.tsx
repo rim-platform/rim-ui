@@ -335,6 +335,8 @@ export interface PresetArgumentsSectionProps {
   commandId?: string;
   /** What happens to an empty required field, such as "asked for when the key is pressed". */
   emptyNote: string;
+  /** Replaces the sentence about empty fields, for a form whose fields are never asked. */
+  intro?: string;
   /** The text size of the section: `xs` in the compact keybind list, `sm` in a dialog. */
   size?: "xs" | "sm";
 }
@@ -353,6 +355,7 @@ export function PresetArgumentsSection({
   workspaceId,
   commandId,
   emptyNote,
+  intro,
   size = "sm",
 }: PresetArgumentsSectionProps) {
   return (
@@ -369,7 +372,7 @@ export function PresetArgumentsSection({
       ) : (
         <>
           <p className="text-xs text-rim-text-faint">
-            Optional. A required field left empty is {emptyNote}.
+            {intro ?? `Optional. A required field left empty is ${emptyNote}.`}
           </p>
           <ArgumentFieldList
             fields={fields}

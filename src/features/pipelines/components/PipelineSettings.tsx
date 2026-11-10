@@ -12,6 +12,9 @@ import {
 } from "../api/usePipelines";
 import type { Pipeline, CreatePipelineInput, UpdatePipelineInput } from "../api/usePipelines";
 import { useCommands } from "../../commands/api/useCommands";
+import { PresetArgumentsSection } from "../../commands/components/ArgumentFields";
+import type { FieldValues } from "../../commands/runtime/argumentValues";
+import { actionArgs, actionForm } from "../actionArguments";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import {
   runsOnServer,
@@ -78,7 +81,14 @@ const CONDITION_TYPES = [
 interface CommandDraft {
   kind: "command";
   commandId: string;
-  args: string;
+  /** The arguments the action was saved with. */
+  saved: unknown;
+  /** The fields changed since it loaded. */
+  edited: FieldValues;
+  /** Whether the saved arguments the fields cannot show were removed. */
+  removed: boolean;
+  /** Why each field cannot be saved; the empty name holds a problem of the whole form. */
+  problems: Record<string, string>;
 }
 
 interface PostDraft extends PostAsBot {
@@ -90,7 +100,14 @@ interface PostDraft extends PostAsBot {
 type ActionDraft = CommandDraft | PostDraft;
 
 /** A command action with nothing in it, which a save leaves out. */
-const EMPTY_COMMAND: CommandDraft = { kind: "command", commandId: "", args: "" };
+const EMPTY_COMMAND: CommandDraft = {
+  kind: "command",
+  commandId: "",
+  saved: undefined,
+  edited: {},
+  removed: false,
+  problems: {},
+};
 
 /** Whether a command draft has been left empty. */
 function isEmptyCommand(action: ActionDraft): boolean {
@@ -111,6 +128,70 @@ interface PipelineEditorProps {
   hasPostAsBot: boolean;
   onSave: () => void;
   onCancel: () => void;
+}
+
+interface ActionArgumentsProps {
+  action: CommandDraft;
+  command: CommandDefinition | undefined;
+  /** Whether the command registry has loaded, so the action's command is known or unknown. */
+  loaded: boolean;
+  triggerKind: PipelineTriggerKindGql;
+  serverId: string;
+  onEdit: (change: (action: CommandDraft) => CommandDraft) => void;
+}
+
+/**
+ * The arguments of one pipeline action: a field for each its command takes, and the saved
+ * arguments the fields cannot show, as JSON with a button that removes them.
+ */
+function ActionArguments({
+  action,
+  command,
+  loaded,
+  triggerKind,
+  serverId,
+  onEdit,
+}: ActionArgumentsProps) {
+  if (!loaded) return null;
+  const form = actionForm(command, action.saved, action.edited, action.removed, triggerKind);
+  return (
+    <>
+      {form.fields.length > 0 && (
+        <PresetArgumentsSection
+          fields={form.fields}
+          commandId={command?.id}
+          values={form.values}
+          problems={action.problems}
+          workspaceId={serverId}
+          emptyNote=""
+          intro="Nobody is there to ask when this runs, so a field marked Required must be filled. Other fields use the trigger's conversation or the command's default."
+          onChange={(name, value) =>
+            onEdit((a) => {
+              const problems = { ...a.problems };
+              delete problems[name];
+              return { ...a, edited: { ...a.edited, [name]: value }, problems };
+            })
+          }
+        />
+      )}
+      {form.extras !== undefined && (
+        <div className="space-y-1 text-xs text-rim-text-muted">
+          <p>
+            Saved arguments the form can&apos;t show:{" "}
+            <code className="break-all font-mono text-rim-text">{JSON.stringify(form.extras)}</code>
+          </p>
+          <button
+            type="button"
+            onClick={() => onEdit((a) => ({ ...a, removed: true }))}
+            className="rounded border border-rim-line px-2 py-0.5 text-rim-text transition hover:text-rim-danger"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+      {action.problems[""] && <p className="text-xs text-rim-danger">{action.problems[""]}</p>}
+    </>
+  );
 }
 
 function PipelineEditor({
@@ -151,7 +232,10 @@ function PipelineEditor({
       return {
         kind: "command",
         commandId: a.commandId ?? "",
-        args: a.args ? JSON.stringify(a.args) : "",
+        saved: a.args ?? undefined,
+        edited: {},
+        removed: false,
+        problems: {},
       };
     });
   });
@@ -191,10 +275,16 @@ function PipelineEditor({
     setActions((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const updateAction = useCallback((index: number, field: "commandId" | "args", value: string) => {
+  const updateAction = useCallback((index: number, commandId: string) => {
     setActions((prev) =>
-      prev.map((a, i) => (i === index && a.kind === "command" ? { ...a, [field]: value } : a)),
+      prev.map((a, i) =>
+        i === index && a.kind === "command" ? { ...EMPTY_COMMAND, commandId } : a,
+      ),
     );
+  }, []);
+
+  const editAction = useCallback((index: number, change: (a: CommandDraft) => CommandDraft) => {
+    setActions((prev) => prev.map((a, i) => (i === index && a.kind === "command" ? change(a) : a)));
   }, []);
 
   const updatePost = useCallback((index: number, next: PostAsBot) => {
@@ -267,6 +357,24 @@ function PipelineEditor({
           }
         : undefined;
 
+    const unsaved = new Map<ActionDraft, Record<string, string>>();
+    const savedArgs = new Map<ActionDraft, unknown>();
+    for (const a of validActions) {
+      if (a.kind !== "command") continue;
+      const command = commandsById.get(a.commandId.trim());
+      const form = actionForm(command, a.saved, a.edited, a.removed, triggerKind);
+      const result = actionArgs(command, form, serverId);
+      if (result.ok) savedArgs.set(a, result.args);
+      else unsaved.set(a, result.problems);
+    }
+    if (unsaved.size > 0) {
+      setActions((prev) =>
+        prev.map((a) => (unsaved.has(a) ? { ...a, problems: unsaved.get(a)! } : a)),
+      );
+      toast.error("Fix the actions marked in red before saving.");
+      return;
+    }
+
     const mappedActions: PipelineActionInput[] = [];
     for (const a of validActions) {
       if (a.kind === "post") {
@@ -284,16 +392,7 @@ function PipelineEditor({
         );
         continue;
       }
-      let args: unknown = undefined;
-      if (a.args.trim()) {
-        try {
-          args = JSON.parse(a.args);
-        } catch {
-          // Do not save with the args silently dropped.
-          toast.error(`Invalid JSON in args for action "${a.commandId}"`);
-          return;
-        }
-      }
+      const args = savedArgs.get(a);
       mappedActions.push({ commandId: a.commandId.trim(), args });
     }
 
@@ -556,7 +655,7 @@ function PipelineEditor({
                 <div className="flex-1 space-y-2">
                   <CommandIdInput
                     value={action.commandId}
-                    onChange={(v) => updateAction(index, "commandId", v)}
+                    onChange={(v) => updateAction(index, v)}
                     commands={actionCommands}
                     error={
                       warning
@@ -565,12 +664,13 @@ function PipelineEditor({
                     }
                   />
                   {warning && <p className="text-xs text-rim-danger">{warning}</p>}
-                  <input
-                    type="text"
-                    value={action.args}
-                    onChange={(e) => updateAction(index, "args", e.target.value)}
-                    placeholder='{"key": "value"} (optional)'
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 font-mono text-xs text-rim-text-muted outline-none focus:border-rim-accent"
+                  <ActionArguments
+                    action={action}
+                    command={commandsById.get(action.commandId.trim())}
+                    loaded={allCommands !== undefined}
+                    triggerKind={triggerKind}
+                    serverId={serverId}
+                    onEdit={(change) => editAction(index, change)}
                   />
                 </div>
                 <button
