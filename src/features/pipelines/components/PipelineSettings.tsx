@@ -440,6 +440,7 @@ function PipelineEditor({
     actions,
     allCommands,
     pickerCommands,
+    commandsById,
     mayEditPosts,
     initial,
     serverId,
