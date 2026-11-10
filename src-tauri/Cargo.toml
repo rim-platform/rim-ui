@@ -111,6 +111,9 @@ tar = { version = "0.4", default-features = false }
 # and `.tar.bz2`, through its default backend, the pure-Rust libbz2-rs-sys, so no C library is
 # built.
 bzip2 = "0.6"
+# npm version ranges, for the size an npm agent takes once installed
+# (src/agent_installer/size.rs).
+semver = "1"
 
 # Asks the session bus for a tray host (src/desktop_shell).
 [target.'cfg(target_os = "linux")'.dependencies]

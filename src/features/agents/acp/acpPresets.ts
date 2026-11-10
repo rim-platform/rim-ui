@@ -18,6 +18,8 @@ export interface AcpPreset {
   setupArgs: string[] | null;
   /** How to sign in to it, for when RIM can't do it from the agent's own answer. */
   signIn: string;
+  /** Whether RIM installs it as an npm package that runs on RIM's own Node.js. */
+  runsOnNode: boolean;
 }
 
 /** The presets, in the order Settings shows them. */
@@ -29,6 +31,7 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     args: [],
     setupArgs: null,
     signIn: "Sign in once: run claude in a terminal and log in.",
+    runsOnNode: false,
   },
   {
     id: "codex",
@@ -37,6 +40,7 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     args: [],
     setupArgs: null,
     signIn: "Sign in once: run codex login in a terminal, or set CODEX_API_KEY.",
+    runsOnNode: true,
   },
   {
     id: "gemini-cli",
@@ -45,6 +49,7 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     args: ["--acp"],
     setupArgs: null,
     signIn: "Sign in once: run gemini in a terminal and log in.",
+    runsOnNode: true,
   },
   {
     id: "opencode",
@@ -53,6 +58,7 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     args: ["acp"],
     setupArgs: ["auth", "login"],
     signIn: "Sign in once: run opencode auth login in a terminal.",
+    runsOnNode: false,
   },
   {
     id: "goose",
@@ -61,6 +67,7 @@ export const ACP_PRESETS: readonly AcpPreset[] = [
     args: ["acp"],
     setupArgs: ["configure"],
     signIn: "Set it up once: run goose configure in a terminal.",
+    runsOnNode: false,
   },
 ];
 

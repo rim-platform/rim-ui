@@ -63,7 +63,10 @@ function ProgramList() {
   const [signingIn, setSigningIn] = useState<AgentProgramProfile | null>(null);
   const installer = useAgentInstaller();
   const installedPairs = useMemo(
-    () => (installer.catalog ?? []).flatMap((entry) => (entry.installed ? [entry.installed] : [])),
+    () =>
+      (installer.catalog?.agents ?? []).flatMap((entry) =>
+        entry.installed ? [entry.installed] : [],
+      ),
     [installer.catalog],
   );
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);

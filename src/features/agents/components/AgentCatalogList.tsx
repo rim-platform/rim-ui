@@ -2,14 +2,22 @@ import { Button } from "../../../shared/ui/Button";
 import { ACP_PRESETS, type AcpPreset } from "../acp/acpPresets";
 import { progressLine, type InstalledAgent } from "../acp/agentInstaller";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
-import { presetRowState, versionLine, type PresetRowState } from "./catalogRows";
+import {
+  diskUseLine,
+  offerLine,
+  presetRowState,
+  usesLine,
+  versionLine,
+  type PresetRowState,
+} from "./catalogRows";
 import type { AgentInstallerState } from "./useAgentInstaller";
 
 const CHIP_SUCCESS = "rounded-full border border-rim-success/30 px-2 text-xs text-rim-success";
+const CHIP_MUTED = "rounded-full border border-rim-line px-2 text-xs text-rim-text-muted";
 
 /**
  * The supported agents, one row each: installing, updating and removing what RIM installs, and
- * one the person installed themselves.
+ * one the person installed themselves; then what RIM's agents use on disk.
  */
 export function AgentCatalogList({
   installer,
@@ -32,6 +40,7 @@ export function AgentCatalogList({
   onSignIn: (profile: AgentProgramProfile) => void;
 }) {
   const loaded = installer.catalog !== null || installer.catalogError !== null;
+  const diskUse = installer.catalog === null ? null : diskUseLine(installer.catalog, ACP_PRESETS);
   return (
     <div className="space-y-2">
       {installer.catalogError !== null && (
@@ -41,7 +50,7 @@ export function AgentCatalogList({
       )}
       <ul aria-label="Supported agents" className="space-y-2">
         {ACP_PRESETS.map((preset) => {
-          const entry = installer.catalog?.find((item) => item.presetId === preset.id);
+          const entry = installer.catalog?.agents.find((item) => item.presetId === preset.id);
           const state = presetRowState(
             preset,
             entry,
@@ -68,6 +77,7 @@ export function AgentCatalogList({
           );
         })}
       </ul>
+      {diskUse !== null && <p className="text-xs text-rim-text-muted">{diskUse}</p>}
     </div>
   );
 }
@@ -96,6 +106,7 @@ function PresetRow({
   const error = installer.errors[preset.id];
   const installing = mine && busy?.action === "install";
   const heard = progress?.presetId === preset.id ? progress : null;
+  const uses = state.kind === "installed" ? usesLine(state.installed) : null;
   const progressText = !installing
     ? null
     : heard === null
@@ -110,12 +121,13 @@ function PresetRow({
             {state.kind === "installed" && (
               <span className={CHIP_SUCCESS}>Installed by RIM, {state.installed.version}</span>
             )}
+            {uses !== null && <span className={CHIP_MUTED}>{uses}</span>}
             {state.kind === "found" && <span className={CHIP_SUCCESS}>Found on this computer</span>}
           </div>
           {state.kind === "install" && (
             <>
               <span className="block text-xs text-rim-text-muted">
-                {versionLine(state.available)}
+                {offerLine(state.available)}
               </span>
               <span className="block break-all text-xs text-rim-text-faint">
                 From {state.available.source}

@@ -14,6 +14,15 @@ export { DESKTOP_ONLY_MESSAGE };
 /** The event with the progress of an install. */
 export const AGENT_INSTALL_PROGRESS_EVENT = "agent-installer://progress";
 
+/**
+ * How big an agent is before it is installed: the archive RIM downloads, or what npm puts on
+ * disk.
+ */
+export interface AgentSize {
+  bytes: number;
+  kind: "download" | "installed";
+}
+
 /** A version of an agent RIM can install. */
 export interface AvailableAgent {
   version: string;
@@ -21,6 +30,8 @@ export interface AvailableAgent {
   license: string;
   /** Where RIM downloads it from. */
   source: string;
+  /** How big it is, or `null` when RIM could not tell. */
+  size: AgentSize | null;
 }
 
 /** An agent RIM installed. */
@@ -34,6 +45,12 @@ export interface InstalledAgent {
   installedAt: number;
 }
 
+/** An agent RIM installed, with what it uses on disk. */
+export interface CatalogInstalledAgent extends InstalledAgent {
+  /** The bytes its files use, or `null` when they could not be read. */
+  diskBytes: number | null;
+}
+
 /** One supported agent, as the installer sees it on this computer. */
 export interface CatalogEntry {
   presetId: string;
@@ -41,9 +58,28 @@ export interface CatalogEntry {
   /** The version RIM would install, or `null` when it can't install it here. */
   available: AvailableAgent | null;
   /** What RIM installed, or `null`. */
-  installed: InstalledAgent | null;
+  installed: CatalogInstalledAgent | null;
   /** Why it can't be installed or checked, as a sentence, or `null`. */
   problem: string | null;
+}
+
+/** RIM's own Node.js, which the agents installed from npm run on. */
+export interface InstalledNode {
+  version: string;
+  /** The bytes its files use, or `null` when they could not be read. */
+  diskBytes: number | null;
+}
+
+/** What the installer reports: the supported agents and what RIM's agents use on disk. */
+export interface InstallerCatalog {
+  /** Each supported agent, in the order of the presets. */
+  agents: CatalogEntry[];
+  /** RIM's Node.js when it is installed, or `null`. */
+  node: InstalledNode | null;
+  /** What installing RIM's Node.js downloads, when it isn't installed and that is known. */
+  nodeDownload: number | null;
+  /** The bytes everything in RIM's agents folder uses. */
+  totalBytes: number;
 }
 
 /** A program and its exact arguments, as the runner's allowed list holds them. */
@@ -73,8 +109,8 @@ export interface InstallProgress {
   total: number | null;
 }
 
-/** @returns Each supported agent, in the order of the presets. */
-export function agentInstallerCatalog(): Promise<CatalogEntry[]> {
+/** @returns Each supported agent, in the order of the presets, and what they use on disk. */
+export function agentInstallerCatalog(): Promise<InstallerCatalog> {
   return callDesktop("agent_installer_catalog");
 }
 
@@ -107,6 +143,19 @@ export async function removeInstalledAgent(presetId: string): Promise<void> {
  */
 export function onInstallProgress(callback: (progress: InstallProgress) => void): () => void {
   return listenDesktop(AGENT_INSTALL_PROGRESS_EVENT, callback);
+}
+
+/**
+ * A size as the person reads it, in decimal units: one decimal under 10 MB ("4.2 MB"), whole
+ * megabytes up to 1000 MB ("120 MB"), and gigabytes with one decimal above ("1.2 GB").
+ */
+export function formatSize(bytes: number): string {
+  const tenths = (value: number) => `${Math.floor(value / 10)}.${value % 10}`;
+  const tenthsMb = Math.round(bytes / 100_000);
+  if (tenthsMb < 100) return `${tenths(tenthsMb)} MB`;
+  const mb = Math.round(bytes / 1_000_000);
+  if (mb < 1000) return `${mb} MB`;
+  return `${tenths(Math.round(bytes / 100_000_000))} GB`;
 }
 
 function megabytes(bytes: number): string {

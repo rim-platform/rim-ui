@@ -175,15 +175,20 @@ access to your files.
 **The supported agents.** The section lists Claude Code, opencode, Goose, Codex and Gemini CLI,
 one row each, with what RIM finds for it on this computer:
 
-- **Install**, with the version and licence RIM would install and where it comes from, when it
-  isn't installed and isn't on your `PATH`.
-- **Installed by RIM** and its version, with **Update to** a newer version when there is one, and
-  **Remove files**.
+- **Install**, with the version and licence RIM would install, how big it is and where it comes
+  from, when it isn't installed and isn't on your `PATH`. The size is the download for Claude
+  Code, opencode and Goose, and what npm puts on disk for Codex and Gemini CLI.
+- **Installed by RIM** and its version, with what its files use, **Update to** a newer version
+  when there is one, and **Remove files**.
 - **Found on this computer**, when it's on your `PATH` because you installed it yourself.
 - **Not available on this computer**, with the reason, when RIM can't install it here.
 
+Under the list, one line says what the agents RIM installed use on this computer in all,
+including RIM's Node.js and the agents that run on it.
+
 **RIM installs it for you.** **Install** shows one system dialog, not a page of RIM, that names
-the agent, its version, its licence and where it's downloaded from. Only **Install** goes on:
+the agent, its version, its licence, where it's downloaded from and, when RIM could tell, how big
+it is and what Node.js adds. Only **Install** goes on:
 
 - RIM takes the version from the Agent Client Protocol registry, and downloads only from the
   source fixed for each agent: the agent's own release on GitHub for Claude Code, opencode and
@@ -194,7 +199,8 @@ the agent, its version, its licence and where it's downloaded from. Only **Insta
 - Codex and Gemini CLI run on Node.js. RIM downloads its own Node.js once, from nodejs.org, and
   uses it even when your computer has its own. Their packages install without running their
   install scripts.
-- Everything goes into RIM's own folder; nothing is installed for the whole computer.
+- Everything goes into RIM's own folder; nothing is installed for the whole computer. RIM keeps
+  no download cache: each download and npm's cache are deleted once the install ends.
 - RIM may then start the program it installed, so no second dialog asks. RIM adds it to
   **Your agent programs** and connects an agent for it, with nothing granted.
 

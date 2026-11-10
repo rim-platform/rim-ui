@@ -64,7 +64,12 @@ vi.mock("./AgentSignInDialog", () => ({
 
 import { useAgentProgramsStore, type AgentProgramProfile } from "../state/useAgentProgramsStore";
 import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
-import type { CatalogEntry } from "../acp/agentInstaller";
+import type {
+  AvailableAgent,
+  CatalogEntry,
+  InstalledAgent,
+  InstallerCatalog,
+} from "../acp/agentInstaller";
 import { AgentProgramsSection, PROGRAMS_NOTE } from "./AgentProgramsSection";
 
 const INSTALLED_CLAUDE = {
@@ -75,22 +80,39 @@ const INSTALLED_CLAUDE = {
   installedAt: 1_762_768_800_000,
 };
 
-/** A catalog where everything can be installed and nothing is, but for `changes`. */
-function catalog(changes: Record<string, Partial<CatalogEntry>> = {}): CatalogEntry[] {
-  return [
+/** A change to one catalog entry; a size or a disk use left out is not known. */
+interface EntryChange {
+  available?: (Omit<AvailableAgent, "size"> & Partial<Pick<AvailableAgent, "size">>) | null;
+  installed?: (InstalledAgent & { diskBytes?: number | null }) | null;
+  problem?: string | null;
+}
+
+/** A catalog where everything can be installed and nothing is, but for `changes` and `rest`. */
+function catalog(
+  changes: Record<string, EntryChange> = {},
+  rest: Partial<Omit<InstallerCatalog, "agents">> = {},
+): InstallerCatalog {
+  const agents: CatalogEntry[] = [
     ["claude-code", "Claude Code", "proprietary"],
     ["opencode", "opencode", "MIT"],
     ["goose", "Goose", "Apache-2.0"],
     ["codex", "Codex", "Apache-2.0"],
     ["gemini-cli", "Gemini CLI", "Apache-2.0"],
-  ].map(([presetId, name, license]) => ({
-    presetId,
-    name,
-    available: { version: "0.102.0", license, source: `github.com/${presetId}/releases` },
-    installed: null,
-    problem: null,
-    ...changes[presetId],
-  }));
+  ].map(([presetId, name, license]) => {
+    const change = changes[presetId] ?? {};
+    const available =
+      change.available === undefined
+        ? { version: "0.102.0", license, source: `github.com/${presetId}/releases` }
+        : change.available;
+    return {
+      presetId,
+      name,
+      available: available === null ? null : { size: null, ...available },
+      installed: change.installed ? { diskBytes: null, ...change.installed } : null,
+      problem: change.problem ?? null,
+    };
+  });
+  return { agents, node: null, nodeDownload: null, totalBytes: 0, ...rest };
 }
 
 function supportedRow(name: string): HTMLElement {
@@ -348,6 +370,104 @@ describe("AgentProgramsSection", () => {
       expect(goose).toHaveTextContent("Goose has no build for this computer.");
       expect(within(goose).queryByRole("button")).not.toBeInTheDocument();
       expect(supportedRow("opencode")).toHaveTextContent("Not available on this computer");
+    });
+
+    it("says how big each offer is and what the installed agents use", async () => {
+      installer.agentInstallerCatalog.mockResolvedValue(
+        catalog(
+          {
+            "claude-code": {
+              available: {
+                version: "0.102.0",
+                license: "proprietary",
+                source: "github.com/x",
+                size: { bytes: 120_400_000, kind: "download" },
+              },
+            },
+            codex: {
+              available: {
+                version: "2.6.0",
+                license: "Apache-2.0",
+                source: "npm package x",
+                size: { bytes: 459_600_000, kind: "installed" },
+              },
+            },
+            goose: {
+              installed: {
+                presetId: "goose",
+                version: "1.59.0",
+                program: "/data/agents/goose/1.59.0/goose",
+                args: ["acp"],
+                installedAt: 1_762_768_800_000,
+                diskBytes: 433_000_000,
+              },
+            },
+          },
+          { totalBytes: 1_200_000_000 },
+        ),
+      );
+      render(<AgentProgramsSection />);
+      expect(
+        await within(supportedRow("Claude Code")).findByText(
+          "0.102.0 · proprietary licence · about 120 MB download",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(supportedRow("Codex")).getByText(
+          "2.6.0 · Apache-2.0 licence · about 460 MB installed",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(supportedRow("opencode")).getByText("0.102.0 · MIT licence"),
+      ).toBeInTheDocument();
+      const goose = supportedRow("Goose");
+      expect(within(goose).getByText("Installed by RIM, 1.59.0")).toBeInTheDocument();
+      expect(within(goose).getByText("Uses 433 MB")).toBeInTheDocument();
+      expect(
+        screen.getByText("Agents installed by RIM use 1.2 GB on this computer."),
+      ).toBeInTheDocument();
+    });
+
+    it("names Node.js and the agents that share it in what RIM's agents use", async () => {
+      const node = "/data/agents/node/26.13.0/bin/node";
+      installer.agentInstallerCatalog.mockResolvedValue(
+        catalog(
+          {
+            codex: {
+              installed: {
+                presetId: "codex",
+                version: "2.6.0",
+                program: node,
+                args: ["/data/agents/codex/2.6.0/x.js"],
+                installedAt: 1_762_768_800_000,
+                diskBytes: 474_400_000,
+              },
+            },
+            "gemini-cli": {
+              installed: {
+                presetId: "gemini-cli",
+                version: "0.67.0",
+                program: node,
+                args: ["/data/agents/gemini-cli/0.67.0/g.js", "--acp"],
+                installedAt: 1_762_768_800_000,
+              },
+            },
+          },
+          {
+            node: { version: "26.13.0", diskBytes: 214_000_000 },
+            totalBytes: 1_234_000_000,
+          },
+        ),
+      );
+      render(<AgentProgramsSection />);
+      expect(
+        await screen.findByText(
+          "Agents installed by RIM use 1.2 GB on this computer, including Node.js 26.13.0 " +
+            "(214 MB), shared by Codex and Gemini CLI.",
+        ),
+      ).toBeInTheDocument();
+      expect(within(supportedRow("Codex")).getByText("Uses 474 MB")).toBeInTheDocument();
+      expect(within(supportedRow("Gemini CLI")).queryByText(/^Uses /u)).not.toBeInTheDocument();
     });
 
     it("installs a preset, shows its progress, and adds it without asking the runner", async () => {

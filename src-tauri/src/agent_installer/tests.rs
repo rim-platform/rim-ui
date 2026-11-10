@@ -6,12 +6,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tempfile::TempDir;
 
-/// Serves fixed files by path on a loopback port and counts the requests for each.
+/// Serves fixed files by path on a loopback port and records the requests: the paths of the
+/// `GET`s in `hits`, of the `HEAD`s in `heads`.
 struct FileServer {
     server: Arc<tiny_http::Server>,
     base: String,
     files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     hits: Arc<Mutex<Vec<String>>>,
+    heads: Arc<Mutex<Vec<String>>>,
 }
 
 impl FileServer {
@@ -20,11 +22,17 @@ impl FileServer {
         let base = format!("http://{}", server.server_addr().to_ip().unwrap());
         let files: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::default();
         let hits: Arc<Mutex<Vec<String>>> = Arc::default();
-        let (serving, served, logged) = (server.clone(), files.clone(), hits.clone());
+        let heads: Arc<Mutex<Vec<String>>> = Arc::default();
+        let (serving, served, logged, headed) =
+            (server.clone(), files.clone(), hits.clone(), heads.clone());
         std::thread::spawn(move || {
             for request in serving.incoming_requests() {
                 let path = request.url().to_owned();
-                lock(&logged).push(path.clone());
+                if *request.method() == tiny_http::Method::Head {
+                    lock(&headed).push(path.clone());
+                } else {
+                    lock(&logged).push(path.clone());
+                }
                 let body = lock(&served).get(&path).cloned();
                 let response = match body {
                     Some(body) => tiny_http::Response::from_data(body),
@@ -38,6 +46,7 @@ impl FileServer {
             base,
             files,
             hits,
+            heads,
         }
     }
 
@@ -126,9 +135,10 @@ fn github_path(url: &str) -> String {
 /// A shell script that answers ACP's first line, as an agent would.
 const FAKE_AGENT: &[u8] = b"#!/bin/sh\nexec cat\n";
 
-/// The fake Node.js `node`: given npm's install arguments, it writes the package with a
-/// `bin` script under `--prefix`.
-const FAKE_NODE: &[u8] = b"#!/bin/sh\nprefix=\"$4\"\nfor last; do :; done\npkg=\"${last%@*}\"\nmkdir -p \"$prefix/node_modules/$pkg/bin\"\nprintf '{\"name\":\"%s\",\"bin\":{\"codex-acp\":\"bin/codex-acp.js\"}}' \"$pkg\" > \"$prefix/node_modules/$pkg/package.json\"\necho 'console.log(1)' > \"$prefix/node_modules/$pkg/bin/codex-acp.js\"\n";
+/// The fake Node.js `node`: given npm's install arguments, it writes a file into npm's cache
+/// folder, fails for a version with `fail` in it, and otherwise writes the package with a `bin`
+/// script under `--prefix`.
+const FAKE_NODE: &[u8] = b"#!/bin/sh\nprefix=\"$4\"\nmkdir -p \"${12}\" && echo cached > \"${12}/blob\"\nfor last; do :; done\ncase \"$last\" in *fail*) echo 'npm ERR! failed' >&2; exit 1;; esac\npkg=\"${last%@*}\"\nmkdir -p \"$prefix/node_modules/$pkg/bin\"\nprintf '{\"name\":\"%s\",\"bin\":{\"codex-acp\":\"bin/codex-acp.js\"}}' \"$pkg\" > \"$prefix/node_modules/$pkg/package.json\"\necho 'console.log(1)' > \"$prefix/node_modules/$pkg/bin/codex-acp.js\"\n";
 
 /// The registry's binary entry of `registry_id` at `version`, with `build`'s fields.
 fn binary_agent(
@@ -243,6 +253,7 @@ impl Harness {
         self.server
             .put("/registry.json", serde_json::to_vec(&document).unwrap());
         self.installer.sources.net.forget_registry();
+        self.installer.sizes.clear();
     }
 
     /// Serves a goose archive at `version` in `.tar.bz2` and returns its registry entry.
@@ -257,6 +268,31 @@ impl Harness {
             &self.platform,
             serde_json::json!({ "archive": url, "cmd": "./goose", "args": ["acp"], "sha256": sha(&archive) }),
         )
+    }
+
+    /// Serves npm's metadata of `name` with `versions`, the last one tagged `latest`.
+    #[cfg(unix)]
+    fn npm_package(&self, name: &str, versions: serde_json::Value) {
+        serve_npm(&self.server, name, versions);
+    }
+
+    /// The size of the fake Node.js archive.
+    fn node_archive_len(&self) -> u64 {
+        lock(&self.server.files)["/nodejs.org/dist/v1.0.0/node-v1.0.0-test.tar.gz"].len() as u64
+    }
+
+    /// The npm cache folders in the agents folder.
+    #[cfg(unix)]
+    fn npm_caches(&self) -> Vec<String> {
+        std::fs::read_dir(self.root())
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .filter(|name| name.starts_with(NPM_CACHE_PREFIX))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn questions(&self) -> usize {
@@ -354,6 +390,73 @@ fn the_page_types_have_their_field_names() {
         serde_json::to_value(event).unwrap(),
         serde_json::json!({ "presetId": "goose", "stage": "downloading", "received": 1, "total": null })
     );
+    let catalog = Catalog {
+        agents: vec![CatalogEntry {
+            preset_id: "codex".into(),
+            name: "Codex".into(),
+            available: Some(Available {
+                version: "2".into(),
+                license: "MIT".into(),
+                source: "npm package x".into(),
+                size: Some(Size {
+                    bytes: 460,
+                    kind: SizeKind::Installed,
+                }),
+            }),
+            installed: Some(CatalogInstalled {
+                agent: InstalledAgent {
+                    preset_id: "codex".into(),
+                    version: "1".into(),
+                    program: "/a/node".into(),
+                    args: vec!["/a/x.js".into()],
+                    installed_at: 7,
+                },
+                disk_bytes: Some(433),
+            }),
+            problem: None,
+        }],
+        node: Some(CatalogNode {
+            version: "26.13.0".into(),
+            disk_bytes: None,
+        }),
+        node_download: None,
+        total_bytes: 1200,
+    };
+    assert_eq!(
+        serde_json::to_value(catalog).unwrap(),
+        serde_json::json!({
+            "agents": [{
+                "presetId": "codex",
+                "name": "Codex",
+                "available": {
+                    "version": "2",
+                    "license": "MIT",
+                    "source": "npm package x",
+                    "size": { "bytes": 460, "kind": "installed" },
+                },
+                "installed": {
+                    "presetId": "codex",
+                    "version": "1",
+                    "program": "/a/node",
+                    "args": ["/a/x.js"],
+                    "installedAt": 7,
+                    "diskBytes": 433,
+                },
+                "problem": null,
+            }],
+            "node": { "version": "26.13.0", "diskBytes": null },
+            "nodeDownload": null,
+            "totalBytes": 1200,
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(Size {
+            bytes: 1,
+            kind: SizeKind::Download
+        })
+        .unwrap(),
+        serde_json::json!({ "bytes": 1, "kind": "download" })
+    );
     let terminal = crate::agent_runner::TerminalOutcome::NoTerminal {
         command_line: "x".into(),
     };
@@ -366,18 +469,59 @@ fn the_page_types_have_their_field_names() {
 #[test]
 fn the_dialog_names_the_version_source_licence_and_node() {
     let preset = presets::find("codex").unwrap();
-    let available = Available {
+    let mut available = Available {
         version: "2.6.0".into(),
         license: "Apache-2.0".into(),
         source: "npm package @agentclientprotocol/codex-acp".into(),
+        size: None,
     };
+    let node = |download: Option<u64>| {
+        Some(NodeOffer {
+            version: "26.13.0",
+            download,
+        })
+    };
+    let start = "RIM will download Codex 2.6.0 from npm package @agentclientprotocol/codex-acp \
+                 (licence: Apache-2.0), check it and install it in RIM's own folder. RIM can then \
+                 start it on this computer.";
+    let with_node = format!("{start}\n\nIt also downloads Node.js 26.13.0 from nodejs.org, once.");
+    assert_eq!(install_message(preset, &available, node(None)), with_node);
+    assert_eq!(install_message(preset, &available, None), start);
+
+    available.size = Some(Size {
+        bytes: 459_600_000,
+        kind: SizeKind::Installed,
+    });
     assert_eq!(
-        install_message(preset, &available, Some("26.13.0")),
-        "RIM will download Codex 2.6.0 from npm package @agentclientprotocol/codex-acp (licence: \
-         Apache-2.0), check it and install it in RIM's own folder. RIM can then start it on this \
-         computer.\n\nIt also downloads Node.js 26.13.0 from nodejs.org, once."
+        install_message(preset, &available, node(Some(50_400_000))),
+        format!(
+            "{with_node}\n\nIt takes about 460 MB once installed. Node.js 26.13.0 adds about 50 MB \
+             to download."
+        )
     );
-    assert!(!install_message(preset, &available, None).contains("Node.js"));
+    assert_eq!(
+        install_message(preset, &available, None),
+        format!("{start}\n\nIt takes about 460 MB once installed.")
+    );
+    available.size = None;
+    assert_eq!(
+        install_message(preset, &available, node(Some(4_240_000))),
+        format!("{with_node}\n\nNode.js 26.13.0 adds about 4.2 MB to download.")
+    );
+
+    let goose = presets::find("goose").unwrap();
+    let offer = Available {
+        version: "1.58.0".into(),
+        license: "Apache-2.0".into(),
+        source: "github.com/block/goose".into(),
+        size: Some(Size {
+            bytes: 120_000_000,
+            kind: SizeKind::Download,
+        }),
+    };
+    assert!(
+        install_message(goose, &offer, None).ends_with("this computer.\n\nDownload: about 120 MB.")
+    );
 }
 
 #[tokio::test]
@@ -452,6 +596,7 @@ async fn each_archive_format_installs_and_is_allowed() {
 
     let catalog = h.installer.catalog().await;
     let ids: Vec<&str> = catalog
+        .agents
         .iter()
         .map(|entry| entry.preset_id.as_str())
         .collect();
@@ -459,11 +604,15 @@ async fn each_archive_format_installs_and_is_allowed() {
         ids,
         ["claude-code", "opencode", "goose", "codex", "gemini-cli"]
     );
-    let goose = &catalog[2];
-    assert_eq!(goose.installed.as_ref().unwrap().version, "1.0.0");
+    let goose = &catalog.agents[2];
+    assert_eq!(goose.installed.as_ref().unwrap().agent.version, "1.0.0");
     assert_eq!(goose.available.as_ref().unwrap().version, "1.0.0");
     assert_eq!(goose.problem, None);
-    assert!(catalog[3].problem.as_ref().unwrap().contains("no entry"));
+    assert!(catalog.agents[3]
+        .problem
+        .as_ref()
+        .unwrap()
+        .contains("no entry"));
 
     let (record, warning) = state::read(&h.root().join(state::FILE_NAME));
     assert_eq!(warning, None);
@@ -482,7 +631,7 @@ async fn a_checksum_mismatch_leaves_nothing_behind() {
     assert_eq!(h.leftover_downloads(), 0);
     assert!(h.preset_folder("goose").is_empty());
     assert!(h.runner.allowed().is_empty());
-    assert!(h.installer.catalog().await[2].installed.is_none());
+    assert!(h.installer.catalog().await.agents[2].installed.is_none());
 }
 
 #[tokio::test]
@@ -497,8 +646,8 @@ async fn an_entry_that_breaks_its_rule_downloads_nothing() {
     assert_eq!(h.questions(), 0);
     assert!(h.server.downloads().is_empty());
     let catalog = h.installer.catalog().await;
-    assert!(catalog[2].available.is_none());
-    assert!(catalog[2]
+    assert!(catalog.agents[2].available.is_none());
+    assert!(catalog.agents[2]
         .problem
         .as_ref()
         .unwrap()
@@ -576,7 +725,7 @@ async fn removing_deletes_the_files_and_the_pair() {
     h.installer.remove("goose").await.unwrap();
     assert!(!h.root().join("goose").exists());
     assert!(!h.allowed(&agent.program, &["acp"]));
-    assert!(h.installer.catalog().await[2].installed.is_none());
+    assert!(h.installer.catalog().await.agents[2].installed.is_none());
     assert!(state::read(&h.root().join(state::FILE_NAME))
         .0
         .agents
@@ -634,6 +783,7 @@ async fn a_corrupt_record_is_read_as_empty() {
     assert!(installer
         .catalog()
         .await
+        .agents
         .iter()
         .all(|entry| entry.installed.is_none()));
     installed(installer.install("goose").await.unwrap());
@@ -699,10 +849,10 @@ async fn a_failed_registry_still_lists_what_is_installed() {
     lock(&h.server.files).remove("/registry.json");
     h.installer.sources.net.forget_registry();
     let catalog = h.installer.catalog().await;
-    assert_eq!(catalog.len(), 5);
-    assert!(catalog[2].installed.is_some());
-    assert!(catalog.iter().all(|entry| entry.available.is_none()));
-    assert!(catalog[2]
+    assert_eq!(catalog.agents.len(), 5);
+    assert!(catalog.agents[2].installed.is_some());
+    assert!(catalog.agents.iter().all(|entry| entry.available.is_none()));
+    assert!(catalog.agents[2]
         .problem
         .as_ref()
         .unwrap()
@@ -750,6 +900,10 @@ async fn an_npm_agent_installs_with_rims_node() {
         return;
     }
     h.registry(vec![codex_entry("2.6.0")]);
+    h.npm_package(
+        "@agentclientprotocol/codex-acp",
+        serde_json::json!({ "2.6.0": { "dist": { "unpackedSize": 12_000 } } }),
+    );
     let (agent, replaced) = install_retrying(&h, "codex").await;
     assert_eq!(replaced, None);
     let node_dir = h.root().join(NODE_FOLDER).join("1.0.0");
@@ -764,6 +918,27 @@ async fn an_npm_agent_installs_with_rims_node() {
     let (title, message, _) = lock(&h.answers.last).clone().unwrap();
     assert_eq!(title, "Install Codex?");
     assert!(message.contains("It also downloads Node.js 1.0.0 from nodejs.org, once."));
+    assert!(
+        message.ends_with(&format!(
+            "It takes about 0.0 MB once installed. Node.js 1.0.0 adds about {} to download.",
+            size::size_text(h.node_archive_len())
+        )),
+        "{message}"
+    );
+    assert!(h.npm_caches().is_empty());
+    let catalog = h.installer.catalog().await;
+    let node = catalog.node.as_ref().unwrap();
+    assert_eq!(node.version, "1.0.0");
+    assert_eq!(
+        node.disk_bytes,
+        Some((FAKE_NODE.len() + b"// npm".len()) as u64),
+        "the link bin/npm is not counted"
+    );
+    assert_eq!(catalog.node_download, None);
+    assert_eq!(
+        catalog.agents[3].installed.as_ref().unwrap().disk_bytes,
+        Some(folder_size(&h.root().join("codex/2.6.0")))
+    );
     let stages = h.events.stages();
     assert_eq!(stages.first(), Some(&Stage::Node));
     assert!(
@@ -810,6 +985,236 @@ async fn an_npm_agent_installs_with_rims_node() {
     h.installer.remove("codex").await.unwrap();
     assert!(!h.root().join(NODE_FOLDER).exists());
     assert_eq!(state::read(&h.root().join(state::FILE_NAME)).0.node, None);
+}
+
+/// Serves npm's metadata of `name` on `server` with `versions`, the last one tagged `latest`.
+fn serve_npm(server: &FileServer, name: &str, versions: serde_json::Value) {
+    let latest = versions
+        .as_object()
+        .unwrap()
+        .keys()
+        .next_back()
+        .unwrap()
+        .clone();
+    let document = serde_json::json!({
+        "name": name,
+        "dist-tags": { "latest": latest },
+        "versions": versions,
+    });
+    server.put(
+        &format!("/registry.npmjs.org/{}", name.replacen('/', "%2f", 1)),
+        serde_json::to_vec(&document).unwrap(),
+    );
+}
+
+/// A test server and a `Net` that fetches every `https://` URL from it.
+fn npm_server() -> (FileServer, Net) {
+    let server = FileServer::start();
+    let net = Net::new(
+        format!("{}/registry.json", server.base),
+        "http",
+        Some(server.base.clone()),
+    )
+    .unwrap();
+    (server, net)
+}
+
+#[tokio::test]
+async fn the_npm_size_counts_what_npm_would_install_here() {
+    let (server, net) = npm_server();
+    serve_npm(
+        &server,
+        "@agentclientprotocol/codex-acp",
+        serde_json::json!({
+            "2.6.0": {
+                "dist": { "unpackedSize": 1000 },
+                "dependencies": { "a": "^1.0.0", "b": "1.x || >=3", "c": "1.0.0" },
+                "optionalDependencies": {
+                    "@openai/codex-linux-x64": "npm:@openai/codex@0.167.0-linux-x64",
+                    "@openai/codex-win32-x64": "npm:@openai/codex@0.167.0-win32-x64"
+                }
+            },
+            "2.7.0": { "dist": { "unpackedSize": 99_999 } }
+        }),
+    );
+    serve_npm(
+        &server,
+        "a",
+        serde_json::json!({
+            "1.0.0": { "dist": { "unpackedSize": 10 } },
+            "1.2.0": {
+                "dist": { "unpackedSize": 20 },
+                "dependencies": { "b": "~1.1", "c": "1.0.0", "old": "^1" }
+            },
+            "2.0.0": { "dist": { "unpackedSize": 40 } }
+        }),
+    );
+    serve_npm(
+        &server,
+        "b",
+        serde_json::json!({
+            "1.1.5": { "dist": { "unpackedSize": 100 } },
+            "1.9.0": { "dist": { "unpackedSize": 200 } }
+        }),
+    );
+    serve_npm(
+        &server,
+        "c",
+        serde_json::json!({ "1.0.0": { "dist": { "unpackedSize": 5 } } }),
+    );
+    serve_npm(
+        &server,
+        "old",
+        serde_json::json!({ "1.0.0": { "dist": {} } }),
+    );
+    serve_npm(
+        &server,
+        "@openai/codex",
+        serde_json::json!({
+            "0.167.0-linux-x64": { "os": ["linux"], "cpu": ["x64"], "dist": { "unpackedSize": 3000 } },
+            "0.167.0-win32-x64": { "os": ["win32"], "cpu": ["x64"], "dist": { "unpackedSize": 4000 } },
+            "0.167.0": { "dist": { "unpackedSize": 1 } }
+        }),
+    );
+    let linux = size::NpmPlatform::from_key("linux-x86_64").unwrap();
+    let windows = size::NpmPlatform::from_key("windows-x86_64").unwrap();
+    let mac = size::NpmPlatform::from_key("darwin-aarch64").unwrap();
+    let package = "@agentclientprotocol/codex-acp";
+    assert_eq!(
+        size::npm_size(&net, package, "2.6.0", linux).await,
+        Some(1000 + 20 + 100 + 200 + 5 + 3000)
+    );
+    assert_eq!(
+        size::npm_size(&net, package, "2.6.0", windows).await,
+        Some(1000 + 20 + 100 + 200 + 5 + 4000)
+    );
+    assert_eq!(
+        size::npm_size(&net, package, "2.6.0", mac).await,
+        Some(1000 + 20 + 100 + 200 + 5)
+    );
+    let fetched = lock(&server.hits).len();
+    assert_eq!(fetched, 18, "{:?}", lock(&server.hits));
+    assert_eq!(size::npm_size(&net, package, "3.0.0", linux).await, None);
+    assert_eq!(size::npm_size(&net, "missing", "1.0.0", linux).await, None);
+}
+
+#[tokio::test]
+async fn the_npm_size_gives_up_past_its_fetch_limit() {
+    let (server, net) = npm_server();
+    let chain = size::MAX_METADATA_FETCHES + 1;
+    for i in 0..chain {
+        let mut version = serde_json::json!({ "dist": { "unpackedSize": 1 } });
+        if i + 1 < chain {
+            version["dependencies"] = serde_json::json!({ format!("p{}", i + 1): "1.0.0" });
+        }
+        serve_npm(
+            &server,
+            &format!("p{i}"),
+            serde_json::json!({ "1.0.0": version }),
+        );
+    }
+    let linux = size::NpmPlatform::from_key("linux-x86_64").unwrap();
+    assert_eq!(size::npm_size(&net, "p1", "1.0.0", linux).await, Some(80));
+    assert_eq!(size::npm_size(&net, "p0", "1.0.0", linux).await, None);
+}
+
+#[tokio::test]
+async fn the_catalog_says_how_big_each_offer_is_and_what_is_used() {
+    let Some(h) = Harness::new() else { return };
+    h.registry(vec![h.goose("1.0.0")]);
+    let archive_len = lock(&h.server.files)
+        ["/github.com/block/goose/releases/download/v1.0.0/goose.tar.bz2"]
+        .len() as u64;
+    let catalog = h.installer.catalog().await;
+    assert_eq!(
+        catalog.agents[2].available.as_ref().unwrap().size,
+        Some(Size {
+            bytes: archive_len,
+            kind: SizeKind::Download,
+        })
+    );
+    assert_eq!(catalog.node_download, Some(h.node_archive_len()));
+    assert_eq!(catalog.node, None);
+    assert_eq!(catalog.total_bytes, 0);
+    assert!(h.server.downloads().is_empty());
+
+    installed(h.installer.install("goose").await.unwrap());
+    let (_, message, _) = lock(&h.answers.last).clone().unwrap();
+    assert!(
+        message.ends_with(&format!(
+            "Download: about {}.",
+            size::size_text(archive_len)
+        )),
+        "{message}"
+    );
+    let heads = lock(&h.server.heads).len();
+    let catalog = h.installer.catalog().await;
+    assert_eq!(lock(&h.server.heads).len(), heads, "the sizes are kept");
+    let goose = catalog.agents[2].installed.as_ref().unwrap();
+    assert_eq!(goose.disk_bytes, Some(FAKE_AGENT.len() as u64));
+    let record = std::fs::metadata(h.root().join(state::FILE_NAME))
+        .unwrap()
+        .len();
+    assert_eq!(catalog.total_bytes, FAKE_AGENT.len() as u64 + record);
+
+    std::fs::remove_dir_all(h.root().join("goose/1.0.0")).unwrap();
+    let catalog = h.installer.catalog().await;
+    assert_eq!(
+        catalog.agents[2].installed.as_ref().unwrap().disk_bytes,
+        None
+    );
+    assert_eq!(catalog.total_bytes, record);
+}
+
+#[tokio::test]
+async fn an_unknown_size_is_left_out() {
+    let Some(h) = Harness::new() else { return };
+    h.registry(vec![h.goose("1.0.0")]);
+    lock(&h.server.files).retain(|path, _| !path.starts_with("/nodejs.org/"));
+    let mut entry = h.goose("1.0.0");
+    entry["distribution"]["binary"][&h.platform]["archive"] =
+        serde_json::json!("https://github.com/block/goose/releases/download/v1.0.0/gone.tar.bz2");
+    h.registry(vec![entry]);
+    let catalog = h.installer.catalog().await;
+    assert_eq!(catalog.agents[2].available.as_ref().unwrap().size, None);
+    assert_eq!(catalog.node_download, None);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn npm_caches_are_deleted_after_each_install() {
+    let Some(h) = Harness::new() else { return };
+    if h.platform.ends_with("-musl") {
+        return;
+    }
+    std::fs::create_dir_all(h.root().join(".npm-cache/_cacache")).unwrap();
+    std::fs::write(h.root().join(".npm-cache/_cacache/blob"), "old").unwrap();
+    std::fs::create_dir_all(h.root().join(".npm-cache-0123")).unwrap();
+    h.registry(vec![h.goose("1.0.0")]);
+    installed(h.installer.install("goose").await.unwrap());
+    assert!(h.npm_caches().is_empty());
+
+    h.registry(vec![codex_entry("9.9.9-fail")]);
+    let mut error = String::new();
+    for _ in 0..20 {
+        match h.installer.install("codex").await {
+            Err(failed) if failed.contains("busy") => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(failed) => {
+                error = failed;
+                break;
+            }
+            Ok(_) => panic!("the install should fail"),
+        }
+    }
+    assert!(error.contains("npm could not install"), "{error}");
+    assert!(h.npm_caches().is_empty());
+    assert!(h.preset_folder("codex").is_empty());
+
+    h.registry(vec![codex_entry("2.6.0")]);
+    install_retrying(&h, "codex").await;
+    assert!(h.npm_caches().is_empty());
 }
 
 /// The bytes of every file under `path`, links not followed.
@@ -988,4 +1393,61 @@ async fn installs_all_five_for_real() {
         folder_size(&root.join(NODE_FOLDER)) as f64 / (1024.0 * 1024.0)
     );
     assert!(failures.is_empty(), "failed: {failures:?}");
+}
+
+/// Prints the sizes the catalog gives for the five agents and RIM's Node.js from the real
+/// registry, npm and nodejs.org, installing nothing. Run alone:
+/// `cargo test --lib agent_installer::tests::prints_the_real_sizes -- --ignored --exact --nocapture`.
+#[tokio::test]
+#[ignore = "reads the real registry, npm and nodejs.org"]
+async fn prints_the_real_sizes() {
+    let home = TempDir::new().unwrap();
+    for name in ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "USERPROFILE"] {
+        let dir = home.path().join(name.to_ascii_lowercase());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var(name, &dir);
+    }
+    let data = TempDir::new().unwrap();
+    let answers = Arc::new(Answers {
+        answer: AtomicBool::new(false),
+        asked: AtomicUsize::new(0),
+        last: Mutex::new(None),
+    });
+    let runner = AgentRunner::new(
+        Arc::new(NoRunEvents),
+        answers,
+        Some(data.path().join("agent-programs.json")),
+        None,
+        Limits::default(),
+    );
+    let installer = AgentInstaller::new(
+        runner,
+        Arc::new(Recorder::default()),
+        Some(data.path().join(AGENTS_FOLDER)),
+        Sources::live().unwrap(),
+    );
+    let started = std::time::Instant::now();
+    let catalog = installer.catalog().await;
+    println!(
+        "SIZES catalog seconds={:.1}",
+        started.elapsed().as_secs_f64()
+    );
+    for entry in &catalog.agents {
+        let offer = entry.available.as_ref();
+        println!(
+            "SIZES {} version={:?} size={:?} text={:?} problem={:?}",
+            entry.preset_id,
+            offer.map(|offer| offer.version.as_str()),
+            offer.and_then(|offer| offer.size),
+            offer
+                .and_then(|offer| offer.size)
+                .map(|size| size::size_text(size.bytes)),
+            entry.problem,
+        );
+    }
+    println!(
+        "SIZES node download={:?} text={:?}",
+        catalog.node_download,
+        catalog.node_download.map(size::size_text)
+    );
 }
