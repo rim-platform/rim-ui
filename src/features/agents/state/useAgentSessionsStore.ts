@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { onVaultLock } from "../../../core/accountVault/accountVault";
 import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 import { logger } from "../../../core/logger";
+import { resolveStoredPrograms } from "../acp/agentPrograms";
 import {
   AgentSession,
   type AgentSessionDeps,
@@ -247,6 +248,27 @@ function hold(key: string, session: AgentSession, startedAt: string): void {
 }
 
 /**
+ * Starts `session`, first finding the full path of a stored profile that has none, so a session
+ * started before Settings > Agents looked it up still starts the program that was allowed.
+ */
+async function begin(
+  session: AgentSession,
+  profile: AgentProgramProfile,
+  cwd: string,
+  reopen?: string,
+): Promise<void> {
+  let current = profile;
+  if (current.resolvedProgram === null) {
+    await resolveStoredPrograms().catch((error: unknown) => {
+      logger.warn("[RIM:agents] could not look up the allowed agent programs", error);
+    });
+    current =
+      useAgentProgramsStore.getState().profiles.find((item) => item.id === profile.id) ?? profile;
+  }
+  await session.start({ profile: current, cwd, reopen });
+}
+
+/**
  * Starts a session with `profile` in `cwd`.
  *
  * @returns The session's key, at once; the session reports its start in its own snapshot.
@@ -256,7 +278,7 @@ export function startAgentSession(profile: AgentProgramProfile, cwd: string): st
   const session = new AgentSession(sessionDeps);
   hold(key, session, new Date().toISOString());
   useRunningAgentSessionsStore.setState({ focusComposerKey: key });
-  void session.start({ profile, cwd });
+  void begin(session, profile, cwd);
   return key;
 }
 
@@ -281,7 +303,7 @@ export function reopenAgentSession(key: string): ReopenRefusal | null {
   const session = new AgentSession(sessionDeps);
   hold(key, session, entry.startedAt);
   useRunningAgentSessionsStore.setState({ focusComposerKey: key });
-  void session.start({ profile, cwd: entry.cwd, reopen: entry.acpSessionId });
+  void begin(session, profile, entry.cwd, entry.acpSessionId);
   return null;
 }
 

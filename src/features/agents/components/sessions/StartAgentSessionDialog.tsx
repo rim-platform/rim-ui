@@ -1,10 +1,10 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "../../../../shared/ui/Button";
 import { cn } from "../../../../shared/ui/cn";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import { commandLine } from "../../acp/acpPresets";
-import { isFullPath } from "../../acp/agentPrograms";
+import { isFullPath, resolveStoredPrograms } from "../../acp/agentPrograms";
 import { ADD_AGAIN } from "../../acp/agentSession";
 import { showInvisibleCharacters } from "../../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../../state/useAgentProgramsStore";
@@ -50,6 +50,10 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
     [profiles],
   );
   const found = useFound(names);
+  const unresolved = profiles.some((profile) => profile.resolvedProgram === null);
+  useEffect(() => {
+    if (unresolved) void resolveStoredPrograms();
+  }, [unresolved]);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);

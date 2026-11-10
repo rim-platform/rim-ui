@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const lookup = vi.hoisted(() => ({
+  allowedAgentPrograms: vi.fn(() => Promise.resolve([] as { program: string; args: string[] }[])),
+  findAgentPrograms: vi.fn((names: string[]) =>
+    Promise.resolve(names.map(() => null as string | null)),
+  ),
+}));
 vi.mock("../acp/agentRunner", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../acp/agentRunner")>()),
   ...(await import("../../../test/fakeAcpAgent")).fakeAcpAgent.module(),
+  ...lookup,
 }));
 const notifications = vi.hoisted(() => ({ show: vi.fn(() => Promise.resolve()) }));
 vi.mock("../../notifications/runtime/desktopNotification", () => ({
@@ -20,6 +27,7 @@ import { queryKeys } from "../../../core/query/keys";
 import { fakeAcpAgent as agent, helloAnswer } from "../../../test/fakeAcpAgent";
 import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { ADD_AGAIN } from "../acp/agentSession";
 import { inQuietHours } from "../runtime/agentSessionNotifications";
 import { useAgentProgramsStore, type AgentProgramProfile } from "./useAgentProgramsStore";
 import {
@@ -135,6 +143,29 @@ describe("agent sessions store", () => {
     expect(title.endsWith("…")).toBe(true);
     agent.update("sess_1", { sessionUpdate: "session_info_update", title: "Incident summary" });
     expect(useAgentSessionsStore.getState().recent[0].title).toBe("Incident summary");
+  });
+
+  it("finds a stored profile's allowed path before starting it", async () => {
+    useAgentProgramsStore.setState({ profiles: [{ ...PROFILE, resolvedProgram: null }] });
+    lookup.allowedAgentPrograms.mockResolvedValueOnce([{ program: "/opt/fake-agent", args: [] }]);
+    lookup.findAgentPrograms.mockResolvedValueOnce(["/opt/fake-agent"]);
+    const key = startAgentSession(useAgentProgramsStore.getState().profiles[0], "/home/a/project");
+    await vi.waitFor(() => expect(agentSessionOf(key)?.status).toBe("ready"));
+    expect(agent.startAgentRun).toHaveBeenCalledWith({
+      program: "/opt/fake-agent",
+      args: [],
+      cwd: "/home/a/project",
+    });
+    expect(useAgentProgramsStore.getState().profiles[0].resolvedProgram).toBe("/opt/fake-agent");
+  });
+
+  it("fails with a sentence when the allowed path can't be found", async () => {
+    const stale = { ...PROFILE, resolvedProgram: null };
+    useAgentProgramsStore.setState({ profiles: [stale] });
+    const key = startAgentSession(stale, "/home/a/project");
+    await vi.waitFor(() => expect(agentSessionOf(key)?.status).toBe("failed"));
+    expect(agentSessionOf(key)?.getSnapshot().error).toBe(ADD_AGAIN);
+    expect(agent.startAgentRun).not.toHaveBeenCalled();
   });
 
   it("stores the session's metadata and none of its transcript", async () => {
