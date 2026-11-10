@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { onAction } from "@tauri-apps/plugin-notification";
 
 import { logger } from "../../../core/logger";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { MessageNotificationTarget } from "../../notifications/runtime/desktopNotification";
 import { jumpToNotification } from "../../notifications/runtime/jumpToNotification";
@@ -30,9 +31,17 @@ function targetOf(value: unknown): MessageNotificationTarget | null {
   return { workspaceId, conversationId, messageId, threadId: threadId ?? null };
 }
 
+/** `extra.rimAgentSession`'s key, or null when it is not one. */
+function agentSessionKeyOf(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { key } = value as Record<string, unknown>;
+  return typeof key === "string" && key !== "" ? key : null;
+}
+
 /**
- * Answers a click on a notification: the window always shows, and with a session a message
- * notification also opens its message, in its workspace.
+ * Answers a click on a notification: the window always shows. With a session, a message
+ * notification also opens its message, in its workspace, and an agent session's opens that
+ * session.
  *
  * @param qc - The app's query client.
  * @param event - The action the plugin reported; anything but a click on the notification itself
@@ -43,8 +52,14 @@ async function openFromNotification(qc: QueryClient, event: NotificationAction):
   desktopShowWindow().catch((error: unknown) => {
     logger.warn("[RIM:desktop] could not show the window for a notification:", error);
   });
+  if (!useAuthStore.getState().session) return;
+  const sessionKey = agentSessionKeyOf(event.notification?.extra?.rimAgentSession);
+  if (sessionKey) {
+    useShellStore.getState().setMainSurface({ kind: "agent-session", key: sessionKey });
+    return;
+  }
   const target = targetOf(event.notification?.extra?.rimMessage);
-  if (!target || !useAuthStore.getState().session) return;
+  if (!target) return;
   const workspaces = useWorkspaceStore.getState();
   if (workspaces.workspaceId !== target.workspaceId) workspaces.setWorkspaceId(target.workspaceId);
   await jumpToNotification(qc, {

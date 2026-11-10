@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { detectPlatform } from "../../../core/runtime/runtime";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { toast } from "../../../shared/toast";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { ACP_PRESETS, commandLine, findPreset } from "../acp/acpPresets";
 import { removeAgentProgram, resolveStoredPrograms } from "../acp/agentPrograms";
-import { DESKTOP_ONLY_MESSAGE, findAgentPrograms } from "../acp/agentRunner";
+import { DESKTOP_ONLY_MESSAGE } from "../acp/agentRunner";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../state/useAgentProgramsStore";
 import { AgentProgramDialog, HintLine, type AgentProgramDialogTarget } from "./AgentProgramDialog";
+import { isBareName, programState, useFound, type ProgramState } from "./programLookup";
 
 /** What the section says about what RIM starts. */
 export const PROGRAMS_NOTE =
@@ -19,60 +21,11 @@ export const PROGRAMS_NOTE =
 /** The toast when a removed program could not be taken off the allowed list. */
 export const FORGET_FAILED = "RIM could not forget that it may start this program.";
 
-/** Whether `program` is a bare name, which can be looked up. */
-function isBareName(program: string): boolean {
-  return program !== "" && !/[\\/]/u.test(program);
-}
-
-/**
- * Looks the programs up on the computer's `PATH`.
- *
- * @returns Each bare name and the full path it was found at, or `null`. Empty when the
- *   lookup fails.
- */
-function useFound(names: string[]): Map<string, string | null> {
-  const key = names.join("\n");
-  const [found, setFound] = useState<Map<string, string | null>>(() => new Map());
-  useEffect(() => {
-    const wanted = key === "" ? [] : key.split("\n");
-    if (wanted.length === 0) return;
-    let live = true;
-    findAgentPrograms(wanted)
-      .then((paths) => {
-        if (!live) return;
-        setFound(new Map(wanted.map((name, index) => [name, paths[index] ?? null])));
-      })
-      .catch(() => {
-        if (live) setFound(new Map());
-      });
-    return () => {
-      live = false;
-    };
-  }, [key]);
-  return found;
-}
-
-/**
- * What a profile's row says of its program: `found` where the lookup finds it at the path that
- * was allowed, `not_found` where it does not, `add_again` for a stored profile whose allowed
- * path is not known, and `unknown` for a full path or before the lookup answers.
- */
-type ProgramState = "found" | "not_found" | "add_again" | "unknown";
-
 const STATE_LABELS: Record<Exclude<ProgramState, "unknown">, string> = {
   found: "Found",
   not_found: "Not found",
   add_again: "Not found, add it again",
 };
-
-function programState(
-  profile: AgentProgramProfile,
-  found: Map<string, string | null>,
-): ProgramState {
-  if (profile.resolvedProgram === null) return "add_again";
-  if (!isBareName(profile.program) || !found.has(profile.program)) return "unknown";
-  return found.get(profile.program) === profile.resolvedProgram ? "found" : "not_found";
-}
 
 /** Settings > Agents, Agents RIM can start: the agent programs RIM may start, and adding more. */
 export function AgentProgramsSection() {
@@ -133,24 +86,34 @@ function ProgramList() {
           </h2>
           <p className="mt-1 text-sm text-rim-text-muted">{PROGRAMS_NOTE}</p>
         </div>
-        <Button
-          ref={addRef}
-          type="button"
-          variant="secondary"
-          size="sm"
-          aria-haspopup="menu"
-          aria-expanded={menuAt !== null}
-          onClick={() => {
-            if (menuAt) {
-              setMenuAt(null);
-              return;
-            }
-            const rect = addRef.current?.getBoundingClientRect();
-            setMenuAt({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });
-          }}
-        >
-          Add
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => useShellStore.getState().setMainSurface({ kind: "agent-sessions" })}
+          >
+            Open agent sessions
+          </Button>
+          <Button
+            ref={addRef}
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-haspopup="menu"
+            aria-expanded={menuAt !== null}
+            onClick={() => {
+              if (menuAt) {
+                setMenuAt(null);
+                return;
+              }
+              const rect = addRef.current?.getBoundingClientRect();
+              setMenuAt({ x: rect?.left ?? 0, y: rect?.bottom ?? 0 });
+            }}
+          >
+            Add
+          </Button>
+        </div>
       </div>
 
       {profiles.length === 0 ? (

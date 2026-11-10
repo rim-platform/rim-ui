@@ -10,6 +10,13 @@ export const REFUSE_AGENT_PAIRING = "agents.refuse_pairing";
 /** Opens the dialog that connects an agent from the app and shows its token once. */
 export const CONNECT_AGENT = "agents.connect_agent";
 
+/** Opens the agent sessions page. */
+export const OPEN_AGENT_SESSIONS = "workspace.open_agent_sessions";
+/** Opens the dialog that starts an agent session. */
+export const START_AGENT_SESSION = "agents.start_session";
+/** Stops the agent session that is open. */
+export const STOP_AGENT_SESSION = "agents.stop_session";
+
 /** The commands that answer a waiting agent: its request, or its asking to connect. */
 export const AGENT_ANSWER_COMMAND_IDS: readonly string[] = [
   APPROVE_AGENT_REQUEST,
@@ -31,9 +38,9 @@ export const AGENT_MANAGEMENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "agents.open_record",
   "agents.clear_record",
   CONNECT_AGENT,
-  "agents.start_session",
-  "agents.stop_session",
+  START_AGENT_SESSION,
+  STOP_AGENT_SESSION,
   "agents.ask_about_message",
   "agents.ask_about_conversation",
-  "workspace.open_agent_sessions",
+  OPEN_AGENT_SESSIONS,
 ]);

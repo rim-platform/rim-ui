@@ -14,6 +14,7 @@ import {
   type AgentCommand,
   type AgentHello,
   type ContentBlock,
+  type OpenedSession,
   type PermissionOption,
   type PermissionOutcome,
   type PermissionRequest,
@@ -75,6 +76,8 @@ export interface AgentSessionSnapshot {
   cwd: string | null;
   /** The ACP session id, once the agent opened it. */
   sessionId: string | null;
+  /** The title the agent gave the session, once it did. */
+  title: string | null;
   /** What the agent said about itself, once it did. */
   agent: AgentHello | null;
   transcript: readonly TranscriptItem[];
@@ -102,6 +105,20 @@ export interface StartAgentSession {
   profile: AgentProgramProfile;
   /** The session's folder, a full path. */
   cwd: string;
+  /**
+   * An earlier ACP session to open again with `session/load` instead of opening a new one; the
+   * agent replays its history as updates. Only for an agent that offers `loadSession`.
+   */
+  reopen?: string;
+}
+
+/**
+ * The sentence for an agent that can't open an earlier session again.
+ *
+ * @param name - What the person calls the agent.
+ */
+export function cannotReopenSentence(name: string): string {
+  return `${name} can't reopen past sessions. Start a new one.`;
 }
 
 const DEFAULT_DEPS: AgentSessionDeps = {
@@ -115,6 +132,7 @@ const INITIAL: AgentSessionSnapshot = {
   name: "",
   cwd: null,
   sessionId: null,
+  title: null,
   agent: null,
   transcript: [],
   pendingPermissions: [],
@@ -205,10 +223,11 @@ export class AgentSession {
 
   /**
    * Starts the profile's program in `cwd`, introduces RIM and opens a session, with RIM's tools
-   * when agents may connect and the agent can reach them. Resolves once the session is `ready`,
-   * or `failed` with the reason in `error`; it does not reject.
+   * when agents may connect and the agent can reach them. With `reopen`, opens that earlier
+   * session again instead, as the agent replays it. Resolves once the session is `ready`, or
+   * `failed` with the reason in `error`; it does not reject.
    */
-  async start({ profile, cwd }: StartAgentSession): Promise<void> {
+  async start({ profile, cwd, reopen }: StartAgentSession): Promise<void> {
     if (this.started) throw new Error("This session has already started.");
     this.started = true;
     this.change({ status: "starting", profileId: profile.id, name: profile.name, cwd });
@@ -249,7 +268,17 @@ export class AgentSession {
               },
             ]
           : [];
-      const opened = await client.newSession({ cwd, mcpServers });
+      let opened: OpenedSession;
+      if (reopen === undefined) {
+        opened = await client.newSession({ cwd, mcpServers });
+      } else {
+        if (!hello.agentCapabilities.loadSession)
+          throw new Error(cannotReopenSentence(profile.name));
+        // The id goes in first, so the replayed updates are heard as this session's.
+        this.change({ sessionId: reopen });
+        const modes = await client.loadSession(reopen, { cwd, mcpServers });
+        opened = { sessionId: reopen, modes };
+      }
       if (this.isOver()) return;
       this.change({
         status: "ready",
@@ -390,7 +419,8 @@ export class AgentSession {
     if (this.isOver()) return;
     this.waiting.clear();
     const stderrTail = end.stderrTail;
-    if (this.stopping || (end.reason === null && end.code === 0)) {
+    // The runner stops a run only when asked to or when the app quits: neither is a failure.
+    if (this.stopping || end.reason === "stopped" || (end.reason === null && end.code === 0)) {
       this.change({ status: "ended", pendingPermissions: [], stderrTail });
       return;
     }
@@ -421,6 +451,10 @@ export class AgentSession {
         }
         return;
       case "session_info_update":
+        if (update.title !== null && update.title.trim() !== "") {
+          this.change({ title: update.title });
+        }
+        return;
       case "unknown":
         return;
     }

@@ -36,6 +36,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Gemini CLI, opencode, Goose or another Agent Client Protocol program, each confirmed in a system
   dialog with its exact command line, and RIM connects an agent for it with nothing granted. RIM
   never installs one: a program it can't find shows how to install it and sign in.
+- **Agent sessions**, in the desktop app: start one of your agent programs in a folder, tell it
+  what to do, follow its answers, tool calls, diffs and plan as it works, approve or refuse each
+  step it asks about, and cancel or stop it. Desktop notifications say when it waits for you or
+  finishes. RIM keeps no transcripts; recent sessions reopen when the agent supports it.
 - Command forms pick people and conversations from fitting lists: the members of a new group or
   channel, or people to invite, by name as chips; Unban lists the people banned, Clear Timeout
   those timed out and Remove Member the conversation's members; a step that archives, unarchives,

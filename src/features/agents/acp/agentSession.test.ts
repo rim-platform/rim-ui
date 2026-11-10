@@ -8,7 +8,12 @@ import { logger } from "../../../core/logger";
 import { fakeAcpAgent as agent, helloAnswer } from "../../../test/fakeAcpAgent";
 import type { AgentBridgeStatus } from "../api/agentBridge";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
-import { ADD_AGAIN, AgentSession, type AgentSessionStatus } from "./agentSession";
+import {
+  ADD_AGAIN,
+  AgentSession,
+  cannotReopenSentence,
+  type AgentSessionStatus,
+} from "./agentSession";
 
 const TOKEN = "rimagent_session-test-token-0123456789abcdefghijklmnop";
 
@@ -365,5 +370,86 @@ describe("AgentSession", () => {
     expect(died.status).toBe("failed");
     expect(died.getSnapshot().error).toBe("The agent program ended with exit code 2.");
     expect(died.getSnapshot().stderrTail).toEqual(["panic: out of tokens"]);
+  });
+
+  it("ends, not fails, when the runner stops the program, as it does when the app quits", async () => {
+    scriptAgent();
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p" });
+    agent.exit({ code: null, signal: 15, reason: "stopped" });
+    expect(subject.status).toBe("ended");
+    expect(subject.getSnapshot().error).toBeNull();
+  });
+
+  it("takes the session's title from the agent", async () => {
+    scriptAgent();
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p" });
+    expect(subject.getSnapshot().title).toBeNull();
+    agent.update("sess_1", { sessionUpdate: "session_info_update", title: "Fix the flaky test" });
+    expect(subject.getSnapshot().title).toBe("Fix the flaky test");
+    agent.update("sess_1", { sessionUpdate: "session_info_update", title: "  " });
+    expect(subject.getSnapshot().title).toBe("Fix the flaky test");
+  });
+
+  it("reopens an earlier session with session/load, and the agent replays it", async () => {
+    agent
+      .on("initialize", () => helloAnswer())
+      .on("session/load", (_params, id) => {
+        queueMicrotask(() => {
+          agent.update("sess_old", {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "Check the logs" },
+          });
+          agent.update("sess_old", {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "They look fine." },
+          });
+          agent.respond(id, {
+            modes: { currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }] },
+          });
+        });
+        return undefined;
+      });
+    const subject = session();
+    const seen = statuses(subject);
+    await subject.start({ profile: PROFILE, cwd: "/home/a/project", reopen: "sess_old" });
+    expect(seen).toEqual(["starting", "ready"]);
+    expect(agent.requests("session/new")).toHaveLength(0);
+    expect(agent.requests("session/load")[0].params).toEqual({
+      sessionId: "sess_old",
+      cwd: "/home/a/project",
+      mcpServers: [
+        {
+          type: "http",
+          name: "rim",
+          url: "http://127.0.0.1:47821/mcp",
+          headers: [{ name: "Authorization", value: `Bearer ${TOKEN}` }],
+        },
+      ],
+    });
+    expect(subject.getSnapshot().sessionId).toBe("sess_old");
+    expect(subject.currentModeId).toBe("ask");
+    expect(subject.transcript.map(({ id: _id, ...item }) => item)).toEqual([
+      { kind: "user", text: "Check the logs" },
+      {
+        kind: "agent_message",
+        messageId: null,
+        content: [{ type: "text", text: "They look fine." }],
+      },
+    ]);
+  });
+
+  it("fails to reopen with a sentence when the agent can't load sessions", async () => {
+    agent.on("initialize", () => helloAnswer(true, { loadSession: false }));
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p", reopen: "sess_old" });
+    expect(subject.status).toBe("failed");
+    expect(subject.getSnapshot().error).toBe(cannotReopenSentence("Fake Agent"));
+    expect(cannotReopenSentence("Fake Agent")).toBe(
+      "Fake Agent can't reopen past sessions. Start a new one.",
+    );
+    expect(agent.requests("session/load")).toHaveLength(0);
+    expect(agent.stopAgentRun).toHaveBeenCalled();
   });
 });

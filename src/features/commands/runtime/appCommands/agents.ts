@@ -12,7 +12,14 @@ import {
   useAgentsSettingsRequestStore,
   type AgentsSettingsRequest,
 } from "../../../agents/state/useAgentsSettingsRequestStore";
+import { DESKTOP_ONLY_MESSAGE } from "../../../agents/acp/agentRunner";
+import {
+  agentSessionOf,
+  isLiveStatus,
+  requestStopAgentSession,
+} from "../../../agents/state/useAgentSessionsStore";
 import { useConnectedAgentsStore } from "../../../agents/state/useConnectedAgentsStore";
+import { useStartAgentSessionStore } from "../../../agents/state/useStartAgentSessionStore";
 import { usePendingPairingStore } from "../../../agents/state/usePendingPairingStore";
 import type { TargetPickerKind } from "../../state/useCommandStore";
 import type { CommandDefinition } from "../../types";
@@ -22,8 +29,11 @@ import {
   APPROVE_AGENT_PAIRING,
   APPROVE_AGENT_REQUEST,
   CONNECT_AGENT,
+  OPEN_AGENT_SESSIONS,
   REFUSE_AGENT_PAIRING,
   REFUSE_AGENT_REQUEST,
+  START_AGENT_SESSION,
+  STOP_AGENT_SESSION,
 } from "./agentCommandIds";
 import { localCommand } from "./localCommand";
 
@@ -31,6 +41,16 @@ const NO_REQUEST = "No agent is waiting for an answer";
 const NO_PAIRING = "No agent is waiting to connect";
 /** What connecting an agent says in an app without agents. */
 export const CONNECT_DESKTOP_ONLY_MESSAGE = "Connecting agents needs the desktop app";
+
+/** What stopping a session says when none is open. */
+export const NO_SESSION_OPEN = "No agent session is open";
+
+/** Whether this app can start agents; when it can't, says so. */
+function canStartAgents(): boolean {
+  if (detectPlatform() === "desktop") return true;
+  toast.info(DESKTOP_ONLY_MESSAGE);
+  return false;
+}
 
 /** The agent request open in the confirmation dialog, if one is: never the person's own command. */
 function openAgentRequest(): ConfirmationRequest | null {
@@ -159,6 +179,24 @@ export const AGENT_COMMANDS: CommandDefinition[] = [
     "Connect an Agent…",
     "Connect a program on this computer and get its token and setup, shown once",
   ),
+  localCommand(
+    OPEN_AGENT_SESSIONS,
+    "Agents",
+    "Open Agent Sessions",
+    "See the agent sessions running on this computer and the recent ones",
+  ),
+  localCommand(
+    START_AGENT_SESSION,
+    "Agents",
+    "Start Agent Session…",
+    "Pick an agent program and a folder, and start a session",
+  ),
+  localCommand(
+    STOP_AGENT_SESSION,
+    "Agents",
+    "Stop Agent Session",
+    "End the agent program of the session that is open",
+  ),
 ];
 
 export const AGENT_HANDLERS: Record<string, LocalHandler> = {
@@ -222,6 +260,25 @@ export const AGENT_HANDLERS: Record<string, LocalHandler> = {
       return;
     }
     openInAgentsSettings({ kind: "connect" });
+  },
+  [OPEN_AGENT_SESSIONS]: () => {
+    if (!canStartAgents()) return;
+    useShellStore.getState().setMainSurface({ kind: "agent-sessions" });
+  },
+  [START_AGENT_SESSION]: () => {
+    if (!canStartAgents()) return;
+    useStartAgentSessionStore.getState().show();
+  },
+  // Asks first while a turn is running, as the session's own Stop button does.
+  [STOP_AGENT_SESSION]: () => {
+    if (!canStartAgents()) return;
+    const surface = useShellStore.getState().mainSurface;
+    const session = surface.kind === "agent-session" ? agentSessionOf(surface.key) : undefined;
+    if (surface.kind !== "agent-session" || !session || !isLiveStatus(session.status)) {
+      toast.info(NO_SESSION_OPEN);
+      return;
+    }
+    requestStopAgentSession(surface.key);
   },
 };
 
