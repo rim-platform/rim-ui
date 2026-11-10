@@ -87,6 +87,9 @@ import { RelayNotices } from "../../features/relay/components/RelayNotices";
 import { ProbationBanner } from "../../features/limits/components/ProbationBanner";
 import { AccountDeletionBanner } from "../../features/account-deletion/components/AccountDeletionBanner";
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
+import { AgentSessionPage } from "../../features/agents/components/sessions/AgentSessionPage";
+import { AgentSessionsPage } from "../../features/agents/components/sessions/AgentSessionsPage";
+import { StartAgentSessionDialogHost } from "../../features/agents/components/sessions/StartAgentSessionDialog";
 import { HomePage } from "../../features/home/components/HomePage";
 import { UnreadsPage } from "../../features/unreads/components/UnreadsPage";
 import { DmRequestsPage } from "../../features/relay/components/DmRequestsPage";
@@ -691,6 +694,22 @@ function WorkspaceShell() {
                 </main>
               )}
 
+              {mainSurface.kind === "agent-sessions" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary surface="Agent sessions" resetKeys={[]}>
+                    <AgentSessionsPage />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
+              {mainSurface.kind === "agent-session" && (
+                <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
+                  <SurfaceErrorBoundary surface="Agent session" resetKeys={[mainSurface.key]}>
+                    <AgentSessionPage key={mainSurface.key} sessionKey={mainSurface.key} />
+                  </SurfaceErrorBoundary>
+                </main>
+              )}
+
               {mainSurface.kind === "audit-log" && (
                 <main {...MAIN_PANEL_PROPS} className="flex min-w-0 flex-1 flex-col outline-none">
                   <SurfaceErrorBoundary surface="Audit log" resetKeys={[]}>
@@ -756,6 +775,7 @@ function WorkspaceShell() {
           <ConfirmCommandModal />
           <PluginCommandConfirmDialog />
           <CommandArgumentsDialog />
+          <StartAgentSessionDialogHost />
           <ConversationActionConfirmHost />
           <WorkspaceActionDialogs />
           <AppCommandDialogs />

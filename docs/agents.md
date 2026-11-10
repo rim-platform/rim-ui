@@ -193,7 +193,64 @@ permission rules.
 **Remove** stops RIM starting the program and disconnects its agent. Disconnecting that agent in
 the list above removes the program from this list too.
 
-Starting a session with one of these agents comes in a later version.
+## Sessions
+
+A session is one agent program, started by RIM in a folder you choose, that you direct from RIM.
+Sessions run in the desktop app only; the web app says "Starting agents needs the desktop app".
+
+**Start one.** Open **Agent sessions**: the **Open agent sessions** button in **Settings > Agents**,
+or **Open Agent Sessions** in the command palette. Choose **Start a session**, or run **Start
+Agent Session…**. Pick one of your agent programs (one RIM can't find is shown but can't be
+picked) and the full path of the folder it works in, which starts as the program's default folder.
+RIM doesn't sandbox the agent: it runs as you in that folder, with its own tools and permission
+settings. The session says so under its header.
+
+**Tell it what to do.** Write in the box at the bottom and press Enter; Shift+Enter adds a line.
+Only what you write there is sent to the agent: nothing it reads in RIM, no message from someone
+else, no macro, plugin or command, and nothing the agent itself sends becomes a prompt. The box
+waits while the agent works, and says why.
+
+**Follow it.** The agent's answer appears as it writes it. Its thinking is folded under
+**Thinking**. Each tool call is a card with its kind, title and status (pending, running, done,
+failed or cancelled); open it to see the files it changed, as removed and added lines, the text it
+returned, the files it touched and what it was called with. A plan shows as a checklist. All of it
+is shown as plain text: nothing the agent sends runs in RIM.
+
+**Approve or refuse.** When the agent asks before a step, a card shows what it wants to do and a
+button for each answer it offers, such as **Allow once**, **Always allow** or **Reject**. Only
+those buttons answer it: no command, keybind, macro, plugin or agent can. What "always" means is up
+to the agent and its own settings.
+
+**Cancel or stop.** **Cancel turn** stops what the agent is doing now and refuses its waiting
+requests; the session stays open for your next prompt. **Stop** ends the agent program, after
+asking while a turn is running; **Stop Agent Session** does the same for the session that's open.
+Quitting RIM stops every session. Closing the window to the tray keeps them running, and signing
+out stops them.
+
+**RIM's tools.** When **Let agents on this computer connect** is on and the agent can reach an
+MCP server over HTTP, the session gets RIM's tools under the agent RIM connected for the program,
+with what you granted it and nothing more. Otherwise the session says that RIM's tools are off, or
+that the agent can't use them, and the agent works with its own tools only.
+
+**Notifications.** When an agent starts waiting for your answer, or finishes a turn, while the RIM
+window isn't in front, the desktop shows "<agent> is waiting for you" or "<agent> finished", with
+the session's title and nothing else from the session. They follow your notification settings,
+and the open workspace's pause and quiet hours. Choosing one opens the session.
+
+**Running and recent.** **Agent sessions** lists the sessions running now, as Working, Waiting
+for you, Ready or Failed, and up to 20 recent ones, with the agent, the title, the folder and when
+it last did something. The title is the one the agent gives the session, or the start of your
+first prompt.
+
+**Transcripts aren't kept.** RIM keeps a session's transcript in memory while the app runs, and
+never stores it. The recent list keeps only the agent, the folder, the agent's id for the session,
+the title and the times, sealed with your account on this device. The agent may keep its own
+history, in its own way.
+
+**Reopen one.** Choosing a recent session that isn't running starts its program again and asks
+the agent to open that session, when the agent can: it shows the history it kept. An agent that
+can't says "<agent> can't reopen past sessions. Start a new one." **Remove** only takes a session
+off the list.
 
 ## Choose what it can read
 

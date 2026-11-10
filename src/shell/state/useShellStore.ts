@@ -28,7 +28,11 @@ export type MainSurface =
    * The message requests of one workspace's conversations, or with `workspaceId: null`, those
    * from outside every workspace.
    */
-  | { kind: "dm-requests"; workspaceId: string | null };
+  | { kind: "dm-requests"; workspaceId: string | null }
+  /** The agent sessions RIM started on this computer: those running and the recent ones. */
+  | { kind: "agent-sessions" }
+  /** One agent session, by RIM's key for it. */
+  | { kind: "agent-session"; key: string };
 
 /**
  * A direct message not created yet: with a workspace member, or with someone in a relay's
@@ -78,7 +82,9 @@ export function placeKey(place: Place): string {
         ? `plugin:${surface.pluginId}`
         : surface.kind === "dm-requests"
           ? `dm-requests:${surface.workspaceId ?? ""}`
-          : surface.kind;
+          : surface.kind === "agent-session"
+            ? `agent-session:${surface.key}`
+            : surface.kind;
   const conversation = surface.kind === "conversation" ? (place.conversationId ?? "") : "";
   return `${place.workspaceId}|${page}|${conversation}`;
 }

@@ -28,7 +28,18 @@ import { useCommandStore } from "../../state/useCommandStore";
 import { dispatchCommand, hasLocalHandler, runDesktopLocalCommand } from "../commandDispatcher";
 import { LOCAL_COMMANDS } from "../localCommands";
 import { AGENT_MANAGEMENT_COMMAND_IDS } from "./agentCommandIds";
-import { AGENT_COMMANDS, CONNECT_DESKTOP_ONLY_MESSAGE, keybindAnswersWaitingAgent } from "./agents";
+import { AgentSession } from "../../../agents/acp/agentSession";
+import {
+  useAgentSessionsStore,
+  useRunningAgentSessionsStore,
+} from "../../../agents/state/useAgentSessionsStore";
+import { useStartAgentSessionStore } from "../../../agents/state/useStartAgentSessionStore";
+import {
+  AGENT_COMMANDS,
+  CONNECT_DESKTOP_ONLY_MESSAGE,
+  keybindAnswersWaitingAgent,
+  NO_SESSION_OPEN,
+} from "./agents";
 
 const IDS = [
   "agents.approve_request",
@@ -42,16 +53,13 @@ const IDS = [
   "agents.open_record",
   "agents.clear_record",
   "agents.connect_agent",
+  "workspace.open_agent_sessions",
+  "agents.start_session",
+  "agents.stop_session",
 ];
 
 /** Agent session commands no macro, plugin or agent may run, listed before they exist. */
-const SESSION_IDS = [
-  "agents.start_session",
-  "agents.stop_session",
-  "agents.ask_about_message",
-  "agents.ask_about_conversation",
-  "workspace.open_agent_sessions",
-];
+const SESSION_IDS = ["agents.ask_about_message", "agents.ask_about_conversation"];
 
 const executeBackend = vi.fn();
 
@@ -153,6 +161,98 @@ describe("agent commands", () => {
     it("is never run for the AI agent or another caller", () => {
       expect(runDesktopLocalCommand("agents.connect_agent")).toBe(false);
       expect(useAgentsSettingsRequestStore.getState().request).toBeNull();
+    });
+  });
+
+  describe("agent session commands", () => {
+    const SESSION_COMMANDS = [
+      "workspace.open_agent_sessions",
+      "agents.start_session",
+      "agents.stop_session",
+    ];
+
+    /** A session in memory under `key`, reporting `status`. */
+    function heldSession(key: string, status: "ready" | "working" | "ended") {
+      const session = new AgentSession();
+      const stop = vi.spyOn(session, "stop").mockResolvedValue();
+      vi.spyOn(session, "status", "get").mockReturnValue(status);
+      useRunningAgentSessionsStore.setState({ sessions: { [key]: session } });
+      return { session, stop };
+    }
+
+    afterEach(() => {
+      useRunningAgentSessionsStore.setState({
+        sessions: {},
+        stopConfirmKey: null,
+        focusComposerKey: null,
+      });
+      useAgentSessionsStore.setState({ recent: [] });
+      useStartAgentSessionStore.getState().close();
+    });
+
+    it("opens the agent sessions page", async () => {
+      await run("workspace.open_agent_sessions");
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-sessions" });
+    });
+
+    it("opens the start dialog", async () => {
+      await run("agents.start_session");
+      expect(useStartAgentSessionStore.getState().open).toBe(true);
+    });
+
+    it("stops the session that is open when no turn is running", async () => {
+      const { stop } = heldSession("s1", "ready");
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "s1" });
+      await run("agents.stop_session");
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(useRunningAgentSessionsStore.getState().stopConfirmKey).toBeNull();
+    });
+
+    it("asks before stopping a session in the middle of a turn", async () => {
+      const { stop } = heldSession("s1", "working");
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "s1" });
+      await run("agents.stop_session");
+      expect(stop).not.toHaveBeenCalled();
+      expect(useRunningAgentSessionsStore.getState().stopConfirmKey).toBe("s1");
+    });
+
+    it("refuses to stop when no running session is open", async () => {
+      const { stop } = heldSession("s1", "ended");
+      await run("agents.stop_session");
+      expect(toast.info).toHaveBeenLastCalledWith(NO_SESSION_OPEN);
+      expect(NO_SESSION_OPEN).toBe("No agent session is open");
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "s1" });
+      await run("agents.stop_session");
+      expect(toast.info).toHaveBeenCalledTimes(2);
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "gone" });
+      await run("agents.stop_session");
+      expect(toast.info).toHaveBeenCalledTimes(3);
+      expect(stop).not.toHaveBeenCalled();
+    });
+
+    it("refuses each outside the desktop app", async () => {
+      vi.mocked(detectPlatform).mockReturnValue("web");
+      heldSession("s1", "ready");
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "s1" });
+      for (const id of SESSION_COMMANDS) {
+        vi.mocked(toast.info).mockClear();
+        await run(id);
+        expect(toast.info, id).toHaveBeenCalledWith("Starting agents needs the desktop app");
+      }
+      expect(useStartAgentSessionStore.getState().open).toBe(false);
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key: "s1" });
+    });
+
+    it("never runs one for the AI agent, a plugin or another caller", () => {
+      heldSession("s1", "ready");
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key: "s1" });
+      for (const id of SESSION_COMMANDS) {
+        expect(AGENT_MANAGEMENT_COMMAND_IDS.has(id), id).toBe(true);
+        expect(runDesktopLocalCommand(id), id).toBe(false);
+        expect(LOCAL_COMMANDS.find((c) => c.id === id)?.pluginRunnable, id).toBeUndefined();
+      }
+      expect(useStartAgentSessionStore.getState().open).toBe(false);
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key: "s1" });
     });
   });
 

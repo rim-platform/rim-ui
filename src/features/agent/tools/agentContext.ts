@@ -76,6 +76,9 @@ function surfaceInWords(
       return "Unreads, across every workspace";
     case "dm-requests":
       return "message requests";
+    case "agent-sessions":
+    case "agent-session":
+      return "agent sessions";
   }
 }
 

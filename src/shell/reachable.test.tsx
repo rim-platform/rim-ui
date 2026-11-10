@@ -59,6 +59,9 @@ const SURFACE_COMMANDS: Record<MainSurface["kind"], string> = {
   home: "workspace.open_home",
   unreads: "workspace.open_unreads",
   "dm-requests": "workspace.open_message_requests",
+  "agent-sessions": "workspace.open_agent_sessions",
+  // One session opens from the sessions page, or from the start dialog.
+  "agent-session": "agents.start_session",
 };
 
 /** The command behind each panel, overlay and entry point that is not a main surface. */
