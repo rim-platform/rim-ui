@@ -32,6 +32,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   step can name the workspace to switch to, the macro to run and the pipeline to turn on or off
   from lists, a topic can be cleared with **No topic**, and choices such as a mute's length or a
   scope read as they do elsewhere in the app ("Until I unmute it", "Only me").
+- **Agents RIM can start** in Settings → Agents, in the desktop app: add Claude Code, Codex,
+  Gemini CLI, opencode, Goose or another Agent Client Protocol program, each confirmed in a system
+  dialog with its exact command line, and RIM connects an agent for it with nothing granted. RIM
+  never installs one: a program it can't find shows how to install it and sign in.
 - A macro step that takes a channel now also offers the public channels of the workspace you have
   not joined, so a macro can join them and set their notifications, and a step's message text can
   have several lines (Ctrl+Enter or Cmd+Enter sends it from a form).

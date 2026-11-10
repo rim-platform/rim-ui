@@ -60,4 +60,20 @@ describe("useConnectedAgentsStore", () => {
     useConnectedAgentsStore.getState().revoke("agent-1");
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
   });
+
+  it("renames one agent with the name cleaned, and ignores a name that cleans to nothing", () => {
+    useConnectedAgentsStore.setState({
+      agents: [
+        { ...STORED, commandApprovals: [] },
+        { ...STORED, id: "agent-2", commandApprovals: [] },
+      ],
+    });
+    useConnectedAgentsStore.getState().rename("agent-1", "  Claude\u200b  at   work ");
+    expect(useConnectedAgentsStore.getState().agents.map((agent) => agent.name)).toEqual([
+      "Claude at work",
+      "Claude Code",
+    ]);
+    useConnectedAgentsStore.getState().rename("agent-1", " \u200b ");
+    expect(useConnectedAgentsStore.getState().agents[0].name).toBe("Claude at work");
+  });
 });

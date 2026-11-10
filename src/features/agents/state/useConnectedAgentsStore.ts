@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 import type { AgentGrants } from "../runtime/grants";
+import { cleanName } from "../runtime/pairing";
 
 /** What one agent may run from one plugin, tied to the manifest it was approved for. */
 export interface PluginApproval {
@@ -33,6 +34,8 @@ interface ConnectedAgentsState {
   agents: ConnectedAgent[];
   add: (agent: ConnectedAgent) => void;
   revoke: (id: string) => void;
+  /** Renames an agent, cleaned as a pairing program's name is; a name that cleans to nothing is ignored. */
+  rename: (id: string, name: string) => void;
   setGrants: (id: string, grants: AgentGrants) => void;
   /** Keeps an approval for one plugin, or with `null` takes it away. */
   setPluginApprovals: (id: string, pluginId: string, approval: PluginApproval | null) => void;
@@ -72,6 +75,15 @@ export const useConnectedAgentsStore = create<ConnectedAgentsState>()(
       agents: [],
       add: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
       revoke: (id) => set((state) => ({ agents: state.agents.filter((agent) => agent.id !== id) })),
+      rename: (id, name) => {
+        const cleaned = cleanName(name);
+        if (cleaned === null) return;
+        set((state) => ({
+          agents: state.agents.map((agent) =>
+            agent.id === id ? { ...agent, name: cleaned } : agent,
+          ),
+        }));
+      },
       setGrants: (id, grants) =>
         set((state) => ({
           agents: state.agents.map((agent) =>

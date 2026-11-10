@@ -165,6 +165,36 @@ seconds:
 Store the token where only the person can read it, and never print it or put it in a model's
 context.
 
+## Agents RIM can start
+
+The desktop app can also keep a list of agent programs it may start itself, under **Settings >
+Agents**, **Agents RIM can start**. The web app can't: it says "Starting agents needs the desktop
+app". Each one is a program that speaks the Agent Client Protocol, and RIM starts it as you, with
+access to your files.
+
+1. Choose **Add**, then a preset or **Custom…**.
+   - The presets are Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Gemini CLI
+     (`gemini --acp`), opencode (`opencode acp`) and Goose (`goose acp`).
+   - **Custom…** asks for a name, the program (a full path, or a name found on your `PATH`) and
+     its arguments, one per line.
+   - Each can have a default folder, the full path of the folder its sessions start in.
+2. Choose **Add**. A system dialog, not a page of RIM, asks whether RIM may start that program
+   with exactly those arguments. Only **Allow** saves it. Changing the program or its arguments
+   later asks again; changing the name or the folder doesn't.
+3. RIM connects an agent for it, with nothing granted, as **Connect an agent** does. It's in the
+   list above with the others, and you choose what it may read the same way.
+
+**Install and sign in once, yourself.** RIM never installs or downloads an agent. A program that
+isn't on your `PATH` shows **Not found**, with its install command or a pointer to its own
+instructions, and how to sign in to it once in a terminal, each with **Copy**. RIM can't add a
+program that isn't installed. The agent keeps its own settings, its own tools and its own
+permission rules.
+
+**Remove** stops RIM starting the program and disconnects its agent. Disconnecting that agent in
+the list above removes the program from this list too.
+
+Starting a session with one of these agents comes in a later version.
+
 ## Choose what it can read
 
 A new agent can read nothing. In **Settings > Agents**, pick the agent, then **Choose what it can

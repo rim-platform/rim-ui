@@ -28,11 +28,14 @@ import { AgentPluginsDialog } from "./AgentPluginsDialog";
 import { AgentRecordDialog } from "./AgentRecordDialog";
 import { AgentRunsDialog } from "./AgentRunsDialog";
 import { BRIDGE_SWITCH_LABEL, ConnectAgentDialog } from "./ConnectAgentDialog";
+import { disconnectAgent } from "../acp/agentPrograms";
+import { useAgentProgramsStore } from "../state/useAgentProgramsStore";
+import { AgentProgramsSection, FORGET_FAILED } from "./AgentProgramsSection";
 
 /** The Agents tab of the settings: whether agents may connect, and the ones that are. */
 export function AgentsSettings() {
   const agents = useConnectedAgentsStore((s) => s.agents);
-  const revoke = useConnectedAgentsStore((s) => s.revoke);
+  const profiles = useAgentProgramsStore((s) => s.profiles);
   const [status, setStatus] = useState<AgentBridgeStatus | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   const [disconnecting, setDisconnecting] = useState<ConnectedAgent | null>(null);
@@ -212,6 +215,8 @@ export function AgentsSettings() {
         </div>
       )}
 
+      <AgentProgramsSection />
+
       {agentAvailable() && (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-rim-text-muted">
@@ -274,11 +279,17 @@ export function AgentsSettings() {
       {disconnecting && (
         <ConfirmActionDialog
           title={`Disconnect ${showInvisibleCharacters(disconnecting.name)}?`}
-          description="It will not be able to reach RIM any more. It keeps nothing RIM can take back: what it has already read stays with it."
+          description={
+            profiles.some((profile) => profile.agentId === disconnecting.id)
+              ? "It will not be able to reach RIM any more, and RIM removes it from Agents RIM can start. It keeps nothing RIM can take back: what it has already read stays with it."
+              : "It will not be able to reach RIM any more. It keeps nothing RIM can take back: what it has already read stays with it."
+          }
           confirmLabel="Disconnect"
           danger
           onConfirm={() => {
-            revoke(disconnecting.id);
+            void disconnectAgent(disconnecting.id).then((forgotten) => {
+              if (!forgotten) toast.error(FORGET_FAILED);
+            });
             setDisconnecting(null);
             // The detail that opened the dialog goes with the agent: focus moves to the next
             // agent in the list, or to the switch above it.
