@@ -529,12 +529,14 @@ describe("the dialogs of a workspace a control names", () => {
     useWorkspaceStore.getState().clearWorkspaceId();
   });
 
-  it("opens another workspace's invite and new-channel dialogs without opening it", () => {
-    expect(runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-2" })).toEqual({
+  it("opens another workspace's invite and new-channel dialogs without opening it", async () => {
+    expect(
+      await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-2" }),
+    ).toEqual({
       ok: true,
       message: "",
     });
-    runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-2" });
+    await runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-2" });
 
     expect(useConversationDialogStore.getState()).toMatchObject({
       inviteTo: "ws-2",
@@ -544,11 +546,11 @@ describe("the dialogs of a workspace a control names", () => {
     expect(useShellStore.getState().showNewChannelDialog).toBe(false);
   });
 
-  it("opens the open workspace's invite dialog in its conversation's header, and its new-channel dialog beside its list", () => {
+  it("opens the open workspace's invite dialog in its conversation's header, and its new-channel dialog beside its list", async () => {
     useShellStore.getState().setSelectedConversationId("c-1");
     useShellStore.getState().setMainSurface({ kind: "conversation" });
-    runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
-    runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-1" });
+    await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
+    await runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-1" });
 
     expect(useShellStore.getState().showInviteDialog).toBe(true);
     expect(useConversationDialogStore.getState().inviteTo).toBeNull();
@@ -556,9 +558,9 @@ describe("the dialogs of a workspace a control names", () => {
     expect(useShellStore.getState().showNewChannelDialog).toBe(true);
   });
 
-  it("opens the open workspace's invite dialog on its own away from a conversation", () => {
+  it("opens the open workspace's invite dialog on its own away from a conversation", async () => {
     useShellStore.getState().setMainSurface({ kind: "home" });
-    runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
+    await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
 
     expect(useConversationDialogStore.getState().inviteTo).toBe("ws-1");
     expect(useShellStore.getState().showInviteDialog).toBe(false);

@@ -730,19 +730,14 @@ export function runDesktopLocalCommand(commandId: string, args?: Record<string, 
  * @returns `null` when the command has no local handler (or is an agent command), else
  *   whether it succeeded and what its result says.
  */
-export function runLocalCommandForCaller(
+export async function runLocalCommandForCaller(
   commandId: string,
   args: Record<string, unknown>,
   commandContext: Record<string, unknown>,
-): { ok: boolean; message: string } | null {
+): Promise<{ ok: boolean; message: string } | null> {
   if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return null;
   if (!Object.prototype.hasOwnProperty.call(localHandlers, commandId)) return null;
-  const result = localHandlers[commandId](args, commandContext);
-  // A handler that works on says how it went itself; a failure it did not report is logged.
-  if (result instanceof Promise) {
-    result.catch((err: unknown) => logger.warn(`[RIM] ${commandId} failed`, err));
-    return { ok: true, message: "" };
-  }
+  const result = await localHandlers[commandId](args, commandContext);
   if (!result) return { ok: true, message: "" };
   return { ok: result.status !== "ERROR", message: result.message };
 }
