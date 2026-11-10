@@ -4,8 +4,9 @@
  * notifications and `session/request_permission` requests into typed values. RIM offers the
  * agent no file system and no terminal: the agent works with its own tools and RIM shows what
  * it does. RIM can run the agent's own sign-in in a terminal, so it says so, and asks the agent
- * to sign in itself with `authenticate`. Everything parsed here came from the agent and is untrusted; fields that are missing
- * or of the wrong type are left out or given their protocol default.
+ * to sign in itself with `authenticate`. Everything parsed here came from the agent and is
+ * untrusted; fields that are missing or of the wrong type are left out or given their protocol
+ * default.
  */
 
 import type { AcpConnection, JsonValue } from "./acpConnection";
