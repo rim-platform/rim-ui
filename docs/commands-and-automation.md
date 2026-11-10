@@ -362,10 +362,20 @@ runs them as the person who created it.
 
 **Where.** Settings → Pipelines, which is not shown in Direct messages. **New Pipeline** opens
 "Create Pipeline" with **Name**, **Description**, **Trigger**, **Filters** (**Add filter**),
-**Actions** (**Add action**, a command and an optional JSON arguments field) and **Cooldown
+**Actions** (**Add action**, a command and an **Arguments** section) and **Cooldown
 (seconds, optional)**, then **Save**. The list shows each pipeline as Active or Disabled, with
 its trigger, its number of actions and, to its creator, when it last fired. The power button
 enables or disables it, the pencil edits it, and the bin deletes it after a confirmation.
+
+**Arguments.** An action shows a field for each argument its command takes, the same fields a
+keybind or a macro step has, with a picker where the command has one, such as the key of
+`state.get`. Nobody is there to ask when a pipeline runs, so a required argument the event does
+not supply must be filled: the workspace is always supplied, the conversation for message and
+reaction triggers, and nothing else. Those fields say "Required", and **Save** is refused with
+the field's message until they are filled. A command with no fields shows no Arguments section.
+Arguments saved with an action that the fields cannot show, such as a key the command does not
+declare, stay as they are, listed as JSON under "Saved arguments the form can't show", until you
+press **Remove**.
 
 **Who.** Any member of the workspace can create a pipeline, and every member sees the list. Only
 its creator, an Owner or a Moderator can change, toggle or delete it, and only they see the power
@@ -407,7 +417,7 @@ workspace open, says why. The power button turns it back on.
 
 **Example.** "Deploy failed": trigger New Message, scoped to the id of #deploys, with the filter
 "Message contains pattern" `FAILED`, a cooldown of 300 and the action `chat.search_messages`
-with `{"query": "FAILED"}`. Each failure posted to #deploys shows the pipeline's creator the
+with `{"query": "FAILED"}` (the Query field). Each failure posted to #deploys shows the pipeline's creator the
 firing, at most once in five minutes. The action's result is not shown anywhere, and an action
 such as `chat.post_message` would be skipped.
 
