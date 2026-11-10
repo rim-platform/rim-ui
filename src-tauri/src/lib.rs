@@ -1,6 +1,7 @@
 mod account_lock;
 mod agent_bridge;
 mod agent_proxy;
+mod agent_runner;
 mod desktop_shell;
 mod e2ee;
 mod history_archive;
@@ -80,6 +81,7 @@ pub fn run() {
             app.manage(vault);
             desktop_shell::setup(app.handle());
             agent_bridge::setup(app.handle());
+            agent_runner::setup(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -280,17 +282,38 @@ pub fn run() {
             agent_bridge::agent_bridge_set_enabled,
             agent_bridge::agent_bridge_ack,
             agent_bridge::agent_bridge_answer,
+            agent_runner::agent_runner_start,
+            agent_runner::agent_runner_send,
+            agent_runner::agent_runner_stop,
+            agent_runner::agent_runner_find,
+            agent_runner::agent_runner_list,
+            agent_runner::agent_runner_allow,
+            agent_runner::agent_runner_forget,
+            agent_runner::agent_runner_allowed,
         ])
         .build(context)
         .expect("error while building tauri application")
         .run(|app, event| {
-            // `run` ends the process without running destructors, so plugin
-            // processes are stopped here or they outlive the app.
+            // `run` ends the process without running destructors, so plugin processes and
+            // agent runs are stopped here or they outlive the app. Hiding the window to the
+            // tray is no exit, so both keep running then.
             if let tauri::RunEvent::Exit = event {
-                log::info!("the app is exiting: stopping plugin processes");
-                if let Some(state) = app.try_state::<plugin_host::PluginHostState>() {
-                    tauri::async_runtime::block_on(plugin_host::runtime::stop_all(&state));
-                }
+                log::info!("the app is exiting: stopping plugin processes and agent runs");
+                let plugins = app.try_state::<plugin_host::PluginHostState>();
+                let runner = app.try_state::<agent_runner::AgentRunner>();
+                tauri::async_runtime::block_on(async {
+                    let plugins = async {
+                        if let Some(state) = &plugins {
+                            plugin_host::runtime::stop_all(state).await;
+                        }
+                    };
+                    let runs = async {
+                        if let Some(runner) = &runner {
+                            runner.stop_all().await;
+                        }
+                    };
+                    tokio::join!(plugins, runs);
+                });
             }
         });
 }

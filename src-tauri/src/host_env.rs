@@ -58,6 +58,25 @@ pub(crate) fn host_env_changes(
     changes
 }
 
+/// The `PATH` a child started with [`restore_host_env`] sees: the app's own, without the AppImage
+/// mount's entries when the app runs from an AppImage. `None` when it has no `PATH` at all.
+pub(crate) fn host_path() -> Option<OsString> {
+    let path = std::env::var_os("PATH")?;
+    if std::env::var_os("APPIMAGE").is_none() {
+        return Some(path);
+    }
+    let Some(appdir) = std::env::var_os("APPDIR").filter(|dir| !dir.is_empty()) else {
+        return Some(path);
+    };
+    match host_env_changes([(OsString::from("PATH"), path.clone())], Path::new(&appdir))
+        .into_iter()
+        .next()
+    {
+        Some((_, value)) => value,
+        None => Some(path),
+    }
+}
+
 /// Gives `cmd` the host's environment back when the app runs from an AppImage (`APPIMAGE` and
 /// `APPDIR` set); does nothing otherwise.
 pub(crate) fn restore_host_env(cmd: &mut tokio::process::Command) {
@@ -160,6 +179,14 @@ mod tests {
     fn ignores_an_empty_or_root_appdir() {
         assert!(changes(&[("PATH", "/usr/bin")], "").is_empty());
         assert!(changes(&[("PATH", "/usr/bin")], "/").is_empty());
+    }
+
+    #[test]
+    fn host_path_is_the_path_outside_an_appimage() {
+        if std::env::var_os("APPIMAGE").is_some() {
+            return;
+        }
+        assert_eq!(host_path(), std::env::var_os("PATH"));
     }
 
     #[test]
