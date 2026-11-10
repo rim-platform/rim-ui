@@ -39,6 +39,9 @@ import { KeybindProvider } from "./KeybindProvider";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useCommandArgumentsStore } from "../state/useCommandArgumentsStore";
+import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
+import { useSelectedMessageStore } from "../../messages/state/useSelectedMessageStore";
+import { toast } from "../../../shared/toast";
 
 function definition(id: string, overrides: Partial<CommandDefinition> = {}): CommandDefinition {
   return {
@@ -63,6 +66,20 @@ const CREATE_CHANNEL = definition("chat.create_channel", {
     { name: "name", argumentType: CommandArgumentType.STRING, required: true },
     { name: "topic", argumentType: CommandArgumentType.STRING, required: false },
   ],
+});
+
+const ON_SELECTED_MESSAGE = ["workspace", "conversation", "selected_message"];
+
+const REPORT = definition("chat.report_message", {
+  title: "Report Message",
+  requiredContext: ON_SELECTED_MESSAGE,
+  arguments: [{ name: "reason", argumentType: CommandArgumentType.STRING, required: true }],
+});
+
+const REPLY = definition("chat.reply_to_selected_message", {
+  title: "Reply To Selected Message",
+  requiredContext: ON_SELECTED_MESSAGE,
+  arguments: [{ name: "text", argumentType: CommandArgumentType.STRING, required: true }],
 });
 
 const MUTE = definition("notifications.mute_conversation", {
@@ -115,7 +132,7 @@ function renderProvider() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  lists.keybind = [CREATE_CHANNEL, MUTE];
+  lists.keybind = [CREATE_CHANNEL, REPORT, REPLY, MUTE];
   useShellStore.getState().reset();
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
 });
@@ -123,6 +140,8 @@ beforeEach(() => {
 afterEach(() => {
   bound.keybinds = [];
   useCommandArgumentsStore.getState().cancel();
+  useConfirmationModalStore.getState().reset();
+  useSelectedMessageStore.setState({ selection: null, actions: null });
   useWorkspaceStore.setState({ workspaceId: null });
 });
 
@@ -171,6 +190,87 @@ describe("a keybind to a server command this app has a dialog for", () => {
       ),
     );
     expect(useShellStore.getState().showNewChannelDialog).toBe(false);
+  });
+});
+
+describe("a keybind with saved arguments to a command on the selected message", () => {
+  const actions = {
+    conversationId: "conv-1",
+    textOf: () => "hello",
+    reply: vi.fn(() => true),
+    edit: vi.fn(() => true),
+    report: vi.fn(() => true),
+  };
+
+  beforeEach(() => {
+    useShellStore.getState().setSelectedConversationId("conv-1");
+    useSelectedMessageStore.getState().setActions(actions);
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "conv-1", messageId: "msg-1" });
+  });
+
+  it("asks before reporting when the server holds the report, as a macro step does", async () => {
+    execute.mockResolvedValueOnce({
+      executeCommand: {
+        status: "CONFIRMATION_REQUIRED",
+        message: "Confirm",
+        payload: null,
+        followUpCommands: [],
+        confirmationRequired: {
+          token: "tok",
+          argsHash: "hash",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      },
+    } as never);
+    bind("chat.report_message", { reason: "spam" });
+    renderProvider();
+    press();
+
+    await vi.waitFor(() =>
+      expect(useConfirmationModalStore.getState().request).toMatchObject({
+        commandId: "chat.report_message",
+        args: { reason: "spam" },
+      }),
+    );
+    useConfirmationModalStore.getState().reject();
+
+    await vi.waitFor(() => expect(useConfirmationModalStore.getState().request).toBeNull());
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(actions.report).not.toHaveBeenCalled();
+  });
+
+  it("says why the server refused a reply in an encrypted conversation", async () => {
+    execute.mockRejectedValueOnce(
+      Object.assign(new Error("refused"), {
+        response: {
+          errors: [
+            {
+              message: "this conversation is encrypted",
+              extensions: { code: "VALIDATION", refusal: "INVALID" },
+            },
+          ],
+        },
+      }),
+    );
+    bind("chat.reply_to_selected_message", { text: "On it" });
+    renderProvider();
+    press();
+
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Reply To Selected Message: this conversation is encrypted",
+      ),
+    );
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commandId: "chat.reply_to_selected_message",
+        args: { text: "On it" },
+        commandContext: expect.objectContaining({ selectedMessageId: "msg-1" }),
+      }),
+    );
+    expect(actions.reply).not.toHaveBeenCalled();
   });
 });
 
