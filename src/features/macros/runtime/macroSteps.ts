@@ -7,6 +7,7 @@ import {
   type ArgumentContext,
 } from "../../commands/runtime/commandArguments";
 import {
+  argumentTypeOfName,
   isEmptyField,
   presetArgsOf,
   presetFields,
@@ -24,28 +25,6 @@ export const MAX_MACRO_STEP_COUNT = 20;
 
 /** The most macros a person may keep. */
 export const MAX_MACROS = 100;
-
-/**
- * The type of an argument a command does not declare, from its name: a conversation, a workspace
- * or a member for the names that hold one, else text.
- */
-export function argumentTypeOfName(name: string): CommandArgumentType {
-  switch (name) {
-    case "conversation_id":
-    case "conversationId":
-      return CommandArgumentType.CONVERSATION_ID;
-    case "workspace_id":
-    case "workspaceId":
-    case "server_id":
-    case "serverId":
-      return CommandArgumentType.WORKSPACE_ID;
-    case "user_id":
-    case "userId":
-      return CommandArgumentType.USER_ID;
-    default:
-      return CommandArgumentType.STRING;
-  }
-}
 
 function pluginArgumentType(type: string | undefined): CommandArgumentType {
   switch (type) {
@@ -82,15 +61,7 @@ export function stepFields(command: CommandDefinition | undefined): CommandArgum
       argument.argumentType === CommandArgumentType.WORKSPACE_ID &&
       argumentPickerKind(command.id, argument.name) === "targetWorkspace",
   );
-  const fields = requiredFirst([...presetFields(command), ...targets]);
-  const prompted = argumentPromptName(command.id);
-  if (prompted && !fields.some((field) => field.name === prompted)) {
-    const argumentType = argumentTypeOfName(prompted);
-    if (argumentType !== CommandArgumentType.WORKSPACE_ID) {
-      fields.push({ name: prompted, argumentType, required: false });
-    }
-  }
-  return fields;
+  return requiredFirst([...presetFields(command), ...targets]);
 }
 
 /** A context with every part a macro may find where it runs: a workspace, a conversation, a message. */

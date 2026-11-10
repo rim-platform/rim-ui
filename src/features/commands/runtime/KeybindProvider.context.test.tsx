@@ -93,6 +93,7 @@ describe("KeybindProvider command context", () => {
     expect(options).toEqual({
       args: { level: "mentions" },
       commandContext: { workspaceId: "ws-1", conversationId: "conv-9", threadId: "thread-1" },
+      typedArgs: true,
       askForArguments: true,
       onArguments: expect.any(Function),
     });

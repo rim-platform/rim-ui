@@ -2,6 +2,7 @@ import type { CommandDefinition } from "../types";
 import { argumentPromptName, hasLocalHandler, typedArgumentsGoToServer } from "./commandDispatcher";
 import { formAsksFor, unfilledRequiredArguments, type ArgumentContext } from "./commandArguments";
 import { presetFields } from "./argumentValues";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 
 /**
  * The names of the arguments `command` requires that neither `context`, its argument prompt nor
@@ -69,15 +70,15 @@ export function runsWithoutArguments(command: CommandDefinition): boolean {
 }
 
 /**
- * Whether a keybind or quick action to `command` saves its arguments in fields: a server command
- * this app neither runs itself nor asks a target for, with an argument the form has a field for.
+ * Whether a keybind or quick action to `command` saves its arguments in fields, the same fields a
+ * macro step offers: a built-in or app command with an argument the form has a field for, or one
+ * this app asks for with a picker. The commands that manage agents save none.
  */
 export function takesPresetFields(command: CommandDefinition): boolean {
   return (
     command.sourceKind !== "PLUGIN" &&
     !command.id.startsWith("plugin.") &&
-    !hasLocalHandler(command.id) &&
-    argumentPromptName(command.id) === undefined &&
+    !AGENT_MANAGEMENT_COMMAND_IDS.has(command.id) &&
     presetFields(command).length > 0
   );
 }

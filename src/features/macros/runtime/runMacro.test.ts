@@ -326,3 +326,54 @@ describe("runMacro", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
 });
+
+describe("a macro step that mutes until tomorrow", () => {
+  const zone = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = "America/New_York";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 15:00 in New York.
+    vi.setSystemTime(new Date("2026-11-09T20:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
+  it("ends the mute at 09:00 tomorrow in the person's timezone", async () => {
+    haveMacros(
+      macro({
+        id: "user.quiet",
+        steps: [
+          step("notifications.mute_conversation", {
+            conversation_id: "c-1",
+            duration: "until_tomorrow",
+          }),
+        ],
+      }),
+    );
+    queryClient.setQueryData(queryKeys.macroStepCommands, [
+      ...STEP_COMMANDS,
+      stepCommand("notifications.mute_conversation", "Mute Conversation", {
+        arguments: [
+          {
+            name: "duration",
+            title: "Duration",
+            argumentType: CommandArgumentType.ENUM,
+            required: true,
+            allowedValues: ["1h", "8h", "until_tomorrow", "forever", "until"],
+          },
+        ],
+      }),
+    ]);
+
+    await expect(runMacro("user.quiet", { workspaceId: "ws-1" })).resolves.toBe(true);
+
+    expect(executed().map(({ input }) => input.args)).toEqual([
+      { conversation_id: "c-1", duration: "until", until: "2026-11-10T14:00:00.000Z" },
+    ]);
+  });
+});

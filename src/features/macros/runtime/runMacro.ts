@@ -2,6 +2,7 @@ import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { executeCommandAt } from "../../commands/api/useCommands";
+import { argumentTypeOfName } from "../../commands/runtime/argumentValues";
 import { camelCaseName } from "../../commands/runtime/commandArguments";
 import { currentCommandContext } from "../../commands/runtime/commandContext";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
@@ -23,7 +24,6 @@ import {
   type AccountMacroStep,
 } from "../api/useAccountMacros";
 import { isMacroId, macroRegistry, stepTitle, type MacroRegistry } from "./macroCommands";
-import { argumentTypeOfName } from "./macroSteps";
 
 /** How many macros a chain of macros naming macros may hold. */
 export const MAX_MACRO_DEPTH = 8;

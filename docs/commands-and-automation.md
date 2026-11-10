@@ -214,7 +214,10 @@ Composer, Message list and so on.
 - **Add keybind** opens a form: press the keys in "Press a key combination...", pick the
   command and the context, then **Save**. For a server command with arguments, **Arguments** has a
   field for each: the ones filled in are saved with the keybind, and a required one left empty is
-  asked for when the key is pressed. A member or a conversation saved there keeps its workspace. The field records any keys, even ones already bound,
+  asked for when the key is pressed. A member or a conversation saved there keeps its workspace.
+  Saved arguments are used as given, here and in a Home quick action, even for a command such as
+  **Create Channel** whose dialog opens when none are saved, and "Until tomorrow" means 09:00
+  tomorrow in your timezone, worked out when the command runs. The field records any keys, even ones already bound,
   and runs nothing while it has focus; <kbd>Escape</kbd> alone stops recording and keeps the
   earlier keys. Keys already bound in the chosen context show "\<keys\> is used by \<command\>.
   Saving moves it here and leaves \<command\> without a key." (or "…; \<command\> keeps its other
