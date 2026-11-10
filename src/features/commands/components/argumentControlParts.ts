@@ -1,3 +1,4 @@
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import type { FieldValue, FieldValues } from "../runtime/argumentValues";
 import type { CommandArgumentInfo } from "../types";
 
@@ -52,4 +53,16 @@ export function selectEmptyLabel(
   prompt: string,
 ): string {
   return mode === "preset" ? emptyPresetLabel(argument) : prompt;
+}
+
+/** The workspace a field offers things of: the one given, else the open one. */
+export function useFieldWorkspace(workspaceId: string | undefined): string | undefined {
+  const open = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  return workspaceId ?? open;
+}
+
+/** The conversation the form's `conversation_id` field holds, or the one the command runs in. */
+export function formConversationId(props: Pick<ControlProps, "formValues">): string | undefined {
+  const value = props.formValues.conversation_id;
+  return typeof value === "string" && value !== "" ? value : undefined;
 }

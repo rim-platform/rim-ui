@@ -7,7 +7,11 @@ import { handleDomain, personName } from "../../../shared/utils/handles";
 import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
+import {
+  useArchivedChannels,
+  useChannels,
+  useJoinedChannels,
+} from "../../conversations/api/useChannels";
 import { useInboxConversations } from "../../conversations/api/useInboxConversations";
 import type { ConversationSummary } from "../../conversations/types";
 import { directPeerId, untitledGroupName } from "../../conversations/utils";
@@ -113,6 +117,49 @@ export function useChannelTargets(inWorkspace?: string): Targets {
     [joined.data, inbox.data],
   );
   return { items: useNamed(conversations), isPending: joined.isPending || inbox.isPending };
+}
+
+/**
+ * The viewer's unarchived conversations of `types` in a workspace: channels from the joined
+ * list, DMs and groups from the inbox, each fetched only when asked for.
+ *
+ * @param inWorkspace - The workspace to list; the open one when left out.
+ * @param types - The kinds of conversation to list.
+ */
+export function useOwnConversationTargets(
+  inWorkspace: string | undefined,
+  types: readonly ConversationTypeEnum[],
+): Targets {
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const workspaceId = inWorkspace ?? openWorkspaceId;
+  const channels = types.includes(ConversationTypeEnum.CHANNEL);
+  const inboxKinds = types.filter((type) => type !== ConversationTypeEnum.CHANNEL);
+  const joined = useJoinedChannels(channels ? workspaceId : undefined);
+  const inbox = useInboxConversations(inboxKinds.length > 0 ? workspaceId : undefined);
+  const inboxKey = inboxKinds.join(",");
+  const conversations = useMemo(
+    () => [
+      ...(channels ? (joined.data?.items ?? []).filter((c) => !c.isArchived) : []),
+      ...(inbox.data?.items ?? []).filter((c) => inboxKey.split(",").includes(c.conversationType)),
+    ],
+    [channels, joined.data, inbox.data, inboxKey],
+  );
+  return {
+    items: useNamed(conversations),
+    isPending: (channels && joined.isPending) || (inboxKinds.length > 0 && inbox.isPending),
+  };
+}
+
+/**
+ * The archived channels of a workspace the viewer can see, as Browse channels lists them.
+ *
+ * @param inWorkspace - The workspace to list; the open one when left out.
+ */
+export function useArchivedChannelTargets(inWorkspace?: string): Targets {
+  const openWorkspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
+  const workspaceId = inWorkspace ?? openWorkspaceId;
+  const { data, isPending } = useArchivedChannels(workspaceId, true);
+  return { items: useNamed(data ?? []), isPending };
 }
 
 /** The DMs and groups of every direct space, as the direct message list shows them. */

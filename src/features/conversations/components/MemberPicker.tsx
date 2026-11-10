@@ -16,6 +16,8 @@ export interface MemberPickerProps {
   onChange: (userIds: string[]) => void;
   /** Workspace members that cannot be picked (e.g. already in the conversation). */
   excludeUserIds?: readonly string[];
+  /** When given, the only workspace members that can be picked, such as those timed out. */
+  onlyUserIds?: readonly string[];
   /** Whether bots are offered; they are left out unless the caller may add them. */
   includeBots?: boolean;
   /** Ctrl/Cmd+Enter, or Enter with an empty query and at least one pick. */
@@ -44,6 +46,7 @@ export function MemberPicker({
   selectedUserIds,
   onChange,
   excludeUserIds,
+  onlyUserIds,
   includeBots = false,
   onConfirm,
   onEscape,
@@ -68,8 +71,15 @@ export function MemberPicker({
   // not on every keystroke.
   const resolvedMembers = useMemo(() => {
     const excluded = new Set(excludeUserIds ?? []);
+    const only = onlyUserIds ? new Set(onlyUserIds) : null;
     return (members ?? [])
-      .filter((m) => m.userId !== me?.id && !excluded.has(m.userId) && (includeBots || !m.isBot))
+      .filter(
+        (m) =>
+          m.userId !== me?.id &&
+          !excluded.has(m.userId) &&
+          (only === null || only.has(m.userId)) &&
+          (includeBots || !m.isBot),
+      )
       .map((m) => {
         const resolved = memberLookup.resolve(m.userId);
         return {
@@ -81,7 +91,7 @@ export function MemberPicker({
         };
       })
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [members, me?.id, memberLookup, excludeUserIds, includeBots]);
+  }, [members, me?.id, memberLookup, excludeUserIds, onlyUserIds, includeBots]);
 
   const getText = useCallback(
     (member: { displayName: string; handle: string }) => [member.displayName, member.handle],

@@ -6,9 +6,16 @@ import {
   argumentPicker,
   argumentPickerKind,
   CLEARED_FIELD,
+  memberIdsOf,
   sendsEmptyText,
 } from "./argumentPickers";
-import { argumentValueOf, fieldProblem, readFields, toFieldValue } from "./argumentValues";
+import {
+  argumentValueOf,
+  fieldProblem,
+  presetArgsOf,
+  readFields,
+  toFieldValue,
+} from "./argumentValues";
 
 const TOPIC: CommandArgumentInfo = {
   name: "topic",
@@ -150,5 +157,99 @@ describe("state key and value checks", () => {
   it("shows a saved plain text value as the JSON string the server stored", () => {
     expect(toFieldValue(VALUE, "hello", "state.set")).toBe('"hello"');
     expect(toFieldValue(VALUE, "42", "state.set")).toBe("42");
+  });
+});
+
+const MEMBER_IDS: CommandArgumentInfo = {
+  name: "member_ids",
+  title: "Members",
+  argumentType: CommandArgumentType.STRING,
+  required: true,
+};
+
+describe("member and conversation pickers", () => {
+  it("names the member pools", () => {
+    const pool = (command: string, name: string) => {
+      const picker = argumentPicker(command, name);
+      return [picker?.kind, picker?.members];
+    };
+    expect(pool("chat.create_group", "member_ids")).toEqual(["members", "people"]);
+    expect(pool("chat.create_channel", "member_ids")).toEqual(["members", "people"]);
+    expect(pool("chat.invite_to_conversation", "user_ids")).toEqual([
+      "members",
+      "notInConversation",
+    ]);
+    expect(pool("admin.unban", "user_id")).toEqual(["member", "banned"]);
+    expect(pool("admin.clear_timeout", "user_id")).toEqual(["member", "timedOut"]);
+    expect(pool("chat.remove_conversation_member", "user_id")).toEqual([
+      "member",
+      "inConversation",
+    ]);
+    for (const command of [
+      "people.message",
+      "people.add_contact",
+      "people.remove_contact",
+      "people.block",
+    ]) {
+      expect(pool(command, "user_id"), command).toEqual(["member", "people"]);
+    }
+    expect(argumentPicker("admin.kick", "user_id")).toBeUndefined();
+  });
+
+  it("names the conversation pools", () => {
+    const pool = (command: string) => argumentPicker(command, "conversation_id")?.conversations;
+    expect(pool("chat.unarchive_channel")).toBe("archivedChannels");
+    for (const command of [
+      "chat.archive_channel",
+      "chat.set_slow_mode",
+      "chat.set_channel_posting",
+      "chat.set_topic",
+    ]) {
+      expect(pool(command), command).toBe("channels");
+    }
+    for (const command of [
+      "chat.leave_conversation",
+      "chat.invite_to_conversation",
+      "chat.remove_conversation_member",
+    ]) {
+      expect(pool(command), command).toBe("channelsAndGroups");
+    }
+    expect(pool("chat.join_channel")).toBe("joinableChannels");
+    expect(pool("workspace.navigate_to_dm")).toBe("direct");
+    expect(pool("chat.post_message")).toBeUndefined();
+    expect(argumentPickerKind("chat.toggle_reaction", "emoji")).toBe("emoji");
+  });
+
+  it("reads member ids from comma-joined text, without blanks or repeats", () => {
+    expect(memberIdsOf(" a, b,,a ,c ")).toEqual(["a", "b", "c"]);
+    expect(memberIdsOf("")).toEqual([]);
+    expect(memberIdsOf(undefined)).toEqual([]);
+  });
+
+  it("sends member ids as one comma-joined string, as the server parses them", () => {
+    expect(argumentValueOf(MEMBER_IDS, "a, b,a", "chat.create_group")).toBe("a,b");
+    expect(argumentValueOf(MEMBER_IDS, " , ", "chat.create_group")).toBeUndefined();
+    expect(toFieldValue(MEMBER_IDS, ["a", "b"], "chat.create_group")).toBe("a,b");
+    expect(toFieldValue(MEMBER_IDS, "a,b", "chat.create_group")).toBe("a,b");
+    expect(toFieldValue(MEMBER_IDS, ["a", 1], "chat.create_group")).toBeNull();
+    expect(toFieldValue(MEMBER_IDS, ["a", "b"], "chat.other")).toBeNull();
+  });
+
+  it("pins the workspace the saved members are of", () => {
+    const command = {
+      id: "chat.create_group",
+      arguments: [
+        MEMBER_IDS,
+        {
+          name: "server_id",
+          argumentType: CommandArgumentType.WORKSPACE_ID,
+          required: true,
+        },
+      ],
+    };
+    expect(presetArgsOf(command, { member_ids: "a,b" }, "ws-1")).toEqual({
+      member_ids: "a,b",
+      server_id: "ws-1",
+    });
   });
 });

@@ -286,7 +286,12 @@ have several lines. A workspace state key is picked from the workspace's keys, e
 its current value, or typed as a new one; a value to store first gets its kind (Text, Number,
 Yes/No or JSON), so `42` typed as text stays text. A step that switches workspace names the
 workspace, one that runs a macro or turns a pipeline on or off picks it from a list, and a topic
-can be cleared with **No topic**. An argument the macro finds where it runs, such as the open workspace, the open
+can be cleared with **No topic**. People are picked by name: several for a new group or channel
+and for an invite, which leaves out those already in the conversation; Unban lists the people
+banned and Clear Timeout those timed out. A conversation field lists only what its command acts
+on: archived channels to unarchive, channels to join, channels and groups to leave, your direct
+messages to open, and a reaction is picked with the emoji picker or typed, a custom emoji as
+`:name:`. An argument the macro finds where it runs, such as the open workspace, the open
 conversation or the selected message, can be left empty. **Save** stays blocked while a required
 argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
 turns a description into steps with their arguments filled in, which open in the form to check.

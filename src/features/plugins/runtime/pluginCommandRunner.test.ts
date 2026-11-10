@@ -239,6 +239,20 @@ describe("runCommandForPlugin", () => {
     });
   });
 
+  it("waits for a local command that finishes later, and passes its failure on", async () => {
+    const t = setup({
+      runLocal: () =>
+        Promise.resolve({
+          ok: false,
+          message: "That direct message isn't among your conversations",
+        }),
+    });
+    expect(await t.run("workspace.open_settings")).toEqual({
+      status: "error",
+      message: "That direct message isn't among your conversations",
+    });
+  });
+
   it("runs a backend built-in on the server as PLUGIN, in the person's context without the selection", async () => {
     const t = setup();
     expect(await t.run("chat.list_channels", { limit: 5 })).toEqual({

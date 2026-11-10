@@ -1,4 +1,4 @@
-import type { CommandDefinition } from "../../types";
+import type { CommandArgumentInfo, CommandDefinition } from "../../types";
 import type { CommandCategory } from "../commandCategories";
 
 /** What else an app command's definition says beyond its id, title and palette category. */
@@ -10,6 +10,8 @@ export interface LocalCommandOptions {
    * moderation, bots and webhooks, blocking, invites, contacts or who can see what.
    */
   pluginRunnable?: boolean;
+  /** The arguments its handler reads, which a keybind or a macro step may fix. */
+  arguments?: CommandArgumentInfo[];
 }
 
 /** The options of an app command a plugin may be granted. */
@@ -23,7 +25,8 @@ export const PLUGIN_RUNNABLE: LocalCommandOptions = Object.freeze({ pluginRunnab
  * @param title - The title the palette shows.
  * @param description - One line saying what it does.
  * @param keybindCapable - Whether a keybind may run it; defaults to true.
- * @param options - Whether a plugin may be granted it; by default none may.
+ * @param options - Whether a plugin may be granted it, by default none may, and the arguments
+ *   its handler reads.
  * @returns The definition, listed as a built-in command that runs on this device.
  */
 export function localCommand(
@@ -48,5 +51,6 @@ export function localCommand(
     keybindCapable,
     dangerous: false,
     ...(options.pluginRunnable ? { pluginRunnable: true } : {}),
+    ...(options.arguments ? { arguments: options.arguments } : {}),
   };
 }

@@ -8,7 +8,6 @@ import {
   useWorkspaceStateList,
 } from "../../workspace-state/api/useWorkspaceState";
 import { stateKeyProblem } from "../../workspace-state/stateKeyRules";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { CLEARED_FIELD, type ArgumentPicker } from "../runtime/argumentPickers";
 import {
   decodeStateValue,
@@ -23,20 +22,19 @@ import {
 import {
   CONTROL_CLASS,
   emptyPresetLabel,
+  formConversationId,
   selectPropsOf,
+  useFieldWorkspace,
   type ControlProps,
 } from "./argumentControlParts";
 import { ChoiceSelect } from "./ChoiceSelect";
+import { ConversationPoolSelect } from "./ConversationArgumentFields";
+import { EmojiField } from "./EmojiArgumentField";
+import { MemberPoolField } from "./MemberArgumentFields";
 import { useMacroTargets, usePipelineTargets } from "./paletteTargets";
 
 /** The most keys the key field suggests at once. */
 const MAX_SUGGESTIONS = 50;
-
-/** The workspace a field offers things of: the one given, else the open one. */
-function useFieldWorkspace(workspaceId: string | undefined): string | undefined {
-  const open = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
-  return workspaceId ?? open;
-}
 
 /** The state scope the form's `scope` field picks; the workspace's when it picks none. */
 function scopeOf(props: ControlProps): WorkspaceStateScopeGql {
@@ -375,10 +373,7 @@ function ClearableTextField(props: ControlProps & { picker: ArgumentPicker }) {
   const text = typeof value === "string" ? value : "";
   const lastText = useRef(text);
   const workspaceId = useFieldWorkspace(props.workspaceId);
-  const conversationId =
-    typeof props.formValues.conversation_id === "string" && props.formValues.conversation_id
-      ? props.formValues.conversation_id
-      : undefined;
+  const conversationId = formConversationId(props);
   const { data: conversation } = useConversation(
     mode === "ask" ? workspaceId : undefined,
     conversationId,
@@ -441,6 +436,13 @@ export function PickerControl(props: ControlProps & { picker: ArgumentPicker }) 
       return <PipelineSelect {...props} />;
     case "clearableText":
       return <ClearableTextField {...props} />;
+    case "members":
+    case "member":
+      return <MemberPoolField {...props} />;
+    case "conversation":
+      return <ConversationPoolSelect {...props} />;
+    case "emoji":
+      return <EmojiField {...props} />;
     default:
       return null;
   }

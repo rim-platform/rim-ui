@@ -36,6 +36,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Gemini CLI, opencode, Goose or another Agent Client Protocol program, each confirmed in a system
   dialog with its exact command line, and RIM connects an agent for it with nothing granted. RIM
   never installs one: a program it can't find shows how to install it and sign in.
+- Command forms pick people and conversations from fitting lists: the members of a new group or
+  channel, or people to invite, by name as chips; Unban lists the people banned, Clear Timeout
+  those timed out and Remove Member the conversation's members; a step that archives, unarchives,
+  joins or leaves offers only the conversations it can act on, Navigate to DM your direct
+  messages, and a reaction opens the emoji picker. Add to Contacts, Remove from Contacts and Block
+  can name the person in a keybind or macro step.
 - A macro step that takes a channel now also offers the public channels of the workspace you have
   not joined, so a macro can join them and set their notifications, and a step's message text can
   have several lines (Ctrl+Enter or Cmd+Enter sends it from a form).

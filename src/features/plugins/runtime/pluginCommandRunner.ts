@@ -115,7 +115,7 @@ export interface RunnerDeps {
     commandId: string,
     args: Record<string, unknown>,
     commandContext: CommandContextInput,
-  ): { ok: boolean; message: string } | null;
+  ): Promise<{ ok: boolean; message: string } | null> | { ok: boolean; message: string } | null;
   /** Whether a confirmation or another host dialog is open now. */
   busy(): boolean;
   /** Asks the person in a card naming the plugin; `true` on yes. */
@@ -254,18 +254,18 @@ export function createPluginCommandRunner(deps: RunnerDeps) {
     return runOnServer(plugin, listed, args, context);
   }
 
-  function runLocally(
+  async function runLocally(
     commandId: string,
     args: Record<string, unknown>,
     context: CommandContextInput,
-  ): PluginRunResult {
+  ): Promise<PluginRunResult> {
     // Plugin runs show no argument form: a command missing what its picker would ask for fails.
     const prompted = argumentPromptName(commandId);
     if (prompted && !argString(args, prompted, camelCase(prompted))) {
       return { status: "error", message: `missing argument: ${prompted}` };
     }
     try {
-      const outcome = deps.runLocal(commandId, args, context);
+      const outcome = await deps.runLocal(commandId, args, context);
       if (outcome === null) return refused("UNAVAILABLE", "this command is not offered here");
       return outcome.ok
         ? { status: "success", ...(outcome.message ? { message: outcome.message } : {}) }
