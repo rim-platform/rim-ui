@@ -322,8 +322,8 @@ export async function removeAgentProgram(id: string): Promise<boolean> {
 
 /**
  * Deletes the files of an agent RIM installed, then removes each profile that starts its
- * program with its arguments and disconnects its agent. Nothing is removed when the installer refuses, such as while one of
- * its sessions runs.
+ * program with its arguments and disconnects its agent. Nothing is removed when the installer
+ * refuses, such as while one of its sessions runs.
  *
  * @param agent - What RIM installed.
  */
