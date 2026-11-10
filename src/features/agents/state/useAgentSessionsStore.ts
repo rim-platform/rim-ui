@@ -7,11 +7,16 @@ import { logger } from "../../../core/logger";
 import { resolveStoredPrograms } from "../acp/agentPrograms";
 import {
   AgentSession,
+  MODEL_CATEGORY,
   type AgentSessionDeps,
   type AgentSessionSnapshot,
   type AgentSessionStatus,
 } from "../acp/agentSession";
-import { notifyAgentSession } from "../runtime/agentSessionNotifications";
+import {
+  dismissAgentSessionToast,
+  isViewingAgentSession,
+  notifyAgentSession,
+} from "../runtime/agentSessionNotifications";
 import { useAgentProgramsStore, type AgentProgramProfile } from "./useAgentProgramsStore";
 
 /**
@@ -162,6 +167,11 @@ interface RunningSessionsState {
   stopConfirmKey: string | null;
   /** The session whose composer takes focus once it is ready, or `null`. */
   focusComposerKey: string | null;
+  /**
+   * The sessions that finished a turn or started waiting since the person last had their page
+   * open, by key; never stored.
+   */
+  unseen: Record<string, true>;
 }
 
 /** The agent sessions in memory while the app runs, with their transcripts. */
@@ -169,7 +179,28 @@ export const useRunningAgentSessionsStore = create<RunningSessionsState>(() => (
   sessions: {},
   stopConfirmKey: null,
   focusComposerKey: null,
+  unseen: {},
 }));
+
+/** Marks the session with `key` as having something the person has not seen. */
+function markUnseen(key: string): void {
+  if (isViewingAgentSession(key)) return;
+  if (useRunningAgentSessionsStore.getState().unseen[key]) return;
+  useRunningAgentSessionsStore.setState((state) => ({ unseen: { ...state.unseen, [key]: true } }));
+}
+
+/**
+ * Notes that the person has the page of the session with `key` open: it is no longer unseen, and
+ * its toast goes away.
+ */
+export function markAgentSessionSeen(key: string): void {
+  dismissAgentSessionToast(key);
+  if (!useRunningAgentSessionsStore.getState().unseen[key]) return;
+  useRunningAgentSessionsStore.setState((state) => {
+    const { [key]: _seen, ...unseen } = state.unseen;
+    return { unseen };
+  });
+}
 
 /** What a session reaches outside itself; tests replace these. */
 let sessionDeps: Partial<AgentSessionDeps> = {};
@@ -229,11 +260,13 @@ function follow(key: string, session: AgentSession, startedAt: string): void {
     }
     const title = useAgentSessionsStore.getState().recent.find((item) => item.key === key)?.title;
     if (previous.status !== "waiting" && after.status === "waiting") {
+      markUnseen(key);
       notifyAgentSession({ kind: "waiting", key, agentName: after.name, title: title ?? null });
     } else if (
       (previous.status === "working" || previous.status === "waiting") &&
       after.status === "ready"
     ) {
+      markUnseen(key);
       notifyAgentSession({ kind: "finished", key, agentName: after.name, title: title ?? null });
     }
   });
@@ -348,6 +381,48 @@ export function agentSessionOf(key: string): AgentSession | undefined {
   return useRunningAgentSessionsStore.getState().sessions[key];
 }
 
+/** Keeps `profileId`'s remembered model, which its next sessions switch to. */
+function rememberModel(profileId: string | null, configId: string | null, value: string): void {
+  if (profileId === null) return;
+  const programs = useAgentProgramsStore.getState();
+  if (!programs.profiles.some((profile) => profile.id === profileId)) return;
+  programs.update(profileId, { preferredModel: { configId, value } });
+}
+
+/**
+ * Sets one of the agent's config options in the session with `key`, as the person chose it in
+ * the session's header. A model option is remembered for the agent program's next sessions.
+ *
+ * @returns Whether the agent took it; when it did not, the session says why.
+ */
+export async function chooseAgentSessionOption(
+  key: string,
+  configId: string,
+  value: string,
+): Promise<boolean> {
+  const session = agentSessionOf(key);
+  if (!session) return false;
+  const { configOptions, profileId } = session.getSnapshot();
+  const option = configOptions.find((item) => item.id === configId);
+  const changed = await session.setConfigOption(configId, value);
+  if (changed && option?.category === MODEL_CATEGORY) rememberModel(profileId, configId, value);
+  return changed;
+}
+
+/**
+ * Switches the session with `key` to a model of the agent's older model list, as the person
+ * chose it, and remembers it for the agent program's next sessions.
+ *
+ * @returns Whether the agent took it; when it did not, the session says why.
+ */
+export async function chooseAgentSessionModel(key: string, modelId: string): Promise<boolean> {
+  const session = agentSessionOf(key);
+  if (!session) return false;
+  const changed = await session.setModel(modelId);
+  if (changed) rememberModel(session.getSnapshot().profileId, null, modelId);
+  return changed;
+}
+
 /** Stops the session's program; nothing when it is not running. */
 export async function stopAgentSession(key: string): Promise<void> {
   const { stopConfirmKey } = useRunningAgentSessionsStore.getState();
@@ -377,7 +452,8 @@ export function dismissAgentSession(key: string): void {
   if (!session || isLiveStatus(session.status)) return;
   useRunningAgentSessionsStore.setState((state) => {
     const { [key]: _gone, ...sessions } = state.sessions;
-    return { sessions };
+    const { [key]: _seen, ...unseen } = state.unseen;
+    return { sessions, unseen };
   });
 }
 
@@ -394,6 +470,7 @@ export async function stopAllAgentSessions(): Promise<void> {
     sessions: {},
     stopConfirmKey: null,
     focusComposerKey: null,
+    unseen: {},
   });
   await Promise.all(
     sessions.map((session) =>

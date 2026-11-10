@@ -25,6 +25,7 @@ nothing read.
 | Mentions and replies | Unread mentions and replies across your workspaces | everywhere |
 | Unread | Unread messages per workspace, and See all unread | everywhere |
 | Your agents' runs | The newest runs of the agents connected on this device | the desktop app |
+| Agent sessions | The agents RIM started on this device, running ones first, with New session and All sessions | the desktop app |
 | Direct messages | Your latest direct messages and groups, 3, 5 or 10, with their unread counts | everywhere |
 | Channel | The latest 3, 5 or 10 messages of one channel you pick | everywhere |
 | Quick actions | 1 to 6 buttons, each running a command you chose | where the command runs |
@@ -64,7 +65,7 @@ such as one of a plugin that isn't installed here or one that needs the desktop 
 disabled button with the reason beneath it.
 
 Until you change it, Home shows today's default: Waiting for you, Mentions and replies, Unread,
-and Your agents' runs where agents are connected. The default comes from the app and is not
+Your agents' runs where agents are connected, and Agent sessions in the desktop app. The default comes from the app and is not
 saved: opening Home saves nothing, and your first Done is what saves a layout to your account.
 
 The workspace filter above the boxes still limits every box to one workspace while Home is open.

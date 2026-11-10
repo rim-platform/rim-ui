@@ -174,6 +174,16 @@ export function openAgentTerminal(options: AgentTerminalOptions): Promise<AgentT
   });
 }
 
+/**
+ * Asks the person to choose a folder for an agent to work in, in the system's folder dialog.
+ *
+ * @param start - The folder the dialog opens at, when it is one, or `null`.
+ * @returns The folder's full path, or `null` when the person cancelled.
+ */
+export function pickAgentFolder(start: string | null): Promise<string | null> {
+  return call("agent_runner_pick_folder", { start });
+}
+
 /** @returns The runs that are running, oldest first. */
 export function listAgentRuns(): Promise<AgentRunInfo[]> {
   return call("agent_runner_list");

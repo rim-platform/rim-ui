@@ -183,9 +183,10 @@ describe("HomePage", () => {
     expect(await screen.findByText("Nothing waiting.")).toBeInTheDocument();
     expect(await screen.findByText("No unread mentions or replies.")).toBeInTheDocument();
     expect(screen.getByText("Nothing unread.")).toBeInTheDocument();
+    expect(screen.getByText("No agent sessions yet.")).toBeInTheDocument();
     expect(
       screen.getAllByRole("region").map((region) => region.getAttribute("data-box-id")),
-    ).toEqual(["waiting", "mentions", "unread"]);
+    ).toEqual(["waiting", "mentions", "unread", "agentSessions"]);
   });
 
   it("lists mentions of every workspace newest first, naming the workspace", async () => {

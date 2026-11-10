@@ -23,6 +23,8 @@ vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
 }));
 
 import { queryClient } from "../../../core/query/queryClient";
+import { useToastStore } from "../../../shared/toast/useToastStore";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { queryKeys } from "../../../core/query/keys";
 import { fakeAcpAgent as agent, helloAnswer } from "../../../test/fakeAcpAgent";
 import { useNotificationSettingsStore } from "../../notifications/state/useNotificationSettingsStore";
@@ -32,6 +34,9 @@ import { inQuietHours } from "../runtime/agentSessionNotifications";
 import { useAgentProgramsStore, type AgentProgramProfile } from "./useAgentProgramsStore";
 import {
   agentSessionOf,
+  chooseAgentSessionModel,
+  chooseAgentSessionOption,
+  markAgentSessionSeen,
   migrateRecentSessions,
   reopenAgentSession,
   RECENT_SESSIONS_LIMIT,
@@ -117,6 +122,8 @@ describe("agent sessions store", () => {
     useAgentProgramsStore.setState({ profiles: [] });
     useWorkspaceStore.setState({ workspaceId: null });
     useNotificationSettingsStore.setState({ enabled: true });
+    useToastStore.setState({ toasts: [] });
+    useShellStore.getState().reset();
     queryClient.clear();
     notifications.show.mockClear();
     setAgentSessionDepsForTests({});
@@ -251,6 +258,88 @@ describe("agent sessions store", () => {
     expect(useRunningAgentSessionsStore.getState().sessions).toEqual({});
   });
 
+  describe("the agent's settings", () => {
+    const MODEL_OPTION = {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "sonnet",
+      options: [
+        { value: "sonnet", name: "Sonnet" },
+        { value: "opus", name: "Opus" },
+      ],
+    };
+    const EFFORT_OPTION = {
+      id: "effort",
+      name: "Effort",
+      category: "thought_level",
+      type: "select",
+      currentValue: "high",
+      options: [
+        { value: "low", name: "Low" },
+        { value: "high", name: "High" },
+      ],
+    };
+
+    it("remembers a chosen model for the agent program, and nothing else it sets", async () => {
+      agent
+        .on("session/new", () => ({
+          sessionId: "sess_1",
+          configOptions: [MODEL_OPTION, EFFORT_OPTION],
+        }))
+        .on("session/set_config_option", (params) => {
+          const { configId, value } = params as { configId: string; value: string };
+          return {
+            configOptions: [MODEL_OPTION, EFFORT_OPTION].map((option) =>
+              option.id === configId ? { ...option, currentValue: value } : option,
+            ),
+          };
+        });
+      const key = await started();
+      await expect(chooseAgentSessionOption(key, "effort", "low")).resolves.toBe(true);
+      expect(useAgentProgramsStore.getState().profiles[0].preferredModel ?? null).toBeNull();
+      await expect(chooseAgentSessionOption(key, "model", "opus")).resolves.toBe(true);
+      expect(useAgentProgramsStore.getState().profiles[0].preferredModel).toEqual({
+        configId: "model",
+        value: "opus",
+      });
+    });
+
+    it("remembers nothing when the agent refuses the model", async () => {
+      agent
+        .on("session/new", () => ({ sessionId: "sess_1", configOptions: [MODEL_OPTION] }))
+        .on("session/set_config_option", (_params, id) => {
+          queueMicrotask(() => agent.fail(id, -32603, "No"));
+          return undefined;
+        });
+      const key = await started();
+      await expect(chooseAgentSessionOption(key, "model", "opus")).resolves.toBe(false);
+      expect(useAgentProgramsStore.getState().profiles[0].preferredModel ?? null).toBeNull();
+    });
+
+    it("remembers a model of the older model list", async () => {
+      agent
+        .on("session/new", () => ({
+          sessionId: "sess_1",
+          models: {
+            currentModelId: "m1",
+            availableModels: [
+              { modelId: "m1", name: "One" },
+              { modelId: "m2", name: "Two" },
+            ],
+          },
+        }))
+        .on("session/set_model", () => ({}));
+      const key = await started();
+      await expect(chooseAgentSessionModel(key, "m2")).resolves.toBe(true);
+      expect(useAgentProgramsStore.getState().profiles[0].preferredModel).toEqual({
+        configId: null,
+        value: "m2",
+      });
+    });
+  });
+
   describe("notifications", () => {
     it("says when a turn ends while the window isn't focused, with the title only", async () => {
       answersWith(SECRET);
@@ -264,6 +353,7 @@ describe("agent sessions store", () => {
         extra: { rimAgentSession: { key } },
       });
       expect(JSON.stringify(shown)).not.toContain(SECRET);
+      expect(useToastStore.getState().toasts).toEqual([]);
     });
 
     it("says when the agent starts waiting for the person", async () => {
@@ -286,12 +376,81 @@ describe("agent sessions store", () => {
       expect(JSON.stringify(shown)).not.toContain(SECRET);
     });
 
-    it("says nothing while the window is focused", async () => {
+    it("shows a toast instead while the window is focused, and Open opens the session", async () => {
+      focus.current = true;
+      answersWith(SECRET);
+      const key = await started();
+      await agentSessionOf(key)!.prompt("Summarise the incident");
+      expect(notifications.show).not.toHaveBeenCalled();
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0]).toMatchObject({
+        variant: "info",
+        title: "Fake Agent finished",
+        description: "Summarise the incident",
+        action: { label: "Open" },
+      });
+      expect(JSON.stringify(toasts)).not.toContain(SECRET);
+      toasts[0].action!.onClick();
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key });
+    });
+
+    it("says waiting in a toast, replacing the session's toast before it", async () => {
       focus.current = true;
       answersWith("done");
       const key = await started();
-      await agentSessionOf(key)!.prompt("Go");
+      await agentSessionOf(key)!.prompt("First");
+      agent.on("session/prompt", () => {
+        queueMicrotask(() =>
+          agent.ask(9, "session/request_permission", {
+            sessionId: "sess_1",
+            toolCall: { toolCallId: "c1", title: "Run it" },
+            options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }],
+          }),
+        );
+        return undefined;
+      });
+      void agentSessionOf(key)!.prompt("Second");
+      await vi.waitFor(() => expect(agentSessionOf(key)?.status).toBe("waiting"));
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0]).toMatchObject({
+        variant: "warning",
+        title: "Fake Agent is waiting for you",
+      });
       expect(notifications.show).not.toHaveBeenCalled();
+    });
+
+    it("says nothing while the person is on the session's page", async () => {
+      focus.current = true;
+      answersWith("done");
+      const key = await started();
+      useShellStore.getState().setMainSurface({ kind: "agent-session", key });
+      await agentSessionOf(key)!.prompt("Go");
+      expect(useToastStore.getState().toasts).toEqual([]);
+      expect(notifications.show).not.toHaveBeenCalled();
+      expect(useRunningAgentSessionsStore.getState().unseen).toEqual({});
+    });
+
+    it("shows no toast with notifications off", async () => {
+      focus.current = true;
+      answersWith("done");
+      const key = await started();
+      useNotificationSettingsStore.setState({ enabled: false });
+      await agentSessionOf(key)!.prompt("Go");
+      expect(useToastStore.getState().toasts).toEqual([]);
+    });
+
+    it("marks a session unseen until its page is shown, which also takes its toast away", async () => {
+      focus.current = true;
+      answersWith("done");
+      const key = await started();
+      expect(useRunningAgentSessionsStore.getState().unseen).toEqual({});
+      await agentSessionOf(key)!.prompt("Go");
+      expect(useRunningAgentSessionsStore.getState().unseen).toEqual({ [key]: true });
+      markAgentSessionSeen(key);
+      expect(useRunningAgentSessionsStore.getState().unseen).toEqual({});
+      expect(useToastStore.getState().toasts[0]?.dismissing).toBe(true);
     });
 
     it("says nothing with notifications off or the workspace paused", async () => {

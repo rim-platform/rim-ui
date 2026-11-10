@@ -6,6 +6,7 @@ import { cn } from "../../../shared/ui/cn";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { agentAvailable } from "../../agent/agentAvailability";
 import { AgentRunDialog } from "../../agents/components/AgentRunDialog";
+import { useAgentSessionRows } from "../../agents/components/sessions/useAgentSessionRows";
 import { groupRuns, type AgentRun } from "../../agents/runtime/runs";
 import { useAgentRecordStore } from "../../agents/state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
@@ -70,7 +71,9 @@ export function HomePage() {
   const [openRun, setOpenRun] = useState<string | null>(null);
   const selectedRun = runs.find((run) => runKey(run) === openRun);
 
-  const view = useHomeLayout(agentsShown);
+  const agentSessions = useAgentSessionRows();
+
+  const view = useHomeLayout(agentsShown, agentAvailable());
   const hidden = useHomeHiddenStore((s) => s.hidden);
   const hide = useHomeHiddenStore((s) => s.hide);
   const draft = useHomeEditStore((s) => s.draft);
@@ -109,6 +112,7 @@ export function HomePage() {
     mentions,
     unread,
     runs,
+    agentSessions,
     shownWorkspaces: shown.length,
     labelOf,
     onOpenRun: (run) => setOpenRun(runKey(run)),

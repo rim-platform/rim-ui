@@ -3,6 +3,14 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { registerSealedStore, sealedStateStorage } from "../../../core/accountVault/sealedStorage";
 
+/** The model the person last chose in a session of an agent program. */
+export interface PreferredModel {
+  /** The id of the model config option it was chosen in, or `null` for the agent's older model list. */
+  configId: string | null;
+  /** The model's value, as the agent named it. */
+  value: string;
+}
+
 /** An agent program the person added, which RIM may start. */
 export interface AgentProgramProfile {
   id: string;
@@ -26,11 +34,19 @@ export interface AgentProgramProfile {
   token: string;
   /** When it was added, ISO 8601. */
   addedAt: string;
+  /**
+   * The model the person last chose in one of its sessions, which a new session switches to
+   * when the agent offers it; absent or `null` when none was chosen.
+   */
+  preferredModel?: PreferredModel | null;
 }
 
 /** The fields of a profile the person can change. */
 export type AgentProgramChanges = Partial<
-  Pick<AgentProgramProfile, "name" | "program" | "resolvedProgram" | "args" | "defaultFolder">
+  Pick<
+    AgentProgramProfile,
+    "name" | "program" | "resolvedProgram" | "args" | "defaultFolder" | "preferredModel"
+  >
 >;
 
 interface AgentProgramsState {
@@ -45,6 +61,15 @@ const STORE_VERSION = 0;
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+/** Reads a stored remembered model, or `null` when it is missing or not well formed. */
+function readPreferredModel(value: unknown): PreferredModel | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { configId, value: chosen } = value as Record<string, unknown>;
+  if (!isString(chosen) || chosen === "") return null;
+  if (configId !== null && !isString(configId)) return null;
+  return { configId, value: chosen };
 }
 
 /**
@@ -74,6 +99,7 @@ export function migrateAgentPrograms(persisted: unknown): { profiles: AgentProgr
       agentId: agentId as string,
       token: token as string,
       addedAt: isString(item.addedAt) ? item.addedAt : new Date(0).toISOString(),
+      preferredModel: readPreferredModel(item.preferredModel),
     });
   }
   return { profiles };

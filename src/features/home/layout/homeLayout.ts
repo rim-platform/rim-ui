@@ -32,14 +32,16 @@ export const MAX_BOXES = 30;
  * Today's Home in today's order, which Home shows while nothing is stored.
  *
  * @param agents - Whether Your agents' runs is on Home, as it is where agents are connected.
+ * @param agentSessions - Whether Agent sessions is on Home, as it is in the desktop app.
  */
-export function defaultLayout(agents: boolean): HomeLayoutDoc {
+export function defaultLayout(agents: boolean, agentSessions = false): HomeLayoutDoc {
   const boxes: HomeBox[] = [
     { id: "waiting", kind: "waiting", width: "half" },
     { id: "mentions", kind: "mentions", width: "half" },
     { id: "unread", kind: "unread", width: "half" },
   ];
   if (agents) boxes.push({ id: "agentRuns", kind: "agentRuns", width: "half" });
+  if (agentSessions) boxes.push({ id: "agentSessions", kind: "agentSessions", width: "half" });
   return { version: 1, boxes };
 }
 

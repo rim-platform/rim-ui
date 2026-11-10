@@ -5,6 +5,7 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import type { AcpPreset } from "../acp/acpPresets";
 import { addAgentProgram, editAgentProgram, parseArgsText } from "../acp/agentPrograms";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
+import { AgentFolderField } from "./AgentFolderField";
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
@@ -140,20 +141,12 @@ export function AgentProgramDialog({
           />
           <span className="mt-1 block text-xs text-rim-text-muted">One per line.</span>
         </label>
-        <label className="block">
-          <span className={LABEL_CLASS}>Default folder</span>
-          <input
-            type="text"
-            value={folder}
-            onChange={(event) => setFolder(event.target.value)}
-            placeholder="/home/you/project"
-            spellCheck={false}
-            className={`${FIELD_CLASS} font-mono`}
-          />
-          <span className="mt-1 block text-xs text-rim-text-muted">
-            Optional. The folder&apos;s full path, where sessions start unless you pick another.
-          </span>
-        </label>
+        <AgentFolderField
+          label="Default folder"
+          value={folder}
+          onChange={setFolder}
+          hint="Optional. The folder's full path, where sessions start unless you pick another."
+        />
         <p className="text-xs text-rim-text-muted">
           Saving asks in a system dialog whether RIM may start this program with these arguments.
         </p>

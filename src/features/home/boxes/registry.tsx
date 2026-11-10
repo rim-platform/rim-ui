@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import { agentAvailable } from "../../agent/agentAvailability";
+import { AgentSessionList } from "../../agents/components/sessions/AgentSessionList";
+import type { AgentSessionRows } from "../../agents/components/sessions/useAgentSessionRows";
 import type { AgentRun } from "../../agents/runtime/runs";
 import type { NotificationItem } from "../../notifications/api/useNotifications";
 import type { FailedWorkspace } from "../api/useHomeMentions";
@@ -31,6 +33,8 @@ export interface HomeBoxData {
   };
   unread: readonly WorkspaceUnread[];
   runs: readonly AgentRun[];
+  /** The agent sessions of this device, running first, and how many wait for the person. */
+  agentSessions: AgentSessionRows;
   /** How many workspaces Home shows, after the filter. */
   shownWorkspaces: number;
   labelOf: (workspaceId: string) => string;
@@ -119,6 +123,16 @@ export const BOX_KINDS: readonly BoxKind[] = [
     render: (data) => (
       <AgentRunsBody runs={data.runs} onOpenRun={data.onOpenRun} onAllRuns={data.onAllRuns} />
     ),
+  },
+  {
+    kind: "agentSessions",
+    name: "Agent sessions",
+    description: "The agents RIM started on this device, running ones first",
+    unavailableReason: () => (agentAvailable() ? null : "Agent sessions needs the desktop app"),
+    fromServer: false,
+    count: (data) => (data.agentSessions.waiting > 0 ? data.agentSessions.waiting : null),
+    multiple: false,
+    render: (data) => <AgentSessionList rows={data.agentSessions.rows} />,
   },
   {
     kind: "direct",

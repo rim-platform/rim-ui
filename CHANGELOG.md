@@ -24,6 +24,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Agent sessions in the desktop app: **Browse…** picks a session's folder in the system's folder
+  dialog; the session's header offers the agent's model and its other settings, and remembers the
+  model per agent; a notice with **Open** says when an agent finishes or waits while you're
+  elsewhere in RIM; and an **Agent sessions** box on Home and a top bar button, which counts the
+  sessions waiting for you, list them, running ones first.
 - The AI agent's header switches the model in the open conversation: it lists the models of
   every provider with a key set, the conversation carries on with the new model, and "Switched
   to \<model\>" marks where it changed.

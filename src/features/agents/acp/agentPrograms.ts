@@ -206,6 +206,7 @@ async function saveProfile(input: AllowedProfile): Promise<AgentProgramProfile> 
     agentId: minted.agent.id,
     token: minted.token,
     addedAt: new Date().toISOString(),
+    preferredModel: null,
   };
   useConnectedAgentsStore.getState().add(minted.agent);
   useAgentProgramsStore.getState().add(profile);

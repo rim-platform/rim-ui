@@ -275,11 +275,38 @@ describe("migrateAgentPrograms", () => {
     const { resolvedProgram: _resolved, ...older } = good;
     expect(migrateAgentPrograms({ profiles: [good, older, { id: "p2" }, null, "x"] })).toEqual({
       profiles: [
-        { ...good, args: ["acp"], defaultFolder: null },
-        { ...good, args: ["acp"], defaultFolder: null, resolvedProgram: null },
+        { ...good, args: ["acp"], defaultFolder: null, preferredModel: null },
+        {
+          ...good,
+          args: ["acp"],
+          defaultFolder: null,
+          resolvedProgram: null,
+          preferredModel: null,
+        },
       ],
     });
     expect(migrateAgentPrograms(undefined)).toEqual({ profiles: [] });
     expect(migrateAgentPrograms({ profiles: "x" })).toEqual({ profiles: [] });
+  });
+
+  it("keeps a remembered model and drops one that is not well formed", () => {
+    const base = {
+      id: "p1",
+      name: "Claude",
+      program: "claude-agent-acp",
+      agentId: "a1",
+      token: "rimagent_x",
+    };
+    const read = (preferredModel: unknown) =>
+      migrateAgentPrograms({ profiles: [{ ...base, preferredModel }] }).profiles[0]?.preferredModel;
+    expect(read({ configId: "model", value: "opus" })).toEqual({
+      configId: "model",
+      value: "opus",
+    });
+    expect(read({ configId: null, value: "opus" })).toEqual({ configId: null, value: "opus" });
+    expect(read({ configId: 3, value: "opus" })).toBeNull();
+    expect(read({ configId: "model", value: "" })).toBeNull();
+    expect(read("opus")).toBeNull();
+    expect(read(undefined)).toBeNull();
   });
 });
