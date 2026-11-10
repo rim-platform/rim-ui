@@ -682,3 +682,70 @@ it("cannot reach the post path through any tool", async () => {
   ]);
   for (const call of serviceCalls) expect(call.granted).toEqual(["chat.read"]);
 });
+
+describe("telling the app of a missing grant", () => {
+  let wanted: ReturnType<typeof vi.fn>;
+  let report: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    wanted = vi.fn(() => true);
+    report = vi.fn();
+    deps.missingGrant = { wanted, report };
+  });
+
+  /** Lets the lookup after a refusal finish. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("reports a read of a channel no grant covers, with ids only, after refusing", async () => {
+    expect(await reads().readMessages(BY_ID, args("c2"))).toEqual(DENIED);
+    await settle();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      workspaceId: "w1",
+      conversationId: "c2",
+    });
+  });
+
+  it("reports a read in a workspace with no grant at all", async () => {
+    await reads().readMessages(agentWith({}), args("c1"));
+    await settle();
+    expect(report).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      workspaceId: "w1",
+      conversationId: "c1",
+    });
+  });
+
+  it("reports a search of one channel no grant covers", async () => {
+    await reads().searchMessages(BY_ID, { workspaceId: "w1", channelId: "c2", query: "x" });
+    await settle();
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["dm", "group", "secret", "gone"])(
+    "reports nothing for %s, which no grant could cover",
+    async (id) => {
+      await reads().readMessages(agentWith({}), args(id));
+      await settle();
+      expect(report).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports nothing in a direct space, for a workspace-wide search or a covered read", async () => {
+    await reads().searchMessages(agentWith({}), { workspaceId: "w1", query: "x" });
+    await reads().readMessages(BY_ID, args("c1"));
+    deps.isDirectSpace.mockReturnValue(true);
+    await reads().readMessages(agentWith({}), args("c1"));
+    await settle();
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it("looks nothing up when nothing wants to hear of it", async () => {
+    wanted.mockReturnValue(false);
+    await reads().readMessages(BY_ID, args("c2"));
+    await settle();
+    expect(deps.lookup).not.toHaveBeenCalled();
+    expect(report).not.toHaveBeenCalled();
+  });
+});

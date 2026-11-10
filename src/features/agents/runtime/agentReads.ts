@@ -11,6 +11,7 @@ import { createMessageService, type ChatDeps } from "../../plugins/chat/messageS
 import { ErrorCode, RpcError } from "../../plugins/web/rpc";
 import type { RecordEntry } from "../state/useAgentRecordStore";
 import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
+import type { MissingGrant } from "./grantRefusals";
 import { grantCovers, grantMayCover, hasGrantIn, type GrantChannel } from "./grants";
 
 /** A read's arguments, as the agent sent them. */
@@ -40,6 +41,14 @@ export interface AgentReadsDeps {
   connected: (agentId: string) => boolean;
   /** Keeps an entry. A failure refuses the read. */
   record: (entry: RecordEntry) => Promise<void>;
+  /**
+   * Hears of a read refused only because no grant covers a channel the person could grant, so
+   * the app can offer that grant; ids only. Without it, nothing is told.
+   */
+  missingGrant?: {
+    wanted: (refusal: MissingGrant) => boolean;
+    report: (refusal: MissingGrant) => void;
+  };
 }
 
 /** The running reads, one function per tool. */
@@ -212,6 +221,31 @@ export function createAgentReads(deps: AgentReadsDeps): AgentReads {
     return grantCovers(grantsOf(agent), workspaceId, channel);
   }
 
+  /**
+   * Tells the app of a refusal for a channel the grants do not cover, once the channel is looked
+   * up and is one a grant could cover: a channel, not encrypted, that the person can see. The
+   * refusal itself does not wait for this.
+   */
+  function noteMissingGrant(
+    agent: ConnectedAgent,
+    workspaceId: string | null,
+    channelId: string | null,
+  ): void {
+    const listener = deps.missingGrant;
+    if (!listener || workspaceId === null || channelId === null) return;
+    if (deps.isDirectSpace(workspaceId)) return;
+    const refusal: MissingGrant = { agentId: agent.id, workspaceId, conversationId: channelId };
+    if (!listener.wanted(refusal)) return;
+    void deps
+      .lookup(workspaceId, channelId)
+      .then((channel) => {
+        if (channel === null || !channel.isChannel || channel.encrypted) return;
+        if (grantCovers(grantsOf(agent), workspaceId, channel)) return;
+        listener.report(refusal);
+      })
+      .catch(() => {});
+  }
+
   /** @returns The messages in conversations the grant covers, looking each one up once. */
   async function keepCovered(
     agent: ConnectedAgent,
@@ -282,6 +316,7 @@ export function createAgentReads(deps: AgentReadsDeps): AgentReads {
         channelId === null ||
         !(await covered(agent, workspaceId, channelId))
       ) {
+        noteMissingGrant(agent, workspaceId, channelId);
         return refuse(call, denied());
       }
       let page: PluginMessagePage;
@@ -317,7 +352,10 @@ export function createAgentReads(deps: AgentReadsDeps): AgentReads {
       const allowed = named
         ? await covered(agent, workspaceId, channelId)
         : workspaceGranted(agent, workspaceId);
-      if (workspaceId === null || !allowed) return refuse(call, denied());
+      if (workspaceId === null || !allowed) {
+        if (named) noteMissingGrant(agent, workspaceId, channelId);
+        return refuse(call, denied());
+      }
       const limit = limitOf(args.limit);
       if (limit === null) return refuse(call, failed());
       let hits: PluginChatMessage[];

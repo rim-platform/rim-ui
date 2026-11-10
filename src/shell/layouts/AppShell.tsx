@@ -89,6 +89,7 @@ import { AccountDeletionBanner } from "../../features/account-deletion/component
 import { AuditLogPage } from "../../features/audit/components/AuditLogPage";
 import { AgentSessionPage } from "../../features/agents/components/sessions/AgentSessionPage";
 import { AgentSessionsPage } from "../../features/agents/components/sessions/AgentSessionsPage";
+import { AskAgentHost } from "../../features/agents/components/sessions/AskAgentDialogs";
 import { StartAgentSessionDialogHost } from "../../features/agents/components/sessions/StartAgentSessionDialog";
 import { HomePage } from "../../features/home/components/HomePage";
 import { UnreadsPage } from "../../features/unreads/components/UnreadsPage";
@@ -776,6 +777,7 @@ function WorkspaceShell() {
           <PluginCommandConfirmDialog />
           <CommandArgumentsDialog />
           <StartAgentSessionDialogHost />
+          <AskAgentHost />
           <ConversationActionConfirmHost />
           <WorkspaceActionDialogs />
           <AppCommandDialogs />

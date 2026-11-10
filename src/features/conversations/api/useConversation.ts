@@ -41,6 +41,23 @@ export function findCachedConversation(
 }
 
 /**
+ * A conversation as this app has it cached already: in one of its workspace's lists, else from
+ * its own query. Nothing is fetched.
+ */
+export function knownConversation(
+  qc: QueryClient,
+  workspaceId: string | undefined,
+  conversationId: string | undefined,
+): ConversationSummary | undefined {
+  return (
+    findCachedConversation(qc, workspaceId, conversationId) ??
+    (workspaceId && conversationId
+      ? qc.getQueryData<ConversationSummary>(queryKeys.conversation(workspaceId, conversationId))
+      : undefined)
+  );
+}
+
+/**
  * One conversation by id, including the viewer's membership (`isMember`) and archive state.
  * Works for public channels the viewer has not joined; a private channel the viewer is not in
  * answers `NOT_FOUND`. Asks only once the inbox says whether the viewer is just invited: an

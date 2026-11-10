@@ -51,3 +51,17 @@ export function grantCovers(
   if (channel === null || !channel.isChannel || channel.encrypted) return false;
   return grantMayCover(grants, workspaceId, channel.id);
 }
+
+/**
+ * The grants with one more channel, and nothing else changed: a workspace with "all channels
+ * you can see" already covers it and stays as it is.
+ */
+export function withChannelGrant(
+  grants: AgentGrants,
+  workspaceId: string,
+  channelId: string,
+): AgentGrants {
+  const grant = grantIn(grants, workspaceId) ?? { all: false, channelIds: [] };
+  if (grant.all || grant.channelIds.includes(channelId)) return grants;
+  return { ...grants, [workspaceId]: { all: false, channelIds: [...grant.channelIds, channelId] } };
+}

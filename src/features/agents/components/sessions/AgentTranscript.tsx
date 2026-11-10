@@ -98,6 +98,9 @@ function TranscriptEntry({ item, agentName }: { item: TranscriptItem; agentName:
       return (
         <div className="rounded-lg border border-rim-line bg-rim-panel-soft px-3 py-2">
           <p className="text-xs font-medium text-rim-text-faint">You</p>
+          {item.about !== undefined && (
+            <p className="text-xs text-rim-text-muted">{showInvisibleCharacters(item.about)}</p>
+          )}
           <p className="whitespace-pre-wrap break-words text-sm text-rim-text">{item.text}</p>
         </div>
       );

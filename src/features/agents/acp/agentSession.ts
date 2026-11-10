@@ -43,7 +43,13 @@ export type RimToolsState = "available" | "bridge_off" | "agent_cannot";
 
 /** One entry of a session's transcript, in the order things happened. */
 export type TranscriptItem =
-  | { kind: "user"; id: string; text: string }
+  | {
+      kind: "user";
+      id: string;
+      text: string;
+      /** What the prompt was about, as its chip said, when the person attached something. */
+      about?: string;
+    }
   | {
       kind: "agent_message" | "thought";
       id: string;
@@ -98,6 +104,17 @@ export interface AgentSessionSnapshot {
 export interface AgentSessionDeps {
   openConnection: typeof openAcpConnection;
   bridgeStatus: () => Promise<AgentBridgeStatus>;
+}
+
+/**
+ * What the person attached to a prompt besides their words: links and hints that name what it is
+ * about, never content from RIM.
+ */
+export interface PromptContext {
+  /** What the chip said, kept with the prompt in the transcript. */
+  label: string;
+  /** The blocks sent after the person's text: only `text` and `resource_link`. */
+  blocks: readonly ContentBlock[];
 }
 
 /** What starting a session needs. */
@@ -297,23 +314,28 @@ export class AgentSession {
   /**
    * Sends what the person wrote as the next prompt and waits for the turn to end.
    *
-   * @param text - The person's words; nothing else ever becomes a prompt.
+   * @param text - The person's words; nothing else they type becomes a prompt.
+   * @param context - What the person attached to it, sent after their words.
    * @returns Why the turn ended, or `null` when the run ended during it.
    */
-  async prompt(text: string): Promise<StopReason | null> {
+  async prompt(text: string, context?: PromptContext): Promise<StopReason | null> {
     const { status, sessionId } = this.snapshot;
     const client = this.client;
     if (status !== "ready" || sessionId === null || client === null) {
       throw new Error("The agent can't take a prompt right now.");
     }
     if (text.trim() === "") throw new Error("Write something for the agent first.");
+    const extra = context?.blocks ?? [];
+    if (extra.some((block) => block.type !== "text" && block.type !== "resource_link")) {
+      throw new Error("A prompt can only hold text and links.");
+    }
     this.turnStart = this.snapshot.transcript.length;
-    this.change({
-      status: "working",
-      transcript: [...this.snapshot.transcript, { kind: "user", id: this.itemId(), text }],
-    });
+    const item: TranscriptItem = context
+      ? { kind: "user", id: this.itemId(), text, about: context.label }
+      : { kind: "user", id: this.itemId(), text };
+    this.change({ status: "working", transcript: [...this.snapshot.transcript, item] });
     try {
-      const reason = await client.prompt(sessionId, [{ type: "text", text }]);
+      const reason = await client.prompt(sessionId, [{ type: "text", text }, ...extra]);
       if (this.isOver()) return null;
       if (reason === "cancelled") this.cancelUnfinishedCalls();
       const notice = STOP_NOTICES[reason];

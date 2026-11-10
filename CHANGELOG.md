@@ -46,6 +46,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   command opens to ask for arguments starts with the current topic, slow mode, posting rule or
   notification level, folds optional arguments under **More options**, and a macro's own form
   asks each step with the same fields as its editor, a cleared topic included.
+- **Ask agent…** on a message, and **Ask agent about #channel** on a channel, in the desktop app:
+  pick a running agent session or start one, let the agent read that channel if it can't yet, and
+  write your question; the agent reads the channel or the message itself, under what you let it
+  read. When an agent in a session is refused a channel it can't read, the session offers
+  **Let it read #channel**.
 - Command forms pick people and conversations from fitting lists: the members of a new group or
   channel, or people to invite, by name as chips; Unban lists the people banned, Clear Timeout
   those timed out and Remove Member the conversation's members; a step that archives, unarchives,

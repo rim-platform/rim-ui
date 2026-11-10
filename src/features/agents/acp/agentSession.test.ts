@@ -343,6 +343,50 @@ describe("AgentSession", () => {
     expect(agent.requests("session/prompt")).toHaveLength(0);
   });
 
+  it("sends what the person attached after their words, and keeps its label", async () => {
+    scriptAgent();
+    agent.on("session/prompt", () => ({ stopReason: "end_turn" }));
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p" });
+    const link = {
+      type: "resource_link" as const,
+      uri: "rim://workspace/w/conversation/c",
+      name: "#general in Acme",
+      title: null,
+      mimeType: null,
+    };
+    await subject.prompt("Summarise it", {
+      label: "About: #general",
+      blocks: [link, { type: "text", text: "Use RIM's tools to read it." }],
+    });
+    expect(agent.requests("session/prompt").map((r) => (r.params as never)["prompt"])).toEqual([
+      [
+        { type: "text", text: "Summarise it" },
+        { type: "resource_link", uri: link.uri, name: link.name },
+        { type: "text", text: "Use RIM's tools to read it." },
+      ],
+    ]);
+    expect(subject.transcript[0]).toMatchObject({
+      kind: "user",
+      text: "Summarise it",
+      about: "About: #general",
+    });
+  });
+
+  it("refuses an attachment that is not text or a link, sending nothing", async () => {
+    scriptAgent();
+    const subject = session();
+    await subject.start({ profile: PROFILE, cwd: "/p" });
+    await expect(
+      subject.prompt("Look", {
+        label: "About: a file",
+        blocks: [{ type: "resource", uri: "file:///x", mimeType: null, text: "inline" }],
+      }),
+    ).rejects.toThrow("A prompt can only hold text and links.");
+    expect(agent.requests("session/prompt")).toHaveLength(0);
+    expect(subject.transcript).toEqual([]);
+  });
+
   it("sets a mode the agent offers and follows the agent's own changes", async () => {
     scriptAgent();
     const subject = session();

@@ -1,5 +1,3 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-
 import { detectPlatform } from "../../../../core/runtime/runtime";
 import { Button } from "../../../../shared/ui/Button";
 import { HoverTooltip } from "../../../../shared/ui/HoverTooltip";
@@ -18,6 +16,7 @@ import {
 } from "../../state/useAgentSessionsStore";
 import { useStartAgentSessionStore } from "../../state/useStartAgentSessionStore";
 import { SessionStatusChip } from "./sessionParts";
+import { useStatuses } from "./useSessionStatuses";
 import {
   ADD_PROGRAM_FIRST,
   folderName,
@@ -33,37 +32,6 @@ export function PageBar({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-/**
- * Every session's status, kept current: re-renders whenever one changes.
- *
- * @returns Each key's status.
- */
-function useStatuses(sessions: Record<string, AgentSession>): Record<string, AgentSessionStatus> {
-  const subscribe = useCallback(
-    (listener: () => void) => {
-      const stops = Object.values(sessions).map((session) => session.subscribe(listener));
-      return () => stops.forEach((stop) => stop());
-    },
-    [sessions],
-  );
-  const read = useCallback(
-    () =>
-      Object.entries(sessions)
-        .map(([key, session]) => `${key}=${session.status}`)
-        .join("\n"),
-    [sessions],
-  );
-  const joined = useSyncExternalStore(subscribe, read);
-  return useMemo(() => {
-    const statuses: Record<string, AgentSessionStatus> = {};
-    for (const line of joined === "" ? [] : joined.split("\n")) {
-      const at = line.indexOf("=");
-      statuses[line.slice(0, at)] = line.slice(at + 1) as AgentSessionStatus;
-    }
-    return statuses;
-  }, [joined]);
 }
 
 /** The agent sessions page: the sessions running now and the recent ones. */

@@ -15,6 +15,10 @@ type Grant = AgentGrants[string];
 
 const NO_GRANT: Grant = { all: false, channelIds: [] };
 
+/** What every offer of a read grant says about where what the agent reads goes. */
+export const GRANT_PROVIDER_NOTE =
+  "What it reads goes to the model provider it uses. Once it has the content, RIM can't see or limit where it goes next.";
+
 /** The channels a person can tick: those a grant could cover. */
 function tickable(page: ConversationSummaryPage | undefined) {
   return (page?.items ?? []).filter((channel) => !channel.encryptedAt);
@@ -185,10 +189,7 @@ export function AgentGrantsDialog({
         Encrypted conversations, direct messages and groups stay closed. Agents can&apos;t read
         them.
       </p>
-      <p className="mt-1 text-xs text-rim-text-muted">
-        What it reads goes to the model provider it uses. Once it has the content, RIM can&apos;t
-        see or limit where it goes next.
-      </p>
+      <p className="mt-1 text-xs text-rim-text-muted">{GRANT_PROVIDER_NOTE}</p>
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onClose}>
           Cancel

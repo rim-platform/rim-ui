@@ -7,6 +7,7 @@ import type { MessageItem } from "../../../core/types/messages";
 import {
   CommandInitiator,
   CommandSensitivity,
+  ConversationTypeEnum,
   ServerMemberRoleGql,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
@@ -15,8 +16,10 @@ import { backendCommand, paletteInput, serveHostCommands } from "../../../test/c
 import {
   callsTo,
   graphqlError,
+  makeConversation,
   routeRequests,
 } from "../../conversations/__fixtures__/conversations";
+import type { ConversationSummary } from "../../conversations/types";
 
 const requestMock = vi.fn();
 
@@ -24,6 +27,11 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
     request: (...args: unknown[]) => requestMock(...args),
   },
+}));
+const platform = vi.hoisted(() => ({ current: "web" }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => platform.current,
 }));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
@@ -53,6 +61,7 @@ import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { resetAskAgent, useAskAgentStore } from "../../agents/state/useAskAgentStore";
 import {
   useSelectedMessageStore,
   type SelectedMessageActions,
@@ -858,5 +867,68 @@ describe("useMessageContextMenu — Mark unread from here", () => {
     cleanup();
     await renderMenu(ServerMemberRoleGql.MEMBER, false, { isDeleted: true } as MessageItem);
     expect(labels()).not.toContain(ITEM);
+  });
+});
+
+describe("useMessageContextMenu — ask an agent", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    platform.current = "desktop";
+    serve(ServerMemberRoleGql.MEMBER);
+  });
+
+  afterEach(() => {
+    platform.current = "web";
+    resetAskAgent();
+  });
+
+  /** Opens the menu on a message of `conversation`, which both caches hold. */
+  async function openOn(conversation: ConversationSummary, message?: MessageItem) {
+    const qc = createTestQueryClient();
+    for (const client of [qc, queryClient]) {
+      client.setQueryData(queryKeys.conversations("ws-1"), { items: [conversation] });
+      client.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme" }]);
+    }
+    render(
+      <QueryClientProvider client={qc}>
+        <MessageRow isOwnMessage={false} message={message} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
+        ServerMemberRoleGql.MEMBER,
+      ),
+    );
+    fireEvent.contextMenu(screen.getByTestId("row"));
+  }
+
+  it("asks about the message, through its command, in a channel", async () => {
+    await openOn(makeConversation());
+    expect(labels()).toContain("Ask agent…");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Ask agent…" }));
+    await waitFor(() =>
+      expect(useAskAgentStore.getState().choosing).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        channelName: "general",
+        workspaceName: "Acme",
+      }),
+    );
+  });
+
+  it("is not offered in the web app", async () => {
+    platform.current = "web";
+    await openOn(makeConversation());
+    expect(labels()).not.toContain("Ask agent…");
+  });
+
+  it.each([
+    ["a direct message", { conversationType: ConversationTypeEnum.DIRECT, title: null }],
+    ["a group", { conversationType: ConversationTypeEnum.GROUP, title: "crew" }],
+    ["an encrypted channel", { encryptedAt: "2026-10-01T09:00:00Z" }],
+  ])("is not offered in %s", async (_what, overrides) => {
+    await openOn(makeConversation(overrides));
+    expect(labels()).not.toContain("Ask agent…");
   });
 });

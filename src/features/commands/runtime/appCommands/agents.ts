@@ -1,3 +1,5 @@
+import { queryKeys } from "../../../../core/query/keys";
+import { queryClient } from "../../../../core/query/queryClient";
 import { detectPlatform } from "../../../../core/runtime/runtime";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { toast } from "../../../../shared/toast";
@@ -18,14 +20,22 @@ import {
   isLiveStatus,
   requestStopAgentSession,
 } from "../../../agents/state/useAgentSessionsStore";
+import { askAgent } from "../../../agents/state/useAskAgentStore";
 import { useConnectedAgentsStore } from "../../../agents/state/useConnectedAgentsStore";
+import { cannotAskAbout, type AskSubject } from "../../../agents/runtime/askContext";
+import { knownConversation } from "../../../conversations/api/useConversation";
+import { isDirectSpace } from "../../../relay/state/useRelayStore";
+import type { Server } from "../../../workspaces/api/useMyServers";
 import { useStartAgentSessionStore } from "../../../agents/state/useStartAgentSessionStore";
 import { usePendingPairingStore } from "../../../agents/state/usePendingPairingStore";
 import type { TargetPickerKind } from "../../state/useCommandStore";
 import type { CommandDefinition } from "../../types";
 import type { LocalHandler } from "../commandDispatcher";
+import { currentCommandContext } from "../commandContext";
 import {
   AGENT_ANSWER_COMMAND_IDS,
+  ASK_AGENT_ABOUT_CONVERSATION,
+  ASK_AGENT_ABOUT_MESSAGE,
   APPROVE_AGENT_PAIRING,
   APPROVE_AGENT_REQUEST,
   CONNECT_AGENT,
@@ -36,6 +46,7 @@ import {
   STOP_AGENT_SESSION,
 } from "./agentCommandIds";
 import { localCommand } from "./localCommand";
+import { OPEN_A_CONVERSATION, SELECT_A_MESSAGE, selectedMessageOf } from "./messageContext";
 
 const NO_REQUEST = "No agent is waiting for an answer";
 const NO_PAIRING = "No agent is waiting to connect";
@@ -114,6 +125,54 @@ function forEveryOrOneAgent(every: AgentsSettingsRequest, one: "runs" | "record"
     const agentId = agentIdArg(args);
     if (agentId === undefined) openInAgentsSettings(every);
     else if (stillConnected(agentId)) openInAgentsSettings({ kind: one, agentId });
+  };
+}
+
+/**
+ * What an "Ask agent…" command asks about: the conversation of its context, with the selected
+ * message when `withMessage`. `null`, after saying why, when there is none or it is not a channel
+ * a grant could cover.
+ */
+function askSubjectOf(
+  commandContext: Record<string, unknown> | undefined,
+  withMessage: boolean,
+): AskSubject | null {
+  const ctx = commandContext ?? currentCommandContext();
+  const workspaceId = typeof ctx.workspaceId === "string" ? ctx.workspaceId : undefined;
+  const conversationId = typeof ctx.conversationId === "string" ? ctx.conversationId : undefined;
+  const messageId = withMessage ? (selectedMessageOf(ctx) ?? null) : null;
+  const conversation = knownConversation(queryClient, workspaceId, conversationId);
+  if (!workspaceId || !conversationId || !conversation) {
+    toast.info(OPEN_A_CONVERSATION);
+    return null;
+  }
+  if (withMessage && messageId === null) {
+    toast.info(SELECT_A_MESSAGE);
+    return null;
+  }
+  const refusal = cannotAskAbout(conversation, isDirectSpace(workspaceId));
+  if (refusal !== null) {
+    toast.info(refusal);
+    return null;
+  }
+  const workspaceName = queryClient
+    .getQueryData<Server[]>(queryKeys.myServers())
+    ?.find((server) => server.id === workspaceId)?.name;
+  return {
+    workspaceId,
+    conversationId,
+    messageId,
+    channelName: conversation.title ?? "channel",
+    workspaceName: workspaceName ?? "this workspace",
+  };
+}
+
+/** A command that asks a chosen agent session about a channel, or a message in it. */
+function askAbout(withMessage: boolean): LocalHandler {
+  return (_args, commandContext) => {
+    if (!canStartAgents()) return;
+    const subject = askSubjectOf(commandContext, withMessage);
+    if (subject) askAgent(subject);
   };
 }
 
@@ -196,6 +255,18 @@ export const AGENT_COMMANDS: CommandDefinition[] = [
     "Agents",
     "Stop Agent Session",
     "End the agent program of the session that is open",
+  ),
+  localCommand(
+    ASK_AGENT_ABOUT_MESSAGE,
+    "Agents",
+    "Ask Agent About Message…",
+    "Choose an agent session and write a question about the selected message",
+  ),
+  localCommand(
+    ASK_AGENT_ABOUT_CONVERSATION,
+    "Agents",
+    "Ask Agent About Conversation…",
+    "Choose an agent session and write a question about the open channel",
   ),
 ];
 
@@ -280,6 +351,8 @@ export const AGENT_HANDLERS: Record<string, LocalHandler> = {
     }
     requestStopAgentSession(surface.key);
   },
+  [ASK_AGENT_ABOUT_MESSAGE]: askAbout(true),
+  [ASK_AGENT_ABOUT_CONVERSATION]: askAbout(false),
 };
 
 /** The agent commands that ask for a connected agent in the palette before they run. */
