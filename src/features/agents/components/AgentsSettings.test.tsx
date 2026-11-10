@@ -320,6 +320,7 @@ describe("AgentsSettings", () => {
           id: "profile-1",
           name: "Claude Code",
           program: "claude-agent-acp",
+          resolvedProgram: "/usr/bin/claude-agent-acp",
           args: [],
           defaultFolder: null,
           presetId: "claude-code",
@@ -343,7 +344,7 @@ describe("AgentsSettings", () => {
     expect(useAgentProgramsStore.getState().profiles).toEqual([]);
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("agent_runner_forget", {
-        program: "claude-agent-acp",
+        program: "/usr/bin/claude-agent-acp",
         args: [],
       }),
     );

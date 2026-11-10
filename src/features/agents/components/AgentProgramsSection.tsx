@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { ConfirmActionDialog } from "../../conversations/components/ConfirmActionDialog";
 import { ACP_PRESETS, commandLine, findPreset } from "../acp/acpPresets";
-import { removeAgentProgram } from "../acp/agentPrograms";
+import { removeAgentProgram, resolveStoredPrograms } from "../acp/agentPrograms";
 import { DESKTOP_ONLY_MESSAGE, findAgentPrograms } from "../acp/agentRunner";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { useAgentProgramsStore, type AgentProgramProfile } from "../state/useAgentProgramsStore";
@@ -27,12 +27,12 @@ function isBareName(program: string): boolean {
 /**
  * Looks the programs up on the computer's `PATH`.
  *
- * @returns Each bare name and whether it was found; full paths are left out. Empty when the
+ * @returns Each bare name and the full path it was found at, or `null`. Empty when the
  *   lookup fails.
  */
-function useFound(names: string[]): Map<string, boolean> {
+function useFound(names: string[]): Map<string, string | null> {
   const key = names.join("\n");
-  const [found, setFound] = useState<Map<string, boolean>>(() => new Map());
+  const [found, setFound] = useState<Map<string, string | null>>(() => new Map());
   useEffect(() => {
     const wanted = key === "" ? [] : key.split("\n");
     if (wanted.length === 0) return;
@@ -40,7 +40,7 @@ function useFound(names: string[]): Map<string, boolean> {
     findAgentPrograms(wanted)
       .then((paths) => {
         if (!live) return;
-        setFound(new Map(wanted.map((name, index) => [name, paths[index] != null])));
+        setFound(new Map(wanted.map((name, index) => [name, paths[index] ?? null])));
       })
       .catch(() => {
         if (live) setFound(new Map());
@@ -50,6 +50,28 @@ function useFound(names: string[]): Map<string, boolean> {
     };
   }, [key]);
   return found;
+}
+
+/**
+ * What a profile's row says of its program: `found` where the lookup finds it at the path that
+ * was allowed, `not_found` where it does not, `add_again` for a stored profile whose allowed
+ * path is not known, and `unknown` for a full path or before the lookup answers.
+ */
+type ProgramState = "found" | "not_found" | "add_again" | "unknown";
+
+const STATE_LABELS: Record<Exclude<ProgramState, "unknown">, string> = {
+  found: "Found",
+  not_found: "Not found",
+  add_again: "Not found, add it again",
+};
+
+function programState(
+  profile: AgentProgramProfile,
+  found: Map<string, string | null>,
+): ProgramState {
+  if (profile.resolvedProgram === null) return "add_again";
+  if (!isBareName(profile.program) || !found.has(profile.program)) return "unknown";
+  return found.get(profile.program) === profile.resolvedProgram ? "found" : "not_found";
 }
 
 /** Settings > Agents, Agents RIM can start: the agent programs RIM may start, and adding more. */
@@ -76,13 +98,23 @@ function ProgramList() {
     return [...new Set(all.filter(isBareName))].sort();
   }, [profiles]);
   const found = useFound(names);
+  const unresolved = profiles.some((profile) => profile.resolvedProgram === null);
+
+  useEffect(() => {
+    if (unresolved) void resolveStoredPrograms();
+  }, [unresolved]);
 
   const menuItems = [
     ...ACP_PRESETS.map((preset) => ({
       id: preset.id,
       label: preset.name,
-      detail: found.get(preset.program) === false ? "Not found" : undefined,
-      onSelect: () => setDialog({ mode: "add", preset, found: found.get(preset.program) ?? null }),
+      detail: found.get(preset.program) === null ? "Not found" : undefined,
+      onSelect: () =>
+        setDialog({
+          mode: "add",
+          preset,
+          found: found.has(preset.program) ? found.get(preset.program) != null : null,
+        }),
     })),
     {
       id: "custom",
@@ -132,7 +164,7 @@ function ProgramList() {
             <ProgramRow
               key={profile.id}
               profile={profile}
-              found={isBareName(profile.program) ? found.get(profile.program) : undefined}
+              found={programState(profile, found)}
               onEdit={() => setDialog({ mode: "edit", profile })}
               onRemove={() => setRemoving(profile)}
             />
@@ -180,8 +212,7 @@ function ProgramRow({
   onRemove,
 }: {
   profile: AgentProgramProfile;
-  /** Whether the program was found, or `undefined` when unknown or a full path. */
-  found: boolean | undefined;
+  found: ProgramState;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -193,15 +224,15 @@ function ProgramRow({
         <div className="min-w-0 flex-1 basis-48 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="break-words text-sm font-medium text-rim-text">{name}</span>
-            {found !== undefined && (
+            {found !== "unknown" && (
               <span
                 className={
-                  found
+                  found === "found"
                     ? "rounded-full border border-rim-success/30 px-2 text-xs text-rim-success"
                     : "rounded-full border border-rim-warm/30 px-2 text-xs text-rim-warm"
                 }
               >
-                {found ? "Found" : "Not found"}
+                {STATE_LABELS[found]}
               </span>
             )}
           </div>
@@ -233,7 +264,7 @@ function ProgramRow({
           </Button>
         </div>
       </div>
-      {found === false && preset && (
+      {found === "not_found" && preset && (
         <div className="mt-3 space-y-2 border-t border-rim-line pt-3">
           <HintLine hint={preset.install} label="install command" />
           <HintLine hint={preset.signIn} label="sign-in command" />

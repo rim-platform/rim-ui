@@ -8,7 +8,7 @@ import { logger } from "../../../core/logger";
 import { fakeAcpAgent as agent, helloAnswer } from "../../../test/fakeAcpAgent";
 import type { AgentBridgeStatus } from "../api/agentBridge";
 import type { AgentProgramProfile } from "../state/useAgentProgramsStore";
-import { AgentSession, type AgentSessionStatus } from "./agentSession";
+import { ADD_AGAIN, AgentSession, type AgentSessionStatus } from "./agentSession";
 
 const TOKEN = "rimagent_session-test-token-0123456789abcdefghijklmnop";
 
@@ -16,6 +16,7 @@ const PROFILE: AgentProgramProfile = {
   id: "profile-1",
   name: "Fake Agent",
   program: "fake-agent",
+  resolvedProgram: "/usr/local/bin/fake-agent",
   args: ["acp"],
   defaultFolder: "/home/a/project",
   presetId: null,
@@ -83,7 +84,7 @@ describe("AgentSession", () => {
     const seen = statuses(subject);
     await subject.start({ profile: PROFILE, cwd: "/home/a/project" });
     expect(agent.startAgentRun).toHaveBeenCalledWith({
-      program: "fake-agent",
+      program: "/usr/local/bin/fake-agent",
       args: ["acp"],
       cwd: "/home/a/project",
     });
@@ -143,6 +144,14 @@ describe("AgentSession", () => {
       "Fake Agent needs you to sign in first. Sign in once: run codex login in a terminal, or set CODEX_API_KEY.",
     );
     expect(agent.stopAgentRun).toHaveBeenCalled();
+  });
+
+  it("fails without starting anything when the profile's full path is not known", async () => {
+    const subject = session();
+    await subject.start({ profile: { ...PROFILE, resolvedProgram: null }, cwd: "/p" });
+    expect(subject.status).toBe("failed");
+    expect(subject.getSnapshot().error).toBe(ADD_AGAIN);
+    expect(agent.startAgentRun).not.toHaveBeenCalled();
   });
 
   it("fails when the program does not start", async () => {

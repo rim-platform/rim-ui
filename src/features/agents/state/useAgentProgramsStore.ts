@@ -10,6 +10,11 @@ export interface AgentProgramProfile {
   name: string;
   /** A full path, or a bare name looked up on the computer's `PATH`. */
   program: string;
+  /**
+   * The program's full path as the runner's allowed list holds it, which RIM starts, or `null`
+   * for a profile stored before RIM kept it and not yet found again.
+   */
+  resolvedProgram: string | null;
   args: string[];
   /** The folder a session starts in unless the person picks another, a full path. */
   defaultFolder: string | null;
@@ -25,7 +30,7 @@ export interface AgentProgramProfile {
 
 /** The fields of a profile the person can change. */
 export type AgentProgramChanges = Partial<
-  Pick<AgentProgramProfile, "name" | "program" | "args" | "defaultFolder">
+  Pick<AgentProgramProfile, "name" | "program" | "resolvedProgram" | "args" | "defaultFolder">
 >;
 
 interface AgentProgramsState {
@@ -55,18 +60,20 @@ export function migrateAgentPrograms(persisted: unknown): { profiles: AgentProgr
   const profiles: AgentProgramProfile[] = [];
   for (const item of stored as Partial<Record<keyof AgentProgramProfile, unknown>>[]) {
     if (typeof item !== "object" || item === null) continue;
-    const { id, name, program, args, defaultFolder, presetId, agentId, token, addedAt } = item;
+    const { id, name, program, resolvedProgram, args, defaultFolder, presetId, agentId, token } =
+      item;
     if (![id, name, program, agentId, token].every(isString)) continue;
     profiles.push({
       id: id as string,
       name: name as string,
       program: program as string,
+      resolvedProgram: isString(resolvedProgram) && resolvedProgram !== "" ? resolvedProgram : null,
       args: Array.isArray(args) ? args.filter(isString) : [],
       defaultFolder: isString(defaultFolder) && defaultFolder !== "" ? defaultFolder : null,
       presetId: isString(presetId) ? presetId : null,
       agentId: agentId as string,
       token: token as string,
-      addedAt: isString(addedAt) ? addedAt : new Date(0).toISOString(),
+      addedAt: isString(item.addedAt) ? item.addedAt : new Date(0).toISOString(),
     });
   }
   return { profiles };

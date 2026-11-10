@@ -126,6 +126,10 @@ const INITIAL: AgentSessionSnapshot = {
   stderrTail: [],
 };
 
+/** Why a profile stored without its program's full path cannot start. */
+export const ADD_AGAIN =
+  "RIM can't tell which program to start. Remove this agent and add it again.";
+
 /** The JSON-RPC code an agent answers `session/new` with when it needs signing in. */
 const AUTH_REQUIRED = -32000;
 
@@ -208,11 +212,12 @@ export class AgentSession {
     if (this.started) throw new Error("This session has already started.");
     this.started = true;
     this.change({ status: "starting", profileId: profile.id, name: profile.name, cwd });
-    const { token } = profile;
+    const { token, resolvedProgram } = profile;
     try {
+      if (resolvedProgram === null) throw new Error(ADD_AGAIN);
       const bridge = await this.deps.bridgeStatus().catch(() => null);
       const connection = await this.deps.openConnection({
-        program: profile.program,
+        program: resolvedProgram,
         args: profile.args,
         cwd,
       });

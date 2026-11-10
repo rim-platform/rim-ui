@@ -12,7 +12,12 @@ import {
   type AgentProgramChanges,
   type AgentProgramProfile,
 } from "../state/useAgentProgramsStore";
-import { allowAgentProgram, forgetAgentProgram } from "./agentRunner";
+import {
+  allowAgentProgram,
+  allowedAgentPrograms,
+  findAgentPrograms,
+  forgetAgentProgram,
+} from "./agentRunner";
 
 /** What adding a program needs. */
 export interface NewAgentProgram {
@@ -30,6 +35,8 @@ export type AllowOutcome = "added" | "changed" | "refused";
 export const NAME_NEEDED = "Give it a name.";
 /** The sentence for an empty program. */
 export const PROGRAM_NEEDED = "Choose the program to start.";
+/** The sentence when RIM cannot tell which full path the person allowed. */
+export const NOT_RESOLVED = "RIM could not tell which program was allowed. Try adding it again.";
 /** The sentence for a folder that is not a full path. */
 export const FOLDER_NOT_FULL = "Write the folder's full path, or leave it empty.";
 
@@ -64,14 +71,66 @@ function sameArgs(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((arg, index) => arg === b[index]);
 }
 
+/** The program's file name without a Windows extension, in lower case on Windows paths. */
+function baseName(path: string): string {
+  const name = path.split(/[\\/]/u).pop() ?? path;
+  return /\\/u.test(path) ? name.replace(/\.[^.]*$/u, "").toLowerCase() : name;
+}
+
+/**
+ * The full path the runner's allowed list holds for this program and exactly these arguments:
+ * the program itself when it is a full path, otherwise where the runner finds it on `PATH`, or
+ * the one allowed entry with these arguments and its name.
+ *
+ * @returns The full path, or `null` when the list holds no such entry.
+ */
+export async function resolveAllowedProgram(
+  program: string,
+  args: readonly string[],
+): Promise<string | null> {
+  const entries = (await allowedAgentPrograms()).filter((entry) => sameArgs(entry.args, args));
+  if (isFullPath(program)) {
+    return entries.some((entry) => entry.program === program) ? program : null;
+  }
+  const [found] = await findAgentPrograms([program]);
+  if (found && entries.some((entry) => entry.program === found)) return found;
+  const named = entries.filter((entry) => baseName(entry.program) === baseName(program));
+  return named.length === 1 ? named[0].program : null;
+}
+
+/** What a profile's program is on the allowed list: its full path once known. */
+function allowedProgramOf(profile: Pick<AgentProgramProfile, "program" | "resolvedProgram">) {
+  return profile.resolvedProgram ?? profile.program;
+}
+
 /** Whether a profile other than `exceptId` starts this program with these arguments. */
 function pairInUse(program: string, args: readonly string[], exceptId: string): boolean {
   return useAgentProgramsStore
     .getState()
     .profiles.some(
       (profile) =>
-        profile.id !== exceptId && profile.program === program && sameArgs(profile.args, args),
+        profile.id !== exceptId &&
+        allowedProgramOf(profile) === program &&
+        sameArgs(profile.args, args),
     );
+}
+
+/**
+ * Asks about a program in the native dialog and finds the full path the person allowed.
+ *
+ * @returns The full path, or `null` when the person did not allow it. Throws
+ *   {@link NOT_RESOLVED} when the path cannot be told, after taking the pair off the list
+ *   unless another profile starts it.
+ */
+async function allowAndResolve(program: string, args: string[]): Promise<string | null> {
+  if (!(await allowAgentProgram(program, args))) return null;
+  const resolved = await resolveAllowedProgram(program, args).catch(() => null);
+  if (resolved !== null) return resolved;
+  const inUse = useAgentProgramsStore
+    .getState()
+    .profiles.some((profile) => profile.program === program && sameArgs(profile.args, args));
+  if (!inUse) await forgetAgentProgram(program, args).catch(() => {});
+  throw new Error(NOT_RESOLVED);
 }
 
 /**
@@ -104,13 +163,15 @@ export async function addAgentProgram(input: NewAgentProgram): Promise<AgentProg
   const program = cleanProgram(input.program);
   const args = [...input.args];
   const defaultFolder = cleanFolder(input.defaultFolder);
-  if (!(await allowAgentProgram(program, args))) return null;
+  const resolvedProgram = await allowAndResolve(program, args);
+  if (resolvedProgram === null) return null;
   const minted = await mintAgent(name);
   if (minted === null) throw new Error(NAME_NEEDED);
   const profile: AgentProgramProfile = {
     id: crypto.randomUUID(),
     name: minted.agent.name,
     program,
+    resolvedProgram,
     args,
     defaultFolder,
     presetId: input.presetId,
@@ -148,12 +209,16 @@ export async function editAgentProgram(
   const args = changes.args !== undefined ? [...changes.args] : current.args;
   const commandChanged = program !== current.program || !sameArgs(args, current.args);
   if (commandChanged) {
-    if (!(await allowAgentProgram(program, args))) return "refused";
+    const resolvedProgram = await allowAndResolve(program, args);
+    if (resolvedProgram === null) return "refused";
     next.program = program;
+    next.resolvedProgram = resolvedProgram;
     next.args = args;
   }
   useAgentProgramsStore.getState().update(id, next);
-  if (commandChanged) await forgetPair(current.program, current.args, id);
+  if (next.name !== undefined)
+    useConnectedAgentsStore.getState().rename(current.agentId, next.name);
+  if (commandChanged) await forgetPair(allowedProgramOf(current), current.args, id);
   return "changed";
 }
 
@@ -169,7 +234,23 @@ export async function removeAgentProgram(id: string): Promise<boolean> {
   if (!profile) return true;
   useConnectedAgentsStore.getState().revoke(profile.agentId);
   useAgentProgramsStore.getState().remove(id);
-  return forgetPair(profile.program, profile.args, id);
+  return forgetPair(allowedProgramOf(profile), profile.args, id);
+}
+
+/**
+ * Finds the full path of each stored profile that has none, through the runner's allowed list.
+ * A profile that cannot be resolved keeps `null` and has to be added again.
+ */
+export async function resolveStoredPrograms(): Promise<void> {
+  const missing = useAgentProgramsStore
+    .getState()
+    .profiles.filter((profile) => profile.resolvedProgram === null);
+  for (const profile of missing) {
+    const resolved = await resolveAllowedProgram(profile.program, profile.args).catch(() => null);
+    if (resolved !== null) {
+      useAgentProgramsStore.getState().update(profile.id, { resolvedProgram: resolved });
+    }
+  }
 }
 
 /** @returns The profile whose agent is `agentId`, or `undefined`. */

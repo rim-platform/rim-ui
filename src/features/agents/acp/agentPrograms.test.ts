@@ -2,13 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runner = vi.hoisted(() => ({
   calls: [] as string[],
+  allowed: [] as { program: string; args: string[] }[],
   allowAgentProgram: vi.fn(),
   forgetAgentProgram: vi.fn(),
+  allowedAgentPrograms: vi.fn(),
+  findAgentPrograms: vi.fn(),
 }));
 vi.mock("./agentRunner", () => ({
   allowAgentProgram: runner.allowAgentProgram,
   forgetAgentProgram: runner.forgetAgentProgram,
+  allowedAgentPrograms: runner.allowedAgentPrograms,
+  findAgentPrograms: runner.findAgentPrograms,
 }));
+
+/** Where the fake runner finds a program: a full path as it is, a name in /usr/bin. */
+function resolve(program: string): string {
+  return program.startsWith("/") ? program : `/usr/bin/${program}`;
+}
 
 import { logger } from "../../../core/logger";
 import { sha256Base64Url } from "../runtime/agentCrypto";
@@ -21,6 +31,8 @@ import { useConnectedAgentsStore } from "../state/useConnectedAgentsStore";
 import {
   FOLDER_NOT_FULL,
   NAME_NEEDED,
+  NOT_RESOLVED,
+  resolveStoredPrograms,
   addAgentProgram,
   disconnectAgent,
   editAgentProgram,
@@ -42,14 +54,22 @@ describe("agent programs", () => {
     useAgentProgramsStore.setState({ profiles: [] });
     useConnectedAgentsStore.setState({ agents: [] });
     runner.calls = [];
+    runner.allowed = [];
     runner.allowAgentProgram.mockReset().mockImplementation((program: string, args: string[]) => {
       runner.calls.push(`allow ${[program, ...args].join(" ")}`);
+      runner.allowed.push({ program: resolve(program), args });
       return Promise.resolve(true);
     });
     runner.forgetAgentProgram.mockReset().mockImplementation((program: string, args: string[]) => {
       runner.calls.push(`forget ${[program, ...args].join(" ")}`);
       return Promise.resolve();
     });
+    runner.allowedAgentPrograms
+      .mockReset()
+      .mockImplementation(() => Promise.resolve(runner.allowed));
+    runner.findAgentPrograms
+      .mockReset()
+      .mockImplementation((names: string[]) => Promise.resolve(names.map(resolve)));
     logged.length = 0;
     for (const level of ["debug", "warn", "error"] as const) {
       vi.spyOn(logger, level).mockImplementation((...args: unknown[]) => {
@@ -74,6 +94,7 @@ describe("agent programs", () => {
     expect(stored).toMatchObject({
       name: "Claude Code",
       program: "claude-agent-acp",
+      resolvedProgram: "/usr/bin/claude-agent-acp",
       args: [],
       defaultFolder: "/home/a/project",
       presetId: "claude-code",
@@ -121,10 +142,11 @@ describe("agent programs", () => {
     ).resolves.toBe("changed");
     expect(runner.calls).toEqual([
       "allow /opt/claude-agent-acp --verbose",
-      "forget claude-agent-acp",
+      "forget /usr/bin/claude-agent-acp",
     ]);
     expect(useAgentProgramsStore.getState().profiles[0]).toMatchObject({
       program: "/opt/claude-agent-acp",
+      resolvedProgram: "/opt/claude-agent-acp",
       args: ["--verbose"],
       token: profile.token,
       agentId: profile.agentId,
@@ -140,7 +162,21 @@ describe("agent programs", () => {
     expect(useAgentProgramsStore.getState().profiles[0].args).toEqual([]);
   });
 
-  it("changes the name and folder without asking", async () => {
+  it("adds nothing it cannot tell the allowed path of, and takes the pair off the list", async () => {
+    runner.allowedAgentPrograms.mockResolvedValue([]);
+    await expect(addAgentProgram(CLAUDE)).rejects.toThrow(NOT_RESOLVED);
+    expect(runner.calls).toEqual(["allow claude-agent-acp", "forget claude-agent-acp"]);
+    expect(useAgentProgramsStore.getState().profiles).toEqual([]);
+    expect(useConnectedAgentsStore.getState().agents).toEqual([]);
+  });
+
+  it("takes the one allowed entry with the program's name when the lookup finds another", async () => {
+    runner.findAgentPrograms.mockResolvedValue(["/home/a/.local/bin/claude-agent-acp"]);
+    const profile = await addAgentProgram(CLAUDE);
+    expect(profile?.resolvedProgram).toBe("/usr/bin/claude-agent-acp");
+  });
+
+  it("changes the name and folder without asking, and renames the agent", async () => {
     const profile = (await addAgentProgram(CLAUDE)) as AgentProgramProfile;
     runner.calls = [];
     await editAgentProgram(profile.id, {
@@ -154,6 +190,7 @@ describe("agent programs", () => {
       name: "Claude at work",
       defaultFolder: null,
     });
+    expect(useConnectedAgentsStore.getState().agents[0].name).toBe("Claude at work");
   });
 
   it("removes a profile, disconnects its agent and forgets its command line", async () => {
@@ -161,7 +198,31 @@ describe("agent programs", () => {
     await expect(removeAgentProgram(profile.id)).resolves.toBe(true);
     expect(useAgentProgramsStore.getState().profiles).toEqual([]);
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
-    expect(runner.calls).toEqual(["allow claude-agent-acp", "forget claude-agent-acp"]);
+    expect(runner.calls).toEqual(["allow claude-agent-acp", "forget /usr/bin/claude-agent-acp"]);
+  });
+
+  it("finds the full path of a stored profile that has none, or leaves it to be added again", async () => {
+    const base = (await addAgentProgram(CLAUDE)) as AgentProgramProfile;
+    useAgentProgramsStore.setState({
+      profiles: [
+        { ...base, resolvedProgram: null },
+        { ...base, id: "gone", program: "uninstalled-agent", resolvedProgram: null },
+      ],
+    });
+    await resolveStoredPrograms();
+    expect(useAgentProgramsStore.getState().profiles.map((p) => p.resolvedProgram)).toEqual([
+      "/usr/bin/claude-agent-acp",
+      null,
+    ]);
+  });
+
+  it("removes a profile stored without its full path", async () => {
+    const profile = (await addAgentProgram(CLAUDE)) as AgentProgramProfile;
+    useAgentProgramsStore.setState({ profiles: [{ ...profile, resolvedProgram: null }] });
+    runner.forgetAgentProgram.mockRejectedValue(new Error("claude-agent-acp was not found."));
+    await expect(removeAgentProgram(profile.id)).resolves.toBe(false);
+    expect(useAgentProgramsStore.getState().profiles).toEqual([]);
+    expect(useConnectedAgentsStore.getState().agents).toEqual([]);
   });
 
   it("keeps a command line another profile still starts", async () => {
@@ -203,6 +264,7 @@ describe("migrateAgentPrograms", () => {
       id: "p1",
       name: "Goose",
       program: "goose",
+      resolvedProgram: "/usr/bin/goose",
       args: ["acp", 3],
       defaultFolder: "",
       presetId: "goose",
@@ -210,8 +272,12 @@ describe("migrateAgentPrograms", () => {
       token: "rimagent_x",
       addedAt: "2026-11-10T10:00:00.000Z",
     };
-    expect(migrateAgentPrograms({ profiles: [good, { id: "p2" }, null, "x"] })).toEqual({
-      profiles: [{ ...good, args: ["acp"], defaultFolder: null }],
+    const { resolvedProgram: _resolved, ...older } = good;
+    expect(migrateAgentPrograms({ profiles: [good, older, { id: "p2" }, null, "x"] })).toEqual({
+      profiles: [
+        { ...good, args: ["acp"], defaultFolder: null },
+        { ...good, args: ["acp"], defaultFolder: null, resolvedProgram: null },
+      ],
     });
     expect(migrateAgentPrograms(undefined)).toEqual({ profiles: [] });
     expect(migrateAgentPrograms({ profiles: "x" })).toEqual({ profiles: [] });

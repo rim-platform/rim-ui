@@ -6,6 +6,7 @@ const runner = vi.hoisted(() => ({
   findAgentPrograms: vi.fn(),
   allowAgentProgram: vi.fn(),
   forgetAgentProgram: vi.fn(),
+  allowedAgentPrograms: vi.fn(),
 }));
 vi.mock("../acp/agentRunner", () => ({
   DESKTOP_ONLY_MESSAGE: "Starting agents needs the desktop app",
@@ -28,6 +29,7 @@ const PROFILE: AgentProgramProfile = {
   id: "p1",
   name: "Claude Code",
   program: "claude-agent-acp",
+  resolvedProgram: "/usr/bin/claude-agent-acp",
   args: [],
   defaultFolder: "/home/a/project",
   presetId: "claude-code",
@@ -47,6 +49,16 @@ describe("AgentProgramsSection", () => {
         Promise.resolve(names.map((name) => (name === "gemini" ? `/usr/bin/${name}` : null))),
       );
     runner.allowAgentProgram.mockReset().mockResolvedValue(true);
+    runner.allowedAgentPrograms.mockReset().mockImplementation(() =>
+      Promise.resolve(
+        [...new Set(runner.allowAgentProgram.mock.calls.map((call) => JSON.stringify(call)))].map(
+          (call) => {
+            const [program, args] = JSON.parse(call) as [string, string[]];
+            return { program: `/usr/bin/${program}`, args };
+          },
+        ),
+      ),
+    );
     runner.forgetAgentProgram.mockReset().mockResolvedValue(undefined);
   });
 
@@ -66,6 +78,7 @@ describe("AgentProgramsSection", () => {
           id: "p2",
           name: "Gemini",
           program: "gemini",
+          resolvedProgram: "/usr/bin/gemini",
           args: ["--acp"],
           defaultFolder: null,
           presetId: "gemini-cli",
@@ -75,7 +88,16 @@ describe("AgentProgramsSection", () => {
           id: "p3",
           name: "Mine",
           program: "/opt/my agent",
+          resolvedProgram: "/opt/my agent",
           args: ["a b"],
+          presetId: null,
+        },
+        {
+          ...PROFILE,
+          id: "p4",
+          name: "Old",
+          program: "old-agent",
+          resolvedProgram: null,
           presetId: null,
         },
       ],
@@ -97,6 +119,8 @@ describe("AgentProgramsSection", () => {
     expect(within(rows[1]).getByText("No default folder")).toBeInTheDocument();
     expect(within(rows[2]).getByText('"/opt/my agent" "a b"')).toBeInTheDocument();
     expect(within(rows[2]).queryByText(/found/iu)).not.toBeInTheDocument();
+    expect(within(rows[3]).getByText("Not found, add it again")).toBeInTheDocument();
+    expect(runner.allowedAgentPrograms).toHaveBeenCalled();
     expect(runner.findAgentPrograms).toHaveBeenCalledWith(
       expect.not.arrayContaining(["/opt/my agent"]),
     );
@@ -119,7 +143,12 @@ describe("AgentProgramsSection", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(runner.allowAgentProgram).toHaveBeenCalledWith("codex-acp", []);
     expect(useAgentProgramsStore.getState().profiles).toMatchObject([
-      { name: "Codex", program: "codex-acp", presetId: "codex" },
+      {
+        name: "Codex",
+        program: "codex-acp",
+        resolvedProgram: "/usr/bin/codex-acp",
+        presetId: "codex",
+      },
     ]);
   });
 
@@ -170,8 +199,16 @@ describe("AgentProgramsSection", () => {
     expect(useAgentProgramsStore.getState().profiles).toEqual([]);
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
     await waitFor(() =>
-      expect(runner.forgetAgentProgram).toHaveBeenCalledWith("claude-agent-acp", []),
+      expect(runner.forgetAgentProgram).toHaveBeenCalledWith("/usr/bin/claude-agent-acp", []),
     );
+  });
+
+  it("says Not found when the lookup finds the program elsewhere than where it was allowed", async () => {
+    useAgentProgramsStore.setState({
+      profiles: [{ ...PROFILE, program: "gemini", resolvedProgram: "/opt/old/gemini" }],
+    });
+    render(<AgentProgramsSection />);
+    expect(await screen.findByText("Not found")).toBeInTheDocument();
   });
 
   it("edits a program's name without asking again", async () => {
