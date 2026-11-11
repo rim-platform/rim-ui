@@ -17,6 +17,9 @@ accepted = [
   "OpenSSL",
   # The Mozilla root certificates in webpki-root-certs.
   "CDLA-Permissive-2.0",
+  # SQLite's public-domain dedication and libtomcrypt, both in the SQLCipher of sqlcipher-src.
+  "blessing",
+  "WTFPL",
 ]
 # Test-only crates never ship.
 ignore-dev-dependencies = true
