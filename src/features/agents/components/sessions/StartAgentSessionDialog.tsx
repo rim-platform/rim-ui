@@ -104,7 +104,7 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
             start();
           }}
         >
-          <fieldset className="space-y-1">
+          <fieldset className="min-w-0 space-y-1">
             <legend className={LABEL_CLASS}>Agent</legend>
             {profiles.map((profile) => {
               const reason = unavailable(profile, found);
@@ -135,7 +135,10 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
                     <span className="block text-sm text-rim-text">
                       {showInvisibleCharacters(profile.name)}
                     </span>
-                    <code className="block truncate font-mono text-xs text-rim-text-muted">
+                    <code
+                      title={commandLine(profile.program, profile.args)}
+                      className="block truncate font-mono text-xs text-rim-text-muted"
+                    >
                       {commandLine(profile.program, profile.args)}
                     </code>
                     {reason && <span className="block text-xs text-rim-warm">{reason}</span>}
