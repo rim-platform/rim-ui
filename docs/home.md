@@ -98,8 +98,8 @@ Edit Home, on Home or in the command palette, turns each box into one you can ch
 Edit Home is a command of this app only. It is not offered to keybinds, and nothing that runs
 commands, such as a macro, a pipeline or an agent, can change your Home.
 
-Under 760 pixels of room the boxes stand in one column; from there in two, with a full box across
-both.
+Home grows with the window up to 1536 pixels wide, then stays centred. Under 760 pixels of room
+the boxes stand in one column; from there in two, with a full box across both.
 
 ## What each device keeps
 
