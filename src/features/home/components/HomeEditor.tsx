@@ -276,7 +276,7 @@ export function HomeEditor({ draft, saved }: { draft: HomeLayoutDoc; saved: Home
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl space-y-4 px-4 py-5 sm:px-6">
+          <div className="mx-auto max-w-[96rem] space-y-4 px-4 py-5 sm:px-6">
             <header className="flex flex-wrap items-center gap-2">
               <p className="min-w-0 basis-full text-sm text-rim-text-muted sm:basis-0 sm:flex-1">
                 Changes save to your account when you press Done
