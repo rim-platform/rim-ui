@@ -182,10 +182,7 @@ function SearchField({ narrow }: { narrow: boolean }) {
 function PluginsButton({ narrow }: { narrow: boolean }) {
   const { data: plugins } = usePluginList();
   const pluginPanels = runningPluginPanels(plugins);
-  const mainSurface = useShellStore((s) => s.mainSurface);
-  const activePluginPanel = useShellStore((s) => s.activePluginPanel);
-  // Plugin panels show only on the conversation surface.
-  const panelShown = mainSurface.kind === "conversation" ? activePluginPanel : null;
+  const panelShown = useShellStore((s) => s.activePluginPanel);
   // Where the menu opens, under the button; null while it is closed.
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);

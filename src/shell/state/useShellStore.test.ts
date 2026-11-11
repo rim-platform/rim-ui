@@ -104,7 +104,8 @@ describe("useShellStore", () => {
     expect(useShellStore.getState().sidebarCollapsed).toBe(false);
   });
 
-  it("opens a plugin panel", () => {
+  it("opens a plugin panel over the page shown, which stays", () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
     useShellStore.getState().openPluginPanel("plugin-1", "panel-a", "main_area");
     const state = useShellStore.getState();
     expect(state.activePluginPanel).toEqual({
@@ -112,7 +113,43 @@ describe("useShellStore", () => {
       panelId: "panel-a",
       slot: "main_area",
     });
-    expect(state.mainSurface).toEqual({ kind: "conversation" });
+    expect(state.mainSurface).toEqual({ kind: "home" });
+  });
+
+  it("closes a main-area plugin panel on going to another page and keeps a tool-panel one", () => {
+    const shell = () => useShellStore.getState();
+    shell().setMainSurface({ kind: "home" });
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setMainSurface({ kind: "unreads" });
+    expect(shell().activePluginPanel).toBeNull();
+
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setMainSurface({ kind: "agent-session", key: "a" });
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setMainSurface({ kind: "agent-session", key: "b" });
+    expect(shell().activePluginPanel).toBeNull();
+
+    shell().openPluginPanel("plugin-1", "notes", "tool_panel");
+    shell().setMainSurface({ kind: "settings", tab: "plugins" });
+    shell().setMainSurface({ kind: "conversation" });
+    expect(shell().mainSurface).toEqual({ kind: "conversation" });
+    expect(shell().activePluginPanel).toEqual({
+      pluginId: "plugin-1",
+      panelId: "notes",
+      slot: "tool_panel",
+    });
+  });
+
+  it("keeps a main-area plugin panel when the page shown is set again", () => {
+    const shell = () => useShellStore.getState();
+    shell().setMainSurface({ kind: "dm-requests", workspaceId: "ws-1" });
+    shell().openPluginPanel("plugin-1", "pods", "main_area");
+    shell().setMainSurface({ kind: "dm-requests", workspaceId: "ws-1" });
+    expect(shell().activePluginPanel).toEqual({
+      pluginId: "plugin-1",
+      panelId: "pods",
+      slot: "main_area",
+    });
   });
 
   it("closes a plugin panel", () => {

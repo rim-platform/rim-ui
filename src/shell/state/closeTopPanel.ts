@@ -14,10 +14,8 @@ function topPanelClose(): (() => void) | null {
   // The notification inbox opens under the top bar, over every page.
   const notifications = useNotificationsPanelStore.getState();
   if (notifications.open && workspaceId) return () => notifications.setOpen(false);
-  // A main-area plugin panel covers the conversation, and the thread beside it.
-  if (onConversation && shell.activePluginPanel?.slot === "main_area") {
-    return shell.closePluginPanel;
-  }
+  // A main-area plugin panel takes the page's place, and covers the thread beside it.
+  if (shell.activePluginPanel?.slot === "main_area") return shell.closePluginPanel;
   if (shell.isThreadOpen) return shell.closeThread;
   // Beside the conversation the pinned panel has no Escape; over it, it closes like the thread.
   if (onConversation && shell.shellWidth !== "wide" && shell.pinnedPanelOpen) {

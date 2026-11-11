@@ -55,7 +55,7 @@ export type DirectOrigin = {
 export type ActivePluginPanel = {
   pluginId: string;
   panelId: string;
-  /** Where the panel shows: a `main_area` panel covers the conversation. */
+  /** Where the panel shows: a `main_area` panel takes the place of the page shown. */
   slot: PluginPanelSlot;
 } | null;
 
@@ -143,8 +143,13 @@ type ShellState = {
   navDrawerOpen: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
+  /**
+   * Shows `surface` as the page. Going to another page closes a main-area plugin panel; a
+   * tool-panel one stays.
+   */
   setMainSurface: (surface: MainSurface) => void;
   setActivePluginPanel: (panel: ActivePluginPanel) => void;
+  /** Opens a plugin panel over the page shown, which stays the same page. */
   openPluginPanel: (pluginId: string, panelId: string, slot: PluginPanelSlot) => void;
   closePluginPanel: () => void;
   /**
@@ -183,9 +188,14 @@ type ShellState = {
   reset: () => void;
 };
 
-/** Closes the active plugin panel when it covers the conversation; a tool-panel one stays. */
+/** Closes the active plugin panel when it takes the page's place; a tool-panel one stays. */
 function withoutMainAreaPanel(state: ShellState): Partial<ShellState> {
   return state.activePluginPanel?.slot === "main_area" ? { activePluginPanel: null } : {};
+}
+
+/** Whether two surfaces are the same page: the same kind with the same tab, plugin or key. */
+function sameSurface(a: MainSurface, b: MainSurface): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 export const useShellStore = create<ShellState>((set, get) => ({
@@ -241,13 +251,14 @@ export const useShellStore = create<ShellState>((set, get) => ({
   navDrawerOpen: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
-  setMainSurface: (surface) => set({ mainSurface: surface }),
+  setMainSurface: (surface) =>
+    set((state) => ({
+      mainSurface: surface,
+      ...(sameSurface(state.mainSurface, surface) ? {} : withoutMainAreaPanel(state)),
+    })),
   setActivePluginPanel: (panel) => set({ activePluginPanel: panel }),
   openPluginPanel: (pluginId, panelId, slot) =>
-    set({
-      mainSurface: { kind: "conversation" },
-      activePluginPanel: { pluginId, panelId, slot },
-    }),
+    set({ activePluginPanel: { pluginId, panelId, slot } }),
   closePluginPanel: () => set({ activePluginPanel: null }),
 
   setSelectedConversationId: (id, options) =>

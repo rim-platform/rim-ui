@@ -178,6 +178,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- A plugin panel opens over the page you are on, such as Home, Unreads or Agent sessions,
+  instead of switching to the conversation: a `tool_panel` panel is a narrow column at the left
+  of the page and stays open when you go to another page, and a `main_area` panel takes the
+  page's place until you close it or go to another page. A panel's `conversation.changed` is
+  `null` while no conversation is shown, and a plugin command that needs a conversation says
+  "Open a conversation first" on any other page.
 - A command picked from the message box's `/` list with nothing typed after it does what the
   command palette does: it opens the palette's argument form, with the same fields and pickers
   (state keys with their values, members, conversations, emoji, times, "More options"), instead of

@@ -60,7 +60,7 @@ const HELLO = { type: "rim.frame.hello", v: 1 };
 
 afterEach(() => {
   vi.useRealTimers();
-  useShellStore.setState({ selectedConversationId: null });
+  useShellStore.setState({ selectedConversationId: null, mainSurface: { kind: "conversation" } });
 });
 
 describe("PluginFrame", () => {
@@ -207,6 +207,21 @@ describe("PluginFrame", () => {
     expect(sent.filter((m) => m.type === "conversation.changed")).toEqual([
       { type: "conversation.changed", conversationId: "c2" },
       { type: "conversation.changed", conversationId: "c3" },
+      { type: "conversation.changed", conversationId: null },
+    ]);
+  });
+
+  it("tells a panel no conversation is open while another page is shown", async () => {
+    useShellStore.setState({ selectedConversationId: "c1", mainSurface: { kind: "home" } });
+    const { iframe, posted } = await loadedPanel({ approvedCapabilities: ["chat.read"] });
+    fromFrame(iframe, { type: "rim.frame.ready", v: 1 });
+    act(() => useShellStore.setState({ selectedConversationId: "c2" }));
+    act(() => useShellStore.setState({ mainSurface: { kind: "conversation" } }));
+    act(() => useShellStore.setState({ mainSurface: { kind: "unreads" } }));
+    const sent = sentMessages(posted) as { type: string }[];
+    expect(sent.filter((m) => m.type === "conversation.changed")).toEqual([
+      { type: "conversation.changed", conversationId: null },
+      { type: "conversation.changed", conversationId: "c2" },
       { type: "conversation.changed", conversationId: null },
     ]);
   });
