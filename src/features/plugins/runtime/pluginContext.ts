@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import { CONTEXT_ARGUMENTS } from "../../../../sdk/plugin-sdk/src/manifestRules";
+import { shownConversationId } from "../../../shell/state/shownConversation";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { openThreadId } from "../../threads/api/openThreadId";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
@@ -45,10 +46,13 @@ function compact(context: PluginInvocationContext): PluginInvocationContext {
   ) as PluginInvocationContext;
 }
 
-/** The context the user is in: the workspace, the open conversation and the thread open beside it. */
+/**
+ * The context the user is in: the workspace, the conversation shown and the thread open beside
+ * it. While another page is shown there is no conversation.
+ */
 export function currentPluginContext(): PluginInvocationContext {
   const workspaceId = useWorkspaceStore.getState().workspaceId ?? undefined;
-  const conversationId = useShellStore.getState().selectedConversationId ?? undefined;
+  const conversationId = shownConversationId(useShellStore.getState()) ?? undefined;
   return compact({
     workspaceId,
     conversationId,
@@ -126,12 +130,12 @@ export function withContextArguments(
 
 /**
  * Whether a command requiring `requiredContext` can run where the user is now; the caller
- * re-renders when the workspace or conversation changes. A selected message only comes from a
- * context menu, so a command requiring one cannot run from here.
+ * re-renders when the workspace or the conversation shown changes. A selected message only comes
+ * from a context menu, so a command requiring one cannot run from here.
  */
 export function useRunnableHere(): (requiredContext: readonly string[]) => boolean {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
-  const conversationId = useShellStore((s) => s.selectedConversationId) ?? undefined;
+  const conversationId = useShellStore(shownConversationId) ?? undefined;
   return useCallback(
     (requiredContext) => contextArguments(requiredContext, { workspaceId, conversationId }).ok,
     [workspaceId, conversationId],

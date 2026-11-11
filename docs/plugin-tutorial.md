@@ -131,7 +131,9 @@ on opening, after every `set` and as `null` once the plugin stops, and `rim.comm
 `requestId`. A panel runs its own plugin's commands and, by the same message, the app's commands
 the person granted in [`runs_commands`](plugin-manifest.md#runs_commands), whose answer carries
 only `status` and `code`. It never confirms a dangerous one, loads only the files `index.html`
-names, runs no inline handlers, and has no network.
+names, runs no inline handlers, and has no network. A panel whose plugin holds `chat.read` also
+gets `conversation.changed` with the `conversationId` of the conversation shown, and `null`
+while no conversation is shown, as on Home or another page.
 
 ## 5. Test it, `plugin.test.ts`
 

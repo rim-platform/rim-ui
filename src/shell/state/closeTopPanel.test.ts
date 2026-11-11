@@ -54,6 +54,19 @@ describe("closeTopPanel", () => {
     expect(hasPanelToClose()).toBe(false);
   });
 
+  it("closes a main-area plugin panel over another page before leaving the page", () => {
+    const shell = () => useShellStore.getState();
+    shell().setMainSurface({ kind: "home" });
+    shell().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");
+
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().activePluginPanel).toBeNull();
+    expect(shell().mainSurface).toEqual({ kind: "home" });
+
+    expect(closeTopPanel()).toBe(true);
+    expect(shell().mainSurface).toEqual({ kind: "conversation" });
+  });
+
   it("closes the navigation drawer before anything behind it", () => {
     const shell = () => useShellStore.getState();
     shell().setSelectedConversationId("conv-1");

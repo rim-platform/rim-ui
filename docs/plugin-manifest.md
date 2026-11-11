@@ -154,9 +154,11 @@ sandboxed frame while its plugin runs ([loading](web-plugins.md#how-a-plugin-run
 - **`title`** (string, required) and **`description`** (string, default `""`): the title names
   the panel's row in the top bar's Plugins menu, beside the plugin's name, and the palette
   command "Open <title>".
-- **`slot`** (string or `null`, optional): `"tool_panel"`, the default, is a narrow column beside
-  the tool panel, next to the conversation; `"main_area"` takes the main area in place of the
-  conversation. Panels show while a conversation is the main surface. Other values fail to parse.
+- **`slot`** (string or `null`, optional): `"tool_panel"`, the default, is a narrow column at the
+  left of the page shown, next to the tool panel beside a conversation, and stays open when you
+  go to another page; `"main_area"` takes the place of the page shown until it is closed or you
+  go to another page. A panel opens over any page: the conversation, Home, Unreads, Settings and
+  the rest. Other values fail to parse.
 
 ## `settings_schema`
 

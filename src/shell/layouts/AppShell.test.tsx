@@ -450,6 +450,35 @@ describe("AppShell — plugin panels and conversation navigation", () => {
     expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
   });
 
+  it("opens a tool-panel panel beside Home and keeps it on going to another page", () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "notes", "tool_panel");
+    renderShell();
+    const panel = screen.getByTestId("plugin-slot-notes");
+    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("conversation-header")).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().setMainSurface({ kind: "conversation" }));
+
+    // The same panel stays mounted: the plugin's frame is not loaded again.
+    expect(screen.getByTestId("plugin-slot-notes")).toBe(panel);
+    expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
+  });
+
+  it("shows a main-area panel in place of Home, and Home again once it closes", () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    renderShell();
+    act(() => useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area"));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    expect(screen.getByTestId("plugin-slot-pods")).toBeInTheDocument();
+    expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
+
+    act(() => useShellStore.getState().closePluginPanel());
+
+    expect(screen.queryByTestId("plugin-slot-pods")).not.toBeInTheDocument();
+    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+  });
+
   it("does not show an open panel of a plugin without the ui.panel grant", () => {
     pluginList.data = pluginList.data.map((plugin) => ({ ...plugin, approved_capabilities: [] }));
     useShellStore.getState().openPluginPanel("chat.rim.k8s-pods", "pods", "main_area");

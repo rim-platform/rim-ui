@@ -299,7 +299,8 @@ From left to right:
   while something is unread. A **Bots** section under the channels lists the workspace's bots.
   Member lists take its place while open.
 - **Main area**: the conversation's header, timeline and composer. Home, Settings, message
-  requests and some plugin panels take its place, and a thread opens in a pane to its right.
+  requests and some plugin panels take its place, and a thread opens in a pane to its right. A
+  plugin panel opens over whichever page is shown.
 
 **Home** shows what matters to you across your workspaces: what waits for you, mentions and
 replies, and what's unread, until you change it. **Edit Home** adds boxes such as a channel you
