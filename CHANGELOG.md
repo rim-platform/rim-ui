@@ -22,6 +22,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-11-12
+
 ### Added
 
 - Agent sessions in the desktop app: **Browse…** picks a session's folder in the system's folder
@@ -1331,7 +1333,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.11...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.12...HEAD
+[0.0.12]: https://github.com/rim-platform/rim-ui/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/rim-platform/rim-ui/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/rim-platform/rim-ui/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/rim-platform/rim-ui/compare/v0.0.8...v0.0.9
