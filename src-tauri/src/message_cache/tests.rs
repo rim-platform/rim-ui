@@ -1629,3 +1629,55 @@ fn each_account_s_key_is_sealed_under_its_data_key_in_the_vault() {
     state.remove(&alice).unwrap();
     assert!(vault.read(&name).unwrap().is_none());
 }
+
+/// A cache database written by an earlier SQLCipher build (`fixtures/sqlcipher-4.14.0.db`:
+/// rusqlite 0.40.2, SQLCipher 4.14.0 on SQLite 3.51.3, raw key bytes 0..32, WAL journal)
+/// still opens with this build's key handling, so an upgrade of the bundled SQLCipher does not
+/// make existing caches unreadable and recreated.
+#[test]
+fn opens_a_database_written_by_an_earlier_sqlcipher() {
+    const FIXTURE: &[u8] = include_bytes!("fixtures/sqlcipher-4.14.0.db");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.db");
+    std::fs::write(&path, FIXTURE).unwrap();
+
+    let mut key = [0u8; 32];
+    for (i, byte) in key.iter_mut().enumerate() {
+        *byte = u8::try_from(i).unwrap();
+    }
+    let conn = super::store::open_keyed(&path, &CacheKey::from_bytes(key)).unwrap();
+    let cipher: String = conn
+        .query_row("PRAGMA cipher_version", [], |row| row.get(0))
+        .unwrap();
+    assert!(cipher.starts_with("4."), "SQLCipher {cipher}");
+    let writer: String = conn
+        .query_row("SELECT cipher_version FROM writer", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(writer, "4.14.0 community");
+    let (count, last): (i64, String) = conn
+        .query_row(
+            "SELECT count(*), (SELECT body FROM rows WHERE id = 39) FROM rows",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(count, 40);
+    assert_eq!(last, "row 39 ".repeat(40));
+    // SQLCipher's page check lists each page whose HMAC fails, and nothing when all pass.
+    let mut check = conn.prepare("PRAGMA cipher_integrity_check").unwrap();
+    let failures: Vec<String> = check
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(failures.is_empty(), "{failures:?}");
+    drop(check);
+    drop(conn);
+
+    // The file is encrypted: another key does not read it.
+    std::fs::write(&path, FIXTURE).unwrap();
+    assert!(matches!(
+        super::store::open_keyed(&path, &CacheKey::from_bytes([1; 32])),
+        Err(CacheError::Unreadable)
+    ));
+}

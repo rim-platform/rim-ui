@@ -74,8 +74,10 @@ sha2 = "0.10"
 hex = "0.4"
 # Local message cache (src/message_cache): SQLCipher, so the whole database file is encrypted.
 # macOS links CommonCrypto and Linux the system libcrypto; Windows has no system OpenSSL, so
-# it builds a vendored one (see the target section below).
-rusqlite = { version = "0.40", features = ["bundled-sqlcipher"] }
+# it builds a vendored one (see the target section below). 0.41 bundles SQLCipher 4.19.0 on
+# SQLite 3.53.4, which RUSTSEC-2026-0459 (CVE-2026-119375, fixed in SQLite 3.54.0) still
+# affects; move on once a libsqlite3-sys release bundles sqlcipher-src 420 or later.
+rusqlite = { version = "0.41", features = ["bundled-sqlcipher"] }
 # History archive (src/history_archive): XChaCha20-Poly1305 seals the archive files, Argon2id
 # turns the passphrase into a key, HKDF and HMAC derive subkeys and the account folder name.
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
@@ -100,12 +102,12 @@ rim_opaque = { path = "crates/rim_opaque" }
 zbus = "5"
 
 [target.'cfg(windows)'.dependencies]
-rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
+rusqlite = { version = "0.41", features = ["bundled-sqlcipher-vendored-openssl"] }
 
 [dev-dependencies]
 tempfile = "3"
 # Validates frames against protocol/plugin-protocol-v1.schema.json in the conformance tests.
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 # A small blocking HTTP server: the fake Google Drive and Dropbox the archive's cloud providers
 # are tested against.
 tiny_http = "0.12"
