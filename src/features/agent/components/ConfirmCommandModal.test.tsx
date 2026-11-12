@@ -527,6 +527,12 @@ describe("ConfirmCommandModal — STALE expiry", () => {
       expect(decision.approved).toBe(false);
       expect(useConfirmationModalStore.getState().request).toBeNull();
     } finally {
+      // jsdom runs animation frames and focus fixup on one shared timer. If it
+      // is left pending on the fake clock, it never fires on the real one and
+      // no later requestAnimationFrame callback in this file runs.
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
       vi.useRealTimers();
     }
   });

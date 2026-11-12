@@ -1,5 +1,5 @@
 {
-  "sourceSha256": "37d8db0b3e2c925d9f47f5ba8b128dbb6f62dfab5e5ca8834d3d40e1d227a8b5",
+  "sourceSha256": "285a7b3debc41b17d3a881aeb2e367c183c85446038581148a7b79abc690adee",
   "wasmBytes": 2463435,
-  "wasmGzipBytes": 706317
+  "wasmGzipBytes": 706299
 }

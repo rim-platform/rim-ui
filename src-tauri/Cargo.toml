@@ -125,7 +125,7 @@ rusqlite = { version = "0.41", features = ["bundled-sqlcipher-vendored-openssl"]
 [dev-dependencies]
 tempfile = "3"
 # Validates frames against protocol/plugin-protocol-v1.schema.json in the conformance tests.
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 # A small blocking HTTP server: the fake Google Drive and Dropbox the archive's cloud providers
 # are tested against.
 tiny_http = "0.12"
