@@ -1,10 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
-import {
-  ServerMemberRoleGql,
-  WorkspaceInviteState,
-} from "../../../core/graphql/generated/schema-types";
+import { WorkspaceInviteState } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { Avatar } from "../../../shared/ui/Avatar";
 import { Button } from "../../../shared/ui/Button";
@@ -13,8 +11,9 @@ import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useIsOwner } from "../../workspaces/api/useMyServerRole";
 import { ModerationDialog } from "../../workspaces/components/ModerationDialog";
-import { useRevokeInviteMutation } from "../api/useInviteMutations";
+import { revokeInvite } from "../api/useInviteMutations";
 import { useWorkspaceInvites, type WorkspaceInviteRow } from "../api/useWorkspaceInvites";
+import { ROLE_LABEL, revokeInviteDescription } from "../inviteText";
 import { InviteDialog } from "./InviteDialog";
 
 interface WorkspaceInvitesProps {
@@ -35,13 +34,6 @@ export function WorkspaceInvites({ serverId }: WorkspaceInvitesProps) {
 
 const ERROR_BOX =
   "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
-
-const ROLE_LABEL: Record<ServerMemberRoleGql, string> = {
-  [ServerMemberRoleGql.OWNER]: "Owner",
-  [ServerMemberRoleGql.MODERATOR]: "Moderator",
-  [ServerMemberRoleGql.MEMBER]: "Member",
-  [ServerMemberRoleGql.GUEST]: "Guest",
-};
 
 const STATE_BADGE: Record<WorkspaceInviteState, { label: string; className: string }> = {
   [WorkspaceInviteState.ACTIVE]: {
@@ -112,7 +104,7 @@ function InvitesSection({ serverId }: { serverId: string }) {
     fetchNextPage,
     isFetchingNextPage,
   } = useWorkspaceInvites(serverId);
-  const revoke = useRevokeInviteMutation();
+  const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<WorkspaceInviteRow | null>(null);
   const invites = data?.pages.flatMap((page) => page.items) ?? [];
@@ -174,17 +166,11 @@ function InvitesSection({ serverId }: { serverId: string }) {
       {revoking && (
         <ModerationDialog
           title="Revoke this invite?"
-          description={`Nobody can join with this ${ROLE_LABEL[revoking.role].toLowerCase()} invite link any more. ${
-            revoking.useCount === 1
-              ? "The person who already joined with it stays."
-              : revoking.useCount > 1
-                ? `The ${revoking.useCount} people who already joined with it stay.`
-                : "Nobody has joined with it yet."
-          }`}
+          description={revokeInviteDescription(revoking)}
           tone="danger"
           confirmLabel="Revoke invite"
           errorFallback="Could not revoke the invite"
-          onConfirm={() => revoke.mutateAsync({ serverId, inviteId: revoking.id })}
+          onConfirm={() => revokeInvite(qc, { serverId, inviteId: revoking.id })}
           onDone={() => {
             setRevoking(null);
             toast.success("Invite revoked");

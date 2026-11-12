@@ -99,6 +99,8 @@ export interface PluginCommandInfo {
   keybind_capable: boolean;
   dangerous: boolean;
   ai_callable: boolean;
+  /** The plugin's claim that the command changes nothing. RIM cannot verify it. */
+  read_only: boolean;
   arguments: PluginCommandArgument[];
   /** Context kinds the command runs in (`conversation`, `message`, `workspace`). */
   required_context?: string[];
@@ -182,6 +184,8 @@ export interface PluginInfo {
   ai_callable_commands: string[];
   /** True when the manifest changed since last consent — UI must prompt re-approval. */
   ai_consent_required: boolean;
+  /** The hash of what was installed, which an agent's approval is tied to. */
+  manifest_hash: string;
   /**
    * True when the on-disk bundle fingerprint differs from the TOFU fingerprint
    * recorded at install time.  The UI must surface a warning and require the user
@@ -210,23 +214,51 @@ export interface PluginInfo {
   last_error?: string | null;
   /** The plugin's grant history and encrypted reads; left out by hosts that keep no audit. */
   audit?: PluginAudit;
+  /** The built-in and app commands the manifest asks to run; left out by older hosts. */
+  runs_commands?: string[];
+  /** The ids of `runs_commands` the person granted; left out by older hosts. */
+  granted_commands?: string[];
 }
 
 export type PluginGrantAction = "granted" | "revoked";
 
-/** One capability given to or taken back from a plugin. Mirror of the Rust `GrantEvent`. */
+/**
+ * One capability, or one command the plugin may run, given to or taken back from a plugin.
+ * Mirror of the Rust `GrantEvent`.
+ */
 export interface PluginGrantEvent {
+  /** The capability's name, or the command's id when `kind` is `command`. */
   capability: string;
+  /** Left out for a capability. */
+  kind?: "capability" | "command";
   action: PluginGrantAction;
   /** RFC 3339, UTC. */
   at: string;
 }
 
-/** Mirror of the Rust `PluginAudit`: grant history and encrypted reads per UTC day. */
+/** How a plugin's request to run a command ended. */
+export type PluginCommandRunOutcome = "success" | "error" | "refused";
+
+/** One built-in or app command a plugin asked the app to run. Mirror of the Rust `CommandRunEvent`. */
+export interface PluginCommandRunEvent {
+  command_id: string;
+  outcome: PluginCommandRunOutcome;
+  /** Why a refused run was refused, such as `NOT_GRANTED`. */
+  code?: string;
+  /** RFC 3339, UTC. */
+  at: string;
+}
+
+/**
+ * Mirror of the Rust `PluginAudit`: grant history, encrypted reads per UTC day and the
+ * commands the plugin asked the app to run.
+ */
 export interface PluginAudit {
   grants: PluginGrantEvent[];
   /** `YYYY-MM-DD` to the encrypted messages the plugin read that day. */
   encrypted_reads: Record<string, number>;
+  /** Left out by hosts from before plugins could run commands. */
+  command_runs?: PluginCommandRunEvent[];
 }
 
 /** The runtime kind of `plugin`; hosts before web plugins only reported local processes. */
@@ -278,6 +310,10 @@ export interface PluginUpdateResult {
   added_capabilities: string[];
   /** Capabilities the new manifest dropped; their approvals are gone. */
   removed_capabilities: string[];
+  /** Commands the new manifest asks to run that the old one did not; left out by older hosts. */
+  added_commands?: string[];
+  /** Commands the new manifest no longer lists; their grants are gone. */
+  removed_commands?: string[];
 }
 
 /**

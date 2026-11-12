@@ -53,6 +53,7 @@ import {
 import type {
   UnreadIncrementEvent,
   UnreadMarkReadEvent,
+  UnreadRewoundEvent,
   PresenceChangedEvent,
   TypingStartedEvent,
   TypingStoppedEvent,
@@ -197,6 +198,15 @@ function typingName(
  * Apply one event of `workspaceId` to the caches and stores: from `workspaceEvents` for a space
  * this server hosts, or a verified host event from the relay for a space elsewhere.
  */
+/** The events that change what the Unreads page shows of a conversation. */
+const UNREAD_GROUP_EVENTS: ReadonlySet<WorkspaceEvent["type"]> = new Set([
+  "NewMessage",
+  "MessageUpdated",
+  "MessageDeleted",
+  "MessagesDeleted",
+  "MessageFlagChanged",
+]);
+
 export function applyWorkspaceEvent(
   event: WorkspaceEvent,
   qc: ReturnType<typeof useQueryClient>,
@@ -253,6 +263,12 @@ export function applyWorkspaceEvent(
       break;
     default:
       break;
+  }
+
+  if (UNREAD_GROUP_EVENTS.has(event.type) && "conversation_id" in event) {
+    void qc.invalidateQueries({
+      queryKey: queryKeys.unreadGroupMessagesOf(workspaceId, event.conversation_id),
+    });
   }
 
   switch (event.type) {
@@ -363,6 +379,8 @@ export function applyWorkspaceEvent(
             };
           },
         );
+        // Only top-level messages count as unread, and the server no longer counts this one.
+        void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
       }
       break;
     }
@@ -506,6 +524,13 @@ export function applyWorkspaceEvent(
         conversationId: event.conversation_id,
       });
       handleReadStateUpdated(qc, workspaceId);
+      break;
+
+    case "ReadMarkerRewound":
+      eventBus.emit<UnreadRewoundEvent>(BUS_EVENTS.UNREAD_REWOUND, {
+        conversationId: event.conversation_id,
+      });
+      void qc.invalidateQueries({ queryKey: queryKeys.unreadCounts(workspaceId) });
       break;
 
     case "PresenceChanged": {

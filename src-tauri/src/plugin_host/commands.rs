@@ -24,7 +24,8 @@ use crate::plugin_host::wire::JsonRpcError;
 use crate::plugin_host::PluginHostState;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginInfo {
@@ -49,6 +50,9 @@ pub struct PluginInfo {
     /// True when the manifest changed since the last consent; the UI must ask
     /// for approval again.
     pub ai_consent_required: bool,
+    /// The manifest's content hash, which an agent's approval is tied to. Empty
+    /// when the manifest could not be read.
+    pub manifest_hash: String,
     /// True when the bundle fingerprint on disk differs from the one recorded and
     /// trusted at install. The UI must surface a warning and require the user to
     /// explicitly trust the new version before spawning.
@@ -79,6 +83,10 @@ pub struct PluginInfo {
     /// When each capability was given and revoked, and the encrypted messages the
     /// plugin read per day.
     pub audit: PluginAudit,
+    /// The built-in and app commands the manifest asks to run.
+    pub runs_commands: Vec<String>,
+    /// The ids of `runs_commands` the person granted.
+    pub granted_commands: Vec<String>,
 }
 
 #[tauri::command]
@@ -137,6 +145,7 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
                 .map(|m| m.ai_callable_command_ids())
                 .unwrap_or_default(),
             ai_consent_required,
+            manifest_hash: manifest.map(|m| m.content_hash()).unwrap_or_default(),
             fingerprint_changed,
             current_fingerprint,
             context_actions: manifest
@@ -161,6 +170,10 @@ pub fn plugin_list(state: State<'_, PluginHostState>) -> Result<Vec<PluginInfo>,
             source: record.source.clone(),
             starting: record.starting,
             audit: store.audit.get(id).cloned().unwrap_or_default(),
+            runs_commands: manifest
+                .map(|m| m.runs_commands.clone())
+                .unwrap_or_default(),
+            granted_commands: record.granted_commands.clone(),
         });
     }
     Ok(plugins)
@@ -856,16 +869,16 @@ fn apply_update_to_store(
             format!("plugin record not found: {}", manifest.plugin_id),
         ))
     })?;
-    let (approved_capabilities, approved_ai_commands, _) =
-        registry::carried(&record, old_manifest, manifest);
+    let kept = registry::carried(&record, old_manifest, manifest);
     let bundle_fingerprint = if record.bundle_fingerprint.is_empty() {
         String::new()
     } else {
         local_install::compute_bundle_fingerprint(plugin_dir)?
     };
     store.upsert(PluginRecord {
-        approved_capabilities,
-        approved_ai_commands,
+        approved_capabilities: kept.capabilities,
+        approved_ai_commands: kept.ai_commands,
+        granted_commands: kept.commands,
         bundle_fingerprint,
         fingerprint_changed: false,
         ..record
@@ -1076,6 +1089,56 @@ pub async fn plugin_run_ai_command(
     Ok(result.payload)
 }
 
+/// Runs a command for an agent outside RIM. The UI holds that agent's approval
+/// and passes the manifest hash it was given for; the hash, the `ai_callable`
+/// flag and `dangerous` are checked here. It runs with `Initiator::Agent`.
+/// Returns the plugin's result payload.
+///
+/// # Errors
+///
+/// [`PluginCommandError`] serialized as `{ kind, message, data? }`:
+/// `LIFECYCLE_ERROR` for a manifest or command the approval does not cover,
+/// `CONFIRMATION_REQUIRED` for a dangerous command, and the failures of
+/// [`command_exec::execute`].
+#[tauri::command]
+pub async fn plugin_run_outside_agent_command(
+    plugin_id: String,
+    command_id: String,
+    input: serde_json::Value,
+    approved_manifest_hash: String,
+    state: State<'_, PluginHostState>,
+) -> Result<serde_json::Value, PluginCommandError> {
+    check_outside_agent(&state, &plugin_id, &command_id, &approved_manifest_hash)?;
+
+    let result = command_exec::execute(
+        &state,
+        &plugin_id,
+        &command_id,
+        input,
+        false,
+        Some(&plugin_id),
+        Initiator::Agent,
+    )
+    .await?;
+    Ok(result.payload)
+}
+
+/// The same checks for a `WebSandboxed` plugin's command, which the UI then runs
+/// itself.
+///
+/// # Errors
+///
+/// The [`PluginCommandError`] of the check that refuses.
+#[tauri::command]
+pub fn plugin_check_outside_agent_command(
+    plugin_id: String,
+    command_id: String,
+    approved_manifest_hash: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), PluginCommandError> {
+    check_outside_agent(&state, &plugin_id, &command_id, &approved_manifest_hash)
+}
+
 /// The signed-in user, as the UI reports it to the plugin host.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1184,6 +1247,74 @@ fn check_ai_consent(
         return Err(LifecycleError::UnknownAiCommand(command_id.to_string()));
     }
     Ok(())
+}
+
+/// Checks a command an agent outside RIM asks for: the manifest is the one the
+/// approval was given for, and it declares the command as `ai_callable` and not
+/// `dangerous`. The built-in agent's approvals play no part.
+fn check_outside_agent(
+    state: &PluginHostState,
+    plugin_id: &str,
+    command_id: &str,
+    approved_manifest_hash: &str,
+) -> Result<(), PluginCommandError> {
+    let manifests = state
+        .manifests
+        .lock()
+        .map_err(|_| PluginCommandError::LockPoisoned)?;
+    let manifest = manifests
+        .get(plugin_id)
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.to_string()))?;
+    if manifest.content_hash() != approved_manifest_hash {
+        return Err(LifecycleError::AiConsentRequired.into());
+    }
+    let command = manifest
+        .commands
+        .iter()
+        .find(|command| command.id == command_id && command.ai_callable)
+        .ok_or_else(|| LifecycleError::UnknownAiCommand(command_id.to_string()))?;
+    if command.dangerous {
+        return Err(PluginCommandError::ConfirmationRequired(
+            command_id.to_string(),
+        ));
+    }
+    log::warn!(
+        "[AUDIT] event=plugin_outside_agent_invocation plugin_id={} command_id={}",
+        plugin_id,
+        command_id
+    );
+    Ok(())
+}
+
+/// Asks the person for a plugin folder with the system's folder dialog; `None` when they cancel.
+///
+/// The path is only returned: [`plugin_install_from_local`] checks it exactly as it checks a
+/// path from any other caller.
+///
+/// # Errors
+///
+/// Returns [`LocalInstallError::Io`] when the dialog's choice is not a local folder path, or
+/// the dialog task fails.
+#[tauri::command]
+pub async fn plugin_pick_folder(app: AppHandle) -> Result<Option<String>, LocalInstallError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a plugin folder")
+            .blocking_pick_folder();
+        match picked {
+            None => Ok(None),
+            Some(path) => path
+                .into_path()
+                .map(|p| Some(p.display().to_string()))
+                .map_err(|e| {
+                    LocalInstallError::Io(std::io::Error::other(format!("not a local folder: {e}")))
+                }),
+        }
+    })
+    .await
+    .map_err(|e| LocalInstallError::Io(std::io::Error::other(e.to_string())))?
 }
 
 /// Installs a plugin from a local folder on disk.
@@ -1879,11 +2010,144 @@ pub fn plugin_record_encrypted_reads(
     Ok(())
 }
 
+/// Grants `plugin_id` running each of `command_ids`, which its manifest's
+/// `runs_commands` must list.
+///
+/// # Errors
+///
+/// The errors of [`lifecycle::grant_commands`], and `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_grant_commands(
+    plugin_id: String,
+    command_ids: Vec<String>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let manifest = state
+        .manifests
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?
+        .get(&plugin_id)
+        .cloned()
+        .ok_or_else(|| LifecycleError::NotFound(plugin_id.clone()))?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    lifecycle::grant_commands(&mut store, &manifest, &command_ids)?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Takes back `plugin_id`'s grant to run `command_id`. The plugin keeps running.
+///
+/// # Errors
+///
+/// `LifecycleError::NotFound` for an unknown plugin, `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_revoke_command(
+    plugin_id: String,
+    command_id: String,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    lifecycle::revoke_command(&mut store, &plugin_id, &command_id)?;
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Records in `plugin_id`'s audit that it asked the app to run `command_id`, and how
+/// the run ended: `outcome` `success`, `error` or `refused`, with `code` saying why a
+/// refused run was refused.
+///
+/// # Errors
+///
+/// `LifecycleError::InvalidCommandRun` for an outcome, code or id out of shape,
+/// `LifecycleError::NotFound` for an unknown plugin, `LifecycleError::Io` when the
+/// store cannot be saved.
+#[tauri::command]
+pub fn plugin_record_command_run(
+    plugin_id: String,
+    command_id: String,
+    outcome: String,
+    code: Option<String>,
+    state: State<'_, PluginHostState>,
+) -> Result<(), LifecycleError> {
+    check_command_run(&command_id, &outcome, code.as_deref())?;
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|e| LifecycleError::Io(std::io::Error::other(e.to_string())))?;
+    if store.get(&plugin_id).is_none() {
+        return Err(LifecycleError::NotFound(plugin_id));
+    }
+    store.record_command_run(
+        &plugin_id,
+        &command_id,
+        &outcome,
+        code.as_deref(),
+        chrono::Utc::now(),
+    );
+    store.save(&state.state_path)?;
+    Ok(())
+}
+
+/// Longest refusal code a recorded command run may carry.
+const MAX_RUN_CODE_LEN: usize = 32;
+
+/// Checks a command run before it is recorded: a known outcome, a code of at most
+/// [`MAX_RUN_CODE_LEN`] capital letters and underscores, and an id of at most 256
+/// printable ASCII characters, since a plugin's own request names it.
+///
+/// # Errors
+///
+/// `LifecycleError::InvalidCommandRun` saying what is out of shape.
+fn check_command_run(
+    command_id: &str,
+    outcome: &str,
+    code: Option<&str>,
+) -> Result<(), LifecycleError> {
+    let invalid = |what: &str| Err(LifecycleError::InvalidCommandRun(what.to_string()));
+    if !crate::plugin_host::state::COMMAND_RUN_OUTCOMES.contains(&outcome) {
+        return invalid("unknown outcome");
+    }
+    if code.is_some_and(|c| {
+        c.is_empty()
+            || c.len() > MAX_RUN_CODE_LEN
+            || !c.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+    }) {
+        return invalid("code out of shape");
+    }
+    if command_id.is_empty()
+        || command_id.len() > 256
+        || !command_id.bytes().all(|b| b.is_ascii_graphic())
+    {
+        return invalid("command id out of shape");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn command_runs_are_checked_before_they_are_recorded() {
+        assert!(check_command_run("workspace.go_back", "success", None).is_ok());
+        assert!(check_command_run("chat.post_message", "refused", Some("NOT_GRANTED")).is_ok());
+        assert!(check_command_run("workspace.go_back", "done", None).is_err());
+        assert!(check_command_run("workspace.go_back", "refused", Some("not granted")).is_err());
+        assert!(check_command_run("workspace.go_back", "refused", Some("")).is_err());
+        assert!(check_command_run("", "error", None).is_err());
+        assert!(check_command_run("a b", "error", None).is_err());
+        assert!(check_command_run(&"a".repeat(257), "error", None).is_err());
+    }
 
     /// A plugin `dev.example.hello` of `kind` declaring the panel `main`, whose
     /// folder holds `index.html`.
@@ -2006,6 +2270,95 @@ mod tests {
             .unwrap();
         assert!(state_after.values.is_empty());
         assert_eq!(state_after.secrets.get("token"), Some(&false));
+    }
+
+    /// A host with `dev.example.outside` installed, declaring an `ai_callable`
+    /// command, a dangerous one and one not offered to agents, and the hash of its
+    /// manifest.
+    fn outside_agent_host() -> (settings::SettingsFixture, String) {
+        let schema = serde_json::json!({ "type": "object", "properties": {} });
+        let manifest: PluginManifest = serde_json::from_value(serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.outside",
+            "display_name": "Outside",
+            "version": "1.0.0",
+            "description": "test",
+            "author": null,
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main",
+            "commands": [
+                { "id": "run", "title": "Run", "description": "", "ai_callable": true, "output_schema": schema },
+                { "id": "wipe", "title": "Wipe", "description": "", "ai_callable": true, "dangerous": true, "output_schema": schema },
+                { "id": "local", "title": "Local", "description": "" },
+            ],
+        }))
+        .unwrap();
+        let hash = manifest.content_hash();
+        (settings::SettingsFixture::new(vec![manifest]), hash)
+    }
+
+    const OUTSIDE: &str = "dev.example.outside";
+
+    #[test]
+    fn an_outside_agent_passes_with_the_approved_hash_and_no_built_in_consent() {
+        let (host, hash) = outside_agent_host();
+        let approved = {
+            let store = host.state.store.lock().unwrap();
+            store.get(OUTSIDE).unwrap().approved_ai_commands.clone()
+        };
+        assert!(approved.is_empty());
+        check_outside_agent(&host.state, OUTSIDE, "run", &hash).unwrap();
+    }
+
+    #[test]
+    fn the_built_in_gate_stays_closed_for_what_an_outside_agent_may_run() {
+        let (host, hash) = outside_agent_host();
+        check_outside_agent(&host.state, OUTSIDE, "run", &hash).unwrap();
+        assert!(check_ai_consent(&host.state, OUTSIDE, "run").is_err());
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_changed_hash() {
+        let (host, _) = outside_agent_host();
+        let error = check_outside_agent(&host.state, OUTSIDE, "run", "another").unwrap_err();
+        assert!(matches!(
+            error,
+            PluginCommandError::Lifecycle(LifecycleError::AiConsentRequired)
+        ));
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_command_not_offered_to_agents() {
+        let (host, hash) = outside_agent_host();
+        for command in ["local", "absent"] {
+            let error = check_outside_agent(&host.state, OUTSIDE, command, &hash).unwrap_err();
+            assert!(matches!(
+                error,
+                PluginCommandError::Lifecycle(LifecycleError::UnknownAiCommand(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_a_dangerous_command_as_needing_confirmation() {
+        let (host, hash) = outside_agent_host();
+        let error = check_outside_agent(&host.state, OUTSIDE, "wipe", &hash).unwrap_err();
+        assert!(matches!(error, PluginCommandError::ConfirmationRequired(_)));
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["kind"],
+            "CONFIRMATION_REQUIRED"
+        );
+    }
+
+    #[test]
+    fn an_outside_agent_is_refused_an_unknown_plugin() {
+        let (host, hash) = outside_agent_host();
+        let error =
+            check_outside_agent(&host.state, "dev.example.other", "run", &hash).unwrap_err();
+        assert!(matches!(
+            error,
+            PluginCommandError::Lifecycle(LifecycleError::NotFound(_))
+        ));
     }
 
     const HELLO: &str = "dev.example.hello";
@@ -2216,6 +2569,29 @@ mod tests {
         assert_eq!(record.approved_capabilities, vec!["chat.read".to_string()]);
         assert!(record.bundle_fingerprint.is_empty());
         assert_eq!(record.source, git_source());
+    }
+
+    #[test]
+    fn an_update_drops_the_grants_of_commands_it_no_longer_lists() {
+        let tmp = TempDir::new().unwrap();
+        let mut store = PluginStateStore::default();
+        store.upsert(PluginRecord {
+            granted_commands: vec!["workspace.go_back".into(), "workspace.open_home".into()],
+            ..recorded(git_source(), &[], "")
+        });
+        let listing = |ids: &[&str]| PluginManifest {
+            runs_commands: ids.iter().map(|c| c.to_string()).collect(),
+            ..asking(&[])
+        };
+        apply_update_to_store(
+            &mut store,
+            Some(&listing(&["workspace.go_back", "workspace.open_home"])),
+            &listing(&["workspace.open_home", "chat.post_message"]),
+            tmp.path(),
+        )
+        .unwrap();
+        let record = store.get(HELLO).unwrap();
+        assert_eq!(record.granted_commands, vec!["workspace.open_home"]);
     }
 
     /// The manifest of [`installed`] asking for `network.fetch` to `origins`.

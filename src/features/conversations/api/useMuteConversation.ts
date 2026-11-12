@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -32,50 +32,52 @@ interface UnmuteConversationVars {
  * A mute changes the conversation's effective notification level, so the caches that carry
  * `effectiveNotificationLevel` refetch, along with the muted list.
  */
-function refreshAfterMute(qc: QueryClient, serverId: string, conversationId: string): void {
+export function refreshAfterMute(qc: QueryClient, serverId: string, conversationId: string): void {
   qc.invalidateQueries({ queryKey: queryKeys.mutedConversations(serverId) });
   qc.invalidateQueries({ queryKey: queryKeys.conversation(serverId, conversationId) });
   qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
   qc.invalidateQueries({ queryKey: queryKeys.conversations(serverId) });
 }
 
-export function useMuteConversationMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: MuteConversationVars) =>
-      graphqlClient.request(MUTE_CONVERSATION, {
-        input: {
-          serverId: vars.serverId,
-          conversationId: vars.conversationId,
-          mutedUntil: vars.mutedUntil ?? null,
-        },
-      }),
-    onMutate: (vars) => {
-      useMutedStore.getState().mute(vars.conversationId);
-    },
-    onError: (_err, vars) => {
-      useMutedStore.getState().unmute(vars.conversationId);
-    },
-    onSettled: (_data, _err, vars) => refreshAfterMute(qc, vars.serverId, vars.conversationId),
-  });
+/**
+ * Mutes a conversation with the `muteConversation` mutation, showing it muted at once and
+ * unmuted again when the server refuses; the mute's caches are read again either way.
+ */
+export async function muteConversation(qc: QueryClient, vars: MuteConversationVars): Promise<void> {
+  useMutedStore.getState().mute(vars.conversationId);
+  try {
+    await graphqlClient.request(MUTE_CONVERSATION, {
+      input: {
+        serverId: vars.serverId,
+        conversationId: vars.conversationId,
+        mutedUntil: vars.mutedUntil ?? null,
+      },
+    });
+  } catch (err) {
+    useMutedStore.getState().unmute(vars.conversationId);
+    throw err;
+  } finally {
+    refreshAfterMute(qc, vars.serverId, vars.conversationId);
+  }
 }
 
-export function useUnmuteConversationMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: UnmuteConversationVars) =>
-      graphqlClient.request(UNMUTE_CONVERSATION, {
-        input: {
-          serverId: vars.serverId,
-          conversationId: vars.conversationId,
-        },
-      }),
-    onMutate: (vars) => {
-      useMutedStore.getState().unmute(vars.conversationId);
-    },
-    onError: (_err, vars) => {
-      useMutedStore.getState().mute(vars.conversationId);
-    },
-    onSettled: (_data, _err, vars) => refreshAfterMute(qc, vars.serverId, vars.conversationId),
-  });
+/**
+ * Unmutes a conversation with the `unmuteConversation` mutation, showing it unmuted at once and
+ * muted again when the server refuses; the mute's caches are read again either way.
+ */
+export async function unmuteConversation(
+  qc: QueryClient,
+  vars: UnmuteConversationVars,
+): Promise<void> {
+  useMutedStore.getState().unmute(vars.conversationId);
+  try {
+    await graphqlClient.request(UNMUTE_CONVERSATION, {
+      input: { serverId: vars.serverId, conversationId: vars.conversationId },
+    });
+  } catch (err) {
+    useMutedStore.getState().mute(vars.conversationId);
+    throw err;
+  } finally {
+    refreshAfterMute(qc, vars.serverId, vars.conversationId);
+  }
 }

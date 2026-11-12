@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AtSign,
@@ -20,14 +20,11 @@ import {
   type ContextMenuBindings,
 } from "../../../shared/ui/contextMenu/useContextMenu";
 import { toast } from "../../../shared/toast";
-import { formatRelativeTime, formatTime } from "../../../shared/utils/formatTime";
+import { formatRelativeTime } from "../../../shared/utils/formatTime";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { NotificationReason } from "../../../core/graphql/generated/schema-types";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import {
-  useMuteConversationMutation,
-  useUnmuteConversationMutation,
-} from "../../conversations/api/useMuteConversation";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { isMuteActive, useMutedConversations } from "../../conversations/api/useMutedConversations";
 import { plainMessagePreview } from "../../messages/utils/snippetText";
 import { DmRequestInbox } from "../../relay/components/DmRequestInbox";
@@ -43,7 +40,11 @@ import { authorDisplayName, notificationConversationLabel } from "../labels";
 import { jumpToNotification } from "../runtime/jumpToNotification";
 import { ENCRYPTED_MESSAGE_TEXT } from "../api/storedText";
 import { useNotificationsPanelStore } from "../state/useNotificationsPanelStore";
-import { MUTE_DURATIONS } from "../hooks/useConversationNotificationItems";
+import {
+  MUTE_DURATIONS,
+  muteFromMenu,
+  unmuteFromMenu,
+} from "../hooks/useConversationNotificationItems";
 
 const REASONS: Record<NotificationReason, { label: string; icon: LucideIcon }> = {
   [NotificationReason.DIRECT]: { label: "Direct message", icon: MessageCircle },
@@ -78,8 +79,8 @@ interface NotificationsPanelProps {
 }
 
 /**
- * The notification inbox in the tool panel: newest first, unread entries dotted.
- * Clicking an entry opens its message and marks it read; entries whose conversation the viewer
+ * The notification inbox under the top bar's bell: newest first, unread entries dotted.
+ * Clicking an entry opens its message, marks it read and closes the inbox; entries whose conversation the viewer
  * can no longer read say so and can still be marked read. An entry's context menu marks it
  * read, mutes or unmutes its conversation, and opens it.
  */
@@ -90,6 +91,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   const { data, isPending, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useNotifications(workspaceId, unreadOnly);
   const markRead = useMarkNotificationsRead();
+  const [markingAll, setMarkingAll] = useState(false);
   const memberLookup = useMemberLookup(workspaceId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
 
@@ -101,14 +103,21 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
     [data, blocked],
   );
 
-  function handleMarkAllRead() {
-    markRead.mutate(
-      { serverId: workspaceId, allBefore: new Date().toISOString() },
-      {
-        onError: (err) =>
-          toast.error(graphqlErrorMessage(err, "Could not mark notifications read")),
-      },
-    );
+  async function handleMarkAllRead() {
+    setMarkingAll(true);
+    try {
+      await runCommandFromClick(
+        "notifications.mark_all_read",
+        { server_id: workspaceId },
+        {
+          target: { workspaceId },
+          successToast: null,
+          errorTitle: "Could not mark notifications read",
+        },
+      );
+    } finally {
+      setMarkingAll(false);
+    }
   }
 
   function handleOpen(item: NotificationItem) {
@@ -122,6 +131,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
       messageId: item.messageId,
       threadId: item.message?.threadId ?? null,
     });
+    onClose();
   }
 
   const resolveName = (userId: string) => memberLookup.resolve(userId).displayName;
@@ -130,8 +140,6 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
     resolveName(principalUserId(qc, workspaceId, id) ?? id) || undefined;
 
   const contextMenu = useContextMenu();
-  const mute = useMuteConversationMutation();
-  const unmute = useUnmuteConversationMutation();
   const { data: muted } = useMutedConversations(workspaceId);
 
   /**
@@ -157,17 +165,12 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
     const conversation = item.conversation;
     if (!conversation) return result;
     const label = notificationConversationLabel(conversation, resolveName, currentUserId);
-    const vars = { serverId: workspaceId, conversationId: item.conversationId };
     const mutedEntry = muted?.find((m) => m.conversationId === item.conversationId);
     if (mutedEntry && isMuteActive(mutedEntry)) {
       result.push({
         id: "unmute-conversation",
         label: "Unmute conversation",
-        onSelect: () =>
-          unmute.mutate(vars, {
-            onError: (err) =>
-              toast.error(graphqlErrorMessage(err, "Could not unmute the conversation")),
-          }),
+        onSelect: () => unmuteFromMenu(qc, workspaceId, item.conversationId),
       });
     } else {
       result.push({
@@ -176,17 +179,8 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
         submenu: MUTE_DURATIONS.map((duration) => ({
           id: duration.id,
           label: duration.label,
-          onSelect: () => {
-            const until = duration.until().toISOString();
-            mute.mutate(
-              { ...vars, mutedUntil: until },
-              {
-                onSuccess: () => toast.success(`Muted ${label} until ${formatTime(until)}`),
-                onError: (err) =>
-                  toast.error(graphqlErrorMessage(err, "Could not mute the conversation")),
-              },
-            );
-          },
+          onSelect: () =>
+            muteFromMenu(qc, workspaceId, item.conversationId, duration.until(), label),
         })),
       });
     }
@@ -201,8 +195,8 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            onClick={handleMarkAllRead}
-            disabled={markRead.isPending}
+            onClick={() => void handleMarkAllRead()}
+            disabled={markRead.isPending || markingAll}
             title="Mark all read"
             aria-label="Mark all read"
             className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text disabled:opacity-50"
@@ -211,7 +205,7 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void runCommandFromClick("workspace.toggle_notifications")}
             title="Close notifications"
             aria-label="Close notifications"
             className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
@@ -297,20 +291,30 @@ export function NotificationsPanel({ workspaceId, onClose }: NotificationsPanelP
   );
 }
 
-function NotificationRow({
+/**
+ * One inbox entry as a button: its reason, conversation, time, and the author with a preview of
+ * the message, dotted while unread.
+ *
+ * @param workspaceName - The workspace to name before the conversation, when the list spans more
+ * than one.
+ * @param contextMenu - The entry's context menu bindings, if it has one.
+ */
+export function NotificationRow({
   item,
   resolveName,
   mentionName,
   currentUserId,
   onOpen,
   contextMenu,
+  workspaceName,
 }: {
   item: NotificationItem;
   resolveName: (userId: string) => string;
   mentionName: (id: string) => string | undefined;
   currentUserId: string | undefined;
   onOpen: () => void;
-  contextMenu: ContextMenuBindings;
+  contextMenu?: ContextMenuBindings;
+  workspaceName?: string;
 }) {
   const reason = REASONS[item.reason];
   const Icon = reason.icon;
@@ -345,6 +349,14 @@ function NotificationRow({
           <span className="flex items-center gap-1.5 text-[11px] text-rim-text-faint">
             <span className="shrink-0 whitespace-nowrap">{reason.label}</span>
             <span aria-hidden>·</span>
+            {workspaceName && (
+              <>
+                <span className="min-w-0 max-w-[40%] shrink-0 truncate" title={workspaceName}>
+                  {workspaceName}
+                </span>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <span
               className={cn("min-w-0 truncate", available ? "text-rim-text-muted" : "italic")}
               title={conversation}

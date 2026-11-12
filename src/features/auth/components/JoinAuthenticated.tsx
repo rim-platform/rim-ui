@@ -45,6 +45,7 @@ import { ownerName as shownOwnerName, sameWorkspaceName } from "../../workspaces
 import { InviteTokenType } from "../types";
 import { InviteByline } from "./InviteByline";
 import { BrandHeading } from "./BrandHeading";
+import { WorkspaceInitials } from "./WorkspaceInitials";
 import { InvalidTokenState } from "./InvalidTokenState";
 
 interface JoinAuthenticatedProps {
@@ -133,7 +134,7 @@ export function JoinAuthenticated({
     case InviteTokenType.INSTANCE:
       return (
         <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-          <div className="w-full max-w-lg text-center space-y-2">
+          <div className="w-full max-w-[440px] text-center space-y-2">
             <p className="text-sm text-rim-danger">
               You already have a RIM account; instance invites are only for new users.
             </p>
@@ -147,9 +148,14 @@ export function JoinAuthenticated({
       if (dead) return <InvalidTokenState code="INVALID_TOKEN" />;
       return (
         <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-          <div className="w-full max-w-lg space-y-6">
+          <div className="w-full max-w-[440px] space-y-6">
             <header className="text-center">
               <BrandHeading />
+              {workspaceName && (
+                <div className="mt-3 flex justify-center">
+                  <WorkspaceInitials name={workspaceName} />
+                </div>
+              )}
               <p className="mt-1 text-sm text-rim-text-muted">
                 {workspaceName
                   ? `You have been invited to join ${workspaceName}`
@@ -158,7 +164,7 @@ export function JoinAuthenticated({
               <InviteByline invitedBy={invitedBy} ownerName={ownerName} />
             </header>
 
-            <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+            <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
               {member || code === CONFLICT ? (
                 <div className="space-y-4">
                   <p className="text-sm text-rim-text-muted">
@@ -180,17 +186,27 @@ export function JoinAuthenticated({
                     <SameNameNotice name={workspaceName} workspaceId={workspaceId} />
                   )}
                   {joinServer.error && (
-                    <p className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger">
+                    <p className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger">
                       {banned
                         ? BANNED_MESSAGE
                         : errorSentence(joinServer.error, "Could not join the workspace.")}
                     </p>
                   )}
+                  {banned && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => navigate("/")}
+                    >
+                      Go to RIM
+                    </Button>
+                  )}
                   <button
                     type="button"
                     onClick={handleJoin}
                     disabled={joinServer.isPending}
-                    className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50"
+                    className="w-full rounded-[9px] bg-rim-text px-4 py-2.5 text-sm font-semibold text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
                   >
                     {joinServer.isPending ? "Joining..." : "Join workspace"}
                   </button>

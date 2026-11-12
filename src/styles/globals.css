@@ -1,21 +1,47 @@
 @import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-400.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-500.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-600.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+@import "@fontsource/jetbrains-mono/latin-ext-400.css";
+@import "@fontsource/jetbrains-mono/latin-ext-500.css";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-rim-void: #030712;
-  --color-rim-panel: #0b1324;
-  --color-rim-panel-soft: #111b30;
-  --color-rim-line: rgba(255, 255, 255, 0.08);
-  --color-rim-accent: #22d3ee;
-  --color-rim-accent-strong: #06b6d4;
-  --color-rim-warm: #f59e0b;
-  --color-rim-danger: #ef4444;
-  --color-rim-success: #34d399;
-  --color-rim-text: #e2e8f0;
-  --color-rim-text-muted: #94a3b8;
-  --color-rim-text-faint: #64748b;
+  --color-rim-void: #0b0c10;
+  --color-rim-panel: #111318;
+  --color-rim-panel-soft: #181b22;
+  --color-rim-line: #262a33;
+  --color-rim-line-strong: #3a404d;
+  --color-rim-accent: #9cc3ff;
+  --color-rim-accent-strong: #6ea8fe;
+  --color-rim-agent: #9cc3ff;
+  --color-rim-warm: #f5c46b;
+  --color-rim-danger: #ff9aaa;
+  --color-rim-danger-solid: #d93a4e;
+  --color-rim-success: #3dd68c;
+  --color-rim-text: #edeef0;
+  --color-rim-text-muted: #9ba1ad;
+  --color-rim-text-faint: #8a909c;
   --color-rim-signal: #f2541b;
+  --color-rim-card-running: #161a22;
+  --color-rim-card-running-line: #263248;
+  --color-rim-card-confirm: #1c1713;
+  --color-rim-card-confirm-line: #5a3220;
+  --color-rim-card-denied: #1c1418;
+  --color-rim-card-denied-line: #5c2533;
+  --color-rim-card-failed: #1b1913;
+  --color-rim-card-failed-line: #4f4321;
+  --color-rim-card-done: #13191a;
+  --color-rim-card-done-line: #1f4434;
+  --color-rim-card-ended: #16181d;
+  --color-rim-card-ended-line: #3a404d;
 }
 
 :root {
@@ -50,25 +76,75 @@ body {
   outline-offset: 2px;
 }
 
-@keyframes rim-splash-bounce {
+/* The splash's glow behind the bolt: three blurred copies and the bolt itself pulse together. */
+@keyframes rim-glow-wide {
   0%,
-  60%,
   100% {
-    transform: translateY(0);
+    opacity: 0.24;
   }
-  30% {
-    transform: translateY(-9px);
+  50% {
+    opacity: 0.76;
+  }
+}
+@keyframes rim-glow-halo {
+  0%,
+  100% {
+    opacity: 0.36;
+  }
+  50% {
+    opacity: 0.96;
+  }
+}
+@keyframes rim-glow-core {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.86;
+  }
+}
+/* #ff8450 is the bolt's brighter peak. */
+@keyframes rim-glow-bolt {
+  0%,
+  100% {
+    fill: var(--color-rim-signal);
+  }
+  50% {
+    fill: #ff8450;
   }
 }
 
-.rim-splash-ball {
-  transform-box: fill-box;
-  animation: rim-splash-bounce 1.2s ease-in-out infinite;
+.rim-glow-wide {
+  animation: rim-glow-wide 1.8s ease-in-out infinite;
+}
+.rim-glow-halo {
+  animation: rim-glow-halo 1.8s ease-in-out infinite;
+}
+/* #ff8a5c is the glow's light core. */
+.rim-glow-core {
+  fill: #ff8a5c;
+  animation: rim-glow-core 1.8s ease-in-out infinite;
+}
+.rim-glow-bolt {
+  animation: rim-glow-bolt 1.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rim-splash-ball {
+  .rim-glow-wide,
+  .rim-glow-halo,
+  .rim-glow-core,
+  .rim-glow-bolt {
     animation: none;
+  }
+  .rim-glow-wide {
+    opacity: 0.35;
+  }
+  .rim-glow-halo {
+    opacity: 0.5;
+  }
+  .rim-glow-core {
+    opacity: 0.45;
   }
 }
 
@@ -118,7 +194,7 @@ body {
   border-radius: 0.25rem;
   padding: 0.125rem 0.25rem;
   color: var(--color-rim-accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
 }
 

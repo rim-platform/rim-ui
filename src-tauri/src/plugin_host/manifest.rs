@@ -35,6 +35,12 @@ pub struct ManifestCommand {
     /// install-ID leak cannot be proven statically.
     #[serde(default)]
     pub output_schema: Option<serde_json::Value>,
+    /// The plugin's claim that the command changes nothing, which lets an agent
+    /// outside RIM run it once approved without asking each time. RIM cannot verify
+    /// it. Skipped when false, so it does not change the content hash of a manifest
+    /// that leaves it out.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +96,8 @@ pub struct CommandInfo {
     pub keybind_capable: bool,
     pub dangerous: bool,
     pub ai_callable: bool,
+    /// The plugin's claim that the command changes nothing.
+    pub read_only: bool,
     pub arguments: Vec<serde_json::Value>,
     /// Context kinds the command runs in (`conversation`, `message`, `workspace`).
     pub required_context: Vec<String>,
@@ -159,6 +167,11 @@ pub struct PluginManifest {
     pub panels: Vec<PanelDef>,
     #[serde(default)]
     pub settings_schema: Vec<SettingSchema>,
+    /// The built-in and app commands the plugin asks to run, which the person grants
+    /// one by one. Skipped when empty, so it does not change the content hash of a
+    /// manifest that leaves it out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs_commands: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -229,6 +242,16 @@ impl PluginManifest {
             }
         }
 
+        // A command that changes nothing cannot also need a person's confirmation.
+        for command in &self.commands {
+            if command.read_only && command.dangerous {
+                return Err(ManifestError::Validation(format!(
+                    "command `{}` cannot be both read_only and dangerous",
+                    command.id
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -271,6 +294,7 @@ impl PluginManifest {
                 keybind_capable: c.keybind_capable,
                 dangerous: c.dangerous,
                 ai_callable: c.ai_callable,
+                read_only: c.read_only,
                 arguments: c.arguments.clone(),
                 required_context: c.required_context.clone(),
                 required_capabilities: c.required_capabilities.clone(),
@@ -366,6 +390,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
         assert!(m.has_reserved_prefix());
     }
@@ -388,6 +413,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         };
         assert!(!m.has_reserved_prefix());
     }
@@ -416,6 +442,7 @@ mod tests {
                     arguments: vec![],
                     ai_callable: false,
                     output_schema: None,
+                    read_only: false,
                 },
                 ManifestCommand {
                     id: "other_action".into(),
@@ -428,6 +455,7 @@ mod tests {
                     arguments: vec![],
                     ai_callable: false,
                     output_schema: None,
+                    read_only: false,
                 },
             ],
             keybind_suggestions: vec![KeybindSuggestion {
@@ -444,6 +472,7 @@ mod tests {
             }],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 
@@ -593,5 +622,70 @@ mod tests {
             "plugin.dev.example.tool.other_action"
         );
         assert_eq!(actions[0].context_types, vec!["message"]);
+    }
+
+    /// A manifest with one `ai_callable` command, whose text leaves out `read_only`.
+    fn pinned_manifest() -> serde_json::Value {
+        serde_json::json!({
+            "manifest_version": 1,
+            "plugin_id": "dev.example.pinned",
+            "display_name": "Pinned",
+            "version": "1.0.0",
+            "description": "A manifest with a pinned hash.",
+            "author": null,
+            "runtime_kind": "DesktopLocalProcess",
+            "entrypoint": "main",
+            "commands": [{
+                "id": "list_pods",
+                "title": "List pods",
+                "description": "Lists pods.",
+                "ai_callable": true,
+                "output_schema": { "type": "object", "properties": { "count": { "type": "integer" } } },
+            }],
+        })
+    }
+
+    #[test]
+    fn the_hash_of_a_manifest_without_read_only_stays_pinned() {
+        let manifest: PluginManifest = serde_json::from_value(pinned_manifest()).unwrap();
+        assert_eq!(
+            manifest.content_hash(),
+            "ba71185003105dd2224908cedee52787e502a722ff724a9217b0f9998a629703"
+        );
+    }
+
+    #[test]
+    fn writing_read_only_as_false_keeps_the_hash_and_true_changes_it() {
+        let plain: PluginManifest = serde_json::from_value(pinned_manifest()).unwrap();
+        let with_value = |value: bool| {
+            let mut json = pinned_manifest();
+            json["commands"][0]["read_only"] = serde_json::json!(value);
+            serde_json::from_value::<PluginManifest>(json).unwrap()
+        };
+        assert_eq!(with_value(false).content_hash(), plain.content_hash());
+        assert_ne!(with_value(true).content_hash(), plain.content_hash());
+    }
+
+    #[test]
+    fn a_command_cannot_be_both_read_only_and_dangerous() {
+        let mut json = pinned_manifest();
+        json["commands"][0]["read_only"] = serde_json::json!(true);
+        json["commands"][0]["dangerous"] = serde_json::json!(true);
+        let manifest: PluginManifest = serde_json::from_value(json).unwrap();
+        let error = manifest.validate().unwrap_err().to_string();
+        assert!(
+            error.contains("command `list_pods` cannot be both read_only and dangerous"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn command_infos_say_whether_a_command_is_read_only() {
+        let mut json = pinned_manifest();
+        json["commands"][0]["read_only"] = serde_json::json!(true);
+        let manifest: PluginManifest = serde_json::from_value(json).unwrap();
+        assert!(manifest.command_infos()[0].read_only);
+        let plain: PluginManifest = serde_json::from_value(pinned_manifest()).unwrap();
+        assert!(!plain.command_infos()[0].read_only);
     }
 }

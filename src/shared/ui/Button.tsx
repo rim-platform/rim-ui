@@ -10,9 +10,9 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<NonNullable<ButtonProps["variant"]>, string> = {
-  primary: "bg-rim-accent text-rim-void hover:bg-rim-accent-strong",
-  secondary: "border border-rim-line bg-rim-void text-rim-text-muted hover:text-rim-text",
-  danger: "bg-rim-danger text-rim-void hover:bg-rim-danger/90",
+  primary: "bg-rim-text text-rim-panel hover:bg-rim-text/90",
+  secondary: "border border-rim-line-strong bg-rim-void text-rim-text-muted hover:text-rim-text",
+  danger: "bg-rim-danger-solid text-white hover:bg-rim-danger-solid/90",
   ghost: "text-rim-text-muted hover:text-rim-text hover:bg-white/5",
 };
 

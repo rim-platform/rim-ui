@@ -67,6 +67,8 @@ import {
 } from "../../../core/graphql/generated/schema-types";
 import { toast } from "../../../shared/toast";
 import { useCommands } from "../api/useCommands";
+import { usePluginCommands } from "../../plugins/api/usePluginCommands";
+import { compareCommandCategories } from "../runtime/commandCategories";
 import { CANCELLED_PAYLOAD } from "../../plugins/runtime/pluginCommandInfo";
 import { dispatchCommand } from "../runtime/commandDispatcher";
 import { useCommandStore } from "../state/useCommandStore";
@@ -129,6 +131,40 @@ const KICK: CommandDefinition = {
   category: "Admin",
   dangerous: true,
   arguments: [SERVER_ID, requiredArgument("user_id", CommandArgumentType.USER_ID)],
+};
+
+const PIN: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "chat.pin_message",
+  title: "Pin Message",
+  description: "Pins a message",
+  category: "Chat",
+  arguments: [SERVER_ID, requiredArgument("message_id", CommandArgumentType.MESSAGE_ID)],
+};
+
+const DND: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "notifications.dnd",
+  title: "Do Not Disturb",
+  description: "Pause notification toasts and sounds",
+  category: "Notifications",
+  arguments: [
+    SERVER_ID,
+    { ...requiredArgument("mode", CommandArgumentType.ENUM), allowedValues: ["on", "off"] },
+  ],
+};
+
+const TIMEOUT: CommandDefinition = {
+  ...BASE_COMMAND,
+  id: "admin.timeout",
+  title: "Timeout Member",
+  description: "Mute a member for a number of minutes",
+  category: "Moderation",
+  arguments: [
+    SERVER_ID,
+    requiredArgument("user_id", CommandArgumentType.USER_ID),
+    requiredArgument("minutes", CommandArgumentType.INTEGER),
+  ],
 };
 
 const CREATE_CHANNEL: CommandDefinition = {
@@ -203,6 +239,8 @@ describe("CommandPalette command context", () => {
         threadId: "thread-1",
         focusedSurface: "commandPalette",
       },
+      askForArguments: true,
+      onArguments: expect.any(Function),
     });
   });
 
@@ -213,6 +251,8 @@ describe("CommandPalette command context", () => {
 
     expect(vi.mocked(dispatchCommand).mock.calls[0][2]).toEqual({
       commandContext: { workspaceId: "ws-1", focusedSurface: "commandPalette" },
+      askForArguments: true,
+      onArguments: expect.any(Function),
     });
   });
 
@@ -303,6 +343,60 @@ describe("CommandPalette search", () => {
     } as ReturnType<typeof useCommands>);
   });
 
+  /** The category headers the open palette shows, top to bottom. */
+  function shownHeaders(): string[] {
+    return Array.from(document.querySelectorAll("[data-command-item]"))
+      .map((item) => item.previousElementSibling?.textContent)
+      .filter((text): text is string => Boolean(text));
+  }
+
+  it("lists the built-in categories in order with an empty query, the others after them", () => {
+    vi.mocked(usePluginCommands).mockReturnValue([
+      {
+        ...BASE_COMMAND,
+        id: "plugin.pods.refresh",
+        title: "Refresh Pods",
+        category: "Kubernetes Pods",
+        sourceKind: "PLUGIN",
+        executionTarget: "DESKTOP_LOCAL",
+        contextTypes: [],
+      },
+    ]);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [
+        serverCommand("admin.reset_password", "Reset Password", "Set a new password", "Admin"),
+        serverCommand("moderation.timeout", "Time Out Member", "Mute someone", "Moderation"),
+        serverCommand("chat.mark_all_as_read", "Mark All as Read", "Read everything", "Messages"),
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCommands>);
+    render(<CommandPalette />, { wrapper: Providers });
+    act(() => useCommandStore.getState().openCommandPalette());
+
+    const headers = shownHeaders();
+    expect(new Set(headers).size).toBe(headers.length);
+    expect(headers).toEqual([...headers].sort(compareCommandCategories));
+    expect(headers.indexOf("Navigation")).toBeLessThan(headers.indexOf("Messages"));
+    expect(headers.indexOf("Messages")).toBeLessThan(headers.indexOf("Moderation"));
+    expect(headers.indexOf("View")).toBeLessThan(headers.indexOf("Admin"));
+    expect(headers.slice(-2)).toEqual(["Admin", "Kubernetes Pods"]);
+    vi.mocked(usePluginCommands).mockReturnValue([]);
+  });
+
+  it("keeps the ranked order with a query, a group's header once above its first match", () => {
+    render(<CommandPalette />, { wrapper: Providers });
+    act(() => useCommandStore.getState().openCommandPalette());
+    fireEvent.change(screen.getByPlaceholderText("Type a command..."), {
+      target: { value: "re" },
+    });
+
+    const titles = Array.from(document.querySelectorAll("[data-command-item]")).map(
+      (item) => item.querySelector("span")?.textContent,
+    );
+    expect(titles[0]).toBe("Reset Password");
+    expect(shownHeaders()[0]).toBe("Admin");
+  });
+
   it("puts the best match first, under its group's header", () => {
     render(<CommandPalette />, { wrapper: Providers });
     act(() => useCommandStore.getState().openCommandPalette());
@@ -338,7 +432,7 @@ describe("CommandPalette search", () => {
 /** Serves the commands the argument filter and pipe tests choose among. */
 function serveFilterCommands() {
   vi.mocked(useCommands).mockReturnValue({
-    data: [MARK_AS_READ, KICK, CREATE_CHANNEL, SEARCH, LIST_STATE],
+    data: [MARK_AS_READ, KICK, PIN, DND, TIMEOUT, CREATE_CHANNEL, SEARCH, LIST_STATE],
     isLoading: false,
   } as ReturnType<typeof useCommands>);
 }
@@ -370,16 +464,30 @@ describe("CommandPalette argument filter", () => {
     } as ReturnType<typeof useCommands>);
   });
 
-  it("leaves out a command whose required argument nothing supplies", () => {
+  it("lists a command whose required argument the argument form asks for", () => {
     useShellStore.getState().setSelectedConversationId("conv-9");
     openPalette();
 
-    expect(screen.queryByText("Kick Member")).not.toBeInTheDocument();
+    expect(screen.getByText("Kick Member")).toBeInTheDocument();
   });
 
-  it("lists a conversation's command only while a conversation is open", () => {
+  it("lists Do Not Disturb and Timeout Member, whose arguments the form asks for", () => {
     openPalette();
-    expect(screen.queryByText("Mark as read")).not.toBeInTheDocument();
+
+    expect(screen.getByText("Do Not Disturb")).toBeInTheDocument();
+    expect(screen.getByText("Timeout Member")).toBeInTheDocument();
+  });
+
+  it("leaves out a command whose required argument only a selected message supplies", () => {
+    useShellStore.getState().setSelectedConversationId("conv-9");
+    openPalette();
+
+    expect(screen.queryByText("Pin Message")).not.toBeInTheDocument();
+  });
+
+  it("lists a conversation's command with no conversation open, to ask for one", () => {
+    openPalette();
+    expect(screen.getByText("Mark as read")).toBeInTheDocument();
 
     act(() => useShellStore.getState().setSelectedConversationId("conv-9"));
     expect(screen.getByText("Mark as read")).toBeInTheDocument();

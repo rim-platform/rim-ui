@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 
 import { TestProviders } from "../../../../test/utils";
 import { useUnreadStore } from "../../../conversations/state/useUnreadStore";
+import { useMessageDisplaySettingsStore } from "../../state/useMessageDisplaySettingsStore";
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../../../core/graphql/client", () => ({
@@ -64,8 +65,11 @@ beforeEach(() => {
   requestMock.mockReset();
   requestMock.mockResolvedValue({ markAsRead: true });
   atBottom.current = true;
-  useUnreadStore.setState({ counts: {}, spaceOf: {} });
+  useUnreadStore.setState({ counts: {}, spaceOf: {}, markers: {}, countSources: {}, held: {} });
+  useMessageDisplaySettingsStore.setState({ markReadByHand: false });
 });
+
+const MARKERS = { "conv-1": "2026-10-13T09:00:00Z" };
 
 afterEach(() => {
   vi.useRealTimers();
@@ -145,7 +149,7 @@ describe("useMarkSeen", () => {
     ]);
   });
 
-  it("sends a pending mark at once when the viewer leaves the conversation", async () => {
+  it("on an older host sends a pending mark at once when the viewer leaves", async () => {
     useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 });
     const { rerender } = renderMarkSeen({ conversationId: "conv-1", items: history });
     await wait(MARK_SEEN_DELAY_MS / 2);
@@ -153,6 +157,90 @@ describe("useMarkSeen", () => {
     await wait(0);
     expect(marks()).toEqual([{ conversationId: "conv-1", readAt: history[1].sentAt }]);
     await wait(MARK_SEEN_DELAY_MS * 2);
+    expect(marks()).toHaveLength(1);
+  });
+
+  it("with read markers, leaving before the second is up marks nothing", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    const { rerender } = renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS / 2);
+    rerender({ conversationId: "conv-2", items: [message(7)] });
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    expect(marks()).toEqual([]);
+    expect(useUnreadStore.getState().counts).toEqual({ "conv-1": 2 });
+  });
+
+  it("with read markers, unmounting before the second is up marks nothing", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    const { unmount } = renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS / 2);
+    unmount();
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    expect(marks()).toEqual([]);
+  });
+
+  it("with read markers, what was marked before leaving stays marked", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    const { rerender } = renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS);
+    expect(marks()).toHaveLength(1);
+    rerender({ conversationId: "conv-2", items: [message(7)] });
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    expect(marks()).toEqual([{ conversationId: "conv-1", readAt: history[1].sentAt }]);
+  });
+
+  it("a short list at the bottom counts as read after the second", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 1 }, MARKERS);
+    renderMarkSeen({ conversationId: "conv-1", items: [message(1)] });
+    await wait(MARK_SEEN_DELAY_MS);
+    expect(marks()).toHaveLength(1);
+  });
+
+  it("marking by hand: reaching the end marks nothing and the count stays", async () => {
+    useMessageDisplaySettingsStore.setState({ markReadByHand: true });
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    const { result } = renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    act(() => result.current.onScrollPosition(true));
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    expect(marks()).toEqual([]);
+    expect(useUnreadStore.getState().counts).toEqual({ "conv-1": 2 });
+  });
+
+  it("marking by hand does not apply to an older host, which has no marker to keep", async () => {
+    useMessageDisplaySettingsStore.setState({ markReadByHand: true });
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 });
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS);
+    expect(marks()).toHaveLength(1);
+  });
+
+  it("held: nothing is marked at the bottom, and a pending mark is taken back", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS / 2);
+    act(() => useUnreadStore.getState().setHeld("conv-1"));
+    await wait(MARK_SEEN_DELAY_MS * 3);
+    expect(marks()).toEqual([]);
+    expect(useUnreadStore.getState().counts).toEqual({ "conv-1": 2 });
+  });
+
+  it("held: a count read again while at the bottom does not mark", async () => {
+    useUnreadStore.getState().setCounts("ws-1", {}, {});
+    useUnreadStore.getState().setHeld("conv-1");
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    act(() => useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS));
+    await wait(MARK_SEEN_DELAY_MS * 3);
+    expect(marks()).toEqual([]);
+  });
+
+  it("marks again once the hold ends", async () => {
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 2 }, MARKERS);
+    useUnreadStore.getState().setHeld("conv-1");
+    renderMarkSeen({ conversationId: "conv-1", items: history });
+    await wait(MARK_SEEN_DELAY_MS * 2);
+    act(() => useUnreadStore.getState().clearHeld("conv-1"));
+    await wait(MARK_SEEN_DELAY_MS);
     expect(marks()).toHaveLength(1);
   });
 });

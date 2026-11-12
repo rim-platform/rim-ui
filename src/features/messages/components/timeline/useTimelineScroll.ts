@@ -64,6 +64,11 @@ interface UseTimelineScrollOptions {
   displayDensity: DisplayDensity;
   /** Row to show at the top on first load (the "New messages" divider), or -1. */
   firstNewIndex: number;
+  /**
+   * Whether `firstNewIndex` is settled. A list that opens before it is goes to that row when it
+   * becomes known, unless the viewer has moved by then.
+   */
+  firstNewKnown: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => unknown;
@@ -90,7 +95,8 @@ interface UseTimelineScrollOptions {
 /**
  * Virtualized scrolling for the message list (oldest at the top):
  * - only rows near the viewport are mounted; each is measured after render;
- * - first load lands on the newest message, or on the "New messages" divider;
+ * - first load lands on the newest message, or on the "New messages" divider, also when that row
+ *   becomes known just after the list opened and the viewer has not moved;
  * - an appended message scrolls into view when the list follows its end or the
  *   user sent it themselves; otherwise the viewport stays put. The list follows
  *   its end from when it reaches it or starts a scroll to it until a scroll
@@ -109,6 +115,7 @@ export function useTimelineScroll({
   currentUserId,
   displayDensity,
   firstNewIndex,
+  firstNewKnown,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
@@ -221,6 +228,8 @@ export function useTimelineScroll({
   const initialScrollForRef = useRef<{ container: HTMLDivElement; listKey: string | null } | null>(
     null,
   );
+  // The initial scroll ran before the first new row was known.
+  const openedUnsettledRef = useRef(false);
 
   // Runs before paint so prepend compensation never shows a jumped frame.
   useLayoutEffect(() => {
@@ -234,6 +243,7 @@ export function useTimelineScroll({
     const initialFor = initialScrollForRef.current;
     if (initialFor?.container !== container || initialFor.listKey !== listKey) {
       initialScrollForRef.current = { container, listKey };
+      openedUnsettledRef.current = !firstNewKnown;
       if (firstNewIndex >= 0) {
         virtualizer.scrollToIndex(firstNewIndex, { align: "start" });
       } else {
@@ -244,6 +254,17 @@ export function useTimelineScroll({
       followEndRef.current = firstNewIndex < 0 || isAtBottomRef.current;
       lastScrollTopRef.current = container.scrollTop;
       return;
+    }
+
+    if (openedUnsettledRef.current && firstNewKnown) {
+      openedUnsettledRef.current = false;
+      if (firstNewIndex >= 0 && followEndRef.current) {
+        virtualizer.scrollToIndex(firstNewIndex, { align: "start" });
+        isAtBottomRef.current = isScrolledToBottom(container);
+        followEndRef.current = isAtBottomRef.current;
+        lastScrollTopRef.current = container.scrollTop;
+        return;
+      }
     }
 
     // Older page prepended: shift by the height added above the old first row.
@@ -287,6 +308,7 @@ export function useTimelineScroll({
     listKey,
     items,
     firstNewIndex,
+    firstNewKnown,
     currentUserId,
     displayDensity,
     virtualizer,

@@ -198,7 +198,7 @@ describe("Vim normal mode", () => {
 
   it("moves focus through a pane's items when no list answers", () => {
     mount(`
-      <div data-panel="sideRail" tabindex="-1">
+      <div data-panel="workspaceRail" tabindex="-1">
         <button>One</button><button>Two</button><input type="text" /><button>Three</button>
       </div>`);
     const [one, two, three] = Array.from(document.querySelectorAll("button"));
@@ -231,7 +231,7 @@ describe("Vim normal mode", () => {
     // real time passes, so the focus checked is where the last one left it.
     vi.useFakeTimers();
     mount(`
-      <div data-panel="sideRail" tabindex="-1">
+      <div data-panel="workspaceRail" tabindex="-1">
         <button>1</button><button>2</button><button>3</button><button>4</button><button>5</button>
       </div>`);
     const buttons = Array.from(document.querySelectorAll("button"));

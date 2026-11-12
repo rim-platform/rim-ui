@@ -7,6 +7,7 @@ import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useKeybindProfileStore } from "../../commands/state/useKeybindProfileStore";
+import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettingsStore";
 import type { MessageItem as MessageItemData, MessagesPage } from "../../../core/types/messages";
 
 // --- Controlled data sources ---------------------------------------------
@@ -41,10 +42,10 @@ vi.mock("../api/useEditMessage", () => ({
   useEditMessageMutation: () => editMutation,
 }));
 
-const toggleMutate = vi.fn();
-const toggleMutation = { mutate: toggleMutate };
-vi.mock("../api/useToggleReaction", () => ({
-  useToggleReactionMutation: () => toggleMutation,
+const runReaction = vi.hoisted(() => vi.fn());
+vi.mock("../api/messageCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/messageCommands")>()),
+  runReactionCommand: runReaction,
 }));
 
 const deleteMessage = vi.fn();
@@ -125,6 +126,7 @@ vi.mock("../../conversations/api/useChannelPosting", async (importOriginal) => (
   usePostingRights: () => posting.rights,
 }));
 vi.mock("../../plugins/api/usePluginCommands", () => ({
+  usePluginCommands: () => [],
   usePluginContextMenuCommands: () => [],
 }));
 vi.mock("./TypingIndicator", () => ({ TypingIndicator: () => null }));
@@ -484,6 +486,7 @@ beforeEach(() => {
   dataState.current = { pages: [], hasNextPage: false, isFetchingNextPage: false };
   useWorkspaceStore.setState({ workspaceId: "ws-1" });
   useAuthStore.setState({ session: { userId: "me" } });
+  useUnreadStore.setState({ counts: {}, markers: {}, countSources: { "ws-1": "plain" } });
   useShellStore.setState({
     selectedConversationId: "conv-1",
     editingMessageId: null,
@@ -575,6 +578,23 @@ describe("MessageTimeline handler stability", () => {
     for (const id of ["m-000", "m-001", "m-002"]) {
       expect(renderCounts.get(id) ?? 0).toBe(0);
     }
+  });
+});
+
+describe("MessageTimeline — reaction chips", () => {
+  it("toggles a reaction with the reaction command on the chip's own message", () => {
+    runReaction.mockReset();
+    setMessages([0, 1].map((i) => makeMessage(i)));
+    render(<MessageTimeline />);
+    const handlers = seenHandlers[0] as { onToggleReaction: (id: string, emoji: string) => void };
+
+    handlers.onToggleReaction("m-000", "👍");
+
+    expect(runReaction).toHaveBeenCalledWith(
+      { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "m-000" },
+      "👍",
+      "button",
+    );
   });
 });
 
@@ -864,6 +884,93 @@ describe("MessageTimeline virtualization", () => {
     expect(screen.getByRole("separator", { name: "New messages" })).toBeInTheDocument();
     // The divider sits inside the first unread row, which is aligned to the top.
     expect(rowViewportOffset("m-040")).toBe(0);
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("opens on the host's read marker in a fresh session, with no watermark", async () => {
+    const items = range(0, 60);
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 20 }, { "conv-1": items[39].sentAt });
+    setMessages(items);
+    render(<MessageTimeline />);
+    await settle();
+
+    expect(screen.getByRole("separator", { name: "New messages" })).toBeInTheDocument();
+    expect(rowViewportOffset("m-040")).toBe(0);
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("shows the loading state until the counts have answered, then opens on the marker", async () => {
+    const items = range(0, 60);
+    useUnreadStore.setState({ countSources: {} });
+    setMessages(items);
+    render(<MessageTimeline />);
+    expect(screen.getByText("Loading messages...")).toBeInTheDocument();
+
+    act(() =>
+      useUnreadStore.getState().setCounts("ws-1", { "conv-1": 20 }, { "conv-1": items[39].sentAt }),
+    );
+    await settle();
+
+    expect(screen.queryByText("Loading messages...")).not.toBeInTheDocument();
+    expect(rowViewportOffset("m-040")).toBe(0);
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("goes to a marker that answers after the list opened at its end", async () => {
+    const items = range(0, 60);
+    useUnreadStore.setState({ countSources: {} });
+    setMessages(items);
+    render(<MessageTimeline />);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 5)));
+    await settle();
+    expect(screen.queryByText("Loading messages...")).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: "New messages" })).not.toBeInTheDocument();
+
+    act(() =>
+      useUnreadStore.getState().setCounts("ws-1", { "conv-1": 20 }, { "conv-1": items[39].sentAt }),
+    );
+    await settle();
+
+    expect(rowViewportOffset("m-040")).toBe(0);
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("says more is above when the marker is past the pages it may load on opening", async () => {
+    const items = range(0, 60);
+    useUnreadStore
+      .getState()
+      .setCounts("ws-1", { "conv-1": 200 }, { "conv-1": "2020-01-01T00:00:00Z" });
+    setMessages(items);
+    fetchNextPage.mockClear();
+    dataState.current = { ...dataState.current, hasNextPage: true };
+    const { rerender } = render(<MessageTimeline />);
+    await settle();
+    for (const fetching of [true, false, true, false, true, false]) {
+      dataState.current = { ...dataState.current, isFetchingNextPage: fetching };
+      rerender(<MessageTimeline />);
+      await settle();
+    }
+
+    expect(fetchNextPage).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("separator", { name: "More new messages above" })).toBeInTheDocument();
+    expect(screen.getByText("message 0")).toBeInTheDocument();
+    useUnreadStore.setState({ watermarks: {} });
+  });
+
+  it("offers Mark as read in the divider only when reading does not mark", async () => {
+    const items = range(0, 60);
+    useUnreadStore.getState().setCounts("ws-1", { "conv-1": 20 }, { "conv-1": items[39].sentAt });
+    setMessages(items);
+    const first = render(<MessageTimeline />);
+    await settle();
+    expect(screen.queryByRole("button", { name: "Mark as read" })).not.toBeInTheDocument();
+    first.unmount();
+
+    useMessageDisplaySettingsStore.setState({ markReadByHand: true });
+    render(<MessageTimeline />);
+    await settle();
+    expect(screen.getByRole("button", { name: "Mark as read" })).toBeInTheDocument();
+    useMessageDisplaySettingsStore.setState({ markReadByHand: false });
     useUnreadStore.setState({ watermarks: {} });
   });
 

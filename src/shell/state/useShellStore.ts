@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import type { PluginPanelSlot } from "../../features/plugins/types";
 import type { DirectMember } from "../../features/relay/conversations/startDirect";
+import type { ShellWidth } from "../hooks/useShellWidth";
 
 export type ActivePanel = "inbox";
 
@@ -18,13 +19,20 @@ export type MainSurface =
    */
   | { kind: "settings"; tab?: string; plugin?: string }
   | { kind: "plugin"; pluginId: string }
-  | { kind: "marketplace" }
   | { kind: "audit-log" }
+  /** The page across every workspace of what needs the person: requests, mentions, unread counts. */
+  | { kind: "home" }
+  /** Every unread message across the workspaces, staying until it is marked read. */
+  | { kind: "unreads" }
   /**
    * The message requests of one workspace's conversations, or with `workspaceId: null`, those
    * from outside every workspace.
    */
-  | { kind: "dm-requests"; workspaceId: string | null };
+  | { kind: "dm-requests"; workspaceId: string | null }
+  /** The agent sessions RIM started on this computer: those running and the recent ones. */
+  | { kind: "agent-sessions" }
+  /** One agent session, by RIM's key for it. */
+  | { kind: "agent-session"; key: string };
 
 /**
  * A direct message not created yet: with a workspace member, or with someone in a relay's
@@ -47,9 +55,39 @@ export type DirectOrigin = {
 export type ActivePluginPanel = {
   pluginId: string;
   panelId: string;
-  /** Where the panel shows: a `main_area` panel covers the conversation. */
+  /** Where the panel shows: a `main_area` panel takes the place of the page shown. */
   slot: PluginPanelSlot;
 } | null;
+
+/** A place the person opened: a workspace, the page shown, and the conversation selected there. */
+export type Place = {
+  workspaceId: string;
+  surface: MainSurface;
+  conversationId: string | null;
+};
+
+/** The most places Back and Forward remember. */
+export const HISTORY_LIMIT = 50;
+
+/**
+ * What tells two places apart: the workspace, the page with its tab or plugin, and the
+ * conversation only while the page is the conversation.
+ */
+export function placeKey(place: Place): string {
+  const { surface } = place;
+  const page =
+    surface.kind === "settings"
+      ? `settings:${surface.tab ?? ""}`
+      : surface.kind === "plugin"
+        ? `plugin:${surface.pluginId}`
+        : surface.kind === "dm-requests"
+          ? `dm-requests:${surface.workspaceId ?? ""}`
+          : surface.kind === "agent-session"
+            ? `agent-session:${surface.key}`
+            : surface.kind;
+  const conversation = surface.kind === "conversation" ? (place.conversationId ?? "") : "";
+  return `${place.workspaceId}|${page}|${conversation}`;
+}
 
 /** Options for selecting a conversation. */
 export type SelectConversationOptions = {
@@ -58,6 +96,23 @@ export type SelectConversationOptions = {
 };
 
 type ShellState = {
+  /** The places opened, oldest first, for Back and Forward; at most {@link HISTORY_LIMIT}. */
+  history: Place[];
+  /** The entry of `history` shown now; -1 while it is empty. */
+  historyIndex: number;
+  /**
+   * Records `place` as the one shown now. A place equal to the current one changes nothing; one
+   * in the same workspace and page as a current entry with no conversation yet replaces it;
+   * any other drops the entries after the current one and is added, the oldest going past the
+   * limit.
+   */
+  recordPlace: (place: Place) => void;
+  /**
+   * Moves `delta` entries back (negative) or forward through the history.
+   *
+   * @returns The place moved to, or `null` when there is none in that direction.
+   */
+  stepHistory: (delta: number) => Place | null;
   activePanel: ActivePanel;
   mainSurface: MainSurface;
   activePluginPanel: ActivePluginPanel;
@@ -77,13 +132,24 @@ type ShellState = {
   showNewMessagePicker: boolean;
   showInviteDialog: boolean;
   pinnedPanelOpen: boolean;
+  /** Whether Bots in this channel shows, in the slot the pinned messages use. */
+  botsPanelOpen: boolean;
   displayDensity: DisplayDensity;
   zenMode: boolean;
   navigationMode: boolean;
+  /** The width class of the shell, set from its measured width. */
+  shellWidth: ShellWidth;
+  /** Whether the navigation drawer is open: the rails and tool panel of a narrow window. */
+  navDrawerOpen: boolean;
 
   setActivePanel: (panel: ActivePanel) => void;
+  /**
+   * Shows `surface` as the page. Going to another page closes a main-area plugin panel; a
+   * tool-panel one stays.
+   */
   setMainSurface: (surface: MainSurface) => void;
   setActivePluginPanel: (panel: ActivePluginPanel) => void;
+  /** Opens a plugin panel over the page shown, which stays the same page. */
   openPluginPanel: (pluginId: string, panelId: string, slot: PluginPanelSlot) => void;
   closePluginPanel: () => void;
   /**
@@ -108,19 +174,58 @@ type ShellState = {
   setShowNewChannelDialog: (show: boolean) => void;
   setShowNewMessagePicker: (show: boolean) => void;
   setShowInviteDialog: (show: boolean) => void;
+  /** Shows or hides the pinned messages; showing them hides Bots in this channel. */
   setPinnedPanelOpen: (open: boolean) => void;
+  /** Shows or hides Bots in this channel; showing it hides the pinned messages. */
+  setBotsPanelOpen: (open: boolean) => void;
   cycleDisplayDensity: () => void;
   toggleZenMode: () => void;
   setNavigationMode: (enabled: boolean) => void;
+  /** Sets the width class; any width but narrow closes the navigation drawer. */
+  setShellWidth: (width: ShellWidth) => void;
+  setNavDrawerOpen: (open: boolean) => void;
+  toggleNavDrawer: () => void;
   reset: () => void;
 };
 
-/** Closes the active plugin panel when it covers the conversation; a tool-panel one stays. */
+/** Closes the active plugin panel when it takes the page's place; a tool-panel one stays. */
 function withoutMainAreaPanel(state: ShellState): Partial<ShellState> {
   return state.activePluginPanel?.slot === "main_area" ? { activePluginPanel: null } : {};
 }
 
-export const useShellStore = create<ShellState>((set) => ({
+/** Whether two surfaces are the same page: the same kind with the same tab, plugin or key. */
+function sameSurface(a: MainSurface, b: MainSurface): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export const useShellStore = create<ShellState>((set, get) => ({
+  history: [],
+  historyIndex: -1,
+  recordPlace: (place) =>
+    set((state) => {
+      const current = state.history[state.historyIndex];
+      const key = placeKey(place);
+      if (current && placeKey(current) === key) return {};
+      const kept = state.history.slice(0, state.historyIndex + 1);
+      const fillsCurrent =
+        current &&
+        current.conversationId === null &&
+        current.surface.kind === "conversation" &&
+        place.surface.kind === "conversation" &&
+        current.workspaceId === place.workspaceId;
+      if (fillsCurrent) kept[kept.length - 1] = place;
+      else kept.push(place);
+      const history = kept.slice(-HISTORY_LIMIT);
+      return { history, historyIndex: history.length - 1 };
+    }),
+  stepHistory: (delta) => {
+    const { history, historyIndex } = get();
+    const index = historyIndex + delta;
+    const place = history[index];
+    if (index < 0 || !place) return null;
+    set({ historyIndex: index });
+    return place;
+  },
   activePanel: "inbox",
   mainSurface: { kind: "conversation" },
   activePluginPanel: null,
@@ -138,18 +243,22 @@ export const useShellStore = create<ShellState>((set) => ({
   showNewMessagePicker: false,
   showInviteDialog: false,
   pinnedPanelOpen: false,
+  botsPanelOpen: false,
   displayDensity: "comfortable",
   zenMode: false,
   navigationMode: false,
+  shellWidth: "wide",
+  navDrawerOpen: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
-  setMainSurface: (surface) => set({ mainSurface: surface }),
+  setMainSurface: (surface) =>
+    set((state) => ({
+      mainSurface: surface,
+      ...(sameSurface(state.mainSurface, surface) ? {} : withoutMainAreaPanel(state)),
+    })),
   setActivePluginPanel: (panel) => set({ activePluginPanel: panel }),
   openPluginPanel: (pluginId, panelId, slot) =>
-    set({
-      mainSurface: { kind: "conversation" },
-      activePluginPanel: { pluginId, panelId, slot },
-    }),
+    set({ activePluginPanel: { pluginId, panelId, slot } }),
   closePluginPanel: () => set({ activePluginPanel: null }),
 
   setSelectedConversationId: (id, options) =>
@@ -202,7 +311,10 @@ export const useShellStore = create<ShellState>((set) => ({
   setShowNewChannelDialog: (show) => set({ showNewChannelDialog: show }),
   setShowNewMessagePicker: (show) => set({ showNewMessagePicker: show }),
   setShowInviteDialog: (show) => set({ showInviteDialog: show }),
-  setPinnedPanelOpen: (open) => set({ pinnedPanelOpen: open }),
+  setPinnedPanelOpen: (open) =>
+    set(open ? { pinnedPanelOpen: true, botsPanelOpen: false } : { pinnedPanelOpen: false }),
+  setBotsPanelOpen: (open) =>
+    set(open ? { botsPanelOpen: true, pinnedPanelOpen: false } : { botsPanelOpen: false }),
 
   cycleDisplayDensity: () =>
     set((state) => {
@@ -216,8 +328,19 @@ export const useShellStore = create<ShellState>((set) => ({
 
   setNavigationMode: (enabled) => set({ navigationMode: enabled }),
 
+  setShellWidth: (width) =>
+    set((state) =>
+      state.shellWidth === width
+        ? {}
+        : { shellWidth: width, ...(width === "narrow" ? {} : { navDrawerOpen: false }) },
+    ),
+  setNavDrawerOpen: (open) => set({ navDrawerOpen: open }),
+  toggleNavDrawer: () => set((state) => ({ navDrawerOpen: !state.navDrawerOpen })),
+
   reset: () =>
     set({
+      history: [],
+      historyIndex: -1,
       activePanel: "inbox",
       mainSurface: { kind: "conversation" },
       activePluginPanel: null,
@@ -235,8 +358,10 @@ export const useShellStore = create<ShellState>((set) => ({
       showNewMessagePicker: false,
       showInviteDialog: false,
       pinnedPanelOpen: false,
+      botsPanelOpen: false,
       displayDensity: "comfortable",
       zenMode: false,
       navigationMode: false,
+      navDrawerOpen: false,
     }),
 }));

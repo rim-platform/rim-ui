@@ -1,7 +1,14 @@
-import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
-import { isSchemaRefusal } from "../../../core/graphql/errors";
+import { asSentence, graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 import { refreshAfterBlockChange } from "../blocking/blockPerson";
 import { useRelayStore } from "../state/useRelayStore";
 import { fetchBlockedPrincipals, unblockPrincipal } from "./relayApi";
@@ -20,14 +27,41 @@ export function useBlockedPrincipals() {
   return useQuery({ ...blockedPrincipalsQuery, enabled: relayOn });
 }
 
-/** Lifts a block at once; the blocked list and the conversation lists refresh after it. */
+/** Someone this account blocked, and the name the app shows for them. */
+export interface UnblockTarget {
+  principalId: string;
+  name: string;
+}
+
+/**
+ * Lifts a block at once, refreshes the blocked list and the conversation lists, and says how it
+ * went in a toast. Settings and the Unblock command both run it.
+ *
+ * @returns Whether the block was lifted.
+ */
+export async function unblockPerson(
+  qc: QueryClient,
+  { principalId, name }: UnblockTarget,
+): Promise<boolean> {
+  try {
+    await unblockPrincipal(principalId);
+  } catch (err) {
+    toast.error(graphqlErrorMessage(err, `Could not unblock ${name}`));
+    return false;
+  }
+  await qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals });
+  await refreshAfterBlockChange(qc);
+  toast.success(asSentence(`Unblocked ${name}`), {
+    description:
+      "They can message you again. A conversation they started comes back as a request when they next write in it.",
+  });
+  return true;
+}
+
+/** {@link unblockPerson} with its pending state, for a control that shows it. */
 export function useUnblockPrincipal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (principalId: string) => unblockPrincipal(principalId),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: queryKeys.myBlockedPrincipals });
-      await refreshAfterBlockChange(qc);
-    },
+    mutationFn: (target: UnblockTarget) => unblockPerson(qc, target),
   });
 }

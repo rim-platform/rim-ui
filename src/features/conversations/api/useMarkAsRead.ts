@@ -1,28 +1,32 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { toast } from "../../../shared/toast";
 import { invalidateUnreadNotificationCount } from "../../notifications/api/useNotifications";
 import { useUnreadStore } from "../state/useUnreadStore";
+import { deferMark, MARK_AS_READ, sendDeferredMarkOf } from "./deferredMark";
 
-const MARK_AS_READ = gql`
-  mutation MarkAsRead($input: MarkAsReadInput!) {
-    markAsRead(input: $input)
-  }
-`;
+/** How long marking everything read can be undone before the server is told. */
+export const MARK_ALL_UNDO_MS = 6000;
 
-export const MARK_ALL_AS_READ = gql`
-  mutation MarkAllAsRead($input: MarkAllAsReadInput!) {
-    markAllAsRead(input: $input)
-  }
-`;
+const MARK_ALL_KEY = "mark-all";
 
-/** Clears a workspace's unread counts at once and marks all of it read on the server. */
+/** Sends what the wait of marking everything read now holds. */
+export function sendPendingMarkAll(): void {
+  sendDeferredMarkOf(MARK_ALL_KEY);
+}
+
+/**
+ * Clears a workspace's unread counts at once and offers to undo that. The server is told only
+ * when {@link MARK_ALL_UNDO_MS} pass, so closing the app before then marks nothing. A later read
+ * of the counts does not bring the badges back meanwhile. Running this again during the wait
+ * starts it over with both runs' conversations, also across workspaces.
+ */
 export function markWorkspaceRead(workspaceId: string): void {
-  useUnreadStore.getState().markAllRead(workspaceId);
-  graphqlClient.request(MARK_ALL_AS_READ, { input: { workspaceId } }).catch(() => {
-    toast.error("Failed to mark all as read");
+  deferMark({
+    targets: [{ kind: "workspace", workspaceId }],
+    waitMs: MARK_ALL_UNDO_MS,
+    mergeKey: MARK_ALL_KEY,
+    toastTitle: "All conversations marked as read",
   });
 }
 

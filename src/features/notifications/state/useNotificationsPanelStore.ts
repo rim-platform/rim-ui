@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 type NotificationsPanelState = {
-  /** Whether the tool panel shows the notification inbox instead of its usual content. */
+  /** Whether the notification inbox is open under the top bar's bell. */
   open: boolean;
   /** The inbox's "Unread only" filter; kept while the panel closes and reopens. */
   unreadOnly: boolean;

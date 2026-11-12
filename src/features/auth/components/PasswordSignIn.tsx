@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 
 import {
@@ -26,9 +26,9 @@ import { resetPassword } from "../runtime/passwordChanges";
 import { KeepSignedInCheckbox, NewPasswordFields, PasswordInput } from "./PasswordFields";
 
 const textareaClass =
-  "mt-1 w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 font-mono text-sm normal-case tracking-normal text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
+  "mt-1.5 w-full rounded-[9px] border border-rim-line-strong bg-rim-void px-3 py-2.5 font-mono text-sm normal-case tracking-normal text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent";
 
-const labelClass = "block text-xs font-medium uppercase tracking-wider text-rim-text-faint";
+const labelClass = "block text-[13px] font-medium text-rim-text";
 
 /** The question a sign-in asks when this device's data needs the recovery phrase. */
 interface RecoveryQuestion {
@@ -89,7 +89,7 @@ function RecoveryNeeded({
 
   if (confirmEmpty) {
     return (
-      <div role="alertdialog" className="space-y-2 rounded-lg border border-rim-warm/30 p-3">
+      <div role="alertdialog" className="space-y-2 rounded-[10px] border border-rim-warm/40 p-3">
         <p className="text-sm font-medium text-rim-text">Start empty on this device?</p>
         <p className="text-xs text-rim-text-muted">{START_EMPTY_EXPLANATION}</p>
         <div className="flex gap-2">
@@ -105,7 +105,7 @@ function RecoveryNeeded({
   }
 
   return (
-    <div role="alertdialog" className="space-y-2 rounded-lg border border-rim-line p-3">
+    <div role="alertdialog" className="space-y-2 rounded-[10px] border border-rim-line p-3">
       <p className="text-sm font-medium text-rim-text">Your recovery phrase is needed</p>
       <p className="text-xs text-rim-text-muted">{NEEDS_RECOVERY_EXPLANATION}</p>
       {wrongPhrase && (
@@ -178,6 +178,7 @@ export function PasswordSignInForm({
   const [locked, setLocked] = useState(false);
   const [resetting, setResetting] = useState(false);
   const recovery = useRecoveryQuestion();
+  const errorId = useId();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -213,11 +214,8 @@ export function PasswordSignInForm({
   }
 
   return (
-    <form
-      onSubmit={(e) => void submit(e)}
-      className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4"
-    >
-      <p className="text-sm font-medium text-rim-text">Password for {accountLabel}</p>
+    <form onSubmit={(e) => void submit(e)} className="space-y-3">
+      <p className="sr-only">Password for {accountLabel}</p>
       {recovery.prompt ?? (
         <>
           <PasswordInput
@@ -226,14 +224,15 @@ export function PasswordSignInForm({
             onChange={setPassword}
             disabled={busy}
             autoFocus
+            invalid={error !== null}
+            describedBy={error ? errorId : undefined}
           />
-          <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
           {error && (
             <div
               role="alert"
-              className="space-y-2 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+              className="space-y-2 rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
             >
-              <p>{error}</p>
+              <p id={errorId}>{error}</p>
               {locked && (
                 <Button
                   type="button"
@@ -246,6 +245,7 @@ export function PasswordSignInForm({
               )}
             </div>
           )}
+          <KeepSignedInCheckbox checked={keep} onChange={setKeep} disabled={busy} />
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" isLoading={busy} disabled={!password}>
               {submitLabel}
@@ -339,10 +339,7 @@ export function ResetPasswordWithPhrase({
   }
 
   return (
-    <form
-      onSubmit={(e) => void submit(e)}
-      className="space-y-3 rounded-lg border border-rim-line bg-rim-void/40 p-4"
-    >
+    <form onSubmit={(e) => void submit(e)} className="space-y-3">
       <p className="text-sm font-medium text-rim-text">New password for {accountLabel}</p>
       {recovery.prompt ?? (
         <>
@@ -376,7 +373,7 @@ export function ResetPasswordWithPhrase({
           {error && (
             <p
               role="alert"
-              className="rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+              className="rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
             >
               {error}
             </p>

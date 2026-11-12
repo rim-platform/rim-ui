@@ -1,7 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import { ArrowLeft, Hash, Pin, Search, UserPlus } from "lucide-react";
 
-import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { LensPicker } from "../../features/lenses/components/LensPicker";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useWorkspace } from "../../features/workspaces/api/useWorkspace";
@@ -17,16 +16,20 @@ import {
   pendingMembersOf,
   untitledGroupName,
 } from "../../features/conversations/utils";
-import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
 import { useTopicEditStore } from "../../features/conversations/state/useTopicEditStore";
 import { useShellStore, type DirectDraft } from "../state/useShellStore";
 import { draftSpaceId, useDraftPeer } from "../../features/conversations/hooks/useDraftPeer";
 import { useAuthStore } from "../../features/auth/state/useAuthStore";
 import { useMemberLookup } from "../../features/workspaces/hooks/useMemberLookup";
-import { useUpdateTopicMutation } from "../../features/conversations/api/useUpdateTopic";
+import { updateConversationTopic } from "../../features/conversations/api/useUpdateTopic";
+import { queryClient } from "../../core/query/queryClient";
 import { Avatar } from "../../shared/ui/Avatar";
 import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useKeybindLabel } from "../../features/commands/hooks/useKeybindLabel";
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
+import { useAgentsReadingChannel } from "../../features/agents/hooks/useAgentsReadingChannel";
+import { botsInChannel, useWorkspaceBots } from "../../features/bots/hooks/useWorkspaceBots";
+import type { ConversationSummary } from "../../features/conversations/types";
 import {
   usePresenceStore,
   type PresenceStatus,
@@ -36,12 +39,13 @@ import { InviteDialog } from "../../features/settings/components/InviteDialog";
 import { useCanModerate, useIsOwner } from "../../features/workspaces/api/useMyServerRole";
 import { PlaintextNotice } from "../../features/e2ee/components/PlaintextNotice";
 import {
-  returnFromDirect,
   useApplicableDirectOrigin,
   workspaceNameOf,
 } from "../../features/conversations/state/directOrigin";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
 import { useRelayStore } from "../../features/relay/state/useRelayStore";
+import { useShellWidth } from "../hooks/useShellWidth";
+import { cn } from "../../shared/ui/cn";
 
 /** The main area's header: the selected conversation, or the draft direct message. */
 export function ConversationHeader() {
@@ -53,8 +57,14 @@ export function ConversationHeader() {
 function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
   const peer = useDraftPeer(draft);
   const { data: workspace } = useWorkspace(draftSpaceId(draft));
+  const narrow = useShellWidth() === "narrow";
   return (
-    <div className="flex h-10 items-center border-b border-rim-line px-4">
+    <div
+      className={cn(
+        "flex items-center border-b border-rim-line px-4",
+        narrow ? "h-auto min-h-10 flex-wrap py-1" : "h-10",
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <BackToWorkspaceButton />
         <Avatar
@@ -76,13 +86,12 @@ function DraftDirectHeader({ draft }: { draft: DirectDraft }) {
 function SelectedConversationHeader() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const conversationId = useShellStore((s) => s.selectedConversationId);
-  const openSearch = useSearchOverlayStore((s) => s.openWithScope);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const { data: workspace } = useWorkspace(workspaceId ?? undefined);
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const isChannel = conversation?.conversationType === ConversationTypeEnum.CHANNEL;
-  const toggleMembers = useMembersPanelStore((s) => s.toggle);
+  const narrow = useShellWidth() === "narrow";
 
   // A DM shows the other person's name, a group without a title its members' names.
   let displayTitle = conversation?.title ?? undefined;
@@ -139,7 +148,6 @@ function SelectedConversationHeader() {
     stop: stopTopicEdit,
   } = useTopicEditStore.getState();
   const topicInputRef = useRef<HTMLInputElement>(null);
-  const updateTopic = useUpdateTopicMutation();
 
   // The edit can start from a menu before the channel has loaded.
   const showTopicInput = isChannel && isEditingTopic && canEditTopic;
@@ -161,17 +169,32 @@ function SelectedConversationHeader() {
         stopTopicEdit();
       } else if (e.key === "Enter") {
         if (workspaceId && conversationId && topicDraft !== (topic ?? "")) {
-          updateTopic.mutate({ serverId: workspaceId, conversationId, topic: topicDraft });
+          const vars = { serverId: workspaceId, conversationId, topic: topicDraft };
+          void runCommandFromClick(
+            "chat.set_topic",
+            { server_id: workspaceId, conversation_id: conversationId, topic: topicDraft },
+            {
+              target: { workspaceId, conversationId },
+              successToast: null,
+              errorTitle: "The topic could not be changed",
+              fallback: () => updateConversationTopic(queryClient, vars),
+            },
+          );
         }
         stopTopicEdit();
       }
     },
-    [workspaceId, conversationId, topicDraft, topic, updateTopic, stopTopicEdit],
+    [workspaceId, conversationId, topicDraft, topic, stopTopicEdit],
   );
 
   return (
-    <div className="flex h-10 items-center justify-between border-b border-rim-line px-4">
-      <div className="flex min-w-0 items-center gap-3">
+    <div
+      className={cn(
+        "flex items-center justify-between border-b border-rim-line px-4",
+        narrow ? "h-auto min-h-10 flex-wrap gap-y-1 py-1" : "h-10",
+      )}
+    >
+      <div className={cn("flex min-w-0 items-center gap-3", narrow && "w-full")}>
         <BackToWorkspaceButton />
         {dmOtherUserId ? (
           <Avatar
@@ -188,15 +211,15 @@ function SelectedConversationHeader() {
         ) : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-medium text-rim-text">
+            <h2 className="truncate text-sm font-medium text-rim-text">
               {displayTitle ?? (conversationId ? "Untitled" : "No conversation")}
             </h2>
             {isChannel && conversation && (
               <button
                 type="button"
-                onClick={toggleMembers}
+                onClick={() => void runCommandFromClick("workspace.toggle_conversation_members")}
                 aria-label={memberCountLabel(conversation.memberCount)}
-                className="text-xs text-rim-text-faint transition hover:text-rim-text"
+                className="whitespace-nowrap text-xs text-rim-text-faint transition hover:text-rim-text"
               >
                 {memberCountLabel(conversation.memberCount)}
               </button>
@@ -208,31 +231,40 @@ function SelectedConversationHeader() {
             )}
             <PlaintextNotice workspaceId={workspaceId} conversationId={conversationId} />
           </div>
-          {isChannel &&
-            (showTopicInput ? (
-              <input
-                ref={topicInputRef}
-                type="text"
-                value={topicDraft}
-                onChange={(e) => setTopicDraft(e.target.value)}
-                onKeyDown={handleTopicKeyDown}
-                onBlur={stopTopicEdit}
-                placeholder="Set a topic..."
-                className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
-              />
-            ) : canEditTopic ? (
-              <button
-                type="button"
-                onClick={handleTopicClick}
-                className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
-              >
-                {topic || "Set a topic..."}
-              </button>
-            ) : topic ? (
-              <p className="block max-w-[400px] truncate text-xs text-rim-text-muted" title={topic}>
-                {topic}
-              </p>
-            ) : null)}
+          {isChannel && (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {showTopicInput ? (
+                <input
+                  ref={topicInputRef}
+                  type="text"
+                  value={topicDraft}
+                  onChange={(e) => setTopicDraft(e.target.value)}
+                  onKeyDown={handleTopicKeyDown}
+                  onBlur={stopTopicEdit}
+                  placeholder="Set a topic..."
+                  className="w-full bg-transparent text-xs text-rim-text-muted outline-none placeholder:text-rim-text-faint"
+                />
+              ) : canEditTopic ? (
+                <button
+                  type="button"
+                  onClick={handleTopicClick}
+                  className="block max-w-[400px] truncate text-xs text-rim-text-muted hover:text-rim-text"
+                >
+                  {topic || "Set a topic..."}
+                </button>
+              ) : topic ? (
+                <p
+                  className="block max-w-[400px] truncate text-xs text-rim-text-muted"
+                  title={topic}
+                >
+                  {topic}
+                </p>
+              ) : null}
+              {workspaceId && conversation && (
+                <ChannelBotsLine workspaceId={workspaceId} conversation={conversation} />
+              )}
+            </div>
+          )}
           {!isChannel && (
             <p className="text-xs text-rim-text-faint">
               {workspace?.name ?? ""}
@@ -243,19 +275,14 @@ function SelectedConversationHeader() {
         </div>
       </div>
       {conversationId && (
-        <div className="flex items-center gap-1">
-          {canInvite && <InviteButton onClick={() => setInviteOpen(true)} />}
+        <div className="flex shrink-0 items-center gap-1">
+          {canInvite && <InviteButton />}
           {isChannel && workspaceId && (
             <LensPicker serverId={workspaceId} conversationId={conversationId} />
           )}
           {isChannel && <PinnedMessagesButton />}
           {!viewerInvited && (
-            <ConversationSearchButton
-              conversationId={conversationId}
-              displayTitle={displayTitle}
-              isChannel={isChannel}
-              openSearch={openSearch}
-            />
+            <ConversationSearchButton displayTitle={displayTitle} isChannel={isChannel} />
           )}
           {conversation && workspaceId && !viewerInvited && (
             <ConversationActionsMenu workspaceId={workspaceId} conversation={conversation} />
@@ -294,7 +321,7 @@ function BackToWorkspaceButton() {
     >
       <button
         type="button"
-        onClick={() => returnFromDirect()}
+        onClick={() => void runCommandFromClick("workspace.back_to_workspace")}
         aria-label={`Back to ${name}`}
         className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -305,7 +332,8 @@ function BackToWorkspaceButton() {
   );
 }
 
-function InviteButton({ onClick }: { onClick: () => void }) {
+/** Invite member: runs the invite command, which opens the invite dialog. */
+function InviteButton() {
   const keybind = useKeybindLabel("admin.invite_member");
   return (
     <HoverTooltip
@@ -322,7 +350,7 @@ function InviteButton({ onClick }: { onClick: () => void }) {
     >
       <button
         type="button"
-        onClick={onClick}
+        onClick={() => void runCommandFromClick("admin.invite_member")}
         aria-label="Invite member"
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -332,17 +360,61 @@ function InviteButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PinnedMessagesButton() {
-  const pinnedPanelOpen = useShellStore((s) => s.pinnedPanelOpen);
-  const setPinnedPanelOpen = useShellStore((s) => s.setPinnedPanelOpen);
+/**
+ * After a channel's topic: how many active bots are members, which opens Bots in this channel,
+ * and, when a program connected on this device may read the channel, that it can. Nothing for an
+ * encrypted channel, which a bot cannot join, or one with neither.
+ */
+function ChannelBotsLine({
+  workspaceId,
+  conversation,
+}: {
+  workspaceId: string;
+  conversation: ConversationSummary;
+}) {
+  const bots = botsInChannel(useWorkspaceBots(workspaceId), conversation);
+  const agents = useAgentsReadingChannel(workspaceId, conversation);
+  const botsPanelOpen = useShellStore((s) => s.botsPanelOpen);
+  const keystroke = useKeybindLabel("workspace.toggle_channel_bots");
+  if (bots.length === 0 && agents.length === 0) return null;
+  const count = bots.length === 1 ? "1 bot" : `${bots.length} bots`;
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-rim-text-faint">
+      {bots.length > 0 && (
+        <button
+          type="button"
+          onClick={() => void runCommandFromClick("workspace.toggle_channel_bots")}
+          aria-expanded={botsPanelOpen}
+          aria-keyshortcuts={keystroke ?? undefined}
+          className="transition hover:text-rim-text"
+        >
+          {count}
+        </button>
+      )}
+      {bots.length > 0 && agents.length > 0 && <span aria-hidden>·</span>}
+      {agents.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            if (!botsPanelOpen) void runCommandFromClick("workspace.toggle_channel_bots");
+          }}
+          className="transition hover:text-rim-text"
+        >
+          {agents.length === 1 ? "your agent can read this" : "your agents can read this"}
+        </button>
+      )}
+    </span>
+  );
+}
 
+function PinnedMessagesButton() {
   return (
     <HoverTooltip
       content={<span className="text-xs text-rim-text whitespace-nowrap">Pinned messages</span>}
     >
       <button
         type="button"
-        onClick={() => setPinnedPanelOpen(!pinnedPanelOpen)}
+        onClick={() => void runCommandFromClick("workspace.toggle_pinned_messages")}
         aria-label="Pinned messages"
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >
@@ -352,16 +424,13 @@ function PinnedMessagesButton() {
   );
 }
 
+/** Search in the open conversation: runs the command that opens search scoped to it. */
 function ConversationSearchButton({
-  conversationId,
   displayTitle,
   isChannel,
-  openSearch,
 }: {
-  conversationId: string;
   displayTitle: string | undefined;
   isChannel: boolean;
-  openSearch: (scope: { kind: "conversation"; conversationId: string }) => void;
 }) {
   const keystroke = useKeybindLabel("workspace.search_in_channel");
   const noun = isChannel ? "channel" : "conversation";
@@ -376,7 +445,7 @@ function ConversationSearchButton({
     >
       <button
         type="button"
-        onClick={() => openSearch({ kind: "conversation", conversationId })}
+        onClick={() => void runCommandFromClick("workspace.search_in_channel")}
         aria-label={accessibleName}
         className="rounded-lg p-1.5 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
       >

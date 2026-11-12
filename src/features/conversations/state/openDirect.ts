@@ -42,7 +42,7 @@ async function workspaceDirect(
   });
 }
 
-/** The DM with `principalId` in the direct spaces this account uses, as the side rail lists them. */
+/** The DM with `principalId` in the direct spaces this account uses, as the conversation list shows them. */
 async function spaceDirect(principalId: string): Promise<ConversationSummary | undefined> {
   const { info, spaces, forked } = useRelayStore.getState();
   const spaceIds = directSpaceIdsOf(info?.directSpaceId ?? null, spaces, forked);
@@ -70,6 +70,23 @@ async function spaceDirect(principalId: string): Promise<ConversationSummary | u
     });
     const people = new Set(peopleOf(item));
     if (members.some((m) => people.has(m.userId) && m.principalId === principalId)) return item;
+  }
+  return undefined;
+}
+
+/**
+ * The direct space of this account that holds `conversationId`, by the spaces' conversation
+ * lists, read from the server when not loaded yet.
+ *
+ * @param conversationId - A DM's or a group's id.
+ * @returns The space's id, or `undefined` when none of the direct spaces holds it.
+ */
+export async function directSpaceOf(conversationId: string): Promise<string | undefined> {
+  const { info, spaces, forked } = useRelayStore.getState();
+  const spaceIds = directSpaceIdsOf(info?.directSpaceId ?? null, spaces, forked);
+  for (const spaceId of spaceIds) {
+    const items = await inboxOf(spaceId).catch(() => []);
+    if (items.some((item) => item.id === conversationId)) return spaceId;
   }
   return undefined;
 }

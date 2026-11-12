@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -25,8 +25,9 @@ interface ServerResponse {
   server: ServerDetail;
 }
 
-export function useWorkspace(workspaceId?: string) {
-  return useQuery({
+/** The `server` query of a workspace: its name and the viewer's role in it. */
+export function workspaceQueryOptions(workspaceId?: string) {
+  return queryOptions({
     queryKey: queryKeys.server(workspaceId),
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
@@ -37,4 +38,8 @@ export function useWorkspace(workspaceId?: string) {
       return res.server;
     },
   });
+}
+
+export function useWorkspace(workspaceId?: string) {
+  return useQuery(workspaceQueryOptions(workspaceId));
 }

@@ -97,6 +97,24 @@ rim_mls = { path = "crates/rim_mls" }
 # The account password (src/account_lock): OPAQUE and the wraps of each account's data key.
 rim_opaque = { path = "crates/rim_opaque" }
 
+# The agent bridge's loopback HTTP server (src/agent_bridge).
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+
+# The agent installer's archives (src/agent_installer/unpack.rs): `.zip` with deflate through
+# flate2's pure-Rust backend,
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# `.tar.gz` and `.tgz`,
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
+# and `.tar.bz2`, through its default backend, the pure-Rust libbz2-rs-sys, so no C library is
+# built.
+bzip2 = "0.6"
+# npm version ranges, for the size an npm agent takes once installed
+# (src/agent_installer/size.rs).
+semver = "1"
+
 # Asks the session bus for a tray host (src/desktop_shell).
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5"

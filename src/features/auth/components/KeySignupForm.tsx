@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 
@@ -59,6 +59,8 @@ interface KeySignupFormProps {
   onBusyChange?: (busy: boolean) => void;
   /** Whether the page's own fields let the signup go ahead; `true` when absent. */
   ready?: boolean;
+  /** What the page's own fields still need, shown under the button while `ready` is false. */
+  notReadyReason?: string;
   /**
    * Offered a failed signup first: returns `true` when the page shows the failure itself, as an
    * invite code field does with a refused token.
@@ -158,7 +160,7 @@ interface Proving {
   startedAt: number;
 }
 
-/** "Proving this is a real device…" with the time it has taken, and a way to stop it. */
+/** "Checking this is a real device" with the time it has taken, and a way to stop it. */
 function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -169,16 +171,28 @@ function ProofOfWorkStatus({ proving, onCancel }: { proving: Proving; onCancel: 
   return (
     <div
       role="status"
-      className="space-y-2 rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text-muted"
+      className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5 text-[13px] leading-normal text-rim-text-muted"
     >
+      <p className="text-[15px] font-semibold text-rim-text">Checking this is a real device</p>
+      <div
+        role="progressbar"
+        aria-label="Working"
+        className="h-1.5 overflow-hidden rounded-full bg-rim-line"
+      >
+        <div className="h-full w-2/5 animate-pulse rounded-full motion-reduce:animate-none bg-rim-accent" />
+      </div>
+      <p>
+        This computer is doing a short piece of work that keeps out mass sign-ups. An invite takes
+        the place of it.
+      </p>
       <div className="flex items-center justify-between gap-3">
-        <span>Proving this is a real device… {seconds} s</span>
+        <span>{seconds} s</span>
         <Button type="button" variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>
       {seconds >= SLOW_PROOF_SECONDS && (
-        <p className="text-xs text-rim-text-faint">
+        <p className="text-xs text-rim-text-muted">
           This relay asks every new account for about {triesInWords(proving.bits)} hashes, to keep
           out automated sign-ups. That takes seconds in the desktop app and can take tens of seconds
           in a browser.
@@ -209,10 +223,12 @@ export function KeySignupForm({
   onSuccess,
   onBusyChange,
   ready = true,
+  notReadyReason,
   onFailure,
   onAccountCreated,
 }: KeySignupFormProps) {
   const qc = useQueryClient();
+  const missingId = useId();
   // Read once: the form follows one flow from start to end.
   const [kitAfter] = useState(deviceKeepsRecoveryKit);
   const storage = useKeyStorageConsent();
@@ -393,6 +409,7 @@ export function KeySignupForm({
     setSaved(false);
   }
 
+  const missing = missingReason();
   const canSubmit =
     ready &&
     terms.satisfied &&
@@ -402,6 +419,24 @@ export function KeySignupForm({
       : username.trim().length > 0 &&
         deviceName.trim().length > 0 &&
         (!kitAfter || password.password.length > 0));
+
+  /** The first thing that keeps Create account disabled, in the order of the form; null when none. */
+  function missingReason(): string | null {
+    if (!ready) return notReadyReason ?? "Finish the invite step above to continue.";
+    if (username.trim().length === 0) return "Choose a username.";
+    if (!draft && deviceName.trim().length === 0) return "Name this device.";
+    if (password.password.length === 0 && (draft || kitAfter)) return "Choose a password.";
+    if (draft && !kitAfter && !saved) return "Save your recovery kit to continue.";
+    if (!terms.satisfied) return "Accept the terms to continue.";
+    if (!age.satisfied) return "Confirm your age to continue.";
+    return null;
+  }
+
+  const missingLine = missing && (
+    <p id={missingId} className="text-xs text-rim-text-muted">
+      {missing}
+    </p>
+  );
 
   if (created && draft) {
     return (
@@ -480,7 +515,7 @@ export function KeySignupForm({
       {formError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger"
+          className="flex items-center justify-between gap-3 rounded-[10px] border border-rim-danger-solid/50 bg-rim-danger-solid/15 px-3 py-2.5 text-sm text-rim-danger"
         >
           <span>{formError}</span>
           {canRetry && draft && (
@@ -494,7 +529,13 @@ export function KeySignupForm({
       {draft ? (
         <div className="space-y-2">
           <div className="flex gap-2">
-            <Button type="submit" className="flex-1" isLoading={busy} disabled={!canSubmit}>
+            <Button
+              type="submit"
+              className="flex-1"
+              isLoading={busy}
+              disabled={!canSubmit}
+              aria-describedby={missing ? missingId : undefined}
+            >
               Create account
             </Button>
             {!kitAfter && (
@@ -513,12 +554,20 @@ export function KeySignupForm({
               Start over makes new keys and a new recovery kit; the kit you saved stops working.
             </p>
           )}
+          {missingLine}
         </div>
       ) : (
-        <Button type="submit" className="w-full" isLoading={busy} disabled={!canSubmit}>
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={busy}
+          disabled={!canSubmit}
+          aria-describedby={missing ? missingId : undefined}
+        >
           {kitAfter ? "Create account" : "Create keys"}
         </Button>
       )}
+      {!draft && missingLine}
     </form>
   );
 }

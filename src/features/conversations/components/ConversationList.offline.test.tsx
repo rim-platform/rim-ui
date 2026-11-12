@@ -73,7 +73,7 @@ describe("ConversationList — offline start", () => {
   it("lists the channels and DMs saved on this device, with member names", async () => {
     render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ConversationList onNewChannel={vi.fn()} />
+        <ConversationList />
       </QueryClientProvider>,
     );
 

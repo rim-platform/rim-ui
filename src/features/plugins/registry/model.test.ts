@@ -174,6 +174,21 @@ describe("update rules", () => {
     expect(plan).toMatchObject({ automatic: false, kindChanged: true });
   });
 
+  it("waits for a command to run the installed copy did not list", () => {
+    const check = verified({
+      manifest: HELLO_WEB_MANIFEST.replace(
+        '"entrypoint"',
+        '"runs_commands":["workspace.open_home"],"entrypoint"',
+      ),
+    });
+    expect(planUpdate(installedHello(), check)).toMatchObject({
+      automatic: false,
+      newCommands: ["workspace.open_home"],
+    });
+    const listed = installedHello({ runs_commands: ["workspace.open_home"] });
+    expect(planUpdate(listed, check).automatic).toBe(true);
+  });
+
   it("waits for a capability the person was not asked for, not for one they approved", () => {
     const check = verified({ manifest: withCapabilities(["ui.notify"]) });
     expect(planUpdate(installedHello(), check)).toMatchObject({

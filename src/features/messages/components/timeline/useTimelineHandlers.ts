@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 import { useEditMessageMutation } from "../../api/useEditMessage";
-import { useToggleReactionMutation } from "../../api/useToggleReaction";
+import { runReactionCommand } from "../../api/messageCommands";
 import { useShellStore } from "../../../../shell/state/useShellStore";
 import { toast } from "../../../../shared/toast";
 import type { DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
@@ -47,7 +47,6 @@ export function useTimelineHandlers({
 }: UseTimelineHandlersOptions) {
   const openThread = useShellStore((s) => s.openThreadForMessage);
   const setEditingMessageId = useShellStore((s) => s.setEditingMessageId);
-  const { mutate: toggleReaction } = useToggleReactionMutation();
   const editMessage = useEditMessageMutation();
   const editMessageAsync = editMessage.mutateAsync;
 
@@ -123,12 +122,23 @@ export function useTimelineHandlers({
     setEditingMessageId(null);
   }, [setEditingMessageId]);
 
+  // A reaction chip runs `chat.toggle_reaction` on its own message, in that message's thread.
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
       if (!workspaceId || !conversationId) return;
-      toggleReaction({ serverId: workspaceId, conversationId, messageId, emoji });
+      const threadId = itemsRef.current.find((m) => m.id === messageId)?.threadId ?? undefined;
+      void runReactionCommand(
+        {
+          workspaceId,
+          conversationId,
+          selectedMessageId: messageId,
+          ...(threadId && { threadId }),
+        },
+        emoji,
+        "button",
+      );
     },
-    [workspaceId, conversationId, toggleReaction],
+    [workspaceId, conversationId],
   );
 
   const handleNavigateToForwardedSource = useCallback(

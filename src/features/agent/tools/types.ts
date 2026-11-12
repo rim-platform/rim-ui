@@ -1,4 +1,7 @@
-import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import type {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
 import type { AiToolDefinition } from "../providers/types";
 
 export interface AiToolResult {
@@ -30,4 +33,6 @@ export interface RegisteredTool {
    * footer appended).
    */
   description?: string;
+  /** The types the server declares for the tool's arguments. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
 }

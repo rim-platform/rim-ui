@@ -33,7 +33,7 @@ export function EmptyWorkspaceState() {
               <button
                 type="button"
                 onClick={() => setDialog("create")}
-                className="w-full rounded-lg bg-rim-accent px-4 py-2.5 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong"
+                className="w-full rounded-lg bg-rim-text px-4 py-2.5 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90"
               >
                 + Create workspace
               </button>

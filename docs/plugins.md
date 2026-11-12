@@ -30,7 +30,7 @@ A plugin contributes some of these:
 
 - commands, listed in the command palette under the plugin's name, bindable to keys and, when
   the plugin marks them so and the user agrees, callable by the AI agent;
-- panels, shown next to the tool panel or in place of the conversation;
+- panels, shown as a narrow column at the left of the page or in its place;
 - context actions in a message's context menu;
 - keybind suggestions the user can assign.
 
@@ -211,14 +211,17 @@ Plugins names.
   On the desktop a plugin left on starts again with the app. On the web, plugins are turned on
   per account in that browser: signing out stops them and signing in starts those the account
   turned on.
-- **Panels.** The side rail's **Plugins** entry opens a menu with one row per panel of every
+- **Panels.** **Plugins** in the top bar opens a menu with one row per panel of every
   running plugin granted Render UI Panels, showing the plugin's name and the panel's title, and
   below them, set apart, **Manage plugins…**, which opens Settings → Plugins. Choosing a row
-  opens the panel; with no such plugin that has a panel, the menu says so above **Manage
-  plugins…**. A panel left open stops showing when its plugin loses that permission. A plugin's
+  opens the panel. While no such plugin has a panel, the top bar shows no **Plugins**. A panel left open stops showing when its plugin loses that permission. A plugin's
   settings are not in this menu: they open from the places listed under **Settings**. The entry
-  stays marked while a plugin panel is open. A panel opens next to the tool panel or, like the
-  Pods panel, in place of the conversation. Its header shows the panel's title and a close
+  stays marked while a plugin panel is open. A panel opens over the page shown, whichever it is:
+  as a narrow column at its left, next to the tool panel beside a conversation, which stays
+  open when you go to another page, or, like the Pods panel, in place of the page until you
+  close it or go to another page. A panel learns which conversation is open only while the
+  conversation is the page shown, and a plugin command that needs a conversation says "Open a
+  conversation first" on any other page. Its header shows the panel's title and a close
   button, and under them the plugin's name, its kind and where it came from, in full. A long
   title is shortened and shows in full on hover. [UI shell](ui-shell.md) describes the menu's
   keys.

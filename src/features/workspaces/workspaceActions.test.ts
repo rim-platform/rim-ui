@@ -4,7 +4,7 @@ vi.mock("../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
-import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
+import { ServerFeatureState, ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../core/query/keys";
 import { queryClient } from "../../core/query/queryClient";
 import { toast } from "../../shared/toast";
@@ -114,5 +114,35 @@ describe("the cached facts", () => {
     cache(ServerMemberRoleGql.MEMBER);
     openWorkspaceAction("rename");
     expect(toast.info).toHaveBeenCalledWith("Only the owner can rename this workspace.");
+  });
+});
+
+describe("workspace.open_bots offer", () => {
+  beforeEach(() => {
+    queryClient.clear();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+  });
+  afterEach(() => {
+    queryClient.clear();
+    useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  function seed(role: ServerMemberRoleGql, features = {}) {
+    queryClient.setQueryData(queryKeys.server("ws-1"), { viewerRole: role });
+    queryClient.setQueryData(queryKeys.serverInfo, fakeServerInfo(features));
+  }
+
+  it("is offered to a moderator where the bots feature is on", () => {
+    seed(ServerMemberRoleGql.MODERATOR);
+    expect(workspaceCommandOffered("workspace.open_bots")).toBe(true);
+  });
+
+  it("is not offered to a member, or where the bots feature is off or the role is unknown", () => {
+    seed(ServerMemberRoleGql.MEMBER);
+    expect(workspaceCommandOffered("workspace.open_bots")).toBe(false);
+    seed(ServerMemberRoleGql.OWNER, { bots: ServerFeatureState.DISABLED });
+    expect(workspaceCommandOffered("workspace.open_bots")).toBe(false);
+    queryClient.clear();
+    expect(workspaceCommandOffered("workspace.open_bots")).toBe(false);
   });
 });

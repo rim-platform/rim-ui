@@ -133,6 +133,17 @@ received. An answer without them, or one that does not verify, is a relay failur
 answer. A verified `409 {"error":"replay","highestSeq":…}` moves the counter above `highestSeq`
 and signs once more.
 
+Command calls name their workspace only in `commandContext` (`commands`, `executeCommand`): for
+a workspace bound to a host, the person's and the plugins' calls also carry a top-level
+`workspaceId` that the operation does not declare, which routes them to that host, so the palette,
+keybinds, quick boxes, the message box and context menus list and run its commands there. The
+cached command lists are read again whenever the router is set or cleared, so a list read before
+the relay started routing does not keep this server's answer.
+The keybinds themselves and the person's macros stay on this server, which is why macros show in
+such a workspace: the app reads them here and runs their steps there, each server step routed to
+the host. The old workspace macros of such a workspace are read, run, changed and deleted on its
+host. The agents do not reach such a workspace.
+
 Calls that name no space but belong to a host (`myMlsWelcomes`, `ackMlsWelcomes`) go through
 `hostClient(host)`; encrypted attachments of such a space are uploaded (as the exact multipart
 bytes) and downloaded the same way. Each host's failures are recorded (`relayHealth.ts`, kept
@@ -205,7 +216,7 @@ for without a workspace. Settings hides Pipelines, State and Emoji there.
 New DMs and groups start in this relay's direct space whenever every member has a principal id:
 from the contact picker there, or from a workspace's member picker when everyone picked has one.
 A group is created when it is picked; a DM opens as a draft and is created when its first
-message is sent, unless the side rail already lists one with that person.
+message is sent, unless the conversation list already has one with that person.
 `createConversation` names them in `remoteMembers` with the relays of their verified card.
 Adding people to a group of the direct space names them the same way, in
 `addConversationMembers`'s `remoteMembers`; for an encrypted group the members panel first checks

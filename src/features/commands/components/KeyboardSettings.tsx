@@ -16,7 +16,7 @@ import {
   readProfileFile,
   saveProfileFile,
 } from "../profiles/profileFiles";
-import { useCommandStore } from "../state/useCommandStore";
+import { runCommandFromClick } from "../runtime/runFromClick";
 import {
   matchingBuiltIn,
   useActiveKeybindProfile,
@@ -48,7 +48,6 @@ export function KeyboardSettings() {
   const setProfile = useKeybindProfileStore((s) => s.setProfile);
   const selectBuiltIn = useKeybindProfileStore((s) => s.selectBuiltIn);
   const setVimMode = useKeybindProfileStore((s) => s.setVimMode);
-  const openShortcuts = useCommandStore((s) => s.setShortcutsPanelOpen);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
@@ -305,7 +304,7 @@ export function KeyboardSettings() {
         </div>
         <button
           type="button"
-          onClick={() => openShortcuts(true)}
+          onClick={() => void runCommandFromClick("workspace.show_shortcuts")}
           className="flex shrink-0 items-center gap-1.5 rounded-md border border-rim-line bg-rim-void px-3 py-1.5 text-xs text-rim-text transition hover:border-rim-accent/40"
         >
           <Keyboard className="h-3.5 w-3.5" />

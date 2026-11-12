@@ -57,6 +57,11 @@ type AuditLogEntry {
 	errorKind: String
 	capabilityCheckOutcome: String
 	confirmationOutcome: String
+	"""
+	The identifier the desktop app gave the stretch of an agent's calls this entry belongs to.
+	Null unless the initiator was `AGENT`.
+	"""
+	runId: String
 	createdAt: String!
 }
 
@@ -65,6 +70,7 @@ input AuditLogFilterInput {
 	serverId: ID
 	commandId: String
 	typedVerb: TypedVerbGql
+	runId: String
 	since: String
 	until: String
 }
@@ -130,6 +136,71 @@ type BlockedPrincipal {
 	When the caller blocked the principal.
 	"""
 	blockedAt: DateTime!
+}
+
+"""
+A bot account of a workspace.
+"""
+type Bot {
+	userId: ID!
+	serverId: ID!
+	name: String!
+	"""
+	Who runs it, as the person who added it says.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes, as the person who added it says.
+	"""
+	readsGoTo: String!
+	"""
+	Who added it.
+	"""
+	addedByName: String
+	createdAt: DateTime!
+	"""
+	When it was deactivated; null while it is active.
+	"""
+	deactivatedAt: DateTime
+	"""
+	Whether an Owner or Moderator let it see members joining the workspace.
+	"""
+	seesMemberJoins: Boolean!
+}
+
+"""
+What the person who added a bot says about it. RIM cannot check it.
+"""
+type BotInfo {
+	"""
+	Who runs it.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes.
+	"""
+	readsGoTo: String!
+	"""
+	Who added it.
+	"""
+	addedByName: String
+}
+
+"""
+A bot's token, without its secret, which is shown once when it is created.
+"""
+type BotToken {
+	id: ID!
+	label: String!
+	createdAt: DateTime!
+	"""
+	When it was last used, to the minute; null when it never was.
+	"""
+	lastUsedAt: DateTime
+	"""
+	When it was revoked; null while it works.
+	"""
+	revokedAt: DateTime
 }
 
 input ChannelCursorInput {
@@ -315,6 +386,10 @@ enum CommandInitiator {
 	Out-of-process CLI client (rim-cli).
 	"""
 	CLI
+	"""
+	A button or other control in the app.
+	"""
+	UI
 }
 
 type CommandResult {
@@ -593,6 +668,26 @@ input CreateAttachmentInput {
 	blobSha256: String
 }
 
+"""
+Create a bot in a workspace.
+"""
+input CreateBotInput {
+	serverId: ID!
+	name: String!
+	"""
+	Who runs it: 1 to 200 characters of plain text.
+	"""
+	runBy: String!
+	"""
+	Where what it reads goes: 1 to 200 characters of plain text.
+	"""
+	readsGoTo: String!
+	"""
+	Whether it sees members joining the workspace; off when left out.
+	"""
+	seesMemberJoins: Boolean
+}
+
 input CreateChannelLensInput {
 	serverId: ID!
 	conversationId: ID!
@@ -640,6 +735,28 @@ input CreateCustomEmojiInput {
 	serverId: ID!
 	name: String!
 	imageBase64: String!
+}
+
+"""
+Create a channel's incoming webhook.
+"""
+input CreateIncomingWebhookInput {
+	conversationId: ID!
+	"""
+	The bot it posts as, an active bot of the channel's workspace.
+	"""
+	botUserId: ID!
+	preset: WebhookPreset!
+	"""
+	The webhook's own format, with the preset `PLAIN`. Sent only to a server that lists the
+	capability `webhook_formats`.
+	"""
+	template: JSON
+	"""
+	The caller's unbound test session whose URL the webhook keeps. Sent only to a server that
+	lists the capability `webhook_test_sessions`.
+	"""
+	testSessionId: ID
 }
 
 input CreateInviteInput {
@@ -706,6 +823,58 @@ input CreateUserCommandInput {
 	title: String!
 	description: String!
 	steps: [UserCommandStepInput!]!
+	"""
+	Lets the AI agent run the macro; refused unless every step is an AI-callable built-in
+	the server runs, with every argument fixed.
+	"""
+	aiCallable: Boolean! = false
+	"""
+	How the macro is described to the AI agent, at most 1,000 characters.
+	"""
+	nlDescription: String
+	"""
+	Up to 10 example phrases for the AI agent, each at most 200 characters.
+	"""
+	intentSamples: [String!]
+}
+
+"""
+A new bot and its first token.
+"""
+type CreatedBot {
+	bot: Bot!
+	"""
+	`rimbot_…`, shown this once.
+	"""
+	token: String!
+}
+
+"""
+A new token of a bot.
+"""
+type CreatedBotToken {
+	botToken: BotToken!
+	"""
+	`rimbot_…`, shown this once.
+	"""
+	token: String!
+}
+
+"""
+A new incoming webhook and its token.
+"""
+type CreatedIncomingWebhook {
+	webhook: IncomingWebhook!
+	"""
+	`rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
+	it is a secret. The empty string when `keptTestUrl` is true: the client already has the URL,
+	and the server held only its hash.
+	"""
+	token: String!
+	"""
+	Whether the webhook kept the token of the test session named in `testSessionId`.
+	"""
+	keptTestUrl: Boolean!
 }
 
 type CustomEmoji {
@@ -1029,6 +1198,11 @@ input ExecuteCommandInput {
 	instance has the AI command surface off.
 	"""
 	initiator: CommandInitiator
+	"""
+	An identifier the desktop app gives one stretch of an agent's calls. Kept on the audit
+	entry when the initiator is `AGENT`, and ignored otherwise.
+	"""
+	runId: String
 }
 
 input ExecuteMacroInput {
@@ -1104,6 +1278,39 @@ input HeartbeatInput {
 	status: PresenceStatus!
 }
 
+"""
+The signed-in person's Home layout, kept on their home server.
+"""
+type HomeLayout {
+	"""
+	The layout: `{ "version": 1, "boxes": [{ "id", "kind", "width", "settings"? }] }`.
+	"""
+	layout: JSON!
+	"""
+	When the person made the edit, never later than the server's clock when it was stored.
+	"""
+	editedAt: DateTime!
+	"""
+	When the server stored it.
+	"""
+	updatedAt: DateTime!
+}
+
+"""
+The answer to `saveHomeLayout`.
+"""
+type HomeLayoutSaved {
+	"""
+	True when the layout sent was stored; false when the stored layout had a later
+	`editedAt` and was kept instead.
+	"""
+	kept: Boolean!
+	"""
+	The layout just stored, or the stored one that was kept.
+	"""
+	layout: HomeLayout!
+}
+
 input InBandTokenInput {
 	token: String!
 	argsHash: String!
@@ -1117,6 +1324,32 @@ input InboxCursorInput {
 type InboxCursorOutput {
 	lastActivityAt: DateTime!
 	conversationId: ID!
+}
+
+"""
+A URL that posts to one channel as one bot, without its token, which is shown once.
+"""
+type IncomingWebhook {
+	id: ID!
+	conversationId: ID!
+	"""
+	The bot it posts as.
+	"""
+	botUserId: ID!
+	preset: WebhookPreset!
+	"""
+	Its own format; null for a webhook that follows its preset, such as an unedited GitHub one.
+	"""
+	template: JSON
+	createdAt: DateTime!
+	"""
+	When it was last used, to the minute; null when it never was.
+	"""
+	lastUsedAt: DateTime
+	"""
+	When it was revoked; null until then.
+	"""
+	revokedAt: DateTime
 }
 
 """
@@ -1643,6 +1876,12 @@ input MarkAsReadInput {
 	readAt: DateTime!
 }
 
+input MarkAsUnreadInput {
+	workspaceId: ID!
+	conversationId: ID!
+	messageId: ID!
+}
+
 """
 How many of a person's messages in the workspace's channels `deleteMemberMessages` would
 reach with the same `since`.
@@ -2081,6 +2320,12 @@ type Mutation {
 	updateKeybind(input: UpdateKeybindInput!): Keybind!
 	toggleReaction(input: ToggleReactionInput!): [ReactionGroup!]!
 	markAsRead(input: MarkAsReadInput!): Boolean!
+	"""
+	Moves the viewer's read marker back so that the message and every later one count as
+	unread. Nothing becomes less unread: when they already count, the marker stays.
+	Notifications already read stay read.
+	"""
+	markAsUnread(input: MarkAsUnreadInput!): Boolean!
 	markAllAsRead(input: MarkAllAsReadInput!): Boolean!
 	"""
 	Join the current default workspace as Member with its public channels. Active bans
@@ -2103,19 +2348,27 @@ type Mutation {
 	unmuteConversation(input: UnmuteConversationInput!): Boolean!
 	createCustomEmoji(input: CreateCustomEmojiInput!): CustomEmoji!
 	deleteCustomEmoji(emojiId: ID!): Boolean!
-	createMacro(input: CreateMacroInput!): MacroDef!
-	updateMacro(input: UpdateMacroInput!): MacroDef!
-	deleteMacro(macroId: ID!): Boolean!
-	executeMacro(input: ExecuteMacroInput!): CommandResult!
+	createMacro(input: CreateMacroInput!): MacroDef! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	updateMacro(input: UpdateMacroInput!): MacroDef! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	deleteMacro(macroId: ID!): Boolean! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	executeMacro(input: ExecuteMacroInput!): CommandResult! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
 	createChannelLens(input: CreateChannelLensInput!): ChannelLens!
 	updateChannelLens(input: UpdateChannelLensInput!): ChannelLens!
 	deleteChannelLens(serverId: ID!, lensId: ID!): Boolean!
 	setWorkspaceState(input: SetWorkspaceStateInput!): WorkspaceStateEntryGql!
 	deleteWorkspaceState(input: DeleteWorkspaceStateInput!): Boolean!
+	"""
+	Create a pipeline. Any member, but only an Owner or Moderator may give it a Post as bot
+	action (`FORBIDDEN`), on the Member Joined trigger, with an active bot of the workspace and
+	a plaintext channel that is not archived and that the bot is in (`VALIDATION`).
+	"""
 	createPipeline(input: CreatePipelineInput!): PipelineGql!
 	"""
 	Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
-	of its workspace; anyone else gets `FORBIDDEN`.
+	of its workspace; anyone else gets `FORBIDDEN`. Adding or changing a Post as bot action
+	takes an Owner or Moderator; keeping one unchanged takes only the right to change the
+	pipeline. A client that does not know the action sends it back as `chat.post_message` with
+	the `args` it was given, which keeps it; other `args` are `VALIDATION`.
 	"""
 	updatePipeline(input: UpdatePipelineInput!): PipelineGql!
 	"""
@@ -2751,6 +3004,80 @@ type Mutation {
 	- `CONFLICT`: the owner owns another workspace of that name.
 	"""
 	renameWorkspace(serverId: ID!, name: String!): Server!
+	"""
+	Create a bot, a guest of the workspace in no channel, and its first token, shown this once.
+	Owner or Moderator; `FORBIDDEN` for anyone else, `VALIDATION` for the direct space, a bad
+	field or a workspace with 25 active bots, `FEATURE_DISABLED` while the `bots` feature is
+	off.
+	"""
+	createBot(input: CreateBotInput!): CreatedBot!
+	"""
+	Change a bot's name, what is said about it or whether it sees members joining. Owner or
+	Moderator of its workspace.
+	"""
+	updateBot(input: UpdateBotInput!): Bot!
+	"""
+	Deactivate a bot: its tokens stop working, its webhooks are revoked and it leaves the
+	workspace and its channels. Its messages stay. Doing it again changes nothing. There is no
+	way back. Owner or Moderator of its workspace.
+	"""
+	deactivateBot(botUserId: ID!): Bot!
+	"""
+	Create a token for an active bot, shown this once; a label is 1 to 64 characters and a bot
+	has at most 5 active tokens (`VALIDATION`). Owner or Moderator of its workspace.
+	"""
+	createBotToken(botUserId: ID!, label: String!): CreatedBotToken!
+	"""
+	Revoke a token. Revoking it again changes nothing. `NOT_FOUND` for an unknown token and for
+	a token of a bot in a workspace the caller does not moderate.
+	"""
+	revokeBotToken(tokenId: ID!): BotToken!
+	"""
+	Create a channel's incoming webhook, bound to a bot of its workspace, and add the bot to the
+	channel if it is not there. The token is shown this once. Owner or Moderator, and for a
+	private channel one who is in it; `FORBIDDEN` for anyone else, `VALIDATION` for anything but
+	a plaintext channel that is not archived and for a bot of another workspace or a deactivated
+	one, `CONFLICT` when the channel already has a webhook that is not revoked.
+	"""
+	createIncomingWebhook(input: CreateIncomingWebhookInput!): CreatedIncomingWebhook!
+	"""
+	Revoke a webhook. Revoking it again changes nothing. `NOT_FOUND` for an unknown webhook and
+	for one of a workspace the caller does not moderate.
+	"""
+	revokeIncomingWebhook(id: ID!): IncomingWebhook!
+	"""
+	Change how a webhook turns a delivery into a message. The URL stays the same. A `template`
+	needs the preset `PLAIN`; `PLAIN` or `GITHUB` with no `template` goes back to that preset.
+	`VALIDATION` for a format that is refused, naming the rule, and for a revoked webhook;
+	`FORBIDDEN` for a private channel the caller is not in; `NOT_FOUND` for an unknown webhook
+	and for one of a workspace the caller does not moderate.
+	"""
+	updateIncomingWebhookFormat(id: ID!, preset: WebhookPreset!, template: JSON): IncomingWebhook!
+	"""
+	Open a test session that holds what arrives, in memory, for the caller alone. Without
+	`webhookId` it answers a token for a URL that posts nothing; with one it copies that
+	webhook's deliveries. Owner or Moderator; `FORBIDDEN` without the standing of creating a
+	webhook or changing that one's format, `NOT_FOUND` for an unknown webhook or one of another
+	workspace, `RATE_LIMITED` past 3 open sessions in the workspace or 20 on the server.
+	"""
+	startWebhookTestSession(serverId: ID!, webhookId: ID): WebhookTestSession!
+	"""
+	Drop a test session and what it holds. Its starter alone; `NOT_FOUND` for anyone else and
+	for one that ended.
+	"""
+	endWebhookTestSession(sessionId: ID!): Boolean!
+	"""
+	Save the signed-in person's Home layout, made at `editedAt` on their device. The stored
+	layout is kept instead when its `editedAt` is later, an `editedAt` later than the
+	server's clock counting as the clock; `kept` says which. `VALIDATION` names the check a
+	layout fails; `FORBIDDEN` for a person from another server.
+	"""
+	saveHomeLayout(layout: JSON!, editedAt: DateTime!): HomeLayoutSaved!
+	"""
+	Delete the signed-in person's Home layout, so every device shows the default. Answers
+	whether one was stored. `FORBIDDEN` for a person from another server.
+	"""
+	resetHomeLayout: Boolean!
 }
 
 input MuteConversationInput {
@@ -3040,13 +3367,34 @@ type PipeStageResult {
 
 type PipelineActionGql {
 	actionType: String!
+	"""
+	For a Post as bot action, `chat.post_message`, the command it runs.
+	"""
 	commandId: String
+	"""
+	For a Post as bot action, the bot, channel and text, as a client that does not know
+	`postAsBot` shows them.
+	"""
 	args: JSON
+	"""
+	The bot, channel and text of a Post as bot action; null for any other.
+	"""
+	postAsBot: PipelinePostAsBotGql
 }
 
 input PipelineActionInput {
+	"""
+	The command to run; `chat.post_message` with `postAsBot`.
+	"""
 	commandId: String!
+	"""
+	The command's arguments; left out with `postAsBot`.
+	"""
 	args: JSON
+	"""
+	Makes this a Post as bot action, on the Member Joined trigger only. Owner or Moderator.
+	"""
+	postAsBot: PipelinePostAsBotInput
 }
 
 type PipelineFilterConditionGql {
@@ -3086,6 +3434,36 @@ type PipelineGql {
 	lastFiredAt: DateTime
 	createdAt: DateTime!
 	updatedAt: DateTime!
+}
+
+"""
+A message a bot posts when someone joins.
+"""
+type PipelinePostAsBotGql {
+	botUserId: ID!
+	conversationId: ID!
+	"""
+	The text as saved, with its placeholders.
+	"""
+	text: String!
+}
+
+"""
+A message a bot posts when someone joins.
+"""
+input PipelinePostAsBotInput {
+	"""
+	An active bot of the workspace.
+	"""
+	botUserId: ID!
+	"""
+	A plaintext channel that is not archived, which the bot is already in.
+	"""
+	conversationId: ID!
+	"""
+	What it posts, which may hold `{username}` and `{name}`.
+	"""
+	text: String!
 }
 
 type PipelineTriggerGql {
@@ -3318,8 +3696,8 @@ type Query {
 	apart from a confirmation, a timeout in force and the arguments given. Naming the direct
 	space makes the caller a guest of it.
 	
-	`AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
-	workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+	`AI` lists only the AI-callable commands, the caller's agent-callable macros among them,
+	and fails with `FEATURE_DISABLED` while the AI command surface is off.
 	"""
 	commands(surface: CommandSurface, commandContext: CommandContextInput): [Command!]!
 	"""
@@ -3333,13 +3711,20 @@ type Query {
 	
 	With `intentPhrase` the commands are ranked by how well the phrase matches their
 	intent samples, title and natural-language description. `limit` defaults to 50 and is
-	capped at 100. `workspaceId` scopes the list to one workspace, including its AI-callable
-	macros.
+	capped at 100. `workspaceId` scopes the list to one workspace; the caller's
+	agent-callable macros are listed for a workspace where they may run every step.
 	
 	Limited to 5 calls per 60-second sliding window per user; more fail with
 	`RATE_LIMITED`. Fails with `FEATURE_DISABLED` while the AI command surface is off.
 	"""
 	commandDiscover(intentPhrase: String, limit: Int, workspaceId: ID): [Command!]!
+	"""
+	Every built-in and app command a macro step may name, sorted by id, whatever the
+	caller's role and workspace: the built-ins the server runs and those the client runs,
+	and the app commands other than the agent-management ones. Plugin commands are not in
+	it.
+	"""
+	macroStepCommands: [Command!]!
 	resolvedKeybinds(workspaceId: ID): [Keybind!]!
 	conversation(serverId: ID!, conversationId: ID!): Conversation!
 	inboxConversations(serverId: ID!, dir: PageDir!, cursor: InboxCursorInput, limit: Int!): ConversationPage!
@@ -3388,8 +3773,8 @@ type Query {
 	"""
 	The caller's own macros in the workspace. `FORBIDDEN` for a non-member.
 	"""
-	myMacros(serverId: ID!): [MacroDef!]!
-	macroByName(serverId: ID!, name: String!): MacroDef
+	myMacros(serverId: ID!): [MacroDef!]! @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
+	macroByName(serverId: ID!, name: String!): MacroDef @deprecated(reason: "Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand")
 	channelLenses(serverId: ID!, conversationId: ID!): [ChannelLens!]!
 	applyChannelLens(serverId: ID!, conversationId: ID!, lensId: ID!, limit: Int! = 50): [Message!]!
 	workspaceState(serverId: ID!, key: String!, scope: WorkspaceStateScopeGql!): WorkspaceStateEntryGql
@@ -3627,6 +4012,45 @@ type Query {
 	own keep key.
 	"""
 	sessionKeepKey: String
+	"""
+	The workspace's bots, deactivated ones included. Any member; `FORBIDDEN` for anyone else,
+	`FEATURE_DISABLED` while the `bots` feature is off.
+	"""
+	bots(serverId: ID!): [Bot!]!
+	"""
+	The bot's tokens, revoked ones included, never their secret. Owner or Moderator of its
+	workspace; `FORBIDDEN` for anyone else, `NOT_FOUND` for an unknown bot, `FEATURE_DISABLED`
+	while the `bots` feature is off.
+	"""
+	botTokens(botUserId: ID!): [BotToken!]!
+	"""
+	The workspace's incoming webhooks, revoked ones included, never their token. Owner or
+	Moderator; `FORBIDDEN` for anyone else, `FEATURE_DISABLED` while the `bots` feature is off.
+	"""
+	incomingWebhooks(serverId: ID!): [IncomingWebhook!]!
+	"""
+	The ready-made webhook formats, the same for everyone signed in. `FEATURE_DISABLED` while
+	the `bots` feature is off.
+	"""
+	webhookFormats: [WebhookFormatInfo!]!
+	"""
+	What a sample delivery would come to under `template`, as a delivery runs it. Nothing is
+	posted or stored. Owner or Moderator of the workspace; `FORBIDDEN` for anyone else,
+	`VALIDATION` for a sample over 256 KiB.
+	"""
+	previewWebhookFormat(serverId: ID!, template: JSON!, headers: [WebhookHeaderInput!]!, body: String!): WebhookFormatPreview!
+	"""
+	What a test session holds after `after`, oldest first, and its expiry, which this read
+	extends. Its starter alone; `NOT_FOUND` for anyone else, for one that ended and once the
+	starter lacks the standing to start it.
+	"""
+	webhookTestDeliveries(sessionId: ID!, after: Int): WebhookTestDeliveries!
+	"""
+	The signed-in person's Home layout, or null when none is stored and the client shows its
+	default Home. `FORBIDDEN` for a person from another server, whose layout lives at their
+	own server.
+	"""
+	homeLayout: HomeLayout
 }
 
 type ReactionGroup {
@@ -4066,7 +4490,7 @@ type ServerFeatureInfo {
 	"""
 	The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
 	`email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`,
-	`text_art_check` or `avatar_check`. A client ignores a name it does not know.
+	`text_art_check`, `avatar_check` or `bots`. A client ignores a name it does not know.
 	"""
 	key: String!
 	state: ServerFeatureState!
@@ -4174,7 +4598,13 @@ type ServerInfo {
 	`deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
 	(`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
 	`conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
-	(`notificationEvents`). A client ignores names it does not know.
+	(`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
+	`ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
+	`read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event),
+	`bot_events` (`Bot.seesMemberJoins`, the same field of `CreateBotInput` and `UpdateBotInput`,
+	and `/api/bot/v1/events`), `pipeline_post_as_bot` (`PipelineActionGql.postAsBot`,
+	`PipelineActionInput.postAsBot`).
+	A client ignores names it does not know.
 	"""
 	capabilities: [String!]!
 }
@@ -4283,6 +4713,14 @@ type ServerMember {
 	End of the active ban; null for a permanent ban or no ban.
 	"""
 	bannedUntil: DateTime
+	"""
+	Whether this member is a bot, an account nobody signs in to.
+	"""
+	isBot: Boolean!
+	"""
+	What the person who added this bot says about it; null for anyone but a bot.
+	"""
+	bot: BotInfo
 }
 
 """
@@ -4532,6 +4970,24 @@ input UnpinMessageInput {
 type UnreadCount {
 	conversationId: ID!
 	count: Int!
+	"""
+	Messages sent after this time count as unread.
+	"""
+	unreadAfter: DateTime!
+}
+
+"""
+Change a bot; a field left out stays as it is.
+"""
+input UpdateBotInput {
+	botUserId: ID!
+	name: String
+	runBy: String
+	readsGoTo: String
+	"""
+	Whether it sees members joining the workspace.
+	"""
+	seesMemberJoins: Boolean
 }
 
 input UpdateChannelLensInput {
@@ -4636,6 +5092,19 @@ input UpdateUserCommandInput {
 	description: String!
 	steps: [UserCommandStepInput!]!
 	isEnabled: Boolean!
+	"""
+	Omitted, keeps the stored value, which turns off when the new steps no longer let the
+	agent run the macro.
+	"""
+	aiCallable: Boolean
+	"""
+	Omitted, keeps the stored value.
+	"""
+	nlDescription: String
+	"""
+	Omitted, keeps the stored value.
+	"""
+	intentSamples: [String!]
 }
 
 input UpdateWorkspacePluginInput {
@@ -4701,9 +5170,13 @@ type User {
 	handle domain, or a person from another server's username at their home server and that
 	server's handle domain. Null when it is not known (a person from another server whose
 	home server did not say, or whose handle domain does not point back at it) and for a
-	deleted account.
+	deleted account or a bot.
 	"""
 	handle: String
+	"""
+	Whether this account is a bot, which nobody signs in to.
+	"""
+	isBot: Boolean!
 	"""
 	Whether this message's author is banned in its workspace; false outside message authors.
 	"""
@@ -4716,10 +5189,15 @@ type User {
 	The active ban's reason, readable only by workspace moderators.
 	"""
 	banReason: String
+	"""
+	What the person who added this bot says about it; null for anyone but a bot.
+	"""
+	bot: BotInfo
 }
 
 """
-A user command as its owner saved it, in the shape `updateUserCommand` takes.
+A macro, the person's own command, as its owner saved it, in the shape `updateUserCommand`
+takes.
 """
 type UserCommand {
 	"""
@@ -4736,25 +5214,224 @@ type UserCommand {
 	`false` while the command is disabled; a disabled command is not listed by `commands`.
 	"""
 	isEnabled: Boolean!
+	"""
+	Whether the owner lets the AI agent run the macro. The agent runs it only while every
+	step is an AI-callable built-in the server runs, with every argument fixed.
+	"""
+	aiCallable: Boolean!
+	"""
+	How the macro is described to the AI agent; empty when its description serves.
+	"""
+	nlDescription: String!
+	"""
+	Example phrases for the AI agent.
+	"""
+	intentSamples: [String!]!
 }
 
 """
-One step of a user command: the command it runs and the arguments it passes.
+One step of a macro: the command it runs, the arguments fixed for it and the arguments the
+client asks for when the macro runs.
 """
 type UserCommandStep {
+	"""
+	A built-in, app or plugin command id, or on a macro saved before steps could name app
+	and plugin commands, another macro.
+	"""
 	commandId: String!
 	args: JSON
+	"""
+	Names of the arguments the client asks the person for before the first step runs;
+	empty when the step asks for none.
+	"""
+	ask: [String!]!
 }
 
+"""
+One step of a macro.
+"""
 input UserCommandStepInput {
+	"""
+	A built-in, app or plugin command id.
+	"""
 	commandId: String!
 	args: JSON
+	"""
+	Names of the arguments the client asks for when the macro runs: at most 32, each 1 to
+	64 bytes, none twice and none a key of `args`. Omitted, none on create, and on update
+	what the stored step at the same position asked for when it names the same command.
+	"""
+	ask: [String!]
 }
 
 type UserPresenceGql {
 	userId: ID!
 	status: PresenceStatus!
 	lastSeenAt: DateTime!
+}
+
+"""
+A ready-made webhook format RIM ships, the same for everyone.
+"""
+type WebhookFormatInfo {
+	"""
+	A short name that stays the same, such as `github`.
+	"""
+	key: String!
+	name: String!
+	"""
+	What to set up on the service's side.
+	"""
+	setupNote: String!
+	format: JSON!
+	sampleHeaders: [WebhookHeader!]!
+	"""
+	A delivery's body as the service sends it.
+	"""
+	sampleBody: String!
+}
+
+"""
+What a sample delivery would come to under a format. Nothing is posted or stored.
+"""
+type WebhookFormatPreview {
+	outcome: WebhookPreviewOutcome!
+	"""
+	The rule that decides or that a refusal is about, counted from 1.
+	"""
+	rule: Int
+	"""
+	What would post, without the link.
+	"""
+	text: String
+	"""
+	The link after the text, when it passes its check.
+	"""
+	link: String
+	"""
+	The placeholder with no value, as written between its braces.
+	"""
+	placeholder: String
+	"""
+	Why the body or the format would be refused.
+	"""
+	reason: String
+}
+
+"""
+A header of a sample delivery.
+"""
+type WebhookHeader {
+	name: String!
+	value: String!
+}
+
+"""
+A header of a sample delivery.
+"""
+input WebhookHeaderInput {
+	name: String!
+	value: String!
+}
+
+"""
+How an incoming webhook's body becomes text.
+"""
+enum WebhookPreset {
+	"""
+	`{"text": "..."}`, at most 4,000 characters.
+	"""
+	PLAIN
+	"""
+	GitHub's published releases, pull requests opened, closed or merged and issues opened or
+	closed, by the `X-GitHub-Event` header.
+	"""
+	GITHUB
+}
+
+"""
+What a sample delivery would come to.
+"""
+enum WebhookPreviewOutcome {
+	"""
+	A rule holds and posts.
+	"""
+	POSTS
+	"""
+	No rule holds, so nothing would post.
+	"""
+	NO_RULE
+	"""
+	The rule that holds has a placeholder with no value, so nothing would post.
+	"""
+	NO_VALUE
+	"""
+	The body would be refused.
+	"""
+	BODY_REFUSED
+	"""
+	The format would be refused.
+	"""
+	FORMAT_REFUSED
+}
+
+"""
+What a test session holds of a delivery's body.
+"""
+enum WebhookTestBodyState {
+	"""
+	`body` is the body exactly as it came.
+	"""
+	TEXT
+	"""
+	Over 256 KiB; its bytes are not held.
+	"""
+	TOO_LARGE
+	"""
+	Not UTF-8; its bytes are not held.
+	"""
+	NOT_TEXT
+}
+
+"""
+The deliveries a read of a test session answers, and when it now expires.
+"""
+type WebhookTestDeliveries {
+	deliveries: [WebhookTestDelivery!]!
+	expiresAt: DateTime!
+}
+
+"""
+A delivery a test session holds.
+"""
+type WebhookTestDelivery {
+	"""
+	Its place in the session, counted from 1; pass the last one read as `after`.
+	"""
+	id: Int!
+	receivedAt: DateTime!
+	contentType: String
+	"""
+	The `x-` headers a format may use.
+	"""
+	headers: [WebhookHeader!]!
+	bodyState: WebhookTestBodyState!
+	"""
+	The body, for `TEXT` alone. A client shows it as plain text.
+	"""
+	body: String
+}
+
+"""
+A webhook test session just started.
+"""
+type WebhookTestSession {
+	id: ID!
+	"""
+	`rimhook_…` for an unbound session's URL, shown this once; null for a bound session.
+	"""
+	token: String
+	expiresAt: DateTime!
 }
 
 """
@@ -4937,6 +5614,10 @@ enum WorkspaceStateScopeGql {
 	USER
 }
 
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

@@ -2,47 +2,29 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { toast } from "../../../shared/toast";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { ConversationTypeEnum, PostingPolicy } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
 import { detectPlatform } from "../../../core/runtime/runtime";
-import type { HoverTarget } from "../../../shell/state/useHoverContextStore";
-import { useShellStore } from "../../../shell/state/useShellStore";
 import { AgentEncryptedWarning } from "../../agent/encrypted/AgentEncryptedSwitch";
+import { cannotAskAbout } from "../../agents/runtime/askContext";
 import { agentSwitchLabel, useAgentEncryptedStore } from "../../agent/state/useAgentEncryptedStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import {
-  QUICK_ACCESS_SHORTCUT,
-  useQuickAccessStore,
-} from "../../commands/state/useQuickAccessStore";
+import { runCommandFromClick, type ClickOptions } from "../../commands/runtime/runFromClick";
+import { QUICK_ACCESS_SHORTCUT } from "../../commands/state/useQuickAccessStore";
+import { canManageBots, webhooksAvailable } from "../../bots/availability";
 import { useDeviceReadyForEncryption } from "../../e2ee/hooks/useE2eeConversation";
 import { useConversationNotificationItems } from "../../notifications/hooks/useConversationNotificationItems";
 import { blockTargetOf } from "../../relay/blocking/blockPerson";
-import { askToBlock } from "../../relay/blocking/useBlockPersonStore";
-import { useContacts, useRemoveContact } from "../../relay/api/useContacts";
-import { useAddMemberContact } from "../../relay/contacts/useAddMemberContact";
+import { useContacts } from "../../relay/api/useContacts";
 import { isDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import type { ServerMember } from "../../workspaces/api/useServerMembers";
 import { useCanModerate, useIsGuest, useMyServerRole } from "../../workspaces/api/useMyServerRole";
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import {
-  useJoinChannelMutation,
-  useSetConversationArchivedMutation,
-} from "../api/useChannelMembership";
-import {
-  useAcceptConversationInviteMutation,
-  useDeclineConversationInviteMutation,
-} from "../api/useConversationInvite";
 import { cachedChannelPosting } from "../api/useChannelPosting";
-import { useMarkAsRead } from "../api/useMarkAsRead";
+import { knownMessageToMarkUnread, spaceMarksUnread } from "../api/useMarkAsUnread";
 import { formatSlowModeInterval } from "../api/useSlowMode";
 import { ChannelPostingDialog } from "../components/ChannelPostingDialog";
-import { ConfirmActionDialog } from "../components/ConfirmActionDialog";
 import { SlowModeDialog } from "../components/SlowModeDialog";
-import { archiveConfirmation, leaveConfirmation } from "../conversationActionTexts";
-import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useTopicEditStore } from "../state/useTopicEditStore";
 import { useUnreadStore } from "../state/useUnreadStore";
 import type { ConversationSummary } from "../types";
@@ -55,8 +37,7 @@ import {
   isInvited,
   leaveNeedsConfirmation,
 } from "../utils";
-import { useLeaveConversation } from "./useLeaveConversation";
-import { useOpenConversation } from "./useOpenConversation";
+import { isShownConversation, useOpenConversation } from "./useOpenConversation";
 
 /** Where a conversation's menu is opened from. */
 export interface ConversationMenuOptions {
@@ -71,32 +52,37 @@ export interface ConversationMenuOptions {
 }
 
 type PendingDialog = {
-  kind: "archive" | "leave" | "slow-mode" | "posting" | "agent";
+  kind: "slow-mode" | "posting" | "agent";
   conversation: ConversationSummary;
 };
 
 /**
  * The menu of a conversation, the same from its sidebar row and from the conversation
- * header's "…" button. Items the viewer cannot use are left out.
+ * header's "…" button. Items the viewer cannot use are left out. Each item runs its command on
+ * the menu's conversation as a context-menu run, with the confirmation the palette asks for;
+ * Edit topic…, Slow mode… and Who can post… open the editors whose save runs theirs.
  *
  * - An invitation the viewer holds: Accept (on a device set up for encryption) and Decline.
  * - A channel: Join channel first for a public one the viewer is not in, then Mark as read
- *   (when unread), Notifications, Members, Invite people…, Edit topic… (Owner, Moderator or a
- *   private channel's creator), Assign keybind…, the
+ *   (when unread) or Mark as unread (when read, on a host with read markers, unless what is
+ *   loaded shows nothing by someone else), Notifications, Members, Invite people…, Edit topic…
+ *   (Owner, Moderator or a private channel's creator), Ask agent about #name (in the desktop
+ *   app, on a channel that isn't encrypted), Assign keybind…, the
  *   Owner/Moderator's Moderation section (Slow mode…, Who can post… unless the server has no
- *   posting policies, Archive channel… or Unarchive channel),
+ *   posting policies, New webhook… on a plaintext channel when the server has incoming webhooks,
+ *   Archive channel… or Unarchive channel),
  *   and Leave channel. An archived channel has only Members, Unarchive channel and Leave.
- * - A group: Mark as read, Notifications, Members, Add people… (also in Direct messages),
- *   Assign keybind…, Leave group….
- * - A DM: Mark as read, Notifications, Add to contacts or Remove from contacts (while the
- *   relay is on), Assign keybind…, Block… (its other person, while the relay is on and they
+ * - A group: Mark as read or Mark as unread, Notifications, Members, Add people… (also in Direct
+ *   messages), Assign keybind…, Leave group….
+ * - A DM: Mark as read or Mark as unread, Notifications, Add to contacts or Remove from contacts
+ *   (while the relay is on), Assign keybind…, Block… (its other person, while the relay is on and they
  *   are not blocked).
  *
  * @param workspaceId The workspace the list or header shows, whose role gates the moderation
  *   and whose notification settings and mutes stay loaded. A conversation's actions go to its
  *   own `serverId`.
  * @returns `getItems`, the items for a conversation when its menu opens, and `dialogs`, the
- *   confirmations and the slow-mode and posting dialogs to render beside the surface.
+ *   slow-mode, posting and agent dialogs to render beside the surface.
  */
 export function useConversationMenuItems(workspaceId: string | null): {
   getItems: (
@@ -113,51 +99,25 @@ export function useConversationMenuItems(workspaceId: string | null): {
   const { info } = useServerInfo();
   const notificationItems = useConversationNotificationItems(workspaceId);
   const deviceReady = useDeviceReadyForEncryption();
-  const { mutate: markAsRead } = useMarkAsRead();
-  const { mutate: join } = useJoinChannelMutation();
-  const setArchived = useSetConversationArchivedMutation();
-  const { mutate: archive } = setArchived;
-  const { leave, isPending: leavePending } = useLeaveConversation(workspaceId);
-  const { mutate: acceptInvite } = useAcceptConversationInviteMutation();
-  const { mutate: declineInvite } = useDeclineConversationInviteMutation();
   const { data: contacts } = useContacts();
   const myPrincipalId = useRelayStore((s) => s.account?.principalId ?? null);
-  const { addContact } = useAddMemberContact();
-  const { mutate: removeContact } = useRemoveContact();
   const openConversation = useOpenConversation();
   const [pending, setPending] = useState<PendingDialog | null>(null);
-
-  const runSetArchived = useCallback(
-    (conversation: ConversationSummary, archived: boolean) => {
-      const label = conversationLabel(conversation);
-      archive(
-        { serverId: conversation.serverId, conversationId: conversation.id, archived },
-        {
-          onSuccess: () => {
-            setPending(null);
-            toast.success(archived ? `Archived ${label}` : `Unarchived ${label}`);
-          },
-          onError: (err) => {
-            setPending(null);
-            toast.error(
-              graphqlErrorMessage(
-                err,
-                archived ? "Could not archive the channel" : "Could not unarchive the channel",
-              ),
-            );
-          },
-        },
-      );
-    },
-    [archive],
-  );
 
   const getItems = useCallback(
     (conversation: ConversationSummary, options: ConversationMenuOptions = {}) => {
       const { header = false, label } = options;
       const serverId = conversation.serverId;
       const conversationId = conversation.id;
-      const vars = { serverId, conversationId };
+      const ids = { server_id: serverId, conversation_id: conversationId };
+      const name = conversationLabel(conversation);
+      // Runs an item's command on this conversation, as a context-menu run.
+      const run = (commandId: string, args?: Record<string, unknown>, options?: ClickOptions) =>
+        void runCommandFromClick(commandId, args, {
+          source: "menu",
+          target: { workspaceId: serverId, conversationId },
+          ...options,
+        });
 
       if (isInvited(conversation, currentUserId)) {
         const items: DropdownMenuItem[] = [];
@@ -165,21 +125,13 @@ export function useConversationMenuItems(workspaceId: string | null): {
           items.push({
             id: "accept-invite",
             label: "Accept",
-            onSelect: () =>
-              acceptInvite(vars, {
-                onError: (err) =>
-                  toast.error(graphqlErrorMessage(err, "Could not join the conversation")),
-              }),
+            onSelect: () => run("chat.accept_invitation"),
           });
         }
         items.push({
           id: "decline-invite",
           label: "Decline",
-          onSelect: () =>
-            declineInvite(vars, {
-              onError: (err) =>
-                toast.error(graphqlErrorMessage(err, "Could not decline the invitation")),
-            }),
+          onSelect: () => run("chat.decline_invitation"),
         });
         return items;
       }
@@ -190,7 +142,9 @@ export function useConversationMenuItems(workspaceId: string | null): {
       const peer = isDm ? peerOf(conversation) : undefined;
       // Opens the conversation of a sidebar row, unless it is the one shown already.
       const show = () => {
-        if (!isShown(serverId, conversationId)) openConversation(conversationId, serverId);
+        if (!isShownConversation(serverId, conversationId)) {
+          openConversation(conversationId, serverId);
+        }
       };
 
       const items: DropdownMenuItem[] = [];
@@ -200,8 +154,9 @@ export function useConversationMenuItems(workspaceId: string | null): {
           id: "join-channel",
           label: "Join channel",
           onSelect: () =>
-            join(vars, {
-              onError: (err) => toast.error(graphqlErrorMessage(err, "Could not join the channel")),
+            run("chat.join_channel", ids, {
+              successToast: null,
+              errorTitle: "Could not join the channel",
             }),
         });
       }
@@ -210,12 +165,17 @@ export function useConversationMenuItems(workspaceId: string | null): {
         items.push({
           id: "mark-read",
           label: "Mark as read",
-          onSelect: () =>
-            markAsRead({
-              conversationId,
-              workspaceId: serverId,
-              readAt: new Date().toISOString(),
-            }),
+          onSelect: () => run("chat.mark_as_read", ids, { successToast: null }),
+        });
+      } else if (
+        !archived &&
+        spaceMarksUnread(serverId) &&
+        knownMessageToMarkUnread(qc, serverId, conversationId, currentUserId) !== null
+      ) {
+        items.push({
+          id: "mark-unread",
+          label: "Mark as unread",
+          onSelect: () => run("chat.mark_conversation_unread"),
         });
       }
 
@@ -225,14 +185,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
         items.push({
           id: "members",
           label: "Members",
-          onSelect: () => {
-            if (header) {
-              useMembersPanelStore.getState().toggle();
-              return;
-            }
-            show();
-            useMembersPanelStore.getState().setOpen(true);
-          },
+          onSelect: () => run("workspace.toggle_conversation_members"),
         });
       }
 
@@ -248,10 +201,7 @@ export function useConversationMenuItems(workspaceId: string | null): {
         items.push({
           id: "invite",
           label: isChannel ? "Invite people…" : "Add people…",
-          onSelect: () => {
-            show();
-            useMembersPanelStore.getState().openInvite(conversationId);
-          },
+          onSelect: () => run("chat.open_invite"),
         });
       }
 
@@ -275,29 +225,37 @@ export function useConversationMenuItems(workspaceId: string | null): {
 
       const peerPrincipal = peer?.principalId ?? null;
       if (peer && peerPrincipal && contacts && myPrincipalId && peerPrincipal !== myPrincipalId) {
-        const name = peer.displayName || peer.username || "this person";
         const isContact = contacts.some((c) => c.principalId === peerPrincipal);
         items.push(
           isContact
             ? {
                 id: "remove-contact",
                 label: "Remove from contacts",
-                onSelect: () =>
-                  removeContact(peerPrincipal, {
-                    onSuccess: () => toast.success(`Removed ${name} from your contacts`),
-                    onError: (err) =>
-                      toast.error(graphqlErrorMessage(err, `Could not remove ${name}`)),
-                  }),
+                onSelect: () => run("people.remove_contact", { user_id: peer.userId }),
               }
             : {
                 id: "add-contact",
                 label: "Add to contacts",
-                onSelect: () => void addContact(peerPrincipal, name),
+                onSelect: () => run("people.add_contact", { user_id: peer.userId }),
               },
         );
       }
 
       const blockTarget = peer ? blockTargetOf(peer.userId, serverId) : null;
+
+      // Agent sessions run in the desktop app only, and only a channel a grant could cover is
+      // offered: never a direct message, a group or anything encrypted.
+      if (
+        !archived &&
+        detectPlatform() === "desktop" &&
+        cannotAskAbout(conversation, isDirectSpace(serverId)) === null
+      ) {
+        items.push({
+          id: "ask-agent",
+          label: `Ask agent about ${name}`,
+          onSelect: () => run("agents.ask_about_conversation"),
+        });
+      }
 
       // The agent runs in the desktop app only.
       if (header && detectPlatform() === "desktop" && conversation.encryptedAt) {
@@ -313,17 +271,11 @@ export function useConversationMenuItems(workspaceId: string | null): {
       }
 
       if (!archived) {
-        const target: HoverTarget = {
-          kind: isDm ? "dm" : "channel",
-          conversationId,
-          serverId,
-          label: label || conversation.title || peer?.displayName || peer?.username || "Untitled",
-        };
         items.push({
           id: "assign-keybind",
           label: "Assign keybind…",
           shortcut: QUICK_ACCESS_SHORTCUT,
-          onSelect: () => useQuickAccessStore.getState().open(target),
+          onSelect: () => run("settings.assign_keybind", label ? { label } : undefined),
         });
       }
 
@@ -349,18 +301,37 @@ export function useConversationMenuItems(workspaceId: string | null): {
               onSelect: () => setPending({ kind: "posting", conversation }),
             });
           }
+          if (
+            !conversation.encryptedAt &&
+            canManageBots({ role, inDirectSpace: isDirectSpace(serverId), info }) &&
+            webhooksAvailable(info)
+          ) {
+            moderation.push({
+              id: "new-webhook",
+              label: "New webhook…",
+              onSelect: () => run("bots.new_webhook"),
+            });
+          }
         }
         moderation.push(
           archived
             ? {
                 id: "unarchive",
                 label: "Unarchive channel",
-                onSelect: () => runSetArchived(conversation, false),
+                onSelect: () =>
+                  run("chat.unarchive_channel", ids, {
+                    successToast: `Unarchived ${name}`,
+                    errorTitle: "Could not unarchive the channel",
+                  }),
               }
             : {
                 id: "archive",
                 label: "Archive channel…",
-                onSelect: () => setPending({ kind: "archive", conversation }),
+                onSelect: () =>
+                  run("chat.archive_channel", ids, {
+                    successToast: `Archived ${name}`,
+                    errorTitle: "Could not archive the channel",
+                  }),
               },
         );
         moderation[0] = { ...moderation[0], separatorBefore: true, sectionBefore: "Moderation" };
@@ -375,20 +346,21 @@ export function useConversationMenuItems(workspaceId: string | null): {
           label: confirm ? `${what}…` : what,
           danger: true,
           separatorBefore: true,
-          onSelect: () => {
-            if (confirm) setPending({ kind: "leave", conversation });
-            else leave(conversation);
-          },
+          onSelect: () =>
+            run("chat.leave_conversation", ids, {
+              successToast: `Left ${name}`,
+              errorTitle: "Could not leave the conversation",
+            }),
         });
       }
 
-      if (isDm && blockTarget) {
+      if (isDm && peer && blockTarget) {
         items.push({
           id: "block",
           label: "Block…",
           danger: true,
           separatorBefore: true,
-          onSelect: () => askToBlock(blockTarget),
+          onSelect: () => run("people.block", { user_id: peer.userId }),
         });
       }
 
@@ -406,39 +378,20 @@ export function useConversationMenuItems(workspaceId: string | null): {
       qc,
       currentUserId,
       deviceReady,
-      acceptInvite,
-      declineInvite,
       isGuest,
       role,
       info,
       canModerate,
       workspaceId,
-      join,
-      markAsRead,
       notificationItems,
       openConversation,
       contacts,
       myPrincipalId,
-      removeContact,
-      addContact,
-      runSetArchived,
-      leave,
     ],
   );
 
-  const pendingLabel = pending ? conversationLabel(pending.conversation) : "";
   const dialogs = (
     <>
-      {pending?.kind === "archive" && (
-        <ConfirmActionDialog
-          {...archiveConfirmation(pendingLabel)}
-          danger
-          isPending={setArchived.isPending}
-          onConfirm={() => runSetArchived(pending.conversation, true)}
-          onClose={() => setPending(null)}
-        />
-      )}
-
       {pending?.kind === "agent" && (
         <AgentEncryptedWarning
           conversationId={pending.conversation.id}
@@ -461,31 +414,8 @@ export function useConversationMenuItems(workspaceId: string | null): {
           onClose={() => setPending(null)}
         />
       )}
-
-      {pending?.kind === "leave" && (
-        <ConfirmActionDialog
-          {...leaveConfirmation(pendingLabel)}
-          danger
-          isPending={leavePending}
-          onConfirm={() => {
-            setPending(null);
-            leave(pending.conversation);
-          }}
-          onClose={() => setPending(null)}
-        />
-      )}
     </>
   );
 
   return { getItems, dialogs };
-}
-
-/** Whether the conversation surface shows `conversationId` of `workspaceId` now. */
-function isShown(workspaceId: string, conversationId: string): boolean {
-  const shell = useShellStore.getState();
-  return (
-    useWorkspaceStore.getState().workspaceId === workspaceId &&
-    shell.selectedConversationId === conversationId &&
-    shell.mainSurface.kind === "conversation"
-  );
 }

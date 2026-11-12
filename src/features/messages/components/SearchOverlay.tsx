@@ -8,26 +8,14 @@ import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
 import { cn } from "../../../shared/ui/cn";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
-import {
-  useSearchMessages,
-  useLocalSearchHits,
-  type SearchMessageItem,
-} from "../api/useSearchMessages";
-import {
-  buildConversationDirectory,
-  hiddenLocalConversations,
-  mergeSearchResults,
-} from "../api/localSearch";
-import { requestCacheSync } from "../runtime/messageCacheSync";
+import type { SearchMessageItem } from "../api/useSearchMessages";
+import { useMessageSearchResults } from "../api/useMessageSearchResults";
+import { openSearchResult } from "../runtime/openSearchResult";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { personName } from "../../../shared/utils/handles";
-import { useShellStore } from "../../../shell/state/useShellStore";
-import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
-import { useInboxConversations } from "../../conversations/api/useInboxConversations";
 import { formatRelativeTime } from "../../../shared/utils/formatTime";
-import { useBlockedConversationIds } from "../../relay/state/useBlockedConversations";
 import { SearchSnippet } from "./SearchSnippet";
 import { SearchSuggestionsPopover } from "./SearchSuggestionsPopover";
 import {
@@ -63,13 +51,6 @@ export function SearchOverlay() {
   const addRecentSearch = useSearchOverlayStore((s) => s.addRecentSearch);
 
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const setSelectedConversationId = useShellStore((s) => s.setSelectedConversationId);
-  const setHighlightedMessageId = useShellStore((s) => s.setHighlightedMessageId);
-  const setMainSurface = useShellStore((s) => s.setMainSurface);
-  const openThreadForMessage = useShellStore((s) => s.openThreadForMessage);
-  const { data: channelsData } = useChannels(workspaceId ?? undefined);
-  const { data: joinedData } = useJoinedChannels(workspaceId ?? undefined);
-  const { data: inboxData } = useInboxConversations(workspaceId ?? undefined);
   const { data: membersData } = useServerMembers(workspaceId ?? undefined);
   const memberLookup = useMemberLookup(workspaceId ?? undefined);
   const searchMembers = useMemo(
@@ -90,45 +71,26 @@ export function SearchOverlay() {
     },
     [membersData, memberLookup],
   );
-  // The conversations the user can see now: titles for local hits, `in:#name` for local
-  // search, and the visibility check before a local hit joins the server's results.
-  const blocked = useBlockedConversationIds(workspaceId);
-  const directory = useMemo(
-    () => buildConversationDirectory([channelsData?.items, joinedData?.items, inboxData?.items]),
-    [channelsData, joinedData, inboxData],
-  );
 
   // The scope chip (All / current channel) sets `conversationId` as an explicit
   // query-input field. It coexists with an in-query `in:#x` operator — the
   // backend intersects both rather than one overriding the other. They stay
   // two controls: a user can narrow with the chip, the operator, or both.
   const conversationId = scope.kind === "conversation" ? scope.conversationId : undefined;
-  const { data, isPending, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useSearchMessages(workspaceId ?? undefined, conversationId, query, directory);
-  // Desktop app: matches from the local search index, added to the server's results.
-  const { data: localHits } = useLocalSearchHits(
-    workspaceId ?? undefined,
-    conversationId,
-    query,
+  // Desktop app: matches from the local search index join the server's results.
+  const {
+    data,
+    results: flatResults,
+    isOffline,
     directory,
-  );
-
-  const flatResults = useMemo(
-    () =>
-      mergeSearchResults(data?.pages ?? [], hasNextPage, localHits ?? [], directory).filter(
-        (m) => !blocked.has(m.conversationId),
-      ),
-    [data, hasNextPage, localHits, directory, blocked],
-  );
-  const isOffline = data?.pages.some((page) => page.source === "local") ?? false;
-
-  // Local hits from a conversation the lists no longer show are kept out of the results; ask
-  // the cache to re-check those conversations, which drops them if access was lost.
-  useEffect(() => {
-    if (!workspaceId || !localHits || directory.byId.size === 0) return;
-    const hidden = hiddenLocalConversations(localHits, directory);
-    if (hidden.length > 0) requestCacheSync(workspaceId, hidden);
-  }, [workspaceId, localHits, directory]);
+    channels,
+    isPending,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useMessageSearchResults(workspaceId ?? undefined, conversationId, query);
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -180,13 +142,11 @@ export function SearchOverlay() {
   // Channel name lookup
   const channelNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    if (channelsData) {
-      for (const ch of channelsData.items) {
-        map.set(ch.id, ch.title ?? ch.id);
-      }
+    for (const ch of channels) {
+      map.set(ch.id, ch.title ?? ch.id);
     }
     return map;
-  }, [channelsData]);
+  }, [channels]);
 
   // Total keyboard-navigable rows: the flat results, plus one extra "Load
   // more" row while another page is available.
@@ -231,27 +191,9 @@ export function SearchOverlay() {
     (msg: SearchMessageItem) => {
       addRecentSearch(query);
       close();
-      setMainSurface({ kind: "conversation" });
-      setSelectedConversationId(msg.conversationId);
-
-      if (msg.rootMessageId) {
-        // Thread reply — open the thread panel for the root message, then highlight the reply inside
-        openThreadForMessage(msg.rootMessageId);
-        setHighlightedMessageId(msg.id);
-      } else {
-        // Normal message — highlight in the main timeline
-        setHighlightedMessageId(msg.id);
-      }
+      openSearchResult(msg);
     },
-    [
-      query,
-      close,
-      addRecentSearch,
-      setMainSurface,
-      setSelectedConversationId,
-      setHighlightedMessageId,
-      openThreadForMessage,
-    ],
+    [query, close, addRecentSearch],
   );
 
   const contextMenu = useContextMenu();

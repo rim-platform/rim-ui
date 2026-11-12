@@ -100,6 +100,13 @@ export type ChatHandler = (
   granted: readonly string[],
 ) => Promise<unknown>;
 
+/** Runs one of the app's own commands for a plugin and answers how the run ended. */
+export type RunCommandHandler = (
+  pluginId: string,
+  commandId: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>;
+
 /** A manifest command, as far as the gates need it. */
 export interface GatedCommand {
   id: string;
@@ -185,18 +192,24 @@ export class WebPluginHost {
   private principal: Principal | null = null;
   private mappings: readonly PrincipalMapping[] = [];
   private chat: ChatHandler | null = null;
+  private runCommand: RunCommandHandler | null = null;
 
-  /** Connect the host to the page, the store and, when given, the message service. */
+  /**
+   * Connect the host to the page, the store and, when given, the message service and the
+   * runner of the app's own commands.
+   */
   configure(
     env: HostEnvironment,
     services: HostServices,
     forbiddenOrigins: readonly string[] = [],
     chat: ChatHandler | null = null,
+    runCommand: RunCommandHandler | null = null,
   ) {
     this.env = env;
     this.services = services;
     this.forbiddenOrigins = forbiddenOrigins;
     this.chat = chat;
+    this.runCommand = runCommand;
   }
 
   /** Called on every status change. Returns the unsubscribe function. */
@@ -313,6 +326,7 @@ export class WebPluginHost {
     const channel = env.createChannel();
     const frame = env.createFrame(`Plugin: ${plugin.displayName}`);
     const chat = this.chat;
+    const runCommand = this.runCommand;
     entry.frame = frame;
     const session = new PluginSession(
       channel.host,
@@ -334,6 +348,12 @@ export class WebPluginHost {
           ? {
               chat: (method: string, params: unknown) =>
                 chat(id, method, params, plugin.approvedCapabilities),
+            }
+          : {}),
+        ...(runCommand
+          ? {
+              runCommand: (commandId: string, args: Record<string, unknown>) =>
+                runCommand(id, commandId, args),
             }
           : {}),
         stopped: (reason) => this.kill(id, reason),

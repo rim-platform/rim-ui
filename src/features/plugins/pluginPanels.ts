@@ -1,4 +1,5 @@
 import type { PluginInfo, PluginPanelDef } from "./types";
+import { showInvisibleCharacters } from "../agents/runtime/invisibleCharacters";
 
 /** A panel of an enabled, running plugin granted `ui.panel`, with the id and name of its plugin. */
 export interface RunningPluginPanel {
@@ -23,8 +24,8 @@ export function runningPluginPanels(
     .flatMap((plugin) =>
       (plugin.panels ?? []).map((panel) => ({
         pluginId: plugin.plugin_id,
-        pluginName: plugin.display_name,
-        panel,
+        pluginName: showInvisibleCharacters(plugin.display_name),
+        panel: { ...panel, title: showInvisibleCharacters(panel.title) },
       })),
     );
 }

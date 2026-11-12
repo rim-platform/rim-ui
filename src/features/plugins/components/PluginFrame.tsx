@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
 import { useHostDialogOpen } from "../../../shared/ui/hostDialogs";
+import { shownConversationId } from "../../../shell/state/shownConversation";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import {
   createPluginBridge,
@@ -132,7 +133,8 @@ function FrameAttempt({
       maxMessagesPerMinute: PANEL_MESSAGES_PER_MINUTE,
     });
     const panelState = followState(bridge.sendToPlugin);
-    // Which conversation is open is chat context: only a plugin that may read chat learns it.
+    // Which conversation is shown is chat context: only a plugin that may read chat learns it,
+    // and only while the conversation is the page.
     const followsConversation = approvedCapabilities.includes("chat.read");
     let rendered = false;
     function sendConversation(conversationId: string | null) {
@@ -184,7 +186,7 @@ function FrameAttempt({
         bridge.sendToPlugin(createThemeChangeMessage());
         void panelState.load();
         rendered = true;
-        sendConversation(useShellStore.getState().selectedConversationId);
+        sendConversation(shownConversationId(useShellStore.getState()));
       }
       if (data.type === "rim.frame.error") {
         setFailure(errorMessage(typeof data.message === "string" ? data.message : ""));
@@ -195,9 +197,8 @@ function FrameAttempt({
     window.addEventListener("message", handleMessage);
     const unsubscribeTheme = onThemeChange((message) => bridge.sendToPlugin(message));
     const unsubscribeConversation = useShellStore.subscribe((state, previous) => {
-      if (state.selectedConversationId !== previous.selectedConversationId) {
-        sendConversation(state.selectedConversationId);
-      }
+      const shown = shownConversationId(state);
+      if (shown !== shownConversationId(previous)) sendConversation(shown);
     });
     return () => {
       unsubscribeConversation();

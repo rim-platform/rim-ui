@@ -3,7 +3,12 @@ import { act, render, screen, fireEvent, waitFor, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
-import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import {
   ConversationTypeEnum,
@@ -17,6 +22,7 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
 import { useE2eeStore } from "../../e2ee/state/useE2eeStore";
 import { useQuickAccessStore } from "../../commands/state/useQuickAccessStore";
+import { useConversationDialogStore } from "../state/useConversationDialogStore";
 import { useMembersPanelStore } from "../state/useMembersPanelStore";
 import { useUnreadStore } from "../state/useUnreadStore";
 import {
@@ -37,7 +43,9 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../commands/hooks/useKeybindLabel", () => ({ useKeybindLabel: () => null }));
 vi.mock("../../../core/events/usePrefetchMessages", () => ({ usePrefetchMessages: vi.fn() }));
 
+import { ConversationCommandHost } from "./ConversationCommandHost";
 import { ConversationList } from "./ConversationList";
+import { ManageCommandHost } from "../../commands/components/ManageCommandHost";
 
 const general = makeConversation({ id: "c-general", title: "general" });
 const random = makeConversation({ id: "c-random", title: "random" });
@@ -75,19 +83,23 @@ function serve({
     "query InboxConversations": () => ({
       inboxConversations: { items: inbox, pageInfo: { hasNext: false, hasPrev: false } },
     }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
     ...extra,
   });
 }
 
 async function renderList(role = ServerMemberRoleGql.MEMBER, defaultWorkspace?: string) {
-  const onNewChannel = vi.fn();
-  const qc = createTestQueryClient();
+  // The app's own cache, which the menu's commands read the conversations from.
+  const qc = queryClient;
   if (defaultWorkspace) {
     qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace }));
   }
+  serveCommands("ws-1", ["chat.leave_conversation", "chat.mark_as_read"]);
   render(
     <QueryClientProvider client={qc}>
-      <ConversationList onNewChannel={onNewChannel} />
+      <ConversationList />
+      <ConversationCommandHost />
+      <ManageCommandHost />
     </QueryClientProvider>,
   );
   await screen.findByText("general");
@@ -96,7 +108,7 @@ async function renderList(role = ServerMemberRoleGql.MEMBER, defaultWorkspace?: 
       role,
     ),
   );
-  return { qc, onNewChannel };
+  return { qc };
 }
 
 function rowButton(name: string): HTMLElement {
@@ -127,6 +139,8 @@ describe("ConversationList — conversation context menus", () => {
     useAuthStore.setState({ session: null });
     useRelayStore.getState().reset();
     useE2eeStore.setState({ webEncryption: "checking" });
+    clearServedCommands();
+    queryClient.clear();
   });
 
   it("opens a channel's menu on right click, with the same items as its header", async () => {
@@ -181,10 +195,12 @@ describe("ConversationList — conversation context menus", () => {
     await user.keyboard("{Shift>}{F10}{/Shift}");
     expect(screen.getByRole("menu")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Assign keybind…" }));
-    expect(useQuickAccessStore.getState().target).toMatchObject({
-      kind: "channel",
-      conversationId: "c-random",
-    });
+    await waitFor(() =>
+      expect(useQuickAccessStore.getState().target).toMatchObject({
+        kind: "channel",
+        conversationId: "c-random",
+      }),
+    );
     // Choosing an item did not open the highlighted conversation.
     expect(useShellStore.getState().selectedConversationId).toBe("c-general");
   });
@@ -198,16 +214,22 @@ describe("ConversationList — conversation context menus", () => {
     expect(useMembersPanelStore.getState().open).toBe(true);
   });
 
-  it("Leave on a row leaves that channel", async () => {
-    serve({ extra: { "mutation LeaveConversation": () => ({ leaveConversation: true }) } });
+  it("Leave on a row leaves that channel, not the open one", async () => {
+    serve();
     await renderList();
     fireEvent.contextMenu(rowButton("random"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Leave channel" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation LeaveConversation")).toEqual([
-        { serverId: "ws-1", conversationId: "c-random" },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "chat.leave_conversation",
+          args: { server_id: "ws-1", conversation_id: "c-random" },
+          commandContext: { workspaceId: "ws-1", conversationId: "c-random" },
+          initiator: "CONTEXT_MENU",
+        },
       ]),
     );
+    expect(useShellStore.getState().selectedConversationId).toBe("c-general");
   });
 
   it("a DM has no Members, Leave or moderation, even for an owner", async () => {
@@ -216,12 +238,14 @@ describe("ConversationList — conversation context menus", () => {
     fireEvent.contextMenu(rowButton("Alice"));
     expect(menuLabels()).toEqual(["Notifications: All messages", "Assign keybind…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Assign keybind…" }));
-    expect(useQuickAccessStore.getState().target).toEqual({
-      kind: "dm",
-      conversationId: "c-dm",
-      serverId: "ws-1",
-      label: "Alice",
-    });
+    await waitFor(() =>
+      expect(useQuickAccessStore.getState().target).toEqual({
+        kind: "dm",
+        conversationId: "c-dm",
+        serverId: "ws-1",
+        label: "Alice",
+      }),
+    );
   });
 
   it("offers a DM's person as a contact while the relay is on, and removes one", async () => {
@@ -244,10 +268,6 @@ describe("ConversationList — conversation context menus", () => {
     });
     const { qc } = await renderList();
     await waitFor(() => expect(qc.getQueryData(queryKeys.relayContacts)).toBeDefined());
-    queryClient.setQueryData(
-      queryKeys.serverMembers("ws-1"),
-      qc.getQueryData(queryKeys.serverMembers("ws-1")),
-    );
     fireEvent.contextMenu(rowButton("Alice"));
     expect(menuLabels()).toEqual([
       "Notifications: All messages",
@@ -302,15 +322,18 @@ describe("ConversationList — section header menus", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
+    act(() => useConversationDialogStore.getState().closeBrowseChannels());
+    clearServedCommands();
+    queryClient.clear();
   });
 
   it("Channels offers Browse channels and Create channel", async () => {
     serve();
-    const { onNewChannel } = await renderList();
+    await renderList();
     fireEvent.contextMenu(screen.getByText("Channels"));
     expect(menuLabels()).toEqual(["Browse channels…", "Create channel…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
-    expect(onNewChannel).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(useShellStore.getState().showNewChannelDialog).toBe(true));
     fireEvent.contextMenu(screen.getByText("Channels"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
     expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();

@@ -5,12 +5,18 @@ import { toast } from "../../shared/toast";
 import { isDirectSpace } from "../relay/state/useRelayStore";
 import type { KnownServerInfo } from "../updater/api/serverInfoApi";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../updater/api/serverCapabilities";
+import { generalCommandOffered } from "../commands/runtime/appCommands/generalAvailability";
+import { manageCommandOffered } from "../commands/runtime/appCommands/manageAvailability";
+import { botsOfferedFor } from "../bots/availability";
 import type { ServerDetail } from "./api/useWorkspace";
 import { isOwner } from "./role";
 import { useWorkspaceActionStore, type WorkspaceAction } from "./state/useWorkspaceActionStore";
 import { useWorkspaceStore } from "./state/useWorkspaceStore";
 
 export type { WorkspaceAction };
+
+/** The command that opens Settings > Bots. */
+export const OPEN_BOTS_COMMAND_ID = "workspace.open_bots";
 
 /** What decides whether the viewer may leave or rename a workspace. */
 export interface WorkspaceActionFacts {
@@ -67,17 +73,29 @@ export function workspaceActionOffered(
 
 /**
  * Whether the palette offers `commandId` now: `workspace.leave` and `workspace.rename` for the
- * open workspace when allowed, every other command always.
+ * open workspace when allowed, `workspace.open_bots` to those who can see Settings > Bots,
+ * the Settings tab and workspace-settings commands where their page shows, the management
+ * commands where their buttons are shown, every other command always.
  */
 export function workspaceCommandOffered(commandId: string): boolean {
-  if (commandId !== "workspace.leave" && commandId !== "workspace.rename") return true;
+  if (commandId === OPEN_BOTS_COMMAND_ID)
+    return botsOfferedFor(useWorkspaceStore.getState().workspaceId);
+  if (commandId !== "workspace.leave" && commandId !== "workspace.rename") {
+    return generalCommandOffered(commandId) && manageCommandOffered(commandId);
+  }
   const action = commandId === "workspace.leave" ? "leave" : "rename";
   return workspaceActionOffered(action, useWorkspaceStore.getState().workspaceId);
 }
 
-/** Opens `action`'s dialog for the open workspace, or says why it cannot. */
-export function openWorkspaceAction(action: WorkspaceAction): void {
-  const workspaceId = useWorkspaceStore.getState().workspaceId;
+/**
+ * Opens `action`'s dialog for a workspace, or says why it cannot.
+ *
+ * @param workspaceId - The workspace to leave or rename; the open one when left out.
+ */
+export function openWorkspaceAction(
+  action: WorkspaceAction,
+  workspaceId: string | null = useWorkspaceStore.getState().workspaceId,
+): void {
   if (workspaceId && workspaceActionOffered(action, workspaceId)) {
     useWorkspaceActionStore.getState().open(action, workspaceId);
     return;

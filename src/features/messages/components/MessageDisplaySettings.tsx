@@ -7,6 +7,9 @@ export function MessageDisplaySettings() {
   const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
   const setShowInlineMedia = useMessageDisplaySettingsStore((s) => s.setShowInlineMedia);
 
+  const markReadByHand = useMessageDisplaySettingsStore((s) => s.markReadByHand);
+  const setMarkReadByHand = useMessageDisplaySettingsStore((s) => s.setMarkReadByHand);
+
   const clockFormat = useClockFormatStore((s) => s.clockFormat);
   const setClockFormat = useClockFormatStore((s) => s.setClockFormat);
 
@@ -15,7 +18,7 @@ export function MessageDisplaySettings() {
       <div>
         <h2 className="text-base font-semibold text-rim-text">Messages</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          How messages look on this device. Other devices keep their own choices.
+          How messages look and count as read on this device. Other devices keep their own choices.
         </p>
       </div>
       <section aria-labelledby="message-media-heading">
@@ -36,6 +39,27 @@ export function MessageDisplaySettings() {
               checked={showInlineMedia}
               onChange={setShowInlineMedia}
               label="Show inline media"
+            />
+          </div>
+        </div>
+      </section>
+      <section aria-labelledby="message-unread-heading">
+        <h3 id="message-unread-heading" className="text-sm font-semibold text-rim-text">
+          Unread
+        </h3>
+        <div className="mt-2 rounded-lg border border-rim-line bg-rim-panel px-4">
+          <div className="flex items-center justify-between gap-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-rim-text">Only when I mark it read</div>
+              <div className="text-xs text-rim-text-muted">
+                Conversations stay unread until you mark them, even after you read to the end. This
+                needs a server that keeps read markers: on an older one, reading still marks them.
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={markReadByHand}
+              onChange={setMarkReadByHand}
+              label="Only when I mark it read"
             />
           </div>
         </div>

@@ -31,6 +31,8 @@ vi.mock("../api/usePluginList", () => ({
 
 vi.mock("../../commands/api/useCommands", () => ({
   reloadCommands: vi.fn(),
+  useCommands: vi.fn(() => ({ data: [] })),
+  fetchCommandList: vi.fn(async () => []),
 }));
 
 vi.mock("../web/webPluginHost", () => ({
@@ -40,6 +42,7 @@ vi.mock("../web/webPluginHost", () => ({
 import { invoke } from "@tauri-apps/api/core";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { webPluginHost } from "../web/webPluginHost";
+import { openPluginRows } from "./openPluginRows";
 import { PluginSettingsPage } from "./PluginSettingsPage";
 
 const mockInvoke = vi.mocked(invoke);
@@ -88,11 +91,13 @@ function onPlatform(platform: "desktop" | "web") {
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <PluginSettingsPage />
     </QueryClientProvider>,
   );
+  openPluginRows();
+  return view;
 }
 
 function updateCalls() {
@@ -185,6 +190,22 @@ describe("PluginSettingsPage — updating a plugin", () => {
     expect(screen.getByText("Updated to v2.0.0")).toBeInTheDocument();
   });
 
+  it("asks for the commands a new version adds to run", async () => {
+    mockInvoke.mockImplementationOnce(async () => {
+      listed = [makePlugin({ version: "2.0.0", runs_commands: ["workspace.open_home"] })];
+      return updateResult({ new_version: "2.0.0", added_commands: ["workspace.open_home"] });
+    });
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("checkbox", { name: "Let it run Open Home" }),
+    ).not.toBeChecked();
+  });
+
   it("asks before running the new version's install steps, then retries with consent", async () => {
     mockInvoke.mockRejectedValueOnce(consentError).mockResolvedValueOnce(updateResult());
     renderPage();
@@ -234,7 +255,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     ];
     renderPage();
 
-    expect(screen.getAllByRole("button", { name: /^More actions for / })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /^Uninstall / })).toHaveLength(3);
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 
@@ -263,7 +284,7 @@ describe("PluginSettingsPage — updating a plugin", () => {
     listed = [makePlugin({ runtime_kind: "WebSandboxed" })];
     renderPage();
 
-    expect(screen.getByRole("button", { name: /^More actions for / })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Uninstall / })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update" })).toBeNull();
   });
 });

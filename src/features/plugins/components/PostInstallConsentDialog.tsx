@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { AlertTriangle, Terminal } from "lucide-react";
 
 import { Dialog } from "../../../shared/ui/Dialog";
@@ -45,7 +46,11 @@ export function PostInstallConsentDialog({
         </div>
 
         <p className="text-xs text-rim-text-muted">
-          Installing <span className="font-mono text-rim-text">{request.plugin_id}</span> will run:
+          Installing{" "}
+          <span className="font-mono text-rim-text">
+            {showInvisibleCharacters(request.plugin_id)}
+          </span>{" "}
+          will run:
         </p>
 
         <ul className="space-y-2" aria-label="Commands that will run">

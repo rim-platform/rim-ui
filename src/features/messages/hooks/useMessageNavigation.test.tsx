@@ -1,11 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders as render } from "../../../test/utils";
-import { callsTo } from "../../conversations/__fixtures__/conversations";
+import { callsTo, routeRequests } from "../../conversations/__fixtures__/conversations";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
+import { queryClient } from "../../../core/query/queryClient";
+import { useToastStore } from "../../../shared/toast";
+import {
+  backendCommand,
+  COMMAND_OK,
+  paletteInput,
+  serveHostCommands,
+} from "../../../test/clickCommands";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
+import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
 import { useMessageNavigation } from "./useMessageNavigation";
 
 const requestMock = vi.hoisted(() => vi.fn());
@@ -225,6 +235,31 @@ describe("useMessageNavigation reply and thread keys", () => {
     expect(openThread).toHaveBeenCalledWith("m-1");
   });
 
+  it("p pins the selected message with the pin command, as a keybind run", async () => {
+    const user = userEvent.setup();
+    requestMock.mockReset();
+    routeRequests(requestMock, {
+      "mutation ExecuteCommand": () => ({ executeCommand: COMMAND_OK }),
+    });
+    const PIN = backendCommand("chat.pin_message");
+    serveHostCommands("w-1", [PIN]);
+    render(<KeysHarness openThread={vi.fn()} />);
+    enterNavigate();
+
+    await user.keyboard("p");
+
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    const context = { workspaceId: "w-1", conversationId: "c-1", selectedMessageId: "m-1" };
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0].input).toEqual({
+      ...(await paletteInput(PIN, context)),
+      initiator: CommandInitiator.KEYBIND,
+    });
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Message pinned"),
+    );
+    queryClient.clear();
+  });
+
   it("p does not pin where pinning is not allowed", async () => {
     const user = userEvent.setup();
     requestMock.mockReset();
@@ -233,7 +268,7 @@ describe("useMessageNavigation reply and thread keys", () => {
 
     await user.keyboard("p");
 
-    expect(callsTo(requestMock, "mutation PinMessage")).toEqual([]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
   });
 });
 
@@ -358,6 +393,72 @@ describe("useMessageNavigation keys with modifiers", () => {
 
     await user.keyboard("{Meta>}p{/Meta}");
 
-    expect(callsTo(requestMock, "mutation PinMessage")).toEqual([]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+});
+
+function SelectionHarness({ conversationId }: { conversationId: string }) {
+  const { handleMessageListKeyDown, selectedMessageIndex } = useMessageNavigation({
+    items: [
+      { id: "m-1", text: "one", authorId: "u-2" },
+      { id: "m-2", text: "two", authorId: "u-2" },
+    ],
+    conversationId,
+    workspaceId: "w-1",
+    currentUserId: "u-1",
+    editingMessageId: null,
+    setEditingMessageId: vi.fn(),
+    openThread: vi.fn(),
+    onDeleteMessage: vi.fn(),
+    onForwardMessage: vi.fn(),
+    scrollToIndex: vi.fn(),
+    pointerEntryRef: { current: null },
+  });
+  return (
+    <div
+      role="listbox"
+      aria-label="Messages"
+      tabIndex={0}
+      data-selected-index={selectedMessageIndex}
+      onKeyDown={handleMessageListKeyDown}
+    />
+  );
+}
+
+describe("useMessageNavigation shared selection", () => {
+  it("keeps its selection in the shared store, for commands run from other surfaces", async () => {
+    const user = userEvent.setup();
+    render(<SelectionHarness conversationId="c-1" />);
+    act(() => useShellStore.getState().setNavigationMode(true));
+    screen.getByRole("listbox").focus();
+
+    expect(useSelectedMessageStore.getState().selection).toEqual({
+      workspaceId: "w-1",
+      conversationId: "c-1",
+      messageId: "m-2",
+    });
+    await user.keyboard("k");
+    expect(useSelectedMessageStore.getState().selection?.messageId).toBe("m-1");
+    expect(screen.getByRole("listbox")).toHaveAttribute("data-selected-index", "0");
+
+    await user.keyboard("{Escape}");
+    expect(useSelectedMessageStore.getState().selection).toBeNull();
+  });
+
+  it("drops the selection when the conversation changes or the list unmounts", () => {
+    const { rerender, unmount } = render(<SelectionHarness conversationId="c-1" />);
+    act(() => useShellStore.getState().setNavigationMode(true));
+    expect(useSelectedMessageStore.getState().selection?.conversationId).toBe("c-1");
+
+    rerender(<SelectionHarness conversationId="c-2" />);
+    expect(useSelectedMessageStore.getState().selection).toBeNull();
+
+    act(() => {
+      useShellStore.getState().setNavigationMode(false);
+      useShellStore.getState().setNavigationMode(true);
+    });
+    expect(useSelectedMessageStore.getState().selection?.conversationId).toBe("c-2");
+    unmount();
+    expect(useSelectedMessageStore.getState().selection).toBeNull();
   });
 });

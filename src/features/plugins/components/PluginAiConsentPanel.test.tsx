@@ -250,7 +250,6 @@ describe("PluginAiConsentPanel", () => {
         pluginId: "test-plugin",
         commandIds: expect.arrayContaining(["test-plugin::run", "test-plugin::query"]),
       }),
-      expect.any(Object),
     );
   });
 

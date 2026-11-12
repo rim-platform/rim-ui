@@ -21,6 +21,30 @@ pub const SETTING_VALUE_TYPES: &[&str] = &["string", "boolean", "integer", "path
 /// Largest magnitude of an `integer` setting, its bounds and its default: 2^53 - 1,
 /// which every JSON reader holds exactly.
 pub const MAX_SETTING_INTEGER: i64 = (1 << 53) - 1;
+/// How many command ids `runs_commands` may list.
+pub const MAX_RUNS_COMMANDS: usize = 32;
+/// Longest command id `runs_commands` may list, in bytes.
+pub const MAX_COMMAND_ID_LEN: usize = 128;
+/// The app commands that answer and manage agents. Each is the person's own act, so no
+/// plugin may list one in `runs_commands` or be granted it.
+pub const AGENT_MANAGEMENT_COMMAND_IDS: &[&str] = &[
+    "agents.approve_request",
+    "agents.refuse_request",
+    "agents.approve_pairing",
+    "agents.refuse_pairing",
+    "agents.disconnect",
+    "agents.choose_reads",
+    "agents.choose_plugin_commands",
+    "agents.open_runs",
+    "agents.open_record",
+    "agents.clear_record",
+    "agents.connect_agent",
+    "agents.start_session",
+    "agents.stop_session",
+    "agents.ask_about_message",
+    "agents.ask_about_conversation",
+    "workspace.open_agent_sessions",
+];
 /// The context kinds a command's `required_context` can name, and the arguments
 /// the host adds to the command's `args` for each.
 const CONTEXT_ARGUMENTS: &[(&str, &[&str])] = &[
@@ -86,6 +110,10 @@ pub enum ValidationError {
         key: String,
         reason: String,
     },
+    /// `runs_commands` lists too many ids, one twice, one that is not a command id, or
+    /// one no plugin may run.
+    #[serde(rename = "INVALID_RUNS_COMMANDS")]
+    InvalidRunsCommands { reason: String },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -133,6 +161,7 @@ impl std::fmt::Display for ValidationError {
             Self::InvalidSettingsSchema { index, key, reason } => {
                 write!(f, "invalid settings_schema[{index}] `{key}`: {reason}")
             }
+            Self::InvalidRunsCommands { reason } => write!(f, "invalid runs_commands: {reason}"),
         }
     }
 }
@@ -777,7 +806,8 @@ pub fn validate_settings_schema(settings: &[SettingSchema]) -> Result<(), Valida
 
 /// Validates a manifest for install: built-in capability names, commands that
 /// require only declared capabilities, the install-ID leak check, the kind's
-/// rules and the `settings_schema` rules, with no host origins to refuse.
+/// rules, the `settings_schema` rules and the `runs_commands` rules, with no host
+/// origins to refuse.
 ///
 /// # Errors
 ///
@@ -808,6 +838,64 @@ pub fn validate_plugin_manifest_for_host(
     validate_context_arguments(&manifest.commands)?;
     validate_settings_schema(&manifest.settings_schema)?;
     walk_output_schema_for_install_id_leak(&manifest.commands)?;
+    validate_runs_commands(&manifest.runs_commands)?;
+    Ok(())
+}
+
+/// Whether `id` is a command id `runs_commands` may name: 1 to [`MAX_COMMAND_ID_LEN`]
+/// bytes of two or more dot-separated segments of `a-z 0-9 _ -`.
+pub fn is_command_id(id: &str) -> bool {
+    let segment = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
+    };
+    id.len() <= MAX_COMMAND_ID_LEN && id.contains('.') && id.split('.').all(segment)
+}
+
+/// Why a plugin may never run the command `id`, whatever the person grants: another
+/// plugin's command, or one that answers or manages agents. `None` when a person may
+/// grant it.
+pub fn unrunnable_by_plugins(id: &str) -> Option<&'static str> {
+    if id.starts_with("plugin.") {
+        return Some("plugin commands are run by their own plugin");
+    }
+    if AGENT_MANAGEMENT_COMMAND_IDS.contains(&id) {
+        return Some("answering and managing agents is the person's own act");
+    }
+    None
+}
+
+/// The `runs_commands` rules: at most [`MAX_RUNS_COMMANDS`] ids, each listed once, each a
+/// command id by [`is_command_id`], and none a plugin may never run. Ids the host does not
+/// know pass: the person sees them as not available here.
+///
+/// # Errors
+///
+/// Returns [`ValidationError::InvalidRunsCommands`] for the first rule an id breaks.
+fn validate_runs_commands(ids: &[String]) -> Result<(), ValidationError> {
+    let reject = |reason: String| Err(ValidationError::InvalidRunsCommands { reason });
+    if ids.len() > MAX_RUNS_COMMANDS {
+        return reject(format!(
+            "lists {} commands, at most {MAX_RUNS_COMMANDS}",
+            ids.len()
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if !is_command_id(id) {
+            return reject(format!(
+                "`{id}` is not a command id of dot-separated a-z 0-9 _ - segments, at most \
+                 {MAX_COMMAND_ID_LEN} bytes"
+            ));
+        }
+        if !seen.insert(id.as_str()) {
+            return reject(format!("`{id}` is listed twice"));
+        }
+        if let Some(reason) = unrunnable_by_plugins(id) {
+            return reject(format!("`{id}` cannot be run by a plugin: {reason}"));
+        }
+    }
     Ok(())
 }
 
@@ -837,6 +925,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 
@@ -856,6 +945,7 @@ mod tests {
             arguments: vec![],
             ai_callable,
             output_schema,
+            read_only: false,
         }
     }
 
@@ -1536,6 +1626,9 @@ mod tests {
         let builtin: Vec<String> = serde_json::from_value(doc["builtinCapabilities"].clone())
             .expect("builtinCapabilities is a list of strings");
         assert_eq!(builtin, BUILTIN_CAPABILITIES);
+        let agent: Vec<String> = serde_json::from_value(doc["agentManagementCommands"].clone())
+            .expect("agentManagementCommands is a list of strings");
+        assert_eq!(agent, AGENT_MANAGEMENT_COMMAND_IDS);
         let forbidden: Vec<String> = serde_json::from_value(doc["forbiddenOrigins"].clone())
             .expect("forbiddenOrigins is a list of strings");
         let vectors = doc["vectors"].as_array().expect("vectors is a list");
@@ -1548,6 +1641,23 @@ mod tests {
             let verdict = install_verdict(&vector["manifest"], &forbidden);
             assert_eq!(verdict.is_ok(), valid, "{name}: {verdict:?}");
         }
+    }
+
+    #[test]
+    fn command_ids_follow_the_grammar() {
+        assert!(is_command_id("workspace.open_settings"));
+        assert!(is_command_id("settings.open.plugin_ai"));
+        assert!(is_command_id("a-b.c_d.0"));
+        assert!(!is_command_id("quit"));
+        assert!(!is_command_id("Workspace.open"));
+        assert!(!is_command_id("workspace..open"));
+        assert!(!is_command_id(".workspace"));
+        assert!(!is_command_id("workspace.é"));
+        assert!(!is_command_id(&format!("workspace.{}", "a".repeat(119))));
+        assert!(is_command_id(&format!("workspace.{}", "a".repeat(118))));
+        assert_eq!(unrunnable_by_plugins("workspace.go_back"), None);
+        assert!(unrunnable_by_plugins("plugin.dev.example.p.x").is_some());
+        assert!(unrunnable_by_plugins("agents.clear_record").is_some());
     }
 
     #[test]

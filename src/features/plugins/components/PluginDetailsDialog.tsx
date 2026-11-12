@@ -1,7 +1,9 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { Dialog } from "../../../shared/ui/Dialog";
 import type { PluginInfo, PluginInstallSource } from "../types";
 import { capabilityLabel } from "./consentText";
 import { kindLabel, trustBadge } from "./pluginTrust";
+import { RunsCommandsList } from "./RunsCommandsList";
 
 interface PluginDetailsDialogProps {
   plugin: PluginInfo;
@@ -15,7 +17,7 @@ interface PluginDetailsDialogProps {
  * backdrop and the close button close it.
  */
 export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProps) {
-  const name = plugin.display_name || plugin.plugin_id;
+  const name = showInvisibleCharacters(plugin.display_name || plugin.plugin_id);
   const granted = new Set(plugin.approved_capabilities);
   const origins = plugin.network_origins ?? [];
   const commands = plugin.commands ?? [];
@@ -30,7 +32,7 @@ export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProp
               From the plugin author:
             </figcaption>
             <blockquote className="whitespace-pre-line break-words border-l-2 border-rim-line pl-3">
-              {plugin.description}
+              {showInvisibleCharacters(plugin.description)}
             </blockquote>
           </figure>
         ) : (
@@ -70,6 +72,11 @@ export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProp
           )}
         </section>
 
+        <RunsCommandsList
+          ids={plugin.runs_commands ?? []}
+          granted={plugin.granted_commands ?? []}
+        />
+
         {origins.length > 0 && (
           <section className="space-y-1">
             <h4 className="text-xs font-medium text-rim-text">Sites it may reach</h4>
@@ -90,11 +97,13 @@ export function PluginDetailsDialog({ plugin, onClose }: PluginDetailsDialogProp
               {commands.map((command) => (
                 <li key={command.id}>
                   <p className="text-rim-text">
-                    {command.title || command.id}
+                    {showInvisibleCharacters(command.title || command.id)}
                     {command.dangerous && <span className="ml-2 text-rim-warm">Dangerous</span>}
                   </p>
                   {command.description && (
-                    <p className="whitespace-pre-line break-words">{command.description}</p>
+                    <p className="whitespace-pre-line break-words">
+                      {showInvisibleCharacters(command.description)}
+                    </p>
                   )}
                 </li>
               ))}

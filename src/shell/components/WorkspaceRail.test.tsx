@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { expectReachableByKeyboard } from "../../test/keyboard";
+import { sendPendingMarkAll } from "../../features/conversations/api/useMarkAsRead";
 import { useUnreadStore } from "../../features/conversations/state/useUnreadStore";
 import { useQuickAccessStore } from "../../features/commands/state/useQuickAccessStore";
 import { ServerMemberRoleGql } from "../../core/graphql/generated/schema-types";
@@ -12,6 +13,24 @@ import { callsTo, routeRequests } from "../../features/conversations/__fixtures_
 import { fakeServerInfo } from "../../test/serverInfo";
 import { useWorkspaceActionStore } from "../../features/workspaces/state/useWorkspaceActionStore";
 import { WORKSPACE_LEAVE, WORKSPACE_RENAME } from "../../features/updater/api/serverCapabilities";
+import { CommandInitiator } from "../../core/graphql/generated/schema-types";
+import { queryClient } from "../../core/query/queryClient";
+import { useConversationDialogStore } from "../../features/conversations/state/useConversationDialogStore";
+import {
+  backendCommand,
+  COMMAND_OK,
+  paletteInput,
+  serveHostCommands,
+} from "../../test/clickCommands";
+
+const DND = backendCommand("notifications.dnd", { title: "Do Not Disturb" });
+
+/** The `notifications.dnd` runs sent. */
+function dndRuns(): Record<string, unknown>[] {
+  return callsTo(requestMock, "mutation ExecuteCommand").map(
+    (vars) => vars.input as Record<string, unknown>,
+  );
+}
 
 const requestMock = vi.hoisted(() => vi.fn());
 vi.mock("../../core/graphql/client", () => ({
@@ -46,7 +65,17 @@ vi.mock("../../features/workspaces/components/AddWorkspaceDialog", () => ({
   AddWorkspaceDialog: () => null,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
+import { useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useShellStore } from "../state/useShellStore";
+import { AppCommandDialogs } from "../../features/commands/components/AppCommandDialogs";
+import { useAppDialogStore } from "../../features/commands/state/useAppDialogStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -60,6 +89,16 @@ describe("WorkspaceRail", () => {
     useUnreadStore.setState({ counts: {}, spaceOf: {} });
     requestMock.mockReset();
     requestMock.mockImplementation(() => new Promise(() => {}));
+  });
+
+  it("shows one whole letter for a workspace whose name starts with an emoji", () => {
+    myServers.data = [
+      { id: "ws-1", name: "\u{1F680} Botland", owner: null },
+      { id: "ws-2", name: "\u{1F680}", owner: null },
+    ];
+    renderWithQuery(<WorkspaceRail />);
+    expect(screen.getByRole("button", { name: "\u{1F680} Botland" })).toHaveTextContent(/^B$/);
+    expect(screen.getByRole("button", { name: "\u{1F680}" })).toHaveTextContent(/^\?$/);
   });
 
   it("badges another workspace with its unread messages and not the open one", () => {
@@ -93,31 +132,267 @@ describe("WorkspaceRail", () => {
     expect(screen.getByTitle("Beta")).toHaveTextContent("B");
   });
 
+  it("opens Home from the first button of the rail, which is current while Home is open", async () => {
+    const user = userEvent.setup();
+    useShellStore.getState().reset();
+    renderWithQuery(<WorkspaceRail />);
+    const home = screen.getByRole("button", { name: "Home" });
+    expect(screen.getAllByRole("button")[0]).toBe(home);
+    expect(home).not.toHaveAttribute("aria-current");
+    await user.click(home);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    expect(home).toHaveAttribute("aria-current", "page");
+    useShellStore.getState().reset();
+  });
+
+  it("leaves Home when a workspace is chosen", async () => {
+    const user = userEvent.setup();
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    renderWithQuery(<WorkspaceRail />);
+    await user.click(screen.getByRole("button", { name: "Beta" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+  });
+
+  it("badges Home with the mentions and replies waiting across the workspaces", async () => {
+    useShellStore.getState().reset();
+    routeRequests(requestMock, {
+      "query MyNotifications": (vars) => ({
+        myNotifications: {
+          items: [
+            {
+              id: `n-${vars.serverId}`,
+              serverId: vars.serverId,
+              conversationId: "c1",
+              messageId: "m1",
+              reason: "MENTION",
+              createdAt: "2026-11-06T10:00:00Z",
+              readAt: null,
+              conversation: null,
+              message: null,
+            },
+          ],
+          next: null,
+          pageInfo: { hasNext: false },
+        },
+      }),
+    });
+    renderWithQuery(<WorkspaceRail />);
+    expect(
+      await screen.findByRole("button", { name: "Home (2 mentions and replies)" }),
+    ).toHaveTextContent("2");
+  });
+
+  describe("current button", () => {
+    const dmInfo = { directSpaceId: "ws-1" } as never;
+    beforeEach(() => {
+      setWorkspaceId.mockClear();
+      useShellStore.getState().reset();
+      useRelayStore.setState({ info: null });
+    });
+    afterEach(() => {
+      useShellStore.getState().reset();
+      useRelayStore.setState({ info: null });
+    });
+
+    it("highlights only Home on Home while a workspace is selected", () => {
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "Beta" })).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("highlights only Home on Home while Direct messages is selected", () => {
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "Direct messages" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    });
+
+    it("highlights nothing on Unreads", () => {
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "unreads" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
+      for (const name of ["Direct messages", "Alpha", "Beta"]) {
+        expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+      }
+    });
+
+    it("keeps the open workspace highlighted on Settings", () => {
+      useShellStore.getState().setMainSurface({ kind: "settings" });
+      renderWithQuery(<WorkspaceRail />);
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
+    });
+
+    it("leaves Home when the selected workspace is clicked again", async () => {
+      const user = userEvent.setup();
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      await user.click(screen.getByRole("button", { name: "Alpha" }));
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+      expect(screen.getByRole("button", { name: "Alpha" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("leaves Home when Direct messages is clicked while selected", async () => {
+      const user = userEvent.setup();
+      useRelayStore.setState({ info: dmInfo });
+      useShellStore.getState().setMainSurface({ kind: "home" });
+      renderWithQuery(<WorkspaceRail />);
+      await user.click(screen.getByRole("button", { name: "Direct messages" }));
+      expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+      expect(screen.getByRole("button", { name: "Direct messages" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+  });
+
   it("renders add workspace button", () => {
     renderWithQuery(<WorkspaceRail />);
     expect(screen.getByTitle("Add workspace")).toBeInTheDocument();
   });
 
-  it("reaches every workspace and the add button by keyboard, and moves with the arrows", async () => {
+  it("reaches every workspace, the add button and the foot by keyboard, and moves with the arrows", async () => {
     const user = userEvent.setup();
     renderWithQuery(<WorkspaceRail />);
     const alpha = screen.getByRole("button", { name: "Alpha" });
     const beta = screen.getByRole("button", { name: "Beta" });
     const add = screen.getByRole("button", { name: "Add workspace" });
-    await expectReachableByKeyboard(user, [alpha, beta, add]);
+    const audit = screen.getByRole("button", { name: "Audit log" });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    const account = screen.getByRole("button", { name: "User menu" });
+    await expectReachableByKeyboard(user, [alpha, beta, add, audit, settings, account]);
     expect(alpha).toHaveAttribute("aria-pressed", "true");
 
     alpha.focus();
     await user.keyboard("{ArrowDown}");
     expect(beta).toHaveFocus();
-    await user.keyboard("{End}");
+    await user.keyboard("{ArrowDown}");
     expect(add).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(audit).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(account).toHaveFocus();
     await user.keyboard("{ArrowUp}");
-    expect(beta).toHaveFocus();
+    expect(settings).toHaveFocus();
+  });
+});
+
+describe("WorkspaceRail — audit log, Settings and the account", () => {
+  const dmInfo = { directSpaceId: "ws-1" } as never;
+  beforeEach(() => {
+    myServers.data = alphaBeta;
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+  afterEach(() => {
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+
+  const footer = () =>
+    ["Audit log", "Settings", "User menu"].filter((name) => screen.queryByRole("button", { name }));
+
+  it("puts the audit log, Settings and the account last, after Add workspace", () => {
+    renderWithQuery(<WorkspaceRail />);
+    const names = screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"));
+    expect(names.slice(-4)).toEqual(["Add workspace", "Audit log", "Settings", "User menu"]);
+  });
+
+  it("shows the audit log while a workspace is open, on its pages too", () => {
+    renderWithQuery(<WorkspaceRail />);
+    expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
+    act(() => useShellStore.getState().setMainSurface({ kind: "settings" }));
+    expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
+  });
+
+  it("leaves the audit log out on Home, on Unreads and in the direct space", () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    renderWithQuery(<WorkspaceRail />);
+    expect(footer()).toEqual(["Settings", "User menu"]);
+    act(() => useShellStore.getState().setMainSurface({ kind: "unreads" }));
+    expect(footer()).toEqual(["Settings", "User menu"]);
+    act(() => {
+      useShellStore.getState().setMainSurface({ kind: "conversation" });
+      useRelayStore.setState({ info: dmInfo });
+    });
+    expect(footer()).toEqual(["Settings", "User menu"]);
+  });
+
+  it("opens the audit log and Settings, and marks the one that is open", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const audit = screen.getByRole("button", { name: "Audit log" });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    await user.click(audit);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
+    expect(audit).toHaveAttribute("aria-current", "page");
+    expect(settings).not.toHaveAttribute("aria-current");
+
+    settings.focus();
+    await user.keyboard("{Enter}");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+    expect(settings).toHaveAttribute("aria-current", "page");
+    expect(audit).not.toHaveAttribute("aria-current");
+  });
+
+  it("opens the account menu, leaves the arrow keys to it and gives focus back when it closes", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const account = screen.getByRole("button", { name: "User menu" });
+    account.focus();
+    await user.keyboard("{Enter}");
+    const menu = screen.getByRole("menu");
+    expect(menu).toHaveFocus();
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      expect.stringContaining("Set status..."),
+      expect.stringContaining("Settings"),
+      expect.stringContaining("Sign out..."),
+    ]);
+    await user.keyboard("{ArrowDown}");
+    expect(menu).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(account).toHaveFocus();
+  });
+
+  it("asks whether to keep the account before signing out", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(
+      <>
+        <WorkspaceRail />
+        <AppCommandDialogs />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "User menu" }));
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+    expect(await screen.findByRole("dialog", { name: "Sign out" })).toBeInTheDocument();
+    act(() => useAppDialogStore.getState().close());
   });
 });
 
 describe("WorkspaceRail — workspace context menu", () => {
+  /** Renders with the app's query client, whose cache the menu's commands read. */
+  function renderWithQuery(ui: React.ReactElement) {
+    return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  }
+
   function serve(
     role: ServerMemberRoleGql,
     dndPaused = false,
@@ -125,6 +400,7 @@ describe("WorkspaceRail — workspace context menu", () => {
     defaultWorkspace?: string,
     capabilities: string[] = [],
   ) {
+    serveHostCommands("ws-2", [DND]);
     routeRequests(requestMock, {
       "query ServerInfo": () => ({
         serverInfo: fakeServerInfo({}, { defaultWorkspace, capabilities }),
@@ -150,17 +426,7 @@ describe("WorkspaceRail — workspace context menu", () => {
         },
       }),
       "mutation MarkAllAsRead": () => ({ markAllAsRead: true }),
-      "mutation SetDoNotDisturb": (vars) => ({
-        setDoNotDisturb: {
-          serverId: vars.serverId,
-          defaultLevel: "ALL",
-          keywords: [],
-          dnd: null,
-          dndPaused: vars.paused,
-          dndPausedUntil: vars.until ?? null,
-          digest: "OFF",
-        },
-      }),
+      "mutation ExecuteCommand": () => ({ executeCommand: COMMAND_OK }),
     });
   }
 
@@ -190,6 +456,15 @@ describe("WorkspaceRail — workspace context menu", () => {
     useQuickAccessStore.getState().close();
   });
 
+  afterEach(() => {
+    queryClient.clear();
+    useConversationDialogStore.setState({
+      browseChannelsIn: null,
+      inviteTo: null,
+      createChannelIn: null,
+    });
+  });
+
   it("gives the owner of another workspace its full menu, and acts there without switching", async () => {
     serve(ServerMemberRoleGql.OWNER);
     useUnreadStore.getState().setCounts("ws-2", { c2: 2 });
@@ -205,12 +480,14 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Assign keybind…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Mark all as read" }));
+    expect(useUnreadStore.getState().counts.c2 ?? 0).toBe(0);
+    expect(callsTo(requestMock, "mutation MarkAllAsRead")).toEqual([]);
+    sendPendingMarkAll();
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation MarkAllAsRead")).toEqual([
         { input: { workspaceId: "ws-2" } },
       ]),
     );
-    expect(useUnreadStore.getState().counts.c2 ?? 0).toBe(0);
     expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
@@ -218,7 +495,7 @@ describe("WorkspaceRail — workspace context menu", () => {
     serve(ServerMemberRoleGql.MODERATOR);
     await openBetaMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "Reports…" }));
-    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    await waitFor(() => expect(setWorkspaceId).toHaveBeenCalledWith("ws-2"));
     expect(useShellStore.getState().mainSurface).toEqual({
       kind: "settings",
       tab: "workspace-moderation",
@@ -233,7 +510,7 @@ describe("WorkspaceRail — workspace context menu", () => {
       expect(menuLabels()).toContain("Join requests…: 2 waiting");
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Join requests…: 2 waiting" }));
-    expect(setWorkspaceId).toHaveBeenCalledWith("ws-2");
+    await waitFor(() => expect(setWorkspaceId).toHaveBeenCalledWith("ws-2"));
     expect(useShellStore.getState().mainSurface).toEqual({
       kind: "settings",
       tab: "workspace-moderation",
@@ -272,11 +549,22 @@ describe("WorkspaceRail — workspace context menu", () => {
         name: "For 1 hour",
       }),
     );
-    await waitFor(() => expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toHaveLength(1));
-    expect(callsTo(requestMock, "mutation SetDoNotDisturb")[0]).toMatchObject({
-      serverId: "ws-2",
-      paused: true,
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    const sent = dndRuns()[0];
+    expect(sent).toMatchObject({
+      commandId: "notifications.dnd",
+      args: { mode: "until" },
+      commandContext: { workspaceId: "ws-2" },
+      initiator: CommandInitiator.CONTEXT_MENU,
     });
+    const { initiator: _initiator, ...input } = sent;
+    expect(input).toEqual(
+      await paletteInput(
+        DND,
+        sent.commandContext as Record<string, unknown>,
+        sent.args as Record<string, unknown>,
+      ),
+    );
     expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
@@ -288,11 +576,31 @@ describe("WorkspaceRail — workspace context menu", () => {
       expect(menuLabels()).toContain("Resume notifications");
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Resume notifications" }));
+    await waitFor(() => expect(dndRuns()).toHaveLength(1));
+    expect(dndRuns()[0]).toMatchObject({
+      args: { mode: "off" },
+      commandContext: { workspaceId: "ws-2" },
+    });
+  });
+
+  it("opens that workspace's channel, invite and new-channel dialogs without switching", async () => {
+    serve(ServerMemberRoleGql.OWNER);
+    const beta = await openBetaMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetDoNotDisturb")).toEqual([
-        { serverId: "ws-2", paused: false, until: null },
-      ]),
+      expect(useConversationDialogStore.getState().browseChannelsIn).toBe("ws-2"),
     );
+    useConversationDialogStore.getState().closeBrowseChannels();
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Invite people…" }));
+    await waitFor(() => expect(useConversationDialogStore.getState().inviteTo).toBe("ws-2"));
+    useConversationDialogStore.getState().closeInvite();
+
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
+    await waitFor(() => expect(useConversationDialogStore.getState().createChannelIn).toBe("ws-2"));
+    expect(setWorkspaceId).not.toHaveBeenCalled();
   });
 
   it("gives a member no invite or settings, and a guest no channels either", async () => {
@@ -308,7 +616,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   it("gives a member of the default workspace no Create channel", async () => {
     serve(ServerMemberRoleGql.MEMBER, false, 0, "ws-2");
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -325,7 +633,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   /** Opens Beta's menu once its role and the server's capabilities are cached. */
   async function openBetaMenuWithCapabilities() {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -351,6 +659,7 @@ describe("WorkspaceRail — workspace context menu", () => {
       "Leave workspace…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Leave workspace…" }));
+    await waitFor(() => expect(useWorkspaceActionStore.getState().action).not.toBeNull());
     expect(useWorkspaceActionStore.getState().action).toEqual({
       kind: "leave",
       workspaceId: "ws-2",
@@ -414,7 +723,7 @@ describe("WorkspaceRail — workspace context menu", () => {
 
   it("hides browsing and creating channels from a guest", async () => {
     serve(ServerMemberRoleGql.GUEST);
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = queryClient;
     render(
       <QueryClientProvider client={qc}>
         <WorkspaceRail />
@@ -427,10 +736,83 @@ describe("WorkspaceRail — workspace context menu", () => {
     fireEvent.keyDown(beta, { key: "ContextMenu" });
     expect(menuLabels()).toEqual(["Pause notifications", "Assign keybind…"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Assign keybind…" }));
+    await waitFor(() => expect(useQuickAccessStore.getState().target).not.toBeNull());
     expect(useQuickAccessStore.getState().target).toEqual({
       kind: "workspace",
       workspaceId: "ws-2",
       label: "Beta",
     });
+  });
+});
+
+describe("WorkspaceRail — the commands its buttons run", () => {
+  const dmInfo = { directSpaceId: "ws-dm" } as never;
+  beforeEach(() => {
+    myServers.data = alphaBeta;
+    requestMock.mockReset();
+    requestMock.mockImplementation(() => new Promise(() => {}));
+    setWorkspaceId.mockClear();
+    vi.mocked(runCommandFromClick).mockClear();
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: dmInfo });
+  });
+  afterEach(() => {
+    act(() => useAppDialogStore.getState().close());
+    useShellStore.getState().reset();
+    useRelayStore.setState({ info: null });
+  });
+
+  it("opens Home, the direct messages, Add a workspace, the audit log and Settings through their commands", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+
+    await user.click(screen.getByRole("button", { name: "Home" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "home" });
+    await user.click(screen.getByRole("button", { name: "Direct messages" }));
+    expect(setWorkspaceId).toHaveBeenCalledWith("ws-dm");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    await user.click(screen.getByRole("button", { name: "Add workspace" }));
+    expect(useAppDialogStore.getState().dialog).toBe("addWorkspace");
+    await user.click(screen.getByRole("button", { name: "Audit log" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "audit-log" });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.open_home"],
+      ["workspace.open_direct_messages"],
+      ["workspace.add"],
+      ["workspace.open_audit_log"],
+      ["workspace.open_settings"],
+    ]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+
+  it("runs the account menu's items as menu commands, opening the status menu by the avatar", async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<WorkspaceRail />);
+    const account = screen.getByRole("button", { name: "User menu" });
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /set status/i }));
+    expect(useAppDialogStore.getState()).toMatchObject({
+      dialog: "status",
+      statusAt: { x: expect.any(Number), y: expect.any(Number) },
+    });
+    act(() => useAppDialogStore.getState().close());
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /settings/i }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
+
+    await user.click(account);
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+    expect(useAppDialogStore.getState().dialog).toBe("signOut");
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["people.set_status", undefined, { source: "menu" }],
+      ["workspace.open_settings", undefined, { source: "menu" }],
+      ["app.sign_out", undefined, { source: "menu" }],
+    ]);
   });
 });

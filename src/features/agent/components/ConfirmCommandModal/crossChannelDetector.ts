@@ -6,8 +6,7 @@
  * conversation, the modal shows the cross-channel warning chip.
  *
  * The chip guards against a command reaching a conversation other than the
- * one in view, so it only says whether the destination differs; it does not
- * resolve the target to a channel name.
+ * one in view. This says whether the destination differs; the chip then names it.
  */
 const DESTINATION_ARG_NAMES: ReadonlyArray<string> = [
   "conversation_id",

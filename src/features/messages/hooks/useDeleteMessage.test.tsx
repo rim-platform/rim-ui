@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { InfiniteData } from "@tanstack/react-query";
 
 import { queryKeys } from "../../../core/query/keys";
-import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import { queryClient } from "../../../core/query/queryClient";
+import { CommandInitiator, CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import { backendCommand, paletteInput, serveHostCommands } from "../../../test/clickCommands";
 import type { MessagesPage } from "../../../core/types/messages";
 import {
   callsTo,
@@ -41,10 +42,17 @@ const done = {
   executeCommand: { status: "SUCCESS", message: "deleted", payload: null, followUpCommands: [] },
 };
 const context = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
+const DELETE = backendCommand("chat.delete_message", {
+  title: "Delete Message",
+  requiredContext: ["workspace", "conversation", "selected_message"],
+  dangerous: true,
+  sensitivity: CommandSensitivity.RESTRICTED,
+});
 
+/** Seeds the app's query client with the conversation's timeline and the server's commands. */
 function seededClient() {
-  // Keeps the seeded page while no query observes it.
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  const qc = queryClient;
+  serveHostCommands("ws-1", [DELETE]);
   const page = {
     items: [{ id: "msg-1", text: "hello", isDeleted: false }],
     next: null,
@@ -57,16 +65,13 @@ function seededClient() {
   return qc;
 }
 
-function cachedMessage(qc: QueryClient) {
+function cachedMessage(qc: typeof queryClient) {
   return qc.getQueryData<InfiniteData<MessagesPage>>(queryKeys.messages("ws-1", "conv-1"))?.pages[0]
     ?.items[0];
 }
 
-function renderDelete(qc: QueryClient) {
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
-  return renderHook(() => useDeleteMessage("ws-1", "conv-1"), { wrapper }).result;
+function renderDelete() {
+  return renderHook(() => useDeleteMessage("ws-1", "conv-1")).result;
 }
 
 function serveDelete(...answers: (() => unknown)[]) {
@@ -93,13 +98,17 @@ describe("useDeleteMessage", () => {
     useConfirmationModalStore.getState().reset();
   });
 
+  afterEach(() => {
+    queryClient.clear();
+  });
+
   it("asks for confirmation, then removes the message only once the server deletes it", async () => {
     serveDelete(
       () => held,
       () => done,
     );
     const qc = seededClient();
-    const result = renderDelete(qc);
+    const result = renderDelete();
 
     let deleted: Promise<boolean> | undefined;
     act(() => {
@@ -120,18 +129,21 @@ describe("useDeleteMessage", () => {
     act(() => useConfirmationModalStore.getState().approve());
 
     await expect(deleted).resolves.toBe(true);
-    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([
-      { input: { commandId: "chat.delete_message", commandContext: context } },
+    expect(cachedMessage(qc)?.isDeleted).toBe(true);
+    expect(toast.error).not.toHaveBeenCalled();
+    // The palette sends the same command on the same message, apart from the initiator.
+    const sent = callsTo(requestMock, "mutation ExecuteCommand");
+    const palette = await paletteInput(DELETE, context);
+    expect(sent).toEqual([
+      { input: { ...palette, initiator: CommandInitiator.CONTEXT_MENU } },
       {
         input: {
-          commandId: "chat.delete_message",
-          commandContext: context,
+          ...palette,
+          initiator: CommandInitiator.CONTEXT_MENU,
           confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
         },
       },
     ]);
-    expect(cachedMessage(qc)?.isDeleted).toBe(true);
-    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("asks a moderator to type the verb and names the moderator consequence", async () => {
@@ -140,7 +152,7 @@ describe("useDeleteMessage", () => {
       () => done,
     );
     const qc = seededClient();
-    const result = renderDelete(qc);
+    const result = renderDelete();
 
     let deleted: Promise<boolean> | undefined;
     act(() => {
@@ -155,12 +167,37 @@ describe("useDeleteMessage", () => {
 
     await expect(deleted).resolves.toBe(true);
     expect(cachedMessage(qc)?.isDeleted).toBe(true);
+    expect(toast.success).toHaveBeenCalledWith("Message deleted");
+  });
+
+  it("records the message list's delete key as a keybind run", async () => {
+    serveDelete(
+      () => held,
+      () => done,
+    );
+    seededClient();
+    const result = renderDelete();
+
+    let deleted: Promise<boolean> | undefined;
+    act(() => {
+      deleted = result.current("msg-1", { source: "key" });
+    });
+    await openedDialog();
+    act(() => useConfirmationModalStore.getState().approve());
+
+    await expect(deleted).resolves.toBe(true);
+    expect(
+      callsTo(requestMock, "mutation ExecuteCommand").map(
+        (variables) => (variables.input as { initiator?: string }).initiator,
+      ),
+    ).toEqual([CommandInitiator.KEYBIND, CommandInitiator.KEYBIND]);
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("keeps the message and sends nothing more when the user cancels", async () => {
     serveDelete(() => held);
     const qc = seededClient();
-    const result = renderDelete(qc);
+    const result = renderDelete();
 
     let deleted: Promise<boolean> | undefined;
     act(() => {
@@ -183,7 +220,7 @@ describe("useDeleteMessage", () => {
       }),
     );
     const qc = seededClient();
-    const result = renderDelete(qc);
+    const result = renderDelete();
 
     let deleted: Promise<boolean> | undefined;
     act(() => {
@@ -194,7 +231,7 @@ describe("useDeleteMessage", () => {
 
     await expect(deleted).resolves.toBe(false);
     expect(cachedMessage(qc)?.isDeleted).toBe(false);
-    expect(toast.error).toHaveBeenCalledWith("not yours");
+    expect(toast.error).toHaveBeenCalledWith("Delete Message: not yours");
   });
 
   it("says the confirmation expired when the server calls the token stale", async () => {
@@ -205,7 +242,7 @@ describe("useDeleteMessage", () => {
       },
     );
     const qc = seededClient();
-    const result = renderDelete(qc);
+    const result = renderDelete();
 
     let deleted: Promise<boolean> | undefined;
     act(() => {
@@ -216,6 +253,6 @@ describe("useDeleteMessage", () => {
 
     await expect(deleted).resolves.toBe(false);
     expect(cachedMessage(qc)?.isDeleted).toBe(false);
-    expect(toast.error).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
+    expect(toast.info).toHaveBeenCalledWith("Confirmation expired. Run the command again.");
   });
 });

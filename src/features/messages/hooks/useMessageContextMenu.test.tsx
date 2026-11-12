@@ -1,16 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
 import type { MessageItem } from "../../../core/types/messages";
-import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
+import {
+  CommandInitiator,
+  CommandSensitivity,
+  ConversationTypeEnum,
+  ServerMemberRoleGql,
+} from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
+import { backendCommand, paletteInput, serveHostCommands } from "../../../test/clickCommands";
 import {
   callsTo,
   graphqlError,
+  makeConversation,
   routeRequests,
 } from "../../conversations/__fixtures__/conversations";
+import type { ConversationSummary } from "../../conversations/types";
 
 const requestMock = vi.fn();
 
@@ -19,29 +28,78 @@ vi.mock("../../../core/graphql/client", () => ({
     request: (...args: unknown[]) => requestMock(...args),
   },
 }));
+const platform = vi.hoisted(() => ({ current: "web" }));
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => platform.current,
+}));
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 const pluginCommands = vi.hoisted(() => ({ list: [] as { id: string; title: string }[] }));
-vi.mock("../../plugins/api/usePluginCommands", () => ({
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
   usePluginContextMenuCommands: () => pluginCommands.list,
 }));
 
+// The plugins' message actions are recorded here; every other command runs as the app runs it.
 const dispatched = vi.hoisted(() => vi.fn());
-vi.mock("../../commands/runtime/commandDispatcher", () => ({
-  dispatchCommand: (...args: unknown[]) => dispatched(...args),
-}));
+vi.mock("../../commands/runtime/commandDispatcher", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/commandDispatcher")>();
+  return {
+    ...actual,
+    dispatchCommand: (...args: Parameters<typeof actual.dispatchCommand>) =>
+      args[0].id.startsWith("plugin.") ? dispatched(...args) : actual.dispatchCommand(...args),
+  };
+});
 
 import { toast } from "../../../shared/toast";
 import { ConfirmCommandModal } from "../../agent/components/ConfirmCommandModal";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
 import { useRelayStore } from "../../relay/state/useRelayStore";
+import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { QUICK_REACTIONS, useMessageContextMenu } from "./useMessageContextMenu";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { resetAskAgent, useAskAgentStore } from "../../agents/state/useAskAgentStore";
+import {
+  useSelectedMessageStore,
+  type SelectedMessageActions,
+} from "../state/useSelectedMessageStore";
 
 const challenge = { token: "tok-1", argsHash: "hash-1", expiresAt: "2999-01-01T00:00:00Z" };
 const deleteContext = { workspaceId: "ws-1", conversationId: "conv-1", selectedMessageId: "msg-1" };
+
+const DELETE = backendCommand("chat.delete_message", {
+  title: "Delete Message",
+  requiredContext: ["workspace", "conversation", "selected_message"],
+  dangerous: true,
+  sensitivity: CommandSensitivity.RESTRICTED,
+});
+const REPORT = backendCommand("chat.report_message", {
+  title: "Report Message",
+  requiredContext: ["workspace", "conversation", "selected_message"],
+});
+const TOGGLE_REACTION = backendCommand("chat.toggle_reaction", { title: "Toggle Reaction" });
+const PIN = backendCommand("chat.pin_message", { title: "Pin Message" });
+const UNPIN = backendCommand("chat.unpin_message", { title: "Unpin Message" });
+
+/** The `executeCommand` inputs sent so far. */
+function executed(): Record<string, unknown>[] {
+  return callsTo(requestMock, "mutation ExecuteCommand").map(
+    (variables) => variables.input as Record<string, unknown>,
+  );
+}
+
+/** Lists the message commands on the workspace's server, where the menu looks them up. */
+function serveMessageCommands() {
+  serveHostCommands("ws-1", [DELETE, REPORT, TOGGLE_REACTION, PIN, UNPIN]);
+}
+
+afterEach(() => {
+  queryClient.clear();
+  useSelectedMessageStore.setState({ selection: null, actions: null });
+});
 
 /** `ExecuteCommand` answers: held for confirmation first, then `then` for the confirmed re-send. */
 function heldThen(then: () => unknown) {
@@ -62,9 +120,9 @@ function heldThen(then: () => unknown) {
 }
 
 function serve(role: ServerMemberRoleGql, extra: Record<string, () => unknown> = {}) {
+  serveMessageCommands();
   routeRequests(requestMock, {
     "query Server(": () => ({ server: { id: "ws-1", name: "Acme", viewerRole: role } }),
-    "mutation ReportMessage": () => ({ reportMessage: { id: "rep-1" } }),
     "mutation ExecuteCommand": () => ({
       executeCommand: { status: "SUCCESS", message: "message deleted", payload: null },
     }),
@@ -248,14 +306,32 @@ describe("useMessageContextMenu — report and delete", () => {
     fireEvent.click(submit);
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation ReportMessage")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", messageId: "msg-1", reason: "harassment" },
-      ]),
-    );
-    await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Message reported to the moderators"),
     );
     expect(menuIsOpen()).toBe(false);
+    // The report command on that message, as the palette sends it with the same reason; the
+    // dialog was the person's confirmation.
+    expect(executed()).toEqual([
+      await paletteInput(REPORT, deleteContext, { reason: "harassment" }),
+    ]);
+    expect(useConfirmationModalStore.getState().request).toBeNull();
+  });
+
+  it("shows a refused report inline and keeps the dialog open", async () => {
+    serve(ServerMemberRoleGql.MEMBER, {
+      "mutation ExecuteCommand": () => {
+        throw graphqlError("VALIDATION", "reason is too long");
+      },
+    });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Report message…" }));
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "spam" } });
+    fireEvent.click(screen.getByRole("button", { name: "Report" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Report message" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("reason is too long");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("says a report in a DM goes to the people who run the server", async () => {
@@ -282,7 +358,7 @@ describe("useMessageContextMenu — report and delete", () => {
 
   it("says the message was already reported and closes, without Retry", async () => {
     serve(ServerMemberRoleGql.MEMBER, {
-      "mutation ReportMessage": () => {
+      "mutation ExecuteCommand": () => {
         throw graphqlError("CONFLICT", "you already reported this message");
       },
     });
@@ -318,14 +394,13 @@ describe("useMessageContextMenu — report and delete", () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Message deleted"));
-    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([
-      { input: { commandId: "chat.delete_message", commandContext: deleteContext } },
+    const palette = await paletteInput(DELETE, deleteContext);
+    expect(executed()).toEqual([
+      { ...palette, initiator: CommandInitiator.CONTEXT_MENU },
       {
-        input: {
-          commandId: "chat.delete_message",
-          commandContext: deleteContext,
-          confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
-        },
+        ...palette,
+        initiator: CommandInitiator.CONTEXT_MENU,
+        confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
       },
     ]);
     expect(menuIsOpen()).toBe(false);
@@ -361,7 +436,7 @@ describe("useMessageContextMenu — report and delete", () => {
     await renderMenu(ServerMemberRoleGql.OWNER, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete message…" }));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("not found"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Delete Message: not found"));
     expect(toast.success).not.toHaveBeenCalled();
   });
 
@@ -382,12 +457,11 @@ describe("useMessageContextMenu — report and delete", () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(2));
-    expect(callsTo(requestMock, "mutation ExecuteCommand")[1]).toEqual({
-      input: {
-        commandId: "chat.delete_message",
-        commandContext: deleteContext,
-        confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
-      },
+    expect(executed()[1]).toMatchObject({
+      commandId: "chat.delete_message",
+      commandContext: deleteContext,
+      initiator: CommandInitiator.CONTEXT_MENU,
+      confirmation: { inBandToken: { token: "tok-1", argsHash: "hash-1" } },
     });
   });
 });
@@ -505,6 +579,23 @@ describe("useMessageContextMenu — reporting an encrypted message", () => {
   });
 });
 
+/** Registers a main message list for `conv-1` whose actions are mocks. */
+function listActions() {
+  const actions = {
+    conversationId: "conv-1",
+    textOf: vi.fn(() => "hello"),
+    reply: vi.fn(() => true),
+    edit: vi.fn(() => true),
+    report: vi.fn(() => true),
+    forward: vi.fn(() => true),
+    deleteAttachment: vi.fn(() => false),
+    select: vi.fn(() => false),
+    toggleFold: vi.fn(() => false),
+  } satisfies SelectedMessageActions;
+  useSelectedMessageStore.getState().setActions(actions);
+  return actions;
+}
+
 /** Makes `range` the document's only selection. */
 function select(range: Range) {
   const selection = window.getSelection();
@@ -517,16 +608,13 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     requestMock.mockReset();
     onForward.mockReset();
     dispatched.mockReset();
+    dispatched.mockResolvedValue(null);
     vi.mocked(toast.success).mockReset();
     window.getSelection()?.removeAllRanges();
   });
 
   it("toggles a quick reaction from the Add reaction submenu", async () => {
-    serve(ServerMemberRoleGql.MEMBER, {
-      "mutation ToggleReaction": () => ({
-        toggleReaction: { emoji: "🎉", count: 1, reactedByMe: true },
-      }),
-    });
+    serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Add reaction" }));
     const submenu = screen.getByRole("menu", { name: "Add reaction" });
@@ -537,12 +625,48 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     ).toEqual([...QUICK_REACTIONS]);
     fireEvent.click(within(submenu).getByRole("menuitem", { name: "🎉" }));
 
-    await waitFor(() =>
-      expect(callsTo(requestMock, "mutation ToggleReaction")).toEqual([
-        { input: { serverId: "ws-1", conversationId: "conv-1", messageId: "msg-1", emoji: "🎉" } },
-      ]),
-    );
+    await waitFor(() => expect(executed()).toHaveLength(1));
+    expect(executed()).toEqual([
+      {
+        ...(await paletteInput(TOGGLE_REACTION, deleteContext, { emoji: "🎉" })),
+        initiator: CommandInitiator.CONTEXT_MENU,
+      },
+    ]);
     expect(menuIsOpen()).toBe(false);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("acts on the message it was opened on, not the selected message or open conversation", async () => {
+    useShellStore.setState({ selectedConversationId: "conv-2" });
+    useSelectedMessageStore
+      .getState()
+      .select({ workspaceId: "ws-1", conversationId: "conv-2", messageId: "msg-9" });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin message" }));
+
+    await waitFor(() => expect(executed()).toHaveLength(1));
+    expect(executed()[0]).toMatchObject({
+      commandId: "chat.pin_message",
+      commandContext: deleteContext,
+      initiator: CommandInitiator.CONTEXT_MENU,
+    });
+    expect(executed()[0]).toEqual({
+      ...(await paletteInput(PIN, deleteContext)),
+      initiator: CommandInitiator.CONTEXT_MENU,
+    });
+  });
+
+  it("pins and unpins in the thread panel with the thread as context", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, "thread-9");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin message" }));
+
+    await waitFor(() => expect(executed()).toHaveLength(1));
+    expect(executed()[0]).toMatchObject({
+      commandId: "chat.pin_message",
+      commandContext: { ...deleteContext, threadId: "thread-9" },
+    });
   });
 
   it("offers Copy selection while text of the message is selected, and copies only it", async () => {
@@ -576,11 +700,44 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     expect(labels()).not.toContain("Copy selection");
   });
 
-  it("opens the forward dialog through onForward", async () => {
+  it("forwards from the main timeline with chat.forward_message on that message", async () => {
+    const actions = listActions();
     serve(ServerMemberRoleGql.MEMBER);
     await renderMenu(ServerMemberRoleGql.MEMBER, false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Forward…" }));
+    await waitFor(() => expect(actions.forward).toHaveBeenCalledWith("msg-1"));
+    expect(onForward).not.toHaveBeenCalled();
+  });
+
+  it("opens the thread panel's forward dialog through onForward", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, "thread-9");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Forward…" }));
     expect(onForward).toHaveBeenCalledWith("msg-1", "hello");
+  });
+
+  it("copies the text with chat.copy_message_text in the main timeline", async () => {
+    const actions = listActions();
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy text" }));
+    await waitFor(() => expect(actions.textOf).toHaveBeenCalledWith("msg-1"));
+  });
+
+  it("opens the message's thread with chat.open_thread", async () => {
+    listActions();
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reply in thread" }));
+    await waitFor(() => expect(useShellStore.getState().selectedRootMessageId).toBe("msg-1"));
+  });
+
+  it("edits the viewer's own message with chat.start_edit in the main timeline", async () => {
+    const actions = listActions();
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, true);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
+    await waitFor(() => expect(actions.edit).toHaveBeenCalledWith("msg-1"));
   });
 
   it("opens from the keyboard with the ContextMenu key", async () => {
@@ -592,13 +749,13 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     expect(labels()[0]).toBe("Add reaction");
   });
 
-  it("offers Reply before Reply in thread when onReply is given", async () => {
-    const onReply = vi.fn();
+  it("offers Reply before Reply in thread when onReply is given, and runs chat.start_reply", async () => {
+    const actions = listActions();
     serve(ServerMemberRoleGql.MEMBER);
-    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, undefined, onReply);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, undefined, vi.fn());
     expect(labels().slice(1, 4)).toEqual(["Copy text", "Reply", "Reply in thread"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Reply" }));
-    expect(onReply).toHaveBeenCalledWith("msg-1");
+    await waitFor(() => expect(actions.reply).toHaveBeenCalledWith("msg-1"));
   });
 
   it("offers no Reply without onReply", async () => {
@@ -653,5 +810,125 @@ describe("useMessageContextMenu — reactions, copying and the thread panel", ()
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit message" }));
     expect(onEdit).toHaveBeenCalledWith("msg-1");
     expect(useShellStore.getState().editingMessageId).toBeNull();
+  });
+});
+
+describe("useMessageContextMenu — Mark unread from here", () => {
+  const ITEM = "Mark unread from here";
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useUnreadStore.setState({ countSources: { "ws-1": "markers" }, held: {} });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+  });
+
+  it("marks from a top-level message on a host with read markers, and holds it", async () => {
+    serve(ServerMemberRoleGql.MEMBER, { "mutation MarkAsUnread": () => ({ markAsUnread: true }) });
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    fireEvent.click(screen.getByRole("menuitem", { name: ITEM }));
+    await waitFor(() =>
+      expect(callsTo(requestMock, "mutation MarkAsUnread")).toEqual([
+        { input: { workspaceId: "ws-1", conversationId: "conv-1", messageId: "msg-1" } },
+      ]),
+    );
+    expect(useUnreadStore.getState().held).toEqual({ "conv-1": true });
+  });
+
+  it("is offered on the viewer's own message too", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, true);
+    expect(labels()).toContain(ITEM);
+  });
+
+  it("is left out on a host without read markers", async () => {
+    useUnreadStore.setState({ countSources: { "ws-1": "plain" } });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out until the counts have shown what the host has", async () => {
+    useUnreadStore.setState({ countSources: {} });
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false);
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out in the thread panel", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, undefined, "thread-1");
+    expect(labels()).not.toContain(ITEM);
+  });
+
+  it("is left out on a thread reply and on a deleted message", async () => {
+    serve(ServerMemberRoleGql.MEMBER);
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, { threadId: "t-1" } as MessageItem);
+    expect(labels()).not.toContain(ITEM);
+    cleanup();
+    await renderMenu(ServerMemberRoleGql.MEMBER, false, { isDeleted: true } as MessageItem);
+    expect(labels()).not.toContain(ITEM);
+  });
+});
+
+describe("useMessageContextMenu — ask an agent", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    platform.current = "desktop";
+    serve(ServerMemberRoleGql.MEMBER);
+  });
+
+  afterEach(() => {
+    platform.current = "web";
+    resetAskAgent();
+  });
+
+  /** Opens the menu on a message of `conversation`, which both caches hold. */
+  async function openOn(conversation: ConversationSummary, message?: MessageItem) {
+    const qc = createTestQueryClient();
+    for (const client of [qc, queryClient]) {
+      client.setQueryData(queryKeys.conversations("ws-1"), { items: [conversation] });
+      client.setQueryData(queryKeys.myServers(), [{ id: "ws-1", name: "Acme" }]);
+    }
+    render(
+      <QueryClientProvider client={qc}>
+        <MessageRow isOwnMessage={false} message={message} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(qc.getQueryData<{ viewerRole: string }>(queryKeys.server("ws-1"))?.viewerRole).toBe(
+        ServerMemberRoleGql.MEMBER,
+      ),
+    );
+    fireEvent.contextMenu(screen.getByTestId("row"));
+  }
+
+  it("asks about the message, through its command, in a channel", async () => {
+    await openOn(makeConversation());
+    expect(labels()).toContain("Ask agent…");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Ask agent…" }));
+    await waitFor(() =>
+      expect(useAskAgentStore.getState().choosing).toEqual({
+        workspaceId: "ws-1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        channelName: "general",
+        workspaceName: "Acme",
+      }),
+    );
+  });
+
+  it("is not offered in the web app", async () => {
+    platform.current = "web";
+    await openOn(makeConversation());
+    expect(labels()).not.toContain("Ask agent…");
+  });
+
+  it.each([
+    ["a direct message", { conversationType: ConversationTypeEnum.DIRECT, title: null }],
+    ["a group", { conversationType: ConversationTypeEnum.GROUP, title: "crew" }],
+    ["an encrypted channel", { encryptedAt: "2026-10-01T09:00:00Z" }],
+  ])("is not offered in %s", async (_what, overrides) => {
+    await openOn(makeConversation(overrides));
+    expect(labels()).not.toContain("Ask agent…");
   });
 });

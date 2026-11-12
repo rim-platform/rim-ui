@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { QueryClient } from "@tanstack/react-query";
 
+import { queryKeys } from "../../../core/query/keys";
 import { graphqlError } from "../__fixtures__/conversations";
 
 const requestMock = vi.fn();
@@ -12,41 +11,34 @@ vi.mock("../../../core/graphql/client", () => ({
     request: (...args: unknown[]) => requestMock(...args),
   },
 }));
-vi.mock("../../../shared/toast", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
-}));
 
-import { toast } from "../../../shared/toast";
-import { useUpdateTopicMutation } from "./useUpdateTopic";
+import { updateConversationTopic } from "./useUpdateTopic";
 
-function renderMutation() {
-  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
-  return renderHook(() => useUpdateTopicMutation(), { wrapper }).result;
-}
+const VARS = { serverId: "ws-1", conversationId: "conv-1", topic: "News" };
 
-describe("useUpdateTopicMutation", () => {
+describe("updateConversationTopic", () => {
   beforeEach(() => {
     requestMock.mockReset();
-    vi.mocked(toast.error).mockClear();
   });
 
-  it("tells why the server refused a topic in a toast", async () => {
-    requestMock.mockRejectedValue(
-      graphqlError("FORBIDDEN", "only the owner and moderators change a channel's topic"),
-    );
-    const result = renderMutation();
+  it("sets the topic and reads the workspace's conversation lists again", async () => {
+    requestMock.mockResolvedValue({ updateConversationTopic: { id: "conv-1", topic: "News" } });
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.channels("ws-1"), { items: [] });
 
-    act(() => {
-      result.current.mutate({ serverId: "ws-1", conversationId: "conv-1", topic: "News" });
-    });
+    await updateConversationTopic(qc, VARS);
 
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("The topic could not be changed", {
-        description: "Only the owner and moderators change a channel's topic.",
-      }),
+    expect(requestMock.mock.calls[0][1]).toEqual({ input: VARS });
+    expect(qc.getQueryState(queryKeys.channels("ws-1"))?.isInvalidated).toBe(true);
+  });
+
+  it("passes the server's refusal on for the caller to show", async () => {
+    const refusal = graphqlError(
+      "FORBIDDEN",
+      "only the owner and moderators change a channel's topic",
     );
+    requestMock.mockRejectedValue(refusal);
+
+    await expect(updateConversationTopic(new QueryClient(), VARS)).rejects.toBe(refusal);
   });
 });

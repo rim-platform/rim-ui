@@ -1,3 +1,4 @@
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import { useState } from "react";
 import { Link2 } from "lucide-react";
 
@@ -26,6 +27,9 @@ function changesOf(fetched: FetchedLinkBundle, current: PluginInfo) {
     version: current.version === next.version ? null : `${current.version} → ${next.version}`,
     added: next.capabilities.filter((c) => !current.capabilities.includes(c)),
     removed: current.capabilities.filter((c) => !next.capabilities.includes(c)),
+    addedCommands: (next.runs_commands ?? []).filter(
+      (c) => !(current.runs_commands ?? []).includes(c),
+    ),
   };
 }
 
@@ -169,17 +173,25 @@ function ReplaceDialog({
 }) {
   const changes = changesOf(fetched, current);
   return (
-    <Dialog open onClose={onCancel} title={`Replace ${current.display_name}?`} maxWidth="max-w-md">
+    <Dialog
+      open
+      onClose={onCancel}
+      title={`Replace ${showInvisibleCharacters(current.display_name)}?`}
+      maxWidth="max-w-md"
+    >
       <div className="space-y-3 text-xs text-rim-text-muted">
         <p>
-          This link installs another copy of {current.display_name} over the one installed. You
-          approve its permissions again afterwards.
+          This link installs another copy of {showInvisibleCharacters(current.display_name)} over
+          the one installed. You approve its permissions again afterwards.
         </p>
         <ul className="space-y-1 text-rim-text">
           <li>Version: {changes.version ?? `${current.version} (unchanged)`}</li>
           {changes.added.length > 0 && <li>New permissions: {changes.added.join(", ")}</li>}
           {changes.removed.length > 0 && (
             <li>Permissions no longer asked for: {changes.removed.join(", ")}</li>
+          )}
+          {changes.addedCommands.length > 0 && (
+            <li>New commands it can run: {changes.addedCommands.join(", ")}</li>
           )}
           {changes.added.length === 0 && changes.removed.length === 0 && (
             <li>Permissions: unchanged</li>

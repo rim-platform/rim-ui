@@ -50,6 +50,7 @@ import { BUILT_IN_PROFILES } from "../profiles/builtInProfiles";
 import { KeybindSettings } from "./KeybindSettings";
 import type { ResolvedKeybind } from "../types";
 import type { CommandDefinition } from "../types";
+import { CommandArgumentType } from "../../../core/graphql/generated/schema-types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +211,95 @@ describe("KeybindSettings", () => {
     const commandSelect = screen.getAllByRole("combobox")[0];
     expect(within(commandSelect).getByText("New Message")).toBeInTheDocument();
     expect(screen.queryByText("Create Group")).not.toBeInTheDocument();
+  });
+
+  describe("commands that need arguments", () => {
+    const kick = makeCommand({
+      id: "admin.kick",
+      title: "Kick Member",
+      arguments: [
+        { name: "server_id", argumentType: CommandArgumentType.WORKSPACE_ID, required: true },
+        { name: "user_id", argumentType: CommandArgumentType.USER_ID, required: true },
+      ],
+    });
+    const pin = makeCommand({
+      id: "chat.pin_message",
+      title: "Pin Message",
+      arguments: [
+        { name: "message_id", argumentType: CommandArgumentType.MESSAGE_ID, required: true },
+      ],
+    });
+
+    const quoteSelection = makeCommand({
+      id: "chat.quote_selection",
+      title: "Quote Selection",
+      arguments: [
+        { name: "text", argumentType: CommandArgumentType.SELECTION_TEXT, required: true },
+      ],
+    });
+
+    beforeEach(() => {
+      vi.mocked(useCommands).mockReturnValue({
+        data: [makeCommand(), kick, pin, quoteSelection],
+        isLoading: false,
+      } as ReturnType<typeof useCommands>);
+    });
+
+    it("leaves out of the picker a command whose arguments nothing supplies", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Add keybind" }));
+      const commandSelect = screen.getByRole("combobox", { name: "Command" });
+      expect(within(commandSelect).getByText("Open Command Palette")).toBeInTheDocument();
+      // The selected message supplies a message argument, the argument form a member.
+      expect(within(commandSelect).getByText("Pin Message")).toBeInTheDocument();
+      expect(within(commandSelect).getByText("Kick Member")).toBeInTheDocument();
+      expect(within(commandSelect).queryByText("Quote Selection")).not.toBeInTheDocument();
+    });
+
+    it("still lists a saved binding to such a command, marked", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [
+          makeKeybind({
+            id: "kb-quote",
+            source: "USER",
+            keystroke: "Ctrl+Alt+Q",
+            commandId: "chat.quote_selection",
+          }),
+        ],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      const row = screen.getByText("Quote Selection").closest("div") as HTMLElement;
+      expect(within(row).getByText("Needs arguments this can't supply yet")).toBeInTheDocument();
+
+      fireEvent.click(within(row).getByRole("button", { name: "Edit keybind" }));
+      expect(screen.getByRole("combobox", { name: "Command" })).toHaveValue("chat.quote_selection");
+    });
+
+    it("does not mark a binding whose preset arguments supply them", () => {
+      vi.mocked(useResolvedKeybinds).mockReturnValue({
+        data: [
+          makeKeybind({
+            id: "kb-kick",
+            source: "USER",
+            keystroke: "Ctrl+Alt+K",
+            commandId: "admin.kick",
+            presetArgs: { user_id: "u-1" },
+          }),
+        ],
+        isLoading: false,
+      } as ReturnType<typeof useResolvedKeybinds>);
+      render(<KeybindSettings />);
+
+      expect(screen.getByText("Kick Member")).toBeInTheDocument();
+      expect(screen.queryByText("Needs arguments this can't supply yet")).not.toBeInTheDocument();
+    });
   });
 
   describe("default rows", () => {

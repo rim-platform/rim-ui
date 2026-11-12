@@ -1,11 +1,16 @@
 import { create } from "zustand";
 
-import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import type {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
 
 export interface ConfirmationRequest {
   commandId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** The types the server declares for `args`, which say which of them hold what kind of id. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   token: string;
   argsHash: string;
   expiresAt: string;
@@ -34,6 +39,18 @@ export interface ConfirmationRequest {
   verb?: string | null;
   /** The command, or a stage of the run, is marked dangerous: the dialog draws it in red and says so. */
   dangerous?: boolean;
+  /** Set when a program outside RIM asked for this. Shown as the one asking, and holds the words the person is confirming. */
+  outsideAgent?: {
+    name: string;
+    /** What it acts on, in order, as RIM knows them: label and value. */
+    target: { label: string; value: string }[];
+    /** Exact text being confirmed; shown whole. */
+    text?: string;
+    /** What the plugin's author says the command does, marked as theirs. */
+    pluginWords?: { title: string; description: string };
+    /** The arguments being confirmed; shown whole, with secrets masked. */
+    args?: Record<string, unknown>;
+  };
 }
 
 export interface ConfirmationDecision {
@@ -47,6 +64,8 @@ interface PendingResolver {
 interface ConfirmationModalState {
   request: ConfirmationRequest | null;
   open: (req: ConfirmationRequest) => Promise<ConfirmationDecision>;
+  /** Opens the request unless one is open or pending, which it leaves alone and answers `null`. */
+  openIfFree: (req: ConfirmationRequest) => Promise<ConfirmationDecision> | null;
   approve: () => void;
   reject: () => void;
   reset: () => void;
@@ -60,7 +79,7 @@ function settle(decision: ConfirmationDecision): void {
   resolver?.resolve(decision);
 }
 
-export const useConfirmationModalStore = create<ConfirmationModalState>((set) => ({
+export const useConfirmationModalStore = create<ConfirmationModalState>((set, get) => ({
   request: null,
   open: (req) => {
     // Single global modal — a previous request still in flight is resolved
@@ -78,6 +97,7 @@ export const useConfirmationModalStore = create<ConfirmationModalState>((set) =>
     set({ request: req });
     return promise;
   },
+  openIfFree: (req) => (get().request || internal.pending ? null : get().open(req)),
   approve: () => {
     set({ request: null });
     settle({ approved: true });
@@ -91,3 +111,9 @@ export const useConfirmationModalStore = create<ConfirmationModalState>((set) =>
     settle({ approved: false });
   },
 }));
+
+/** Ends an open confirmation that a program outside RIM asked for. Any other stays open. */
+export function rejectOutsideAgentConfirmation(): void {
+  const { request, reject } = useConfirmationModalStore.getState();
+  if (request?.outsideAgent) reject();
+}

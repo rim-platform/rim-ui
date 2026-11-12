@@ -7,6 +7,7 @@ vi.mock("../../../core/runtime/RuntimeProvider", () => ({
   useRuntime: vi.fn(),
 }));
 
+vi.mock("../../../core/tauri/safeInvoke", () => ({ safeInvoke: vi.fn() }));
 vi.mock("../registry/components/RegistryNotes", () => ({ RegistryNotes: () => null }));
 vi.mock("../registry/signing", () => ({
   usePluginSigning: () => ({ canSign: false, identity: undefined }),
@@ -33,9 +34,16 @@ vi.mock("../api/usePluginActions", () => ({
 
 vi.mock("../api/usePluginCapabilities", () => ({
   useApproveCapabilities: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useGrantCommands: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+vi.mock("../../commands/api/useCommands", () => ({
+  useCommands: vi.fn(() => ({ data: [] })),
+  reloadCommands: vi.fn(),
+  fetchCommandList: vi.fn(async () => []),
 }));
 
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
+import { safeInvoke } from "../../../core/tauri/safeInvoke";
 import {
   usePluginDisable,
   usePluginEnable,
@@ -46,6 +54,7 @@ import { useApproveCapabilities } from "../api/usePluginCapabilities";
 import { usePluginList } from "../api/usePluginList";
 import { usePluginFingerprintDismissStore } from "../state/usePluginFingerprintDismissStore";
 import { PluginSettingsPage, PluginDesktopOnlyCard } from "./PluginSettingsPage";
+import { openPluginRows } from "./openPluginRows";
 import type { PluginInfo } from "../types";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -96,10 +105,10 @@ function mockToggles() {
   return { enable, disable };
 }
 
-/** Opens the row's more-actions menu and picks Uninstall. */
+/** Opens the row and clicks its Uninstall button. */
 function clickUninstall() {
-  fireEvent.click(screen.getByRole("button", { name: /^More actions for / }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Uninstall…" }));
+  openPluginRows();
+  fireEvent.click(screen.getByRole("button", { name: /^Uninstall / }));
 }
 
 function listPlugins(plugins: PluginInfo[]) {
@@ -240,14 +249,19 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.getByRole("button", { name: /install from link/i })).toBeInTheDocument();
   });
 
-  it("renders empty state with marketplace copy when no plugins installed", () => {
+  it("renders the empty state with the ways to install when no plugins are installed", () => {
     vi.mocked(usePluginList).mockReturnValue({ data: [], isLoading: false } as ReturnType<
       typeof usePluginList
     >);
     render(<PluginSettingsPage />);
 
     expect(screen.getByText("No plugins installed")).toBeInTheDocument();
-    expect(screen.getByText(/marketplace coming soon/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Install from a local folder or git URL to get started, or from a link or your workspace's registry.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/marketplace/i)).toBeNull();
     // Normal plugin list heading must NOT be present
     expect(screen.queryByText("Installed Plugins")).not.toBeInTheDocument();
   });
@@ -260,7 +274,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
 
     render(<PluginSettingsPage />);
 
-    expect(screen.getByText("Installed Plugins")).toBeInTheDocument();
+    expect(screen.getByText("Local process · this desktop")).toBeInTheDocument();
     expect(screen.getByText("My Plugin")).toBeInTheDocument();
   });
 
@@ -482,29 +496,21 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     });
   });
 
-  it("keeps the rarer actions in the row's more-actions menu", () => {
+  it("keeps the actions inside the opened row", () => {
     listPlugins([makePlugin({ display_name: "Kubernetes Pods", source: { kind: "local" } })]);
     render(<PluginSettingsPage />);
-    expect(screen.queryByRole("button", { name: "Permissions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Permissions/ })).not.toBeInTheDocument();
 
-    const more = screen.getByRole("button", { name: "More actions for Kubernetes Pods" });
-    expect(more).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(more);
-    expect(more).toHaveAttribute("aria-expanded", "true");
-    const menu = screen.getByRole("menu", { name: "More actions for Kubernetes Pods" });
-    expect(
-      within(menu)
-        .getAllByRole("menuitem")
-        .map((item) => item.textContent),
-    ).toEqual(["Permissions", "Activity", "Uninstall…"]);
-    // Uninstall stands apart from the rest.
-    expect(within(menu).getByRole("separator").nextElementSibling).toHaveTextContent("Uninstall…");
+    const row = screen.getByRole("button", { name: /Kubernetes Pods/, expanded: false });
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Activity" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Uninstall Kubernetes Pods" })).toBeInTheDocument();
 
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Permissions" }));
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Permissions for Kubernetes Pods" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
-    // Opened from the menu, it only changes permissions.
+    // Opened from the row, it only changes permissions.
     expect(within(dialog).getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
@@ -569,7 +575,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
   });
 
-  it("shows what an installed plugin does and asks for its permissions right away", () => {
+  it("shows what an installed plugin does and asks for its permissions right away", async () => {
     const k8s = makePlugin({
       plugin_id: "chat.rim.k8s-pods",
       display_name: "Kubernetes Pods",
@@ -585,16 +591,13 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
       isPending: false,
     } as unknown as ReturnType<typeof usePluginInstallFromLocal>);
 
-    const { container } = render(<PluginSettingsPage />);
+    vi.mocked(safeInvoke).mockResolvedValue({ ok: true, value: "/home/me/k8s-pods" });
+    render(<PluginSettingsPage />);
     expect(screen.queryByText("Plugin Permissions")).not.toBeInTheDocument();
 
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = Object.assign(new File([""], "rim-plugin.json"), {
-      path: "/home/me/k8s-pods/rim-plugin.json",
-    });
-    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /install from local folder/i }));
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Plugin Permissions")).toBeInTheDocument();
     // Right after an install, approving also turns the plugin on.
     expect(within(dialog).getByRole("button", { name: "Approve and turn on" })).toBeInTheDocument();
@@ -637,6 +640,7 @@ describe("PluginSettingsPage — desktop build (pluginHost: true)", () => {
     }
 
     function openDetails() {
+      openPluginRows();
       fireEvent.click(screen.getByRole("button", { name: "View details for Kubernetes Pods" }));
       return screen.getByRole("dialog", { name: "Kubernetes Pods" });
     }

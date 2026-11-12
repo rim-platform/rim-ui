@@ -91,9 +91,12 @@ describe("skew check", () => {
   it("keeps every message query valid on a server without Message.editedAt", () => {
     const refused = refusedOperations(schemaWithoutEditTimes(), documents);
     expect(refused.map((r) => r.label).sort()).toEqual([
+      "query HostCapabilities",
+      "query MessagesWithBots",
       "query MessagesWithEdits",
       "query MessagesWithFlags",
       "query ServerInfo",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithEdits",
       "query ThreadMessagesWithFlags",
     ]);
@@ -106,8 +109,54 @@ describe("skew check", () => {
       "query MessageChangesWithFlags",
       "query MessageReportWithAutomatic",
       "query MessageReportsWithAutomatic",
+      "query MessagesWithBots",
       "query MessagesWithFlags",
+      "query ThreadMessagesWithBots",
       "query ThreadMessagesWithFlags",
+    ]);
+  });
+
+  it("refuses only the marker documents on a server without read_marker", () => {
+    const schema = schemaWithoutFields({
+      UnreadCount: ["unreadAfter"],
+      Mutation: ["markAsUnread"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual(["mutation MarkAsUnread", "query UnreadCountsWithMarkers"]);
+  });
+
+  it("refuses only the gated documents on a server without bot_events", () => {
+    const schema = schemaWithoutFields({ Bot: ["seesMemberJoins"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query BotsWithJoins",
+    ]);
+  });
+
+  it("refuses only the gated document on a server without pipeline_post_as_bot", () => {
+    const schema = schemaWithoutFields({ PipelineActionGql: ["postAsBot"] });
+    expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
+      "query PipelinesWithPostAsBot",
+    ]);
+  });
+
+  it("refuses only the bot disclosure documents on a server without bot_disclosure", () => {
+    const schema = schemaWithoutFields({
+      User: ["isBot", "bot"],
+      ServerMember: ["isBot", "bot"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "query ApplyChannelLensWithBots",
+      "query MessagesWithBots",
+      "query PinnedMessagesWithBots",
+      "query ServerMembersWithBots",
+      "query ThreadMessagesWithBots",
     ]);
   });
 
@@ -127,12 +176,10 @@ describe("skew check", () => {
     ]);
   });
 
-  it("refuses only the member message deletion documents on a server without delete_member_messages", () => {
+  it("refuses only the member message counts on a server without delete_member_messages", () => {
+    // The delete itself runs as the Delete Member's Messages command, through executeCommand.
     const refused = refusedOperations(schemaWithoutMemberMessageDeletion(), documents);
-    expect(refused.map((r) => r.label).sort()).toEqual([
-      "mutation DeleteMemberMessages",
-      "query MemberMessageCounts",
-    ]);
+    expect(refused.map((r) => r.label).sort()).toEqual(["query MemberMessageCounts"]);
   });
 
   it("refuses only the timeout reason query on a server without ServerMember.timeoutReason", () => {
@@ -146,6 +193,84 @@ describe("skew check", () => {
     const schema = schemaWithoutFields({ Query: ["conversationMemberRemovals"] });
     expect(refusedOperations(schema, documents).map((r) => r.label)).toEqual([
       "query ConversationMemberRemovals",
+    ]);
+  });
+
+  it("refuses only the bot management documents on a server without the bots API", () => {
+    const schema = schemaWithoutFields({
+      Query: ["bots", "botTokens", "incomingWebhooks"],
+      Mutation: [
+        "createBot",
+        "updateBot",
+        "deactivateBot",
+        "createBotToken",
+        "revokeBotToken",
+        "createIncomingWebhook",
+        "revokeIncomingWebhook",
+      ],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateBot",
+      "mutation CreateBotToken",
+      "mutation CreateIncomingWebhook",
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
+      "mutation DeactivateBot",
+      "mutation RevokeBotToken",
+      "mutation RevokeIncomingWebhook",
+      "mutation UpdateBot",
+      "query BotTokens",
+      "query Bots",
+      "query BotsWithJoins",
+      "query IncomingWebhooks",
+      "query IncomingWebhooksWithFormats",
+    ]);
+  });
+
+  it("refuses only the webhook documents on a server without incoming webhooks", () => {
+    const schema = schemaWithoutFields({
+      Query: ["incomingWebhooks"],
+      Mutation: ["createIncomingWebhook", "revokeIncomingWebhook"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateIncomingWebhook",
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
+      "mutation RevokeIncomingWebhook",
+      "query IncomingWebhooks",
+      "query IncomingWebhooksWithFormats",
+    ]);
+  });
+
+  it("refuses only the format and test session documents on a server without them", () => {
+    const schema = schemaWithoutFields({
+      Query: ["webhookFormats", "previewWebhookFormat", "webhookTestDeliveries"],
+      Mutation: ["updateIncomingWebhookFormat", "startWebhookTestSession", "endWebhookTestSession"],
+      IncomingWebhook: ["template"],
+      CreatedIncomingWebhook: ["keptTestUrl"],
+    });
+    expect(
+      refusedOperations(schema, documents)
+        .map((r) => r.label)
+        .sort(),
+    ).toEqual([
+      "mutation CreateIncomingWebhookKeepingTestUrl",
+      "mutation CreateIncomingWebhookWithFormat",
+      "mutation EndWebhookTestSession",
+      "mutation StartWebhookTestSession",
+      "mutation UpdateIncomingWebhookFormat",
+      "query IncomingWebhooksWithFormats",
+      "query PreviewWebhookFormat",
+      "query WebhookFormats",
+      "query WebhookTestDeliveries",
     ]);
   });
 });

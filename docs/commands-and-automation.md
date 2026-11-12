@@ -1,7 +1,7 @@
 # Commands and automation
 
-Everything RIM does runs as a command: the command palette, keybinds, user commands, macros,
-pipelines, plugins and the AI agent all run them. This page is for the person using the app and
+Everything RIM does runs as a command: the command palette, keybinds, macros, pipelines,
+plugins and the AI agent all run them. This page is for the person using the app and
 goes deeper than [Getting started](getting-started.md). The contract behind it is rim-server's
 [command model](../../rim-server/docs/command_model.md).
 
@@ -14,8 +14,8 @@ three places:
 
 - **Built in.** Shipped with RIM. Most run on the server, such as posting a message or setting a
   slow mode; the ones that only move around the app, such as opening search, run in the app.
-- **Your own.** User commands and macros, each a sequence of other commands, kept on the server
-  for your account.
+- **Your own.** Macros, each a sequence of other commands, kept on your home server for your
+  account ([Macros](#macros)).
 - **Plugins.** Each turned-on plugin adds commands that run on this device, inside the plugin
   ([Plugins](plugins.md)).
 
@@ -30,6 +30,53 @@ such as marking it read or setting its notification level, therefore acts on the
 with none open it needs the conversation's id in its arguments. A plugin command that needs a
 conversation gets the open one; with none open, the palette leaves it out and its keybind says
 "Open a conversation first".
+
+**The argument form.** A server command run from the palette, the message box, a keybind or a Home
+quick action that lacks a required argument opens a form titled with the command, with a field for each missing
+argument: a text field, a number field, a checkbox, a list of the allowed values, a search of the
+workspace's members, a list of its conversations or a list of your workspaces, each labelled with
+the argument's title, its description beneath and its default filled in. The command's optional
+arguments, such as a ban's end or a kick's reason, wait folded under **More options**; only those
+you set are sent, and the form never opens for them alone. A field that changes a setting starts
+with its current value: a channel's topic, slow mode and who may post, your notification level for
+the conversation, and a state key's value as "Now: …"; a role change shows the member's role as
+"Now: …" once you pick them. The first field has the
+focus, <kbd>Tab</kbd> moves between fields, <kbd>Enter</kbd> runs the command, and
+<kbd>Escape</kbd> or **Cancel** runs nothing. A dangerous command still asks for confirmation after
+the form. A message, a thread or selected text is never asked for: without one the command says
+"Select a message first" (or "Open a thread first", "Select some text first"). Pipes, plugin panels
+and agents get no form; they name the missing argument.
+
+**From the message box.** The suggestion list decides: a command runs only when it is picked from
+the open list, with Enter or Tab on the highlighted row or a click. Type `/` and the words of a
+command's id or title (`/list members`, `/List Members`, `/chat.list_members`): the list stays open
+across spaces, the first match is highlighted, and Enter runs it. Esc closes the list and keeps it
+closed for that line, until the line is emptied or the conversation changes; Enter then sends the
+text as an ordinary message, `/list members` included. Text that matches no command shows no list
+and is sent as a message as well.
+
+A command picked with nothing typed after its name runs as it does from the palette: one that needs
+arguments opens the palette's argument form, with the same fields, pickers, current values and
+**More options**; one that picks its target in the palette, such as `workspace.navigate_to_channel`,
+opens the palette's list; any other runs at once. The row of a command that needs arguments says
+which. Arguments can also follow the name as `key=value` pairs, with a value that has spaces in
+double quotes: `/chat.post_message text="two words"`. The command stays listed while you type them,
+and Enter runs it with them. When they leave a required argument out, or give one a value its field
+cannot take (`seconds=soon`), the same form opens with the typed values filled in and the problem
+shown beside its field; nothing runs until you press **Run**. A line whose quotes are not closed
+stays in the box with what is wrong. A thread's reply box has the same list and rule, in the open
+conversation and its thread.
+A command that carries a message's text (`chat.post_message`, `chat.edit_message`, and any command
+with a `text` argument) refuses to run for an end-to-end encrypted conversation before any form opens, and again with
+what the form gives, so that text never reaches the server in plain; text sent after Esc goes
+through normal encrypted sending. A command on a message (`chat.pin_message`,
+`chat.toggle_reaction`) takes the message selected in the list, or a typed `message_id=`; without
+either it says "Select a message first". `chat.reply_to_selected_message` is not listed: writing in
+the box is how you reply.
+
+A pipe (`/a | b`) has no list: a line with `|` that starts with a known command runs as a pipe on
+Enter, and after Esc, or in a thread, it is sent as text. The server reads a pipe's arguments
+without quotes.
 
 **Sensitivity.** Every command has one of four tiers, and the server decides from it whether a
 run waits for your confirmation:
@@ -60,7 +107,10 @@ run; a plugin's command acts only within the permissions you granted the plugin.
 
 ## The command palette
 
-<kbd>Ctrl+K</kbd> opens the palette, and so does <kbd>:</kbd> in Vim normal mode. "Type a
+The palette is the search box under the top bar with commands first. <kbd>Ctrl+K</kbd> opens it
+so, and so does <kbd>:</kbd> in Vim normal mode; in a box opened with search first,
+<kbd>Ctrl+K</kbd> or typing <kbd>&gt;</kbd> switches to commands, and <kbd>Backspace</kbd> in an
+empty field switches back ([Search UI](search-ui.md#the-search-box)). "Type a
 command..." searches the title, description and category of every command, with the matched
 letters highlighted. The best match comes first: a match in the title ranks above one in the
 description or category, and a whole word or the start of one above letters inside a word or
@@ -68,27 +118,27 @@ scattered through it; in a description or category only a match that starts at a
 The arrow keys move, <kbd>Enter</kbd> runs, <kbd>Esc</kbd> closes.
 
 Without a search the list is grouped by category, in alphabetical order: the built-in Admin,
-Chat, Notifications, State and Workspace; User, for your user commands; one per turned-on plugin,
+Chat, Notifications, State and Workspace; Macro, for your macros; one per turned-on plugin,
 under its name, with an "Open \<panel\>" command for each panel of a running plugin; and
 Workspace plugins, the registry's plugins this device has not installed, as "Install \<name\>"
 ([Workspace registry](plugins.md#workspace-registry)). With one, the groups follow their best
 match.
 
 Each row shows where the command comes from (built in, plugin or yours), its category and its
-keybind. Left out are a command that needs an argument the palette cannot fill, such as **Kick
-Member** (the member) or **Set State** (the key), and a conversation's command such as **Mark as
-Read** while no conversation is open; a plugin command that needs arguments, which its plugin's
+keybind. A command that needs an argument nothing around it fills, such as **Kick Member** (the
+member), **Do Not Disturb** (the mode) or **Mark as Read** with no conversation open, is listed and
+asks for it when run (see "The argument form" below). Left out are a command that needs a selected
+message, which the palette never has, such as **Pin Message**; a plugin command that needs arguments, which its plugin's
 panel runs, or a conversation while none is open; **Archive Channel** outside a channel that is not
-archived and **Unarchive Channel** outside an archived one; and macros, which run from Settings →
-Macros or `/macro`. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
+archived and **Unarchive Channel** outside an archived one. **Leave Conversation** and **Archive Channel** ask first, as the conversation's menu
 does: "Archive \<channel\>?" always, "Leave \<name\>?" for a group or a private channel; a
 public channel, which you can join again, is left at once. Running a command closes the palette
 at once; a toast gives its title and the result's message on success, such as "List Channels: 3
 channels found.", except for a command that opens or moves something in the app, which shows
 that instead, or "\<title\>: \<message\>" on failure, and a plugin command answers in its
 words.
-**Search Messages** run from the palette or a keybind without a `query` opens the search box,
-as **Open Search** does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
+**Search Messages** run from the palette or a keybind without a `query` opens the full message
+search, as **Search all messages** in the search box does; with a `query`, such as a keybind's preset argument, or as a pipe stage,
 the server runs the search.
 
 **Pipes.** Typing <kbd>|</kbd> locks the text before it as a stage: a command id, optionally
@@ -105,6 +155,28 @@ names it: "Includes a dangerous command: \<title\>." While the chain runs, "Exec
 palette then shows each stage's result, or "Pipe failed at stage \<n\>: …". <kbd>Backspace</kbd>
 in an empty search reopens the last stage, and <kbd>Esc</kbd> clears the chain.
 
+## Buttons and menus run commands
+
+A button, a menu item, a dialog's main button or a key in a list that does what a command does
+runs that command, the way the palette runs it: the same lookup, gates, result and audit entry.
+The audit log records where it started: `ui` for a button, a toggle, a dialog's main button or a
+Home quick box (a server that does not list `command_initiator_ui` records these as `palette`),
+`context_menu` for an item of a menu, such as a conversation's, a person's or a notification's,
+and `keybind` for a key in a list. A control acts on what it shows: a sidebar
+row's menu on that row's conversation, a person's menu on that person, a notification's menu on
+its conversation, never on whatever happens to be open.
+
+A click asks for the same confirmation the palette asks for: **Archive Channel…** and **Leave
+channel…** in a conversation's menu ask "Archive \<channel\>?" or "Leave \<name\>?", as the
+palette does, and only once. A control with its own confirmation, such as the Kick, Ban, Change
+role, Time out and Delete messages dialogs or a member row's **Remove**, is that confirmation:
+nothing asks again, except for a `Restricted` command, which still asks you to type its verb. A
+refusal reads as it does from the palette, naming a missing permission; a dialog shows it in
+place, with **Retry**. The command's gates apply too: while you are timed out you cannot join a
+channel, kick, ban or set slow mode from a click either. Where a server does not list the command
+yet, such as **Clear Timeout**, **Mute Conversation…**, **Unmute Conversation** or **Edit
+Topic…** on an older server, the control does what it did before.
+
 ## Keybinds
 
 A keybind runs one command, sometimes with fixed arguments. These are the default bindings of a
@@ -116,15 +188,15 @@ new device:
 | <kbd>Ctrl+Alt+S</kbd> | Open Settings |
 | <kbd>Ctrl+F</kbd> | Search in this conversation |
 | <kbd>Ctrl+Shift+F</kbd> | Search the workspace |
-| <kbd>Ctrl+Shift+X</kbd> | Open the plugin marketplace |
+| <kbd>Ctrl+Shift+X</kbd> | Browse plugins: Settings > Plugins |
 | <kbd>Ctrl+Shift+A</kbd> | Open the AI agent (desktop app) |
 | <kbd>Ctrl+Shift+C</kbd> | Create a channel |
 | <kbd>Ctrl+Shift+G</kbd> | New message |
-| <kbd>Ctrl+Shift+M</kbd> | Mark everything as read |
+| <kbd>Ctrl+Shift+M</kbd> | Mark everything as read, with an Undo for 6 seconds before the server is told |
 | <kbd>Ctrl+Shift+K</kbd> | Jump to a conversation; with none named, opens the palette |
 | <kbd>Ctrl+Shift+T</kbd> | Reopen the last thread |
 | <kbd>Ctrl+R</kbd> | Cycle recent activity: jump to where someone last posted, newest first; pressed again within 5 seconds it goes further back |
-| <kbd>Ctrl+B</kbd> | Toggle the sidebar |
+| <kbd>Ctrl+B</kbd> | Hide or show the conversation list |
 | <kbd>Ctrl+E</kbd> | Focus the composer |
 | <kbd>Ctrl+D</kbd> | Cycle display density |
 | <kbd>Ctrl+L</kbd> | Cycle layout preset |
@@ -135,6 +207,8 @@ new device:
 | <kbd>Ctrl+ArrowLeft</kbd>, <kbd>Ctrl+ArrowRight</kbd> | Focus the pane to the left or right |
 | <kbd>Escape</kbd> | Close the open panel: a plugin panel, the thread, a page such as Settings, or the notifications or a members list in the tool panel |
 | <kbd>?</kbd>, <kbd>Ctrl+/</kbd> | Show keyboard shortcuts |
+
+On the Unreads page, while the focus is on the page, <kbd>J</kbd> and <kbd>K</kbd> move through the messages, <kbd>E</kbd> marks the selected conversation read up to the newest message shown, <kbd>Enter</kbd> opens the selected message and <kbd>U</kbd> takes back the last mark, for 10 seconds. These keys belong to the page and stay what they are. Each runs a command (`workspace.unreads_next`, `workspace.unreads_previous`, `workspace.unreads_mark_group`, `workspace.unreads_open`, `workspace.unreads_undo`) that the palette offers on that page and that you can bind to another key as well.
 
 On a Mac, <kbd>Cmd</kbd> works wherever <kbd>Ctrl</kbd> is written. The timeline's own message
 keys, such as <kbd>r</kbd> for a thread and <kbd>e</kbd> to edit, are in [Keyboard](keyboard.md).
@@ -151,13 +225,19 @@ Plugins and Other, with "Search keybinds..." above them. Each row names its cont
 Composer, Message list and so on.
 
 - **Add keybind** opens a form: press the keys in "Press a key combination...", pick the
-  command and the context, then **Save**. The field records any keys, even ones already bound,
+  command and the context, then **Save**. For a server command with arguments, **Arguments** has a
+  field for each: the ones filled in are saved with the keybind, and a required one left empty is
+  asked for when the key is pressed. A member or a conversation saved there keeps its workspace.
+  Saved arguments are used as given, here and in a Home quick action, even for a command such as
+  **Create Channel** whose dialog opens when none are saved, and "Until tomorrow" means 09:00
+  tomorrow in your timezone, worked out when the command runs. The field records any keys, even ones already bound,
   and runs nothing while it has focus; <kbd>Escape</kbd> alone stops recording and keeps the
   earlier keys. Keys already bound in the chosen context show "\<keys\> is used by \<command\>.
   Saving moves it here and leaves \<command\> without a key." (or "…; \<command\> keeps its other
   keys."), and **Save** moves them to the new command; keys a workspace keybind holds cannot be
   taken: "\<keys\> is used by \<command\>, a workspace keybind. Choose other keys."
-- On a binding of your own, the pencil changes its command or context, clicking the keys records
+- On a binding of your own, the pencil changes its command, context or arguments (saved
+  arguments the fields cannot show are kept as they are), clicking the keys records
   new ones, the switch turns it off, and the bin deletes it after "Delete keybind?". Keys
   recorded there that another binding holds wait under the row with the same note, **Save** and
   **Cancel**.
@@ -198,59 +278,95 @@ a text field is insert mode ([Vim mode](keyboard.md#vim-mode)).
 shortcuts** in Settings → Keyboard opens "Keyboard shortcuts". It lists every binding in force,
 grouped by context, with "Vim normal mode" while Vim is on, and "Filter shortcuts..." narrows it.
 
-## User commands and macros
+## Macros
 
-Both run a sequence of commands as one, and both are yours alone: nobody else in the workspace
-sees or runs them.
+A **command** is one action RIM or a plugin gives you. A **macro** is your own action, made of
+commands that run one after another. Every macro is a command too, in the Macro category: it
+shows in the palette, the keybind picker, Home quick boxes and the composer's `/` list, a key can
+run it, and it works in every workspace you are in, on this server or another. Your macros are
+kept on your home server for your account, and nobody else sees or runs them.
 
-**User commands** appear in the palette and can be bound to keys. Settings → Commands, **New
-command**, asks for a **Command ID** (saved as `user.<id>`, in lowercase letters, numbers, dots,
-dashes and underscores), a **Title**, a **Description** and the **Steps**: **+ Add step** picks
-a command the server runs, and the arrows reorder. **Create** saves it. Its steps take no
-arguments here, so each one uses the context, and **+ Add step** offers only commands the
-context can fill: none that needs other arguments. A user command can be bound when all its
-steps can, is dangerous when one step is, and can include other user commands, eight levels
-deep at most. The list shows each one's id and number of steps. The
-pencil loads the saved command into the form, its title, description and steps in order, with
-a step's arguments shown under it. Changing a step's command drops its arguments; **Save**
-stays off until a step is chosen, and the steps on the form replace the saved ones. A command
-deleted elsewhere closes the editor with "\<title\> no longer exists for this account, so it
-cannot be edited."
+**Making one.** Settings → Macros, **New macro**, asks for a **Title** (no two of your macros
+share one), a **Description** and up to 20 **Steps**. Each step has a command, picked from a
+list you can search, grouped by category, with each command's description: the built-ins, the
+app's own commands and the commands of the plugins installed on this device. Macros, the
+commands that connect, answer and manage agents (**Connect an Agent…** among them), and Edit Home
+are not offered. Under the command is a
+field for each of its arguments. Fill one in to fix it, or tick **Ask when I run it** to be
+asked each time. A step that takes a channel also offers the workspace's public channels you
+have not joined, so a macro can join them and set their notifications, and message text can
+have several lines. A workspace state key is picked from the workspace's keys, each shown with
+its current value, or typed as a new one; a value to store first gets its kind (Text, Number,
+Yes/No or JSON), so `42` typed as text stays text. A step that switches workspace names the
+workspace, one that runs a macro or turns a pipeline on or off picks it from a list, and a topic
+can be cleared with **No topic**. People are picked by name: several for a new group or channel
+and for an invite, which leaves out those already in the conversation; Unban lists the people
+banned and Clear Timeout those timed out. A conversation field lists only what its command acts
+on: archived channels to unarchive, channels to join, channels and groups to leave, your direct
+messages to open, and a reaction is picked with the emoji picker or typed, a custom emoji as
+`:name:`. A time is picked as a choice: a ban ends "Until unbanned", after a preset such as
+"For 7 days", after a set length in minutes, hours or days, or at a date and time; a mute, a
+notifications pause and a timeout offer their presets, a set length and, for a mute and a pause,
+"Until a time"; and a state entry "Never expires" or expires after a length. The number, or the
+date and time, appears only for the choice that takes it. A length counts from each run, so
+"For 2 hours" saved in a step ends two hours after the macro runs, and "Mute until tomorrow"
+ends at 09:00 tomorrow on your device's clock. A server that does not take lengths for bans and
+mutes offers a fixed end only, and says so; a ban for a set length saved elsewhere is not sent
+there, from any surface: "This server can't end a ban after a set time, so the ban wasn't sent.
+Choose a date and time instead." An argument the macro finds where it runs, such as the open workspace, the open
+conversation or the selected message, can be left empty. **Save** stays blocked while a required
+argument is neither fixed nor asked for, and the step says so. On the desktop, **Build with AI**
+turns a description into steps with their arguments filled in, which open in the form to check.
 
-**Macros** carry arguments for each step. Settings → Macros, **New Macro**, opens "Create
-Macro": a **Name**, a **Description** and up to 20 **Steps**. Each step has a command, found with
-"Search commands...", and an arguments field that takes JSON, such as
-`{"conversation_id": "…", "text": "…"}`. The search leaves out commands that only run in the app,
-and a step typed as one is marked as failing. A step whose text is not a command id is marked
-"Unknown command: \<id\>" and the macro is not saved until it is fixed. **Save** stores it. On
-the desktop, **Build with AI** turns a description into steps with the provider set in
-Settings → AI Agent: **Generate**, check the preview, then **Use these steps** opens them in the
-editor.
+**Running one.** Run a macro from the palette, a key, a quick box, the play button on its row
+in Settings → Macros, **Run Macro…**, `/` in the composer, or `/macro <title>`, which finds it
+whatever the letter case. The app runs it step by step, in the workspace, conversation and
+thread you are in when it starts:
 
-A macro runs from the play button on its row ("Run macro"), or from the composer: send
-`/macro <name>` ("Run Macro"). It runs on the server, step by step, in the open workspace, the
-open conversation and the thread open beside it, read when the run starts:
+- **Asked arguments come first.** One form asks for every argument the steps ask for, each
+  labelled "Step \<n\> · \<command\>: \<argument\>", with the same fields as the step's own
+  form: a state key's current value, a mute's choices, a topic cleared with **No topic**.
+  Cancelling it runs nothing.
+- **Each step runs as it would on its own.** A server command goes to the server that hosts the
+  workspace, with its own confirmation when it needs one; an app or plugin command runs in the
+  app. Steps do not pipe: each gets its own arguments.
+- **A step that opens a form goes last.** A step that opens a form or a picker does not wait for
+  you to finish it, so put it at the end. The form marks such a step when it is not last.
+- **A failing step stops the rest.** The steps before it stay done, and the toast says
+  `Step <n> (<command>) failed: <reason>`. A cancelled confirmation stops it the same way. A
+  macro that finishes says `Macro "<title>" ran`.
+- **Plugins never run your macros.** A plugin step whose plugin is not installed on this device
+  fails with "its plugin isn't installed on this device".
 
-- **Steps do not pipe.** Each step gets its own arguments. A step that needs a conversation acts
-  on the open one, or on the one its `conversation_id` names, which wins; with none open it needs
-  `conversation_id`. A command that only runs in the app fails as a step.
-- **Confirmation.** A macro with a restricted step asks once, before any step runs, in
-  `Run macro "<name>"`: "This macro includes commands marked as dangerous. They may delete data
-  or make irreversible changes." A dangerous step below the restricted tier, such as kicking a
-  member, cannot be confirmed inside a macro, and the macro stops there.
-- **A failing step** stops the macro. The steps before it stay done, and the toast says
-  `Macro "<name>" failed`, with the server's reason under it. A macro that finishes says
-  `Macro "<name>" executed`.
-- **Limits.** A macro cannot contain another macro, and its name has at most 128 characters. You
-  can keep 50 macros per workspace, and the page shows the server's own cap when it sets one.
+**The AI agent.** Tick **The AI agent can run this** to let the agent run a macro as one
+command, in the workspaces of your home server. It can be ticked only when every step is a
+command the AI agent may run, which RIM's server runs, with every argument fixed; otherwise the
+form says "Only commands the AI agent may run, run on RIM's server, with every argument fixed".
+When the agent asks to run it, the confirmation lists the macro's steps with their arguments
+([The AI agent](#the-ai-agent)).
+
+**Limits.** You keep at most 100 macros, each with at most 20 steps and a title of at most 128
+characters. A macro saved before steps could name other commands keeps any step that runs
+another macro, shown as "Another macro (kept, no longer offered)".
+
+**Workspace macros move into your macros.** Macros used to be kept per workspace. The first time
+the app finds your home server keeping your macros, it moves the ones you made in each workspace
+into your macros and deletes them where they were; one with the title and steps of a macro you
+already have is only deleted, and one whose title is taken gets " (2)". At 100 macros the rest
+stay where they are, and a toast says how many stayed in which workspace. Settings → Macros lists
+the ones that stayed, at 100 macros or because the server refused them, under **Not moved yet**,
+each with its workspace and the reason: **Try again** moves that workspace's macros once more,
+and **Delete** deletes it from its workspace after a confirm. Settings → Commands is
+gone: what it made are macros. With a home server that does not keep your macros, Settings →
+Macros still lists the macros of the open workspace and Settings → Commands is still there.
 
 Two macros, as examples:
 
-- **Standup.** `chat.post_message` with `{"conversation_id": "<#standup's id>", "text": "Standup:
-  yesterday, today, blockers?"}`, then `state.incr` with `{"key": "standup.count"}`, which
+- **Standup.** `chat.post_message` with the conversation set to #standup and the text
+  "Standup: yesterday, today, blockers?", then `state.incr` with the key `standup.count`, which
   counts the standups in workspace state.
-- **Heads down.** `notifications.mark_all_read` with no arguments, then `notifications.dnd` with
-  `{"mode": "until", "minutes": "120"}`, which pauses your notifications for two hours.
+- **Heads down.** `notifications.mark_all_read`, then `notifications.dnd` with **Ask when I run
+  it** on its pause: each run asks how long to pause your notifications.
 
 ## Pipelines
 
@@ -265,14 +381,25 @@ runs them as the person who created it.
   user id; "In conversation", by conversation id. A text filter never matches a message in an
   end-to-end encrypted DM or group, which the server cannot read.
 - **Actions** get the workspace as context, and the conversation for message and reaction
-  triggers. Each action runs even when an earlier one failed.
+  triggers. Each action runs even when an earlier one failed. On the Member Joined trigger, an
+  action can also post as a bot: see "Post as bot" below.
 
 **Where.** Settings → Pipelines, which is not shown in Direct messages. **New Pipeline** opens
 "Create Pipeline" with **Name**, **Description**, **Trigger**, **Filters** (**Add filter**),
-**Actions** (**Add action**, a command and an optional JSON arguments field) and **Cooldown
+**Actions** (**Add action**, a command and an **Arguments** section) and **Cooldown
 (seconds, optional)**, then **Save**. The list shows each pipeline as Active or Disabled, with
 its trigger, its number of actions and, to its creator, when it last fired. The power button
 enables or disables it, the pencil edits it, and the bin deletes it after a confirmation.
+
+**Arguments.** An action shows a field for each argument its command takes, the same fields a
+keybind or a macro step has, with a picker where the command has one, such as the key of
+`state.get`. Nobody is there to ask when a pipeline runs, so a required argument the event does
+not supply must be filled: the workspace is always supplied, the conversation for message and
+reaction triggers, and nothing else. Those fields say "Required", and **Save** is refused with
+the field's message until they are filled. A command with no fields shows no Arguments section.
+Arguments saved with an action that the fields cannot show, such as a key the command does not
+declare, stay as they are, listed as JSON under "Saved arguments the form can't show", until you
+press **Remove**.
 
 **Who.** Any member of the workspace can create a pipeline, and every member sees the list. Only
 its creator, an Owner or a Moderator can change, toggle or delete it, and only they see the power
@@ -294,9 +421,27 @@ fires more than 10 times in 60 seconds is switched off, with "Pipeline "\<name\>
 the power button turns it back on. You can create 50 pipelines per workspace, and the page shows
 the server's own cap when it sets one.
 
+**Post as bot.** With the Member Joined trigger, an Owner or Moderator on a server that has it
+sees **Post as bot** beside **Add action**: a bot (active bots only), a channel (only that bot's;
+"This bot is in no channels yet. Add it to one in Settings > Bots." otherwise) and a text. It says
+plainly above them: "Posted by the bot, without asking anyone, each time someone joins." The text
+takes `{username}`, the person's username, at their home server if they're from another one, and
+`{name}`, their display name, or their username without one. What the server refuses, such as a
+mistyped placeholder, shows beside the field. A welcome mentions nobody, and a name can't add a
+mention or Markdown.
+
+The list shows it to every member as "Post as Greeter in #welcome" with its text. A channel you
+can't see shows as "a channel you can't see", never its name or id, and a bot your list doesn't
+hold as "a bot". Who can't change it, such as a creator who is no longer a Moderator, sees it
+read-only in the editor and can keep or remove it. A burst of joins is limited by the cooldown and
+the bot's budget, which skip a welcome rather than queue it. The 10-firings limit below applies too:
+a rush of people joining can switch the pipeline off. The list then shows it as Disabled like any
+other, since the server keeps no reason, and only the creator's "suspended" notice, if they had the
+workspace open, says why. The power button turns it back on.
+
 **Example.** "Deploy failed": trigger New Message, scoped to the id of #deploys, with the filter
 "Message contains pattern" `FAILED`, a cooldown of 300 and the action `chat.search_messages`
-with `{"query": "FAILED"}`. Each failure posted to #deploys shows the pipeline's creator the
+with `{"query": "FAILED"}` (the Query field). Each failure posted to #deploys shows the pipeline's creator the
 firing, at most once in five minutes. The action's result is not shown anywhere, and an action
 such as `chat.post_message` would be skipped.
 
@@ -315,6 +460,10 @@ can be edited and deleted, and shows when it expires.
 
 - A key starts with a lowercase letter, uses `a-z`, `0-9`, `.`, `_`, `:` and `-`, and ends with
   a letter or digit. Keys starting with `system.` belong to the server.
+- In a macro step, a keybind or the palette, the state commands' key field lists the keys of the
+  scope picked, **Workspace (everyone)** or **Only me**, with their values, says when a typed key
+  is new or breaks these rules, and refuses `system.` keys to `state.set`, `state.incr` and
+  `state.delete`. `state.set` shows the key's value now under its value field.
 - A value has at most 64 KB and lives at most 30 days when it has a TTL. The workspace's scope
   holds 10,000 entries and yours 1,000.
 - Anything that reads a scope sees its values, the AI agent and its model provider included. Do
@@ -324,10 +473,10 @@ can be edited and deleted, and shows when it expires.
 
 On the desktop, the AI agent (<kbd>Ctrl+Shift+A</kbd>, or `/agent` in the composer) works
 through the same commands and the same gates as you do. It sees only commands marked callable by
-an AI: a reviewed set of built-ins and the plugin commands you approved in Settings → Plugin AI,
-and no user command or macro made in Settings. A call that changes anything waits for you in the
-confirmation dialog, headed "Agent wants to:", and the agent runs at most three such actions per
-run. Settings → AI Agent sets its provider and key, and
+an AI: a reviewed set of built-ins, the plugin commands you approved in Settings → Plugin AI,
+and your macros with **The AI agent can run this** ticked, each run as one command. A call that
+changes anything waits for you in the confirmation dialog, headed "Agent wants to:", which lists
+a macro's steps with their arguments, and the agent runs at most three such actions per run. Settings → AI Agent sets its provider and key, and
 [Using a plugin](plugins.md#using-a-plugin) covers approving a plugin's commands for it. A
 server's operator can turn its access off. In the web app it is not offered: the palette, the
 keybind, the `/agent` suggestion and **Build with AI** are left out, and `/agent` typed in full

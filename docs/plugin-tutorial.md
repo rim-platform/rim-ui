@@ -128,8 +128,12 @@ document.getElementById("greet").addEventListener("click", () => {
 A panel does not use the SDK: it speaks the panel bridge over `postMessage`, not frozen in
 protocol v1. The host sends `theme.changed` with the `--color-rim-*` tokens, `panel.state_update`
 on opening, after every `set` and as `null` once the plugin stops, and `rim.command.result` for a
-`requestId`. A panel runs only its own plugin's commands, never confirms a dangerous one, loads
-only the files `index.html` names, runs no inline handlers, and has no network.
+`requestId`. A panel runs its own plugin's commands and, by the same message, the app's commands
+the person granted in [`runs_commands`](plugin-manifest.md#runs_commands), whose answer carries
+only `status` and `code`. It never confirms a dangerous one, loads only the files `index.html`
+names, runs no inline handlers, and has no network. A panel whose plugin holds `chat.read` also
+gets `conversation.changed` with the `conversationId` of the conversation shown, and `null`
+while no conversation is shown, as on Home or another page.
 
 ## 5. Test it, `plugin.test.ts`
 
@@ -180,7 +184,7 @@ author:", the warning that a local process runs with your account's access, and 
 ## 7. Try it
 
 Open a conversation. The palette lists **Greeter: Greet** under Greeter; running it shows the toast
-"Greeter: Greet: Hello, <your name>!". **Open Greetings** in the palette, or the side rail's
+"Greeter: Greet: Hello, <your name>!". **Open Greetings** in the palette, or the top bar's
 Plugins menu, one row per running panel ("Greeter", then "Greetings"), shows the panel beside the
 tool panel; its button runs the same command. `host.log` lines and stderr go to the app's log.
 

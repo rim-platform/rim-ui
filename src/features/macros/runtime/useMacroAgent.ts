@@ -1,8 +1,6 @@
 import { useState, useCallback } from "react";
 
-import { invoke } from "@tauri-apps/api/core";
-import { registerProvider, getProvider } from "../../agent/providers/registry";
-import { useAgentStore } from "../../agent/state/useAgentStore";
+import { configuredProvider } from "../../agent/providers/configuredProvider";
 import type { AiMessage } from "../../agent/providers/types";
 import type { CommandDefinition } from "../../commands/types";
 import type { MacroStep } from "../api/useMacros";
@@ -114,38 +112,7 @@ export function useMacroAgent(): UseMacroAgentResult {
       setError(null);
 
       try {
-        const settings = useAgentStore.getState().settings;
-        const { providerId, modelId } = settings;
-
-        // Presence-check the secret vault, the single source of truth for
-        // provider keys.
-        const hasKey = await invoke<boolean>("is_provider_key_configured", {
-          provider: providerId,
-        });
-        if (!hasKey) {
-          throw new Error("no-api-key");
-        }
-
-        // Lazy-register: if the macro builder is invoked before AgentOverlay
-        // has ever opened, there is no registered provider yet. Register one
-        // here the same way AgentOverlay does. A provider already registered
-        // is reused, but first-open from the macro surface must still work.
-        let provider = getProvider(providerId);
-        if (!provider) {
-          if (providerId === "anthropic") {
-            const { createAnthropicProvider } = await import("../../agent/providers/anthropic");
-            provider = createAnthropicProvider();
-            registerProvider(provider);
-          } else if (providerId === "openai") {
-            const { createOpenAiProvider } = await import("../../agent/providers/openai");
-            provider = createOpenAiProvider();
-            registerProvider(provider);
-          } else {
-            throw new Error(
-              `Provider "${providerId}" is not supported. Configure the AI agent in Settings.`,
-            );
-          }
-        }
+        const { provider, modelId } = await configuredProvider();
 
         const systemPrompt = buildSystemPrompt(commands);
         const messages: AiMessage[] = [{ role: "user", content: description }];

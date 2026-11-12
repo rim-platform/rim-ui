@@ -10,14 +10,25 @@ them.
 - `getting-started.md`: from a fresh install to a first conversation: the account and its
   recovery kit, the first workspace, channels, DMs and requests, the shell, and a second device.
 - `commands-and-automation.md`: commands and their sensitivity, the command palette, keybinds,
-  user commands and macros, pipelines, workspace state and how the AI agent runs commands.
+  macros, pipelines, workspace state and how the AI agent runs commands.
 - `ai-agent.md`: the AI agent on the desktop: setting up a provider and key, using it, what it
   may run, its confirmations, encrypted conversations, privacy and troubleshooting.
+- `agents.md`: connecting an AI agent such as Claude Code that runs on this computer: pairing,
+  what it can read, approving its posts, its record and runs, disconnecting, and what RIM can't
+  promise.
+- `webhooks.md`: posting alerts from GitHub, Grafana or any service into a channel: making a
+  webhook, the ready-made and custom formats, Try it, the test URL, Build with AI, and keeping the
+  URL secret.
 - `install.md`: downloads, run-time needs, verifying a download, where the app keeps its data,
   updates, building from source and using another server.
 - `ui-shell.md`: the shell layout: workspace rail, side rail, tool panel, main surface, thread
   pane.
+- `home.md`: making Home your own, Home's boxes, editing them, what each device keeps, and two
+  devices editing at once.
+- `navigation.md`: the window width classes, the navigation drawer, and every way into each page
+  and panel.
 - `keyboard.md`: how a key is resolved, keybind profiles and the Vim layer.
+- `bots.md`: how the client marks a bot and shows what the person who added it says.
 - `search-ui.md`: the search overlay, server search and the desktop's local search.
 - `error-boundaries.md`: the three tiers of React error boundary and their reset keys.
 - `version-skew.md`: which operations an older server refuses, and `npm run skew:check`.

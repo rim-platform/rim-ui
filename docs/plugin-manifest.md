@@ -30,7 +30,7 @@ plugin's tests run them with `validateManifest` ([the SDK](../sdk/plugin-sdk/REA
   starting `dev.rim.` or `com.rim.` fail with `reserved plugin_id prefix: <id>`. The id names the
   install folder, `~/.rim/plugins/<plugin_id>/`, and every command, `plugin.<plugin_id>.<id>`.
 - **`display_name`** (string, required, not empty): the name in Settings, in the permission
-  prompt, as the palette category of the plugin's commands and in the side rail's Plugins menu.
+  prompt, as the palette category of the plugin's commands and in the top bar's Plugins menu.
 - **`version`** (string, required, not empty): free-form. The bundler names its file
   `<plugin_id>-<version>.rimbundle`.
 - **`description`** (string, required, may be empty) and **`author`** (string or `null`, default
@@ -117,6 +117,11 @@ the palette, keybinds, macros and, when allowed, the AI agent.
 - **`ai_callable`** (bool, default `false`): offers the command to the agent once the user allows
   it in the plugin's AI access settings. The tool name `plugin__<plugin_id, dots as _>__<id>` must
   match `[A-Za-z0-9_-]{1,64}`, or the command is not offered.
+- **`read_only`** (bool, default `false`): the plugin's claim that the command changes nothing. An
+  agent outside RIM runs an approved `read_only` command without asking; every other approved
+  command waits for a confirmation. RIM cannot verify the claim, and the approval screen says it is
+  the plugin's. It cannot be combined with `dangerous`: ``command `<id>` cannot be both read_only
+  and dangerous``. It has no effect on the built-in agent.
 - **`output_schema`** (JSON or `null`, default `null`): the JSON Schema of the payload. An
   `ai_callable` command fails with `REQUIRES_MANUAL_REVIEW`, and does not install, without one or
   when its root is not `"type": "object"`, sets `"additionalProperties": true`, or has neither
@@ -147,11 +152,13 @@ sandboxed frame while its plugin runs ([loading](web-plugins.md#how-a-plugin-run
 - **`id`** (string, required): the folder's name; for `WebSandboxed`, one bundle path segment,
   or `INVALID_PANEL`.
 - **`title`** (string, required) and **`description`** (string, default `""`): the title names
-  the panel's row in the side rail's Plugins menu, beside the plugin's name, and the palette
+  the panel's row in the top bar's Plugins menu, beside the plugin's name, and the palette
   command "Open <title>".
-- **`slot`** (string or `null`, optional): `"tool_panel"`, the default, is a narrow column beside
-  the tool panel, next to the conversation; `"main_area"` takes the main area in place of the
-  conversation. Panels show while a conversation is the main surface. Other values fail to parse.
+- **`slot`** (string or `null`, optional): `"tool_panel"`, the default, is a narrow column at the
+  left of the page shown, next to the tool panel beside a conversation, and stays open when you
+  go to another page; `"main_area"` takes the place of the page shown until it is closed or you
+  go to another page. A panel opens over any page: the conversation, Home, Unreads, Settings and
+  the rest. Other values fail to parse.
 
 ## `settings_schema`
 
@@ -198,14 +205,51 @@ checks each value it uses and ignores keys it does not know. The plugin reads th
 ]
 ```
 
+## `runs_commands`
+
+A list of strings, default `[]`: the built-in and app commands the plugin asks to run as the
+person, such as `workspace.open_home` or `chat.post_message`. A plugin runs its own commands
+without listing them. Install refuses, with `INVALID_RUNS_COMMANDS` and ``invalid runs_commands:
+<reason>``:
+
+- more than 32 ids, or one listed twice;
+- an id that is not two or more dot-separated segments of `a-z 0-9 _ -`, at most 128 bytes;
+- an id starting `plugin.`: another plugin's commands, and its own, are never run this way;
+- one of the commands that answer and manage agents: `agents.approve_request`,
+  `agents.refuse_request`, `agents.approve_pairing`, `agents.refuse_pairing`,
+  `agents.disconnect`, `agents.choose_reads`, `agents.choose_plugin_commands`,
+  `agents.open_runs`, `agents.open_record`, `agents.clear_record`, `agents.connect_agent`,
+  `agents.start_session`, `agents.stop_session`, `agents.ask_about_message`,
+  `agents.ask_about_conversation` and `workspace.open_agent_sessions`.
+
+An id neither the workspace nor the app knows installs: the permission prompt shows it as "Not
+available here". The prompt lists every id under "Commands it can run" with its title and
+category, a box per one the person may grant and none ticked. Plugins can run a built-in that is
+neither `dangerous` nor `RESTRICTED` (one that changes something is labelled "asks you each
+time") and the app commands marked for plugins, which only open, show, move focus or selection,
+or start a form the person finishes. The others are greyed with "Plugins can't run this". An
+update that lists new ids opens the prompt again; grants of ids it drops are gone. Settings →
+Plugins → the plugin's row lists the granted commands, each with Revoke, and the runs.
+
+A plugin asks with `host.commands.execute(commandId, args)` in the SDK, `rim.command.execute`
+from a local process, or `rim.command.execute` from its panel. Each run is checked as the person
+stands then: granted and the plugin on, offered here, at most 20 a minute. It runs as the person
+in their current workspace, conversation and thread, never on their selected message, with a
+`workspace_id`, `conversation_id` or `thread_id` in `args` in place of theirs, and the server
+checks every permission as the person. A built-in that changes something shows a card, "<plugin>
+wants to run <command>", with the arguments and the conversation; dismissing it holds the
+plugin's requests for a minute. The plugin hears only `{ status, code?, message? }`, never the
+command's output: `code` is why a refused run did not run, or the command's own error code on an
+error. Every run is recorded in its audit, except calls over the per-minute limit.
+
 ## The content hash
 
 The desktop records a hash of the manifest at install and when the user approves AI commands: the
 SHA-256, in lowercase hex, of the parsed manifest serialized as compact JSON, with the fields in
 the order above, defaults filled in and unknown fields gone. Whitespace, key order and spelled-out
 defaults do not change it. `network_origins`, a panel's `slot` and a setting's `default`, `min`,
-`max`, `options` and `placeholder` are left out when absent, so a manifest without them hashes as
-on a host without those fields; other absent options are `null`.
+`max`, `options` and `placeholder` are left out when absent, and `runs_commands` when empty, so a
+manifest without them hashes as on a host without those fields; other absent options are `null`.
 
 It gates AI consent. When the hash differs from the recorded one and the manifest declares
 `ai_callable` commands, or the user approved some, the agent runs none of the plugin's commands

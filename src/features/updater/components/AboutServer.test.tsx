@@ -126,6 +126,7 @@ describe("AboutServerFeatures", () => {
       "Plugin link installationOn",
       "Text art checkSwitched off",
       "Profile picture checkNot set upRIM_AVATAR_CHECK_URL is unset",
+      "BotsOn",
     ]);
   });
 

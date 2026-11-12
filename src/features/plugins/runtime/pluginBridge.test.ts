@@ -18,6 +18,12 @@ vi.mock("../../commands/runtime/commandDispatcher", () => ({
   dispatchCommand: vi.fn(() => Promise.resolve(null)),
 }));
 
+vi.mock("./pluginCommandRunner", () => ({
+  runCommandForPlugin: vi.fn(() =>
+    Promise.resolve({ status: "refused", code: "NOT_GRANTED", message: "not granted" }),
+  ),
+}));
+
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
@@ -48,6 +54,7 @@ import { toast } from "../../../shared/toast";
 import { logger } from "../../../core/logger";
 import { dispatchCommand } from "../../commands/runtime/commandDispatcher";
 import { openPluginSettings } from "../pluginSettingsLink";
+import { runCommandForPlugin } from "./pluginCommandRunner";
 import type { PluginCapability } from "../types";
 
 function createMockIframe(): HTMLIFrameElement {
@@ -168,24 +175,79 @@ describe("createPluginBridge", () => {
     bridge.destroy();
   });
 
-  it("denies command execution outside plugin scope", () => {
+  it("hands any id outside the plugin's own to the runner and answers with its status only", async () => {
+    vi.mocked(dispatchCommand).mockClear();
+    vi.mocked(runCommandForPlugin).mockClear();
+    const posted: unknown[] = [];
+    vi.spyOn(iframe.contentWindow as Window, "postMessage").mockImplementation(
+      (message: unknown) => {
+        posted.push(message);
+      },
+    );
     const bridge = createPluginBridge({
       pluginId: "my-plugin",
       approvedCapabilities: [],
       iframe,
     });
 
-    const event = new MessageEvent("message", {
-      origin: "null",
-      source: iframe.contentWindow,
-      data: {
-        type: "rim.command.execute",
-        commandId: "plugin.other-plugin.do_something",
-      },
-    });
-    window.dispatchEvent(event);
+    for (const commandId of ["plugin.other-plugin.do_something", "workspace.open_home"]) {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin: "null",
+          source: iframe.contentWindow,
+          data: { type: "rim.command.execute", commandId, args: { a: 1 }, requestId: commandId },
+        }),
+      );
+    }
+    await vi.waitFor(() => expect(posted).toHaveLength(2));
 
-    // Should warn about scope violation (if source check passes)
+    expect(dispatchCommand).not.toHaveBeenCalled();
+    expect(vi.mocked(runCommandForPlugin).mock.calls).toEqual([
+      ["my-plugin", "plugin.other-plugin.do_something", { a: 1 }],
+      ["my-plugin", "workspace.open_home", { a: 1 }],
+    ]);
+    expect(posted[1]).toEqual({
+      type: "rim.command.result",
+      requestId: "workspace.open_home",
+      ok: false,
+      message: "not granted",
+      payload: null,
+      status: "refused",
+      code: "NOT_GRANTED",
+    });
+    bridge.destroy();
+  });
+
+  it("marks a declined confirmation of an app command as cancelled", async () => {
+    vi.mocked(runCommandForPlugin).mockResolvedValueOnce({
+      status: "refused",
+      code: "CONFIRMATION_DISMISSED",
+      message: "the person did not let it run",
+    });
+    const posted: unknown[] = [];
+    vi.spyOn(iframe.contentWindow as Window, "postMessage").mockImplementation(
+      (message: unknown) => {
+        posted.push(message);
+      },
+    );
+    const bridge = createPluginBridge({ pluginId: "my-plugin", approvedCapabilities: [], iframe });
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "null",
+        source: iframe.contentWindow,
+        data: { type: "rim.command.execute", commandId: "chat.post_message", requestId: "r-1" },
+      }),
+    );
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({
+      type: "rim.command.result",
+      requestId: "r-1",
+      ok: false,
+      payload: null,
+      cancelled: true,
+      status: "refused",
+      code: "CONFIRMATION_DISMISSED",
+    });
     bridge.destroy();
   });
 

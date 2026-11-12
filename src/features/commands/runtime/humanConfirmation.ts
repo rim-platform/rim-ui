@@ -1,5 +1,6 @@
 import {
   CommandSensitivity,
+  type CommandArgumentType,
   type ConfirmationChallenge,
 } from "../../../core/graphql/generated/schema-types";
 import { graphqlErrorCode } from "../../../core/graphql/errors";
@@ -38,6 +39,8 @@ export interface ConfirmationSubject {
   description?: string;
   /** Arguments summary shown in the dialog. */
   args?: Record<string, unknown>;
+  /** The types the server declares for `args`, when known. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   /** A `RESTRICTED` command must have its verb typed before it can be confirmed. */
   sensitivity?: CommandSensitivity;
   /**
@@ -60,7 +63,8 @@ export type HumanConfirmationOutcome<R> =
   | { kind: "stale" }
   | { kind: "unconfirmed"; message: string };
 
-const SENSITIVITY_RANK: Record<CommandSensitivity, number> = {
+/** How strict each sensitivity is: a higher rank asks for more before a command runs. */
+export const SENSITIVITY_RANK: Readonly<Record<CommandSensitivity, number>> = {
   [CommandSensitivity.SAFE]: 0,
   [CommandSensitivity.SENSITIVE]: 1,
   [CommandSensitivity.MUTATING]: 2,
@@ -95,15 +99,36 @@ function isExpired(expiresAt: string): boolean {
   return Number.isFinite(expiry) && Date.now() >= expiry;
 }
 
+/** How {@link runWithHumanConfirmation} treats a held command. */
+export interface HumanConfirmationOptions {
+  /**
+   * The person already confirmed this run in the control's own dialog: a held command is sent
+   * again with the challenge without showing the confirmation dialog. Never for a `RESTRICTED`
+   * command, or one whose sensitivity is unknown, which always asks here.
+   */
+  preConfirmed?: boolean;
+}
+
+/** Whether a held command may skip the confirmation dialog because the caller confirmed it. */
+function skipsDialog(subject: ConfirmationSubject, options?: HumanConfirmationOptions): boolean {
+  return (
+    options?.preConfirmed === true &&
+    subject.sensitivity !== undefined &&
+    subject.sensitivity !== CommandSensitivity.RESTRICTED
+  );
+}
+
 /**
  * Runs a command a person started. When the server holds it with `CONFIRMATION_REQUIRED`,
- * shows the confirmation dialog and, on confirm, sends it again with the challenge as proof.
+ * shows the confirmation dialog and, on confirm, sends it again with the challenge as proof; a
+ * run the caller already confirmed skips the dialog as {@link HumanConfirmationOptions} says.
  * An expired confirmation is reported with a toast. Errors from `send` other than a stale
  * confirmation propagate.
  */
 export async function runWithHumanConfirmation<R extends ChallengeableResult>(
   send: (confirmation?: ConfirmationProof) => Promise<R>,
   subject: ConfirmationSubject,
+  options?: HumanConfirmationOptions,
 ): Promise<HumanConfirmationOutcome<R>> {
   const first = await send();
   if (first.status !== CONFIRMATION_REQUIRED) return { kind: "completed", result: first };
@@ -113,23 +138,26 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
     return { kind: "unconfirmed", message: first.message || "The command needs confirmation" };
   }
 
-  const decision = await useConfirmationModalStore.getState().open({
-    initiator: "user",
-    commandId: subject.commandId,
-    toolName: subject.title,
-    description: subject.description,
-    args: subject.args ?? {},
-    sensitivity: subject.sensitivity,
-    verb: subject.verb,
-    dangerous: subject.dangerous,
-    token: challenge.token,
-    argsHash: challenge.argsHash,
-    expiresAt: challenge.expiresAt,
-    serverMessage: first.message,
-  });
+  const decision = skipsDialog(subject, options)
+    ? { approved: true }
+    : await useConfirmationModalStore.getState().open({
+        initiator: "user",
+        commandId: subject.commandId,
+        toolName: subject.title,
+        description: subject.description,
+        args: subject.args ?? {},
+        argumentTypes: subject.argumentTypes,
+        sensitivity: subject.sensitivity,
+        verb: subject.verb,
+        dangerous: subject.dangerous,
+        token: challenge.token,
+        argsHash: challenge.argsHash,
+        expiresAt: challenge.expiresAt,
+        serverMessage: first.message,
+      });
   if (!decision.approved) {
     if (!isExpired(challenge.expiresAt)) return { kind: "cancelled" };
-    toast.error(CONFIRMATION_EXPIRED_MESSAGE);
+    toast.info(CONFIRMATION_EXPIRED_MESSAGE);
     return { kind: "stale" };
   }
 
@@ -140,7 +168,7 @@ export async function runWithHumanConfirmation<R extends ChallengeableResult>(
     });
   } catch (err) {
     if (graphqlErrorCode(err) !== CONFIRMATION_STALE) throw err;
-    toast.error(CONFIRMATION_EXPIRED_MESSAGE);
+    toast.info(CONFIRMATION_EXPIRED_MESSAGE);
     return { kind: "stale" };
   }
   if (confirmed.status === CONFIRMATION_REQUIRED) {

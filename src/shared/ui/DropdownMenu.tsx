@@ -65,6 +65,11 @@ interface DropdownMenuProps {
   closeOnSelect?: boolean;
   /** The layer the menu draws on; a context menu passes `Z.POPOVER` to draw above dialogs. */
   zIndex?: number;
+  /**
+   * Whether the menu fits a long list in the viewport: its height is capped there, its rows
+   * scroll, and the arrow keys bring the focused row into view.
+   */
+  scroll?: boolean;
 }
 
 export type { DropdownMenuItem, DropdownMenuProps };
@@ -117,6 +122,8 @@ interface MenuPanelProps {
   onBack?: () => void;
   /** Whether this is the top level, which shows the header or a note when there are no items. */
   root: boolean;
+  /** Caps the panel's height at the viewport's and scrolls its rows. */
+  scroll?: boolean;
   /** The layer of the top-level panel; a submenu sits inside it. */
   zIndex?: number;
 }
@@ -135,6 +142,7 @@ function MenuPanel({
   onBack,
   root,
   zIndex = Z.DROPDOWN,
+  scroll = false,
 }: MenuPanelProps) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [submenu, setSubmenu] = useState<OpenSubmenu | null>(null);
@@ -148,6 +156,10 @@ function MenuPanel({
   useEffect(() => {
     if (autoFocus) panelRef.current?.focus();
   }, [autoFocus, panelRef]);
+
+  useEffect(() => {
+    if (scroll) itemRefs.current[focusedIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [scroll, focusedIndex]);
 
   const openSubmenu = useCallback((index: number, focus: boolean) => {
     const rect = itemRefs.current[index]?.getBoundingClientRect();
@@ -240,7 +252,10 @@ function MenuPanel({
       tabIndex={-1}
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => e.preventDefault()}
-      className="fixed min-w-[180px] rounded-lg border border-rim-line bg-rim-panel py-1 shadow-xl outline-none"
+      className={cn(
+        "fixed min-w-[180px] rounded-lg border border-rim-line bg-rim-panel py-1 shadow-xl outline-none",
+        scroll && "max-h-[calc(100vh-16px)] overflow-y-auto",
+      )}
       style={{ top: position.y, left: position.x, zIndex }}
     >
       {root && header}
@@ -353,6 +368,7 @@ export function DropdownMenu({
   anchorRef,
   closeOnSelect = false,
   zIndex,
+  scroll,
 }: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -408,6 +424,7 @@ export function DropdownMenu({
       onClose={onClose}
       root
       zIndex={zIndex}
+      scroll={scroll}
     />,
     document.body,
   );

@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { queryClient } from "../../../core/query/queryClient";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { noteTimedOutError } from "../../workspaces/state/useTimeoutStore";
 import type {
@@ -13,6 +14,7 @@ import type {
   CommandResult,
 } from "../types";
 import type { ConfirmationProof } from "../runtime/humanConfirmation";
+import type { CommandInitiator } from "../../../core/graphql/generated/schema-types";
 
 const CommandsDocument = gql`
   query Commands($surface: CommandSurface, $commandContext: CommandContextInput) {
@@ -32,8 +34,12 @@ const CommandsDocument = gql`
       sensitivity
       arguments {
         name
+        title
+        description
         argumentType
         required
+        defaultValue
+        allowedValues
       }
     }
   }
@@ -63,8 +69,23 @@ const ExecuteCommandDocument = gql`
 `;
 
 /**
- * The command registry for one surface, fetched with the active workspace as context and
- * cached per workspace.
+ * The commands the server that hosts the context's workspace lists on `surface` in
+ * `commandContext`, fetched now, bypassing the cache.
+ */
+export async function fetchCommandList(
+  surface: CommandSurface,
+  commandContext?: CommandContextInput,
+): Promise<CommandDefinition[]> {
+  const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
+    CommandsDocument,
+    routedToWorkspace({ surface, commandContext }, commandContext?.workspaceId),
+  );
+  return res.commands;
+}
+
+/**
+ * The command registry for one surface, fetched with the active workspace as context from the
+ * server that hosts it, and cached per workspace.
  */
 export function useCommands(surface?: CommandSurface, commandContext?: CommandContextInput) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -75,41 +96,91 @@ export function useCommands(surface?: CommandSurface, commandContext?: CommandCo
     gcTime: Infinity,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(CommandsDocument, {
-        surface: surface ?? "PALETTE",
-        commandContext: workspaceId ? { ...commandContext, workspaceId } : commandContext,
-      });
+      const res = await graphqlClient.request<{ commands: CommandDefinition[] }>(
+        CommandsDocument,
+        routedToWorkspace(
+          {
+            surface: surface ?? "PALETTE",
+            commandContext: workspaceId ? { ...commandContext, workspaceId } : commandContext,
+          },
+          workspaceId,
+        ),
+      );
       return res.commands;
     },
   });
 }
 
-export function useExecuteCommandMutation() {
-  return useMutation({
-    mutationFn: (input: {
-      commandId: string;
-      args?: Record<string, unknown>;
-      commandContext?: CommandContextInput;
-      isPipe?: boolean;
-      confirmation?: ConfirmationProof;
-    }) =>
-      graphqlClient.request<{ executeCommand: CommandResult }>(ExecuteCommandDocument, {
+/** One command run, as {@link executeCommandAt} sends it. */
+export interface ExecuteCommandRequest {
+  commandId: string;
+  args?: Record<string, unknown>;
+  commandContext?: CommandContextInput;
+  isPipe?: boolean;
+  confirmation?: ConfirmationProof;
+  /** Who started it; the server takes a person's palette run when omitted. */
+  initiator?: CommandInitiator;
+}
+
+/**
+ * Runs a command on the server that hosts the workspace of its `commandContext`; one without a
+ * workspace runs on the connected server.
+ */
+export function executeCommandAt(
+  input: ExecuteCommandRequest,
+): Promise<{ executeCommand: CommandResult }> {
+  return graphqlClient.request<{ executeCommand: CommandResult }>(
+    ExecuteCommandDocument,
+    routedToWorkspace(
+      {
         input: {
           commandId: input.commandId,
           args: input.args,
           commandContext: input.commandContext,
           isPipe: input.isPipe,
           ...(input.confirmation && { confirmation: input.confirmation }),
+          ...(input.initiator && { initiator: input.initiator }),
         },
-      }),
-    // A `TIMED_OUT` answer (a mutating command while timed out) switches the composer to its
-    // timed-out banner, whichever surface ran the command.
-    onError: (err, input) => {
+      },
+      input.commandContext?.workspaceId,
+    ),
+  );
+}
+
+/**
+ * The way a person's run of a command is sent: {@link executeCommandAt} with `initiator`, which
+ * records a `TIMED_OUT` answer (a mutating command while timed out) so the composer switches to
+ * its timed-out banner, whichever surface ran the command.
+ *
+ * @param initiator - Who started the run; left out, the server takes a palette run, and a request
+ *   that names its own initiator keeps it.
+ * @returns A function that sends one run and rethrows its error.
+ */
+export function executeAsPerson(
+  initiator?: CommandInitiator,
+): (input: ExecuteCommandRequest) => Promise<{ executeCommand: CommandResult }> {
+  return async (input) => {
+    try {
+      return await executeCommandAt(
+        initiator && !input.initiator ? { ...input, initiator } : input,
+      );
+    } catch (err) {
       noteTimedOutError(
         input.commandContext?.workspaceId ?? useWorkspaceStore.getState().workspaceId,
         err,
       );
-    },
+      throw err;
+    }
+  };
+}
+
+/**
+ * Runs a command a person started, on the server that hosts the workspace of its
+ * `commandContext`; one without a workspace runs on the connected server.
+ */
+export function useExecuteCommandMutation() {
+  return useMutation({
+    mutationFn: (input: ExecuteCommandRequest) => executeAsPerson()(input),
   });
 }
 

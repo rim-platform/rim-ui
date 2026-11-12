@@ -19,6 +19,7 @@ import { useServerFeature } from "../../updater/hooks/useServerFeature";
 import { refreshServerMedia, useServerMediaUrl } from "../../../shared/media/serverMedia";
 import { cn } from "../../../shared/ui/cn";
 import { hourCycleOptions } from "../../../shared/utils/formatTime";
+import { firstLetter } from "../../../shared/utils/initials";
 
 /** The largest picture file taken; it is resized to a small PNG before the upload. */
 const MAX_PICTURE_FILE_BYTES = 10 * 1024 * 1024;
@@ -152,8 +153,7 @@ export function ProfileSettings() {
     return <p className="text-sm text-rim-text-muted">Loading profile...</p>;
   }
 
-  const initial =
-    user?.displayName?.charAt(0).toUpperCase() ?? user?.username?.charAt(0).toUpperCase() ?? "?";
+  const initial = firstLetter(user?.displayName ?? user?.username ?? "");
 
   return (
     <div className="space-y-6">
@@ -276,7 +276,7 @@ export function ProfileSettings() {
           onClick={handleSave}
           disabled={updateProfile.isPending || locked}
           className={cn(
-            "rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-rim-void transition hover:bg-rim-accent-strong disabled:opacity-50",
+            "rounded-lg bg-rim-text px-4 py-2 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50",
           )}
         >
           {updateProfile.isPending ? "Saving..." : "Save"}

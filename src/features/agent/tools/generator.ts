@@ -4,6 +4,7 @@ import {
   type CommandArgument,
   type CommandSensitivity,
 } from "../../../core/graphql/generated/schema-types";
+import { argumentTypesOf } from "../../commands/runtime/commandArguments";
 import type { AiToolDefinition } from "../providers/types";
 
 export interface AiToolRegistrationOptions {
@@ -12,6 +13,7 @@ export interface AiToolRegistrationOptions {
   sensitivity?: CommandSensitivity;
   nlDescription?: string;
   description?: string;
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
 }
 
 function jsonTypeForArg(t: CommandArgumentType): string {
@@ -103,5 +105,6 @@ export function buildAiToolRegistrationOptions(cmd: Command): AiToolRegistration
     // so the backend's description wins over the natural-language one.
     nlDescription: cmd.nlDescription ?? undefined,
     description: cmd.description,
+    argumentTypes: argumentTypesOf(cmd.arguments),
   };
 }

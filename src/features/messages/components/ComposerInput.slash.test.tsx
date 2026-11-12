@@ -6,6 +6,7 @@ import { serverInfoQueryClient } from "../../../test/serverInfo";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
   baseReadHandlers,
+  graphqlError,
   makeConversation,
   routeRequests,
 } from "../../conversations/__fixtures__/conversations";
@@ -17,11 +18,16 @@ vi.mock("../../../core/graphql/client", () => ({
     request: (...args: unknown[]) => requestMock(...args),
   },
 }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
+}));
 vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: () => {} }),
 }));
 
 import { Composer } from "./Composer";
+import { toast } from "../../../shared/toast";
 
 const commands = Array.from({ length: 10 }, (_, i) => ({
   id: `chat.cmd_${i}`,
@@ -91,5 +97,27 @@ describe("ComposerInput — / suggestions", () => {
     const options = screen.getAllByRole("option");
     expect(options.length).toBeGreaterThan(1);
     for (const option of options) expect(option).toHaveClass("text-left");
+  });
+
+  it("says a refused slash command was not done", async () => {
+    const spy = vi.spyOn(toast, "error");
+    await openSlashList();
+    routeRequests(requestMock, {
+      ...baseReadHandlers,
+      "query Conversation(": () => ({ conversation: makeConversation() }),
+      "query Commands": () => ({ commands }),
+      "mutation ExecuteCommand": () => {
+        throw graphqlError("FORBIDDEN", "Only moderators can do this");
+      },
+    });
+
+    fireEvent.click(screen.getByRole("option", { name: /Command 0/ }));
+
+    await vi.waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("Command 0: not done", {
+        card: "denied",
+        description: "Only moderators can do this",
+      }),
+    );
   });
 });

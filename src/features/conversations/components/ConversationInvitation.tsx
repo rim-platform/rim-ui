@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 
@@ -23,6 +23,7 @@ import {
   useDeclineConversationInviteMutation,
   useInvitation,
 } from "../api/useConversationInvite";
+import { useInvitationActionsStore } from "../state/useInvitationActionsStore";
 import type { ConversationSummary, ConversationSummaryPage } from "../types";
 import { directPeerId, isInvited } from "../utils";
 
@@ -115,6 +116,30 @@ export function ConversationInvitation({
     setError(null);
     decline.mutate(vars, { onError: (err) => fail(err, "Could not decline the invitation") });
   }
+
+  // The commands that answer the invitation run these, as the buttons below do.
+  const answerRef = useRef({ ready, join, refuse });
+  useEffect(() => {
+    answerRef.current = { ready, join, refuse };
+  });
+  const invitedTo = conversation.id;
+  useEffect(() => {
+    const actions = {
+      conversationId: invitedTo,
+      accept: () => {
+        if (!answerRef.current.ready) return false;
+        answerRef.current.join();
+        return true;
+      },
+      decline: () => answerRef.current.refuse(),
+    };
+    useInvitationActionsStore.getState().setActions(actions);
+    return () => {
+      if (useInvitationActionsStore.getState().actions === actions) {
+        useInvitationActionsStore.getState().setActions(null);
+      }
+    };
+  }, [invitedTo]);
 
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-6">

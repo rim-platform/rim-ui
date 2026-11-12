@@ -71,11 +71,11 @@ describe("createPaletteSearch", () => {
 
   it("orders titles alphabetically inside a category for an empty query", () => {
     const search = createPaletteSearch([
-      item("Create Channel", "Create a channel", "Chat"),
-      item("Toggle Zen Mode", "Hide everything but the timeline", "Workspace"),
-      item("New Message", "Start a conversation", "Chat"),
-      item("Cycle Layout Preset", "Switch to the next saved layout", "Workspace"),
-      item("Get Recent Messages", "Read the latest messages", "Chat"),
+      item("Create Channel", "Create a channel", "Messages"),
+      item("Toggle Zen Mode", "Hide everything but the timeline", "View"),
+      item("New Message", "Start a conversation", "Messages"),
+      item("Cycle Layout Preset", "Switch to the next saved layout", "View"),
+      item("Get Recent Messages", "Read the latest messages", "Messages"),
     ]);
 
     expect(titles(search(""))).toEqual([
@@ -87,21 +87,27 @@ describe("createPaletteSearch", () => {
     ]);
   });
 
-  it("groups everything alphabetically by category for an empty query", () => {
+  it("groups by the built-in category order, then other categories alphabetically, for an empty query", () => {
     const search = createPaletteSearch([
       item("Search Messages", "Search workspace messages", "Chat"),
       item("Invite Member", "Invite someone", "Admin"),
-      item("Toggle Zen mode", "Hide everything but the timeline", "Workspace"),
+      item("Toggle Zen mode", "Hide everything but the timeline", "View"),
+      item("Refresh Pods", "Read the pods again", "Kubernetes Pods"),
+      item("Rename Workspace…", "Give the open workspace a new name", "Workspace"),
+      item("Go Back", "Open the place you were before this one", "Navigation"),
       item("Member List", "Show who is here", "Admin"),
     ]);
 
     for (const query of ["", "  "]) {
       const results = search(query);
       expect(titles(results)).toEqual([
+        "Go Back",
+        "Rename Workspace…",
+        "Toggle Zen mode",
         "Invite Member",
         "Member List",
         "Search Messages",
-        "Toggle Zen mode",
+        "Refresh Pods",
       ]);
       expect(
         results.every((result) => result.titleRanges === null && result.descriptionRanges === null),

@@ -1,7 +1,9 @@
-import { useState, useEffect, useId, Suspense } from "react";
+import { useCanManageBots } from "../../bots/availability";
+import { useState, useEffect, useId, useRef, Suspense } from "react";
 import { X, Loader2 } from "lucide-react";
 
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { KeybindSettings } from "../../commands/components/KeybindSettings";
 import { KeyboardSettings } from "../../commands/components/KeyboardSettings";
@@ -9,6 +11,8 @@ import { UserCommandSettings } from "../../commands/components/UserCommandSettin
 import { NotificationSettings } from "../../notifications/components/NotificationSettings";
 import { MessageDisplaySettings } from "../../messages/components/MessageDisplaySettings";
 import { MacroSettings } from "../../macros/components/MacroSettings";
+import { WorkspaceMacroSettings } from "../../macros/components/WorkspaceMacroSettings";
+import { useAccountMacrosOn } from "../../macros/api/useAccountMacros";
 import { PipelineSettings } from "../../pipelines/components/PipelineSettings";
 import { SurfaceErrorBoundary } from "../../../shared/ui/SurfaceErrorBoundary";
 import { lazyWithRetry } from "../../../shared/lazy/importWithRetry";
@@ -36,6 +40,15 @@ import { joinRequestBadge, useJoinRequestCount } from "../../workspaces/api/publ
 import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLink";
 import { desktopShellAvailable } from "../../desktop-shell/availability";
 import { DesktopSettings } from "../../desktop-shell/components/DesktopSettings";
+import {
+  SETTINGS_GROUPS,
+  SETTINGS_TABS,
+  visibleSettingsTabs,
+  type SettingsTab,
+} from "../settingsTabs";
+
+export { SETTINGS_TABS, visibleSettingsTabs };
+export type { SettingsTab, SettingsTabAccess } from "../settingsTabs";
 
 // Lazy-load heavier / rarely-used settings panels
 const PluginSettingsPage = lazyWithRetry(() =>
@@ -53,8 +66,16 @@ const AgentSettingsPanel = lazyWithRetry(() =>
     default: m.AgentSettingsPanel,
   })),
 );
+const AgentsSettings = lazyWithRetry(() =>
+  import("../../agents/components/AgentsSettings").then((m) => ({
+    default: m.AgentsSettings,
+  })),
+);
 const EmojiManagement = lazyWithRetry(() =>
   import("../../emoji/components/EmojiManagement").then((m) => ({ default: m.EmojiManagement })),
+);
+const BotsSettings = lazyWithRetry(() =>
+  import("../../bots/components/BotsSettings").then((m) => ({ default: m.BotsSettings })),
 );
 const WorkspaceStateSettings = lazyWithRetry(() =>
   import("../../workspace-state/components/WorkspaceStateSettings").then((m) => ({
@@ -226,93 +247,19 @@ function AboutRim() {
   );
 }
 
-type SettingsTab =
-  | "profile"
-  | "keybinds"
-  | "keyboard"
-  | "commands"
-  | "macros"
-  | "pipelines"
-  | "plugins"
-  | "plugin-ai"
-  | "emoji"
-  | "state"
-  | "agent"
-  | "messages"
-  | "direct-messages"
-  | "notifications"
-  | "history"
-  | "workspace"
-  | "security"
-  | "desktop"
-  | "contacts"
-  | "account"
-  | "workspace-moderation"
-  | "moderation"
-  | "about";
-
-/** Settings of the AI agent, which runs in the desktop app only. */
-const AGENT_TABS: readonly SettingsTab[] = ["agent", "plugin-ai"];
-
-/** Tabs that edit what only a workspace has: hidden in a direct space. */
-const WORKSPACE_ONLY_TABS: readonly SettingsTab[] = [
-  "pipelines",
-  "state",
-  "emoji",
-  "workspace",
-  "workspace-moderation",
-];
-
-/** Sections of the settings navigation, in display order. */
-const groups = [
-  "You",
-  "Messaging",
-  "Programmable",
-  "Extensions",
-  "Workspace",
-  "Instance",
-  "About",
-] as const;
-
-type SettingsGroup = (typeof groups)[number];
-
-const tabs: { key: SettingsTab; label: string; group: SettingsGroup }[] = [
-  { key: "profile", label: "Profile", group: "You" },
-  { key: "account", label: "Account", group: "You" },
-  { key: "security", label: "Security", group: "You" },
-  { key: "desktop", label: "Desktop", group: "You" },
-  { key: "contacts", label: "Contacts", group: "You" },
-  { key: "messages", label: "Messages", group: "Messaging" },
-  { key: "direct-messages", label: "Direct messages", group: "Messaging" },
-  { key: "notifications", label: "Notifications", group: "Messaging" },
-  { key: "history", label: "History", group: "Messaging" },
-  { key: "keybinds", label: "Keybinds", group: "Programmable" },
-  { key: "keyboard", label: "Keyboard", group: "Programmable" },
-  { key: "commands", label: "Commands", group: "Programmable" },
-  { key: "macros", label: "Macros", group: "Programmable" },
-  { key: "pipelines", label: "Pipelines", group: "Programmable" },
-  { key: "plugins", label: "Plugins", group: "Extensions" },
-  { key: "plugin-ai", label: "Plugin AI", group: "Extensions" },
-  { key: "state", label: "State", group: "Extensions" },
-  { key: "emoji", label: "Emoji", group: "Extensions" },
-  { key: "agent", label: "AI Agent", group: "Extensions" },
-  { key: "workspace", label: "Workspace", group: "Workspace" },
-  { key: "workspace-moderation", label: "Moderation", group: "Workspace" },
-  { key: "moderation", label: "Instance moderation", group: "Instance" },
-  { key: "about", label: "About", group: "About" },
-];
-
 export function SettingsPage() {
   const setMainSurface = useShellStore((s) => s.setMainSurface);
   const mainSurface = useShellStore((s) => s.mainSurface);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
+  // Where the home server keeps the person's macros, Macros edits them and Commands is gone.
+  const accountMacros = useAccountMacrosOn();
 
   // Resolve the requested tab from the surface, defaulting to "profile".
   // The requested tab must exist in the tab list, so a
   // stale or typo'd value doesn't silently show an empty panel.
   const resolveTab = (surface: typeof mainSurface): SettingsTab => {
     if (surface.kind === "settings" && surface.tab) {
-      const found = tabs.find((t) => t.key === surface.tab);
+      const found = SETTINGS_TABS.find((t) => t.key === surface.tab);
       if (found) return found.key;
     }
     return "profile";
@@ -327,6 +274,8 @@ export function SettingsPage() {
   // Emoji management needs custom emoji on the server.
   const customEmoji = useServerFeature("custom_emoji").enabled;
   const inDirectSpace = useIsDirectSpace(workspaceId);
+  // Bots are managed by moderators, on a server that lists the bots feature as enabled.
+  const botsManageable = useCanManageBots(workspaceId);
   // Instance moderation is listed for instance operators only. Opened directly by anyone else,
   // the page says it is for operators instead of falling back to Profile.
   const { isOperator } = useIsInstanceOperator();
@@ -334,25 +283,31 @@ export function SettingsPage() {
   const canHaveLink = useCanHavePublicLink(workspaceId);
   const { data: requestCount } = useJoinRequestCount(workspaceId, canModerate && canHaveLink);
   const moderationBadge = canModerate && canHaveLink ? joinRequestBadge(requestCount) : null;
-  const visibleTabs = tabs.filter(
-    (tab) =>
-      (!["workspace", "workspace-moderation"].includes(tab.key) || canModerate) &&
-      (tab.key !== "moderation" || isOperator) &&
-      (tab.key !== "emoji" || customEmoji) &&
-      (!AGENT_TABS.includes(tab.key) || agentAvailable()) &&
-      (tab.key !== "desktop" || desktopShellAvailable()) &&
-      !(inDirectSpace && WORKSPACE_ONLY_TABS.includes(tab.key)),
-  );
+  const visibleTabs = visibleSettingsTabs({
+    canModerate,
+    isOperator,
+    customEmoji,
+    botsManageable,
+    agentAvailable: agentAvailable(),
+    desktopShellAvailable: desktopShellAvailable(),
+    inDirectSpace,
+    accountMacros,
+  });
+  const narrow = useShellWidth() === "narrow";
+  const requestedTab: SettingsTab =
+    activeTab === "commands" && accountMacros ? "macros" : activeTab;
   const shownTab: SettingsTab =
-    activeTab === "moderation" || visibleTabs.some((tab) => tab.key === activeTab)
-      ? activeTab
+    requestedTab === "moderation" || visibleTabs.some((tab) => tab.key === requestedTab)
+      ? requestedTab
       : "profile";
-  const sectionLabel = tabs.find((tab) => tab.key === shownTab)?.label ?? "Settings";
+  const sectionLabel = SETTINGS_TABS.find((tab) => tab.key === shownTab)?.label ?? "Settings";
   // Groups with no visible tab are left out, label included.
-  const visibleGroups = groups
-    .map((group) => ({ group, items: visibleTabs.filter((tab) => tab.group === group) }))
-    .filter(({ items }) => items.length > 0);
+  const visibleGroups = SETTINGS_GROUPS.map((group) => ({
+    group,
+    items: visibleTabs.filter((tab) => tab.group === group),
+  })).filter(({ items }) => items.length > 0);
   const groupIdPrefix = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // When the caller navigates to settings again (e.g. "Manage plugins" while
   // settings is already open), the surface updates but the component stays
@@ -360,15 +315,25 @@ export function SettingsPage() {
   useEffect(() => {
     if (mainSurface.kind === "settings") {
       setActiveTab(resolveTab(mainSurface));
+      // Tab starts on the page, not wherever focus was before the tab was opened.
+      const panel = rootRef.current?.closest<HTMLElement>('[data-panel="mainSurface"]');
+      if (panel && !panel.contains(document.activeElement)) panel.focus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainSurface]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={rootRef} className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-10 items-center justify-between border-b border-rim-line px-8">
-        <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
+      <div
+        className={cn(
+          "flex h-10 items-center justify-between border-b border-rim-line",
+          narrow ? "px-4" : "px-8",
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold text-rim-text">Settings</h1>
+        </div>
         <button
           type="button"
           onClick={() => setMainSurface({ kind: "conversation" })}
@@ -380,65 +345,90 @@ export function SettingsPage() {
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Section navigation */}
-        <nav
-          aria-label="Settings sections"
-          onKeyDown={handleVerticalStripKeys}
-          className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
-        >
-          {visibleGroups.map(({ group, items }) => {
-            const labelId = `${groupIdPrefix}-${group}`;
-            return (
-              <div key={group} role="group" aria-labelledby={labelId}>
-                <p
-                  id={labelId}
-                  className="px-3 pt-4 pb-1 text-[11px] uppercase tracking-wide text-rim-text-faint"
-                >
-                  {group}
-                </p>
-                {items.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    aria-current={shownTab === tab.key ? "page" : undefined}
-                    className={cn(
-                      "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
-                      shownTab === tab.key
-                        ? "bg-rim-panel-soft text-rim-text"
-                        : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
-                    )}
+      <div className={cn("flex min-h-0 flex-1", narrow && "flex-col")}>
+        {/* Section navigation: a list beside the content, or one menu above it in a narrow window */}
+        {narrow ? (
+          <div className="shrink-0 border-b border-rim-line bg-rim-void px-3 py-2">
+            <select
+              aria-label="Settings sections"
+              value={shownTab}
+              onChange={(event) => setActiveTab(event.target.value as SettingsTab)}
+              className="w-full rounded-md border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text"
+            >
+              {visibleGroups.map(({ group, items }) => (
+                <optgroup key={group} label={group}>
+                  {items.map((tab) => (
+                    <option key={tab.key} value={tab.key}>
+                      {tab.label}
+                      {tab.key === "workspace-moderation" && moderationBadge
+                        ? ` (${moderationBadge} join requests)`
+                        : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <nav
+            aria-label="Settings sections"
+            onKeyDown={handleVerticalStripKeys}
+            className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
+          >
+            {visibleGroups.map(({ group, items }) => {
+              const labelId = `${groupIdPrefix}-${group}`;
+              return (
+                <div key={group} role="group" aria-labelledby={labelId}>
+                  <p
+                    id={labelId}
+                    className="px-3 pt-4 pb-1 text-[11px] uppercase tracking-wide text-rim-text-faint"
                   >
-                    {tab.label}
-                    {tab.key === "workspace-moderation" && moderationBadge && (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className="ml-2 rounded-full bg-rim-accent px-1.5 text-[10px] font-semibold text-rim-void"
-                        >
-                          {moderationBadge}
-                        </span>
-                        <span className="sr-only">, {moderationBadge} join requests</span>
-                      </>
-                    )}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+                    {group}
+                  </p>
+                  {items.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveTab(tab.key)}
+                      aria-current={shownTab === tab.key ? "page" : undefined}
+                      className={cn(
+                        "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                        shownTab === tab.key
+                          ? "bg-rim-panel-soft text-rim-text"
+                          : "text-rim-text-muted hover:bg-white/5 hover:text-rim-text",
+                      )}
+                    >
+                      {tab.label}
+                      {tab.key === "workspace-moderation" && moderationBadge && (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="ml-2 rounded-full bg-rim-accent px-1.5 text-[10px] font-semibold text-rim-void"
+                          >
+                            {moderationBadge}
+                          </span>
+                          <span className="sr-only">, {moderationBadge} join requests</span>
+                        </>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
+        )}
 
         {/* Tab content */}
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-8 py-6">
+          <div className={cn("mx-auto max-w-3xl", narrow ? "px-4 py-4" : "px-8 py-6")}>
             <SurfaceErrorBoundary surface={sectionLabel} resetKeys={[shownTab]}>
               <Suspense fallback={<SettingsLoadingSpinner />}>
                 {shownTab === "profile" && <ProfileSettings />}
                 {shownTab === "keybinds" && <KeybindSettings />}
                 {shownTab === "keyboard" && <KeyboardSettings />}
                 {shownTab === "commands" && <UserCommandSettings />}
-                {shownTab === "macros" && <MacroSettings />}
+                {shownTab === "macros" &&
+                  (accountMacros ? <MacroSettings /> : <WorkspaceMacroSettings />)}
                 {shownTab === "pipelines" && <PipelineSettings />}
                 {shownTab === "plugins" && <PluginSettingsPage />}
                 {shownTab === "plugin-ai" && <PluginAiConsentPanel />}
@@ -446,6 +436,7 @@ export function SettingsPage() {
                 {shownTab === "state" && (
                   <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
                 )}
+                {shownTab === "agents" && <AgentsSettings />}
                 {shownTab === "agent" && <AgentSettingsPanel />}
                 {shownTab === "messages" && <MessageDisplaySettings />}
                 {shownTab === "direct-messages" && <DmSettings />}
@@ -470,6 +461,7 @@ export function SettingsPage() {
                 {shownTab === "workspace-moderation" && workspaceId && (
                   <ModerationSettings serverId={workspaceId} />
                 )}
+                {shownTab === "bots" && workspaceId && <BotsSettings serverId={workspaceId} />}
                 {shownTab === "moderation" && (
                   <InstanceModerationSettings
                     onNavigateToWorkspaceModeration={
@@ -481,10 +473,7 @@ export function SettingsPage() {
                 )}
 
                 {shownTab === "account" && (
-                  <AccountSettings
-                    onNavigateToProfile={() => setActiveTab("profile")}
-                    onNavigateToWorkspace={() => setActiveTab("workspace")}
-                  />
+                  <AccountSettings onNavigateToWorkspace={() => setActiveTab("workspace")} />
                 )}
                 {shownTab === "about" && <AboutRim />}
               </Suspense>

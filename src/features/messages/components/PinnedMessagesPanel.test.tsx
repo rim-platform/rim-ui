@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
@@ -22,7 +22,17 @@ vi.mock("../../../shared/toast", () => ({
 }));
 
 import { toast } from "../../../shared/toast";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
+import { queryClient } from "../../../core/query/queryClient";
+import {
+  backendCommand,
+  COMMAND_OK,
+  paletteInput,
+  serveHostCommands,
+} from "../../../test/clickCommands";
 import { PinnedMessagesPanel } from "./PinnedMessagesPanel";
+
+const UNPIN = backendCommand("chat.unpin_message");
 
 function pinned(overrides: Partial<MessageItem> = {}): MessageItem {
   return {
@@ -51,6 +61,7 @@ function serve() {
     ...baseReadHandlers,
     "query PinnedMessages": () => ({ pinnedMessages: [pinned()] }),
     "mutation UnpinMessage": () => ({ unpinMessage: true }),
+    "mutation ExecuteCommand": () => ({ executeCommand: COMMAND_OK }),
   });
 }
 
@@ -73,6 +84,10 @@ describe("PinnedMessagesPanel — context menu", () => {
     requestMock.mockReset();
     vi.mocked(toast.info).mockReset();
     useShellStore.getState().reset();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
   });
 
   it("offers Jump to message, Copy text and Unpin message", async () => {
@@ -123,8 +138,24 @@ describe("PinnedMessagesPanel — context menu", () => {
     expect(writeText).toHaveBeenCalledWith("the release is on Friday");
   });
 
-  it("unpins the message", async () => {
+  it("unpins the message with the unpin command, as a context-menu run on that message", async () => {
     serve();
+    serveHostCommands("ws-1", [UNPIN]);
+    renderPanel();
+    fireEvent.contextMenu(await screen.findByText("the release is on Friday"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unpin message" }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    const context = { workspaceId: "ws-1", conversationId: "c-1", selectedMessageId: "m-1" };
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0].input).toEqual({
+      ...(await paletteInput(UNPIN, context)),
+      initiator: CommandInitiator.CONTEXT_MENU,
+    });
+    expect(callsTo(requestMock, "mutation UnpinMessage")).toEqual([]);
+  });
+
+  it("unpins with the unpin mutation on a server that does not list the command", async () => {
+    serve();
+    serveHostCommands("ws-1", []);
     renderPanel();
     fireEvent.contextMenu(await screen.findByText("the release is on Friday"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Unpin message" }));
@@ -133,5 +164,13 @@ describe("PinnedMessagesPanel — context menu", () => {
         { input: { serverId: "ws-1", conversationId: "c-1", messageId: "m-1" } },
       ]),
     );
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+
+  it("names its close button", async () => {
+    serve();
+    renderPanel();
+    await screen.findByText("the release is on Friday");
+    expect(screen.getByRole("button", { name: "Close pinned messages" })).toBeInTheDocument();
   });
 });

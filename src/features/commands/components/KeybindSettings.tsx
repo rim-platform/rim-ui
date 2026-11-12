@@ -10,18 +10,20 @@ import {
   ToggleRight,
 } from "lucide-react";
 
-import { errorSentence } from "../../../core/graphql/errors";
+import { errorSentence, graphqlErrorCode, VALIDATION } from "../../../core/graphql/errors";
 import { useResolvedKeybinds } from "../api/useKeybinds";
 import {
   useCreateKeybindMutation,
   useUpdateKeybindMutation,
   useDeleteKeybindMutation,
 } from "../api/useKeybindSettings";
-import { useCommands } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
+import { useKeybindableCommands } from "../api/useKeybindableCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { usePluginSuggestedKeybinds } from "../../plugins/api/usePluginKeybinds";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import {
+  appCommandKeybindsOnServer,
   bindsOnDevice,
   isDeviceKeybind,
   useDeviceKeybindStore,
@@ -32,61 +34,75 @@ import { Dialog } from "../../../shared/ui/Dialog";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { KEYBIND_CONTEXTS as CONTEXTS, KEYBIND_CONTEXT_LABELS } from "../profiles/keybindProfile";
-import { listedKeybinds, slotHolders, unboundCommands } from "../runtime/effectiveKeybinds";
+import {
+  listedKeybinds,
+  slotHolders,
+  unboundCommands,
+  useHomeAppKeybinds,
+} from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
-import { BUILT_IN_COMMAND_TITLES, LOCAL_COMMANDS, withClientLabel } from "../runtime/localCommands";
-import type { KeybindContext, ResolvedKeybind } from "../types";
+import { compareCommandCategories } from "../runtime/commandCategories";
+import {
+  BUILT_IN_COMMAND_TITLES,
+  isLocalCommand,
+  LOCAL_COMMANDS,
+  withClientLabel,
+} from "../runtime/localCommands";
+import { NEEDS_ARGUMENTS_NOTE, takesPresetFields } from "../runtime/commandRunnable";
+import {
+  presetArgsOf,
+  presetFields,
+  presetFieldValues,
+  presetWorkspace,
+  readFields,
+  type FieldValue,
+  type FieldValues,
+} from "../runtime/argumentValues";
+import type { CommandDefinition, KeybindContext, ResolvedKeybind } from "../types";
+import { PresetArgumentsSection } from "./ArgumentFields";
 
-type CategoryKey = "navigation" | "chat" | "panels" | "agent" | "plugins" | "other";
+/** The group of a keybind whose command is not known here, listed after every category. */
+const UNKNOWN_CATEGORY = "Other";
 
-interface Category {
-  key: CategoryKey;
-  label: string;
-  match: (commandId: string) => boolean;
+/**
+ * Orders the group names of the keybind list like the palette's categories, with
+ * {@link UNKNOWN_CATEGORY} last.
+ */
+function compareGroups(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a === UNKNOWN_CATEGORY) return 1;
+  if (b === UNKNOWN_CATEGORY) return -1;
+  return compareCommandCategories(a, b);
 }
 
-const CATEGORIES: Category[] = [
-  {
-    key: "navigation",
-    label: "Navigation",
-    match: (id) =>
-      id.startsWith("workspace.open_") ||
-      id.startsWith("workspace.navigate_") ||
-      id.startsWith("workspace.switch_") ||
-      id.startsWith("workspace.previous_") ||
-      id.startsWith("workspace.next_") ||
-      id.startsWith("workspace.cycle_"),
-  },
-  {
-    key: "chat",
-    label: "Chat",
-    match: (id) => id.startsWith("chat."),
-  },
-  {
-    key: "panels",
-    label: "Panels",
-    match: (id) =>
-      id.startsWith("workspace.toggle_") ||
-      id.startsWith("workspace.close_") ||
-      id.startsWith("workspace.focus_") ||
-      id.startsWith("workspace.reopen_"),
-  },
-  {
-    key: "agent",
-    label: "Agent",
-    match: (id) => id === "workspace.open_agent",
-  },
-  {
-    key: "plugins",
-    label: "Plugins",
-    match: (id) => id.startsWith("plugin."),
-  },
-  {
-    key: "other",
-    label: "Other",
-    match: () => true, // fallback
-  },
-];
+/** What an empty required argument of a keybind does. */
+const ASKED_ON_PRESS = "asked for when the key is pressed";
+
+/** The fields a keybind's saved arguments show in, with what each holds and why it cannot save. */
+interface PresetDraft {
+  /** The values, or `null` when the saved arguments do not fit the fields. */
+  values: FieldValues | null;
+  problems: Record<string, string>;
+}
+
+const NO_PRESET: PresetDraft = { values: {}, problems: {} };
+
+/** The draft that shows `presetArgs` of a keybind to `command`. */
+function presetDraftOf(command: CommandDefinition | undefined, presetArgs: unknown): PresetDraft {
+  return command ? { values: presetFieldValues(command, presetArgs), problems: {} } : NO_PRESET;
+}
+
+/** `draft` with the field `name` holding `value`, and its problem cleared. */
+function withFieldValue(draft: PresetDraft, name: string, value: FieldValue): PresetDraft {
+  return withFieldValues(draft, { [name]: value });
+}
+
+/** `draft` with several fields set at once, their problems cleared. */
+function withFieldValues(draft: PresetDraft, changes: Readonly<FieldValues>): PresetDraft {
+  const problems = { ...draft.problems };
+  for (const name of Object.keys(changes)) delete problems[name];
+  return { values: { ...(draft.values ?? {}), ...changes }, problems };
+}
 
 /** Keys re-recorded on a listed binding that wait for the user to confirm taking them over. */
 interface PendingRecord {
@@ -137,18 +153,18 @@ function ConflictNote({
   );
 }
 
-function categorizeKeybind(commandId: string): CategoryKey {
-  for (const cat of CATEGORIES) {
-    if (cat.key !== "other" && cat.match(commandId)) return cat.key;
-  }
-  return "other";
+/** Whether `err` is a server refusing the keybind to one of this app's own commands. */
+function refusedAppKeybind(commandId: string, err: unknown): boolean {
+  return isLocalCommand(commandId) && graphqlErrorCode(err) === VALIDATION;
 }
 
 export function KeybindSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
 
   const { data: serverKeybinds, isLoading } = useResolvedKeybinds(workspaceId ?? undefined);
-  // Keybinds to plugin commands are kept on this device (the server knows no plugin commands).
+  // In a workspace another server hosts, the app command keybinds the connected server keeps.
+  const homeAppKeybinds = useHomeAppKeybinds(workspaceId);
+  // Keybinds kept on this device: plugin commands, and app commands where the server keeps none.
   const deviceKeybinds = useDeviceKeybindStore((s) => s.keybinds);
   const addDeviceKeybind = useDeviceKeybindStore((s) => s.add);
   const updateDeviceKeybind = useDeviceKeybindStore((s) => s.update);
@@ -156,17 +172,17 @@ export function KeybindSettings() {
   const profile = useActiveKeybindProfile();
   const keybinds = useMemo(
     () =>
-      listedKeybinds(deviceKeybinds, serverKeybinds, profile).filter((kb) =>
+      listedKeybinds(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((kb) =>
         commandOfferedHere(kb.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   // PALETTE surface filters out commands with `visible_in_palette: false` (e.g.
   // `workspace.open_command_palette`), which causes their titles to fall back to
   // raw IDs in the keybind list. KEYBIND_PICKER surface returns all commands
   // that are keybind-capable regardless of palette visibility, so it is used
   // here exclusively to build the title lookup map.
-  const { data: commands } = useCommands("KEYBIND_PICKER");
+  const { data: commands } = useCommandsWithMacros("KEYBIND_PICKER");
   const pluginCommands = usePluginCommands();
   const pluginSuggestions = usePluginSuggestedKeybinds();
   const createMutation = useCreateKeybindMutation();
@@ -178,7 +194,7 @@ export function KeybindSettings() {
   const [newCommandId, setNewCommandId] = useState("");
   const [newContext, setNewContext] = useState<KeybindContext>("GLOBAL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [collapsedSections, setCollapsedSections] = useState<Set<CategoryKey>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [capturingKeybindId, setCapturingKeybindId] = useState<string | null>(null);
   const [editingKeybindId, setEditingKeybindId] = useState<string | null>(null);
   const [editCommandId, setEditCommandId] = useState("");
@@ -188,27 +204,60 @@ export function KeybindSettings() {
   const [reassignError, setReassignError] = useState<string | null>(null);
   // The keys the add form held when recording started, which Escape puts back.
   const recordStartRef = useRef("");
+  const [newPreset, setNewPreset] = useState<PresetDraft>(NO_PRESET);
+  const [editPreset, setEditPreset] = useState<PresetDraft>(NO_PRESET);
 
-  // Merge built-in + plugin keybindable commands
-  const builtInKeybindable = useMemo(
+  const {
+    builtIn: builtInKeybindable,
+    device: deviceKeybindable,
+    all: keybindableCommands,
+    needsArguments,
+  } = useKeybindableCommands();
+
+  // Where the server keeps bindings to this app's own commands, a server binding may name one.
+  const appCommandsOnServer = appCommandKeybindsOnServer();
+  const serverKeybindable = useMemo(
     () =>
-      commands
-        ?.filter((cmd) => cmd.keybindCapable && commandOfferedHere(cmd.id))
-        .map(withClientLabel) ?? [],
-    [commands],
+      appCommandsOnServer
+        ? [...builtInKeybindable, ...deviceKeybindable.filter((cmd) => isLocalCommand(cmd.id))]
+        : builtInKeybindable,
+    [appCommandsOnServer, builtInKeybindable, deviceKeybindable],
   );
-  // Commands bound on this device: this app's own commands and the plugins' commands.
-  const deviceKeybindable = useMemo(() => {
-    const serverIds = new Set(builtInKeybindable.map((cmd) => cmd.id));
-    return [
-      ...LOCAL_COMMANDS.filter((cmd) => !serverIds.has(cmd.id)),
-      ...pluginCommands.filter((cmd) => cmd.keybindCapable),
-    ].filter((cmd) => commandOfferedHere(cmd.id));
-  }, [builtInKeybindable, pluginCommands]);
-  const keybindableCommands = useMemo(
-    () => [...builtInKeybindable, ...deviceKeybindable],
-    [builtInKeybindable, deviceKeybindable],
-  );
+
+  /** The server command `commandId` names when a keybind to it saves arguments in fields. */
+  function presetCommand(commandId: string): CommandDefinition | undefined {
+    const command = builtInKeybindable.find((cmd) => cmd.id === commandId);
+    return command && takesPresetFields(command) ? command : undefined;
+  }
+
+  /**
+   * The arguments a keybind to `commandId` saves from `draft`, or `null` after showing why a
+   * field cannot be saved. `kept` is saved when the fields do not apply or cannot show it.
+   */
+  function presetArgsFrom(
+    commandId: string,
+    draft: PresetDraft,
+    setDraft: (draft: PresetDraft) => void,
+    kept: unknown,
+    fieldsWorkspace: string | undefined,
+  ): { presetArgs: unknown } | null {
+    const command = presetCommand(commandId);
+    if (!command || draft.values === null) return { presetArgs: kept ?? undefined };
+    const read = readFields(presetFields(command), draft.values, false, command.id);
+    if (!read.ok) {
+      setDraft({ ...draft, problems: read.problems });
+      return null;
+    }
+    return { presetArgs: presetArgsOf(command, read.args, fieldsWorkspace) };
+  }
+
+  // The category of each command a keybind can name: this app's own, the server's, the plugins'.
+  const commandCategoryMap = useMemo(() => {
+    const map = new Map<string, string>(LOCAL_COMMANDS.map((cmd) => [cmd.id, cmd.category]));
+    for (const cmd of commands ?? []) map.set(cmd.id, cmd.category);
+    for (const cmd of pluginCommands) map.set(cmd.id, cmd.category);
+    return map;
+  }, [commands, pluginCommands]);
 
   // Build a lookup from command ID to title (built-in + plugin)
   const commandTitleMap = useMemo(() => {
@@ -247,10 +296,10 @@ export function KeybindSettings() {
   // Commands whose default keys a binding took, listed with no key
   const unbound = useMemo(
     () =>
-      unboundCommands(deviceKeybinds, serverKeybinds, profile).filter((c) =>
+      unboundCommands(deviceKeybinds, serverKeybinds, profile, homeAppKeybinds).filter((c) =>
         commandOfferedHere(c.commandId),
       ),
-    [deviceKeybinds, serverKeybinds, profile],
+    [deviceKeybinds, serverKeybinds, profile, homeAppKeybinds],
   );
   const filteredUnbound = useMemo(() => {
     if (!searchQuery.trim()) return unbound;
@@ -261,20 +310,26 @@ export function KeybindSettings() {
     });
   }, [unbound, searchQuery, commandTitleMap]);
 
-  // Group keybinds by category
-  const categorizedKeybinds = useMemo(() => {
-    const groups = new Map<CategoryKey, ResolvedKeybind[]>();
-    for (const cat of CATEGORIES) {
-      groups.set(cat.key, []);
-    }
-    for (const kb of filteredKeybinds) {
-      const cat = categorizeKeybind(kb.commandId);
-      groups.get(cat)!.push(kb);
-    }
-    return groups;
-  }, [filteredKeybinds]);
+  // Group keybinds and unbound commands by category, the groups in the palette's order
+  const categoryGroups = useMemo(() => {
+    const groups = new Map<string, { items: ResolvedKeybind[]; unbound: typeof filteredUnbound }>();
+    const groupOf = (commandId: string) => {
+      const category = commandCategoryMap.get(commandId) || UNKNOWN_CATEGORY;
+      let group = groups.get(category);
+      if (!group) {
+        group = { items: [], unbound: [] };
+        groups.set(category, group);
+      }
+      return group;
+    };
+    for (const kb of filteredKeybinds) groupOf(kb.commandId).items.push(kb);
+    for (const c of filteredUnbound) groupOf(c.commandId).unbound.push(c);
+    return [...groups.entries()]
+      .sort(([a], [b]) => compareGroups(a, b))
+      .map(([category, group]) => ({ category, ...group }));
+  }, [filteredKeybinds, filteredUnbound, commandCategoryMap]);
 
-  function toggleSection(key: CategoryKey) {
+  function toggleSection(key: string) {
     setCollapsedSections((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -291,6 +346,7 @@ export function KeybindSettings() {
     setNewKeystroke("");
     setNewCommandId("");
     setNewContext("GLOBAL");
+    setNewPreset(NO_PRESET);
     setReassignError(null);
   }
 
@@ -365,14 +421,23 @@ export function KeybindSettings() {
   function openCreateForm(keystroke: string, commandId: string, context: KeybindContext) {
     setNewKeystroke(keystroke);
     setNewCommandId(commandId);
+    setNewPreset(presetDraftOf(presetCommand(commandId), undefined));
     setNewContext(context);
     setShowCreate(true);
   }
 
   function handleCreate() {
     if (!newKeystroke || !newCommandId || workspaceConflict) return;
+    const preset = presetArgsFrom(
+      newCommandId,
+      newPreset,
+      setNewPreset,
+      undefined,
+      workspaceId ?? undefined,
+    );
+    if (!preset) return;
     reassign(createConflicts, () => {
-      if (bindsOnDevice(newCommandId)) {
+      if (bindsOnDevice(newCommandId, appCommandsOnServer)) {
         addDeviceKeybind({ keystroke: newKeystroke, commandId: newCommandId, context: newContext });
         resetCreateForm();
         return;
@@ -383,8 +448,22 @@ export function KeybindSettings() {
           keystroke: newKeystroke,
           commandId: newCommandId,
           context: newContext,
+          ...(preset.presetArgs !== undefined && { presetArgs: preset.presetArgs }),
         },
-        { onSuccess: resetCreateForm },
+        {
+          onSuccess: resetCreateForm,
+          // A server built before an app command refuses its keybind: keep it on this device.
+          onError: (err) => {
+            if (!refusedAppKeybind(newCommandId, err)) return;
+            addDeviceKeybind({
+              keystroke: newKeystroke,
+              commandId: newCommandId,
+              context: newContext,
+            });
+            createMutation.reset();
+            resetCreateForm();
+          },
+        },
       );
     });
   }
@@ -399,6 +478,7 @@ export function KeybindSettings() {
       keystroke: keybind.keystroke,
       commandId: keybind.commandId,
       context: keybind.context,
+      presetArgs: keybind.presetArgs ?? undefined,
       isEnabled: !keybind.isEnabled,
     });
   }
@@ -443,6 +523,7 @@ export function KeybindSettings() {
       keystroke,
       commandId: kb.commandId,
       context: kb.context,
+      presetArgs: kb.presetArgs ?? undefined,
       isEnabled: kb.isEnabled,
     });
   }
@@ -492,7 +573,7 @@ export function KeybindSettings() {
           <button
             onClick={() => confirmPendingRecord(kb, pendingRecord.keystroke)}
             disabled={blocked || updateMutation.isPending}
-            className="rounded bg-rim-accent px-2 py-0.5 text-[11px] font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+            className="rounded bg-rim-text px-2 py-0.5 text-[11px] font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
           >
             Save
           </button>
@@ -515,12 +596,31 @@ export function KeybindSettings() {
     setEditingKeybindId(kb.id);
     setEditCommandId(kb.commandId);
     setEditContext(kb.context);
+    setEditPreset(presetDraftOf(presetCommand(kb.commandId), kb.presetArgs));
   }
 
   function cancelEditing() {
     setEditingKeybindId(null);
     setEditCommandId("");
     setEditContext("GLOBAL");
+    setEditPreset(NO_PRESET);
+  }
+
+  /** Picks the command of the binding being edited; its saved arguments stay with its own. */
+  function changeEditCommand(kb: ResolvedKeybind, commandId: string) {
+    setEditCommandId(commandId);
+    setEditPreset(
+      presetDraftOf(
+        presetCommand(commandId),
+        commandId === kb.commandId ? kb.presetArgs : undefined,
+      ),
+    );
+  }
+
+  /** The workspace whose members and conversations the fields of `kb`'s arguments offer. */
+  function editWorkspace(kb: ResolvedKeybind): string | undefined {
+    const command = presetCommand(kb.commandId);
+    return (command && presetWorkspace(command, kb.presetArgs)) ?? workspaceId ?? undefined;
   }
 
   function handleSaveEdit(kb: ResolvedKeybind) {
@@ -530,16 +630,39 @@ export function KeybindSettings() {
       cancelEditing();
       return;
     }
+    const preset = presetArgsFrom(
+      editCommandId,
+      editPreset,
+      setEditPreset,
+      editCommandId === kb.commandId ? kb.presetArgs : undefined,
+      editCommandId === kb.commandId ? editWorkspace(kb) : (workspaceId ?? undefined),
+    );
+    if (!preset) return;
     updateMutation.mutate(
       {
         keybindId: kb.id,
         keystroke: kb.keystroke,
         commandId: editCommandId,
         context: editContext,
+        presetArgs: preset.presetArgs,
         isEnabled: kb.isEnabled,
       },
       {
         onSuccess: () => cancelEditing(),
+        // A server built before an app command refuses its keybind: the binding moves to this
+        // device with the same keys and state.
+        onError: (err) => {
+          if (!refusedAppKeybind(editCommandId, err)) return;
+          addDeviceKeybind({
+            keystroke: kb.keystroke,
+            commandId: editCommandId,
+            context: editContext,
+            isEnabled: kb.isEnabled,
+          });
+          if (kb.source === "USER") deleteMutation.mutate({ keybindId: kb.id });
+          updateMutation.reset();
+          cancelEditing();
+        },
       },
     );
   }
@@ -599,10 +722,18 @@ export function KeybindSettings() {
             <select
               aria-label="Command"
               value={newCommandId}
-              onChange={(e) => setNewCommandId(e.target.value)}
+              onChange={(e) => {
+                setNewCommandId(e.target.value);
+                setNewPreset(presetDraftOf(presetCommand(e.target.value), undefined));
+              }}
               className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
             >
               <option value="">Select command...</option>
+              {newCommandId && !keybindableCommands.some((cmd) => cmd.id === newCommandId) && (
+                <option value={newCommandId}>
+                  {commandTitleMap.get(newCommandId) ?? newCommandId}
+                </option>
+              )}
               {keybindableCommands.map((cmd) => (
                 <option key={cmd.id} value={cmd.id}>
                   {cmd.title}
@@ -610,6 +741,19 @@ export function KeybindSettings() {
               ))}
             </select>
           </div>
+          {presetCommand(newCommandId) && (
+            <PresetArgumentsSection
+              fields={presetFields(presetCommand(newCommandId)!)}
+              commandId={newCommandId}
+              values={newPreset.values}
+              onChange={(name, value) => setNewPreset(withFieldValue(newPreset, name, value))}
+              onChangeFields={(changes) => setNewPreset(withFieldValues(newPreset, changes))}
+              problems={newPreset.problems}
+              workspaceId={workspaceId ?? undefined}
+              emptyNote={ASKED_ON_PRESS}
+              size="xs"
+            />
+          )}
           <div>
             <label className="block text-[11px] text-rim-text-muted mb-1">Context</label>
             <select
@@ -631,7 +775,7 @@ export function KeybindSettings() {
               disabled={
                 !newKeystroke || !newCommandId || workspaceConflict || createMutation.isPending
               }
-              className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+              className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
             >
               {createMutation.isPending ? "Saving..." : "Save"}
             </button>
@@ -652,19 +796,14 @@ export function KeybindSettings() {
       )}
 
       {/* Categorized keybind sections */}
-      {CATEGORIES.map((cat) => {
-        const items = categorizedKeybinds.get(cat.key) ?? [];
-        const unboundItems = filteredUnbound.filter(
-          (c) => categorizeKeybind(c.commandId) === cat.key,
-        );
-        if (items.length + unboundItems.length === 0) return null;
-        const isCollapsed = collapsedSections.has(cat.key);
+      {categoryGroups.map(({ category, items, unbound: unboundItems }) => {
+        const isCollapsed = collapsedSections.has(category);
 
         return (
-          <div key={cat.key} className="border-b border-rim-line pb-2 mb-2">
+          <div key={category} className="border-b border-rim-line pb-2 mb-2">
             <button
               type="button"
-              onClick={() => toggleSection(cat.key)}
+              onClick={() => toggleSection(category)}
               className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium uppercase tracking-wider text-rim-text-muted hover:text-rim-text transition-colors"
             >
               <ChevronRight
@@ -673,7 +812,7 @@ export function KeybindSettings() {
                   !isCollapsed && "rotate-90",
                 )}
               />
-              <span>{cat.label}</span>
+              <span>{category}</span>
               <span className="text-rim-text-faint">({items.length + unboundItems.length})</span>
             </button>
 
@@ -728,12 +867,20 @@ export function KeybindSettings() {
                           <select
                             aria-label="Command"
                             value={editCommandId}
-                            onChange={(e) => setEditCommandId(e.target.value)}
+                            onChange={(e) => changeEditCommand(kb, e.target.value)}
                             className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1 text-xs text-rim-text outline-none focus:border-rim-accent"
                           >
                             <option value="">Select command...</option>
-                            {/* A device keybind stays a device command; a server one a built-in. */}
-                            {(isDeviceKeybind(kb.id) ? deviceKeybindable : builtInKeybindable).map(
+                            {editCommandId &&
+                              !(
+                                isDeviceKeybind(kb.id) ? deviceKeybindable : serverKeybindable
+                              ).some((cmd) => cmd.id === editCommandId) && (
+                                <option value={editCommandId}>
+                                  {commandTitleMap.get(editCommandId) ?? editCommandId}
+                                </option>
+                              )}
+                            {/* A device keybind stays a device command; a server one a command the server keeps. */}
+                            {(isDeviceKeybind(kb.id) ? deviceKeybindable : serverKeybindable).map(
                               (cmd) => (
                                 <option key={cmd.id} value={cmd.id}>
                                   {cmd.title}
@@ -742,6 +889,28 @@ export function KeybindSettings() {
                             )}
                           </select>
                         </div>
+                        {!isDeviceKeybind(kb.id) && presetCommand(editCommandId) && (
+                          <PresetArgumentsSection
+                            fields={presetFields(presetCommand(editCommandId)!)}
+                            commandId={editCommandId}
+                            values={editPreset.values}
+                            saved={kb.presetArgs}
+                            onChange={(name, value) =>
+                              setEditPreset(withFieldValue(editPreset, name, value))
+                            }
+                            onChangeFields={(changes) =>
+                              setEditPreset(withFieldValues(editPreset, changes))
+                            }
+                            problems={editPreset.problems}
+                            workspaceId={
+                              editCommandId === kb.commandId
+                                ? editWorkspace(kb)
+                                : (workspaceId ?? undefined)
+                            }
+                            emptyNote={ASKED_ON_PRESS}
+                            size="xs"
+                          />
+                        )}
                         <div>
                           <label className="block text-[11px] text-rim-text-muted mb-1">
                             Context
@@ -763,7 +932,7 @@ export function KeybindSettings() {
                           <button
                             onClick={() => handleSaveEdit(kb)}
                             disabled={!editCommandId || updateMutation.isPending}
-                            className="flex-1 rounded bg-rim-accent px-2 py-1 text-xs font-medium text-rim-void hover:bg-rim-accent/90 disabled:opacity-50"
+                            className="flex-1 rounded bg-rim-text px-2 py-1 text-xs font-medium text-rim-panel hover:bg-rim-text/90 disabled:opacity-50"
                           >
                             {updateMutation.isPending ? "Saving..." : "Save"}
                           </button>
@@ -791,6 +960,11 @@ export function KeybindSettings() {
                           {kb.keystroke}
                         </kbd>
                         <span className="flex-1 truncate">{title}</span>
+                        {needsArguments(kb.commandId, kb.presetArgs) && (
+                          <span className="shrink-0 text-[10px] text-rim-text-muted">
+                            {NEEDS_ARGUMENTS_NOTE}
+                          </span>
+                        )}
                         <span
                           className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
                           title="A default binding. A binding of yours on the same keys and context takes its place."
@@ -856,10 +1030,15 @@ export function KeybindSettings() {
                         <span className="flex-1 truncate">
                           {commandTitleMap.get(kb.commandId) ?? kb.commandId}
                         </span>
+                        {needsArguments(kb.commandId, kb.presetArgs) && (
+                          <span className="shrink-0 text-[10px] text-rim-text-muted">
+                            {NEEDS_ARGUMENTS_NOTE}
+                          </span>
+                        )}
                         {isDeviceKeybind(kb.id) && (
                           <span
                             className="shrink-0 rounded border border-rim-line px-1 text-[10px] text-rim-text-faint"
-                            title="Kept on this device, like the plugin it runs"
+                            title="Kept on this device only"
                           >
                             This device
                           </span>
@@ -995,7 +1174,7 @@ export function KeybindSettings() {
           </button>
           <button
             onClick={confirmDelete}
-            className="rounded-md bg-rim-danger px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger/90 transition-colors"
+            className="rounded-md bg-rim-danger-solid px-3 py-1.5 text-xs font-medium text-white hover:bg-rim-danger-solid/90 transition-colors"
           >
             Delete
           </button>

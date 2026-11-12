@@ -4,6 +4,7 @@ import { gql } from "graphql-request";
 import { graphqlClient } from "../../../core/graphql/client";
 import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 
 const THREAD_ROOT = gql`
   query NotificationThreadRoot($serverId: ID!, $conversationId: ID!, $threadId: ID!) {
@@ -46,9 +47,12 @@ async function threadRootMessageId(
 
 /**
  * Opens the notification's message the way a search result does: select the conversation and
- * highlight the message, opening the thread first for a thread reply.
+ * highlight the message, opening the thread first for a thread reply. Another workspace than the
+ * open one is opened first.
  */
 export async function jumpToNotification(qc: QueryClient, target: JumpTarget): Promise<void> {
+  const workspaces = useWorkspaceStore.getState();
+  if (workspaces.workspaceId !== target.serverId) workspaces.setWorkspaceId(target.serverId);
   const shell = useShellStore.getState();
   shell.setMainSurface({ kind: "conversation" });
   shell.setSelectedConversationId(target.conversationId);

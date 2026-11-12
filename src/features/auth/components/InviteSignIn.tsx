@@ -27,7 +27,7 @@ export function InviteSignIn({ token, workspaceName, onSignedIn }: InviteSignInP
     return (
       <section
         aria-label="Sign in"
-        className="space-y-3 rounded-xl border border-rim-line bg-rim-panel p-6"
+        className="space-y-3 rounded-[14px] border border-rim-line bg-rim-panel-soft p-5"
       >
         <p className="text-sm text-rim-text-muted">
           Already have an account? Sign in to join {workspaceName ?? "the workspace"}.

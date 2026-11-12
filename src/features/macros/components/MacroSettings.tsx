@@ -1,371 +1,118 @@
-import { useState, useCallback, useMemo } from "react";
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Play,
-  ChevronUp,
-  ChevronDown,
-  X,
-  Wand2,
-  Loader2,
-} from "lucide-react";
+import { useCallback, useState } from "react";
+import { Pencil, Play, Plus, Trash2, Wand2 } from "lucide-react";
 
-import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import {
-  useMyMacros,
-  useCreateMacroMutation,
-  useUpdateMacroMutation,
-  useDeleteMacroMutation,
-} from "../api/useMacros";
-import type { Macro, MacroStep } from "../api/useMacros";
-import { useCommands } from "../../commands/api/useCommands";
-import { CommandIdInput } from "../../commands/components/CommandIdInput";
-import { runsOnServer, unknownCommandError } from "../../commands/runtime/serverRunnable";
-import { agentAvailable } from "../../agent/agentAvailability";
+import { errorSentence } from "../../../core/graphql/errors";
 import { cn } from "../../../shared/ui/cn";
-import { toast } from "../../../shared/toast";
-import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { agentAvailable } from "../../agent/agentAvailability";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
+import {
+  useDeleteUserCommandMutation,
+  useUpdateUserCommandMutation,
+} from "../../commands/api/useUserCommands";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
-import { useServerInfo } from "../../updater/hooks/useServerInfo";
-import { AiMacroBuilder } from "./AiMacroBuilder";
+import { useAccountMacros, type AccountMacro } from "../api/useAccountMacros";
+import { useMacroRegistry } from "../api/useMacroCommands";
+import { useStepCommandChoices } from "../api/useStepCommandChoices";
+import { stepTitle } from "../runtime/macroCommands";
+import { MAX_MACROS } from "../runtime/macroSteps";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { deleteStayedMacro, retryWorkspaceMove, useStayedMacros } from "../runtime/macroMove";
+import type { StayedMacro } from "../runtime/macroMoves";
+import { useAuthStore } from "../../auth/state/useAuthStore";
 import type { GeneratedMacro } from "../runtime/useMacroAgent";
-import { runMacro } from "../runtime/runMacro";
+import { AiMacroBuilder } from "./AiMacroBuilder";
+import { MacroEditor, type MacroPrefill } from "./MacroEditor";
 
-const MAX_STEPS = 20;
+/** The longest list of step titles a macro's row shows before it says how many more. */
+const SHOWN_STEP_TITLES = 4;
 
-interface MacroEditorProps {
-  initial?: Macro;
-  initialSteps?: MacroStep[];
-  initialName?: string;
-  initialDescription?: string;
-  serverId: string;
-  onSave: () => void;
-  onCancel: () => void;
-}
-
-function MacroEditor({
-  initial,
-  initialSteps,
-  initialName,
-  initialDescription,
-  serverId,
-  onSave,
-  onCancel,
-}: MacroEditorProps) {
-  const [name, setName] = useState(initial?.name ?? initialName ?? "");
-  const [description, setDescription] = useState(initial?.description ?? initialDescription ?? "");
-  const [steps, setSteps] = useState<MacroStep[]>(
-    initial?.steps ?? initialSteps ?? [{ commandId: "", args: {} }],
-  );
-
-  const { data: commands } = useCommands("PALETTE");
-  const { data: pickerCommands } = useCommands("KEYBIND_PICKER");
-  // A macro runs on the server, which refuses desktop-local commands as steps.
-  const stepCommands = useMemo(() => commands?.filter(runsOnServer), [commands]);
-  const appOnlyIds = useMemo(
-    () => new Set(commands?.filter((cmd) => !runsOnServer(cmd)).map((cmd) => cmd.id)),
-    [commands],
-  );
-  const createMacro = useCreateMacroMutation();
-  const updateMacro = useUpdateMacroMutation();
-
-  const addStep = useCallback(() => {
-    if (steps.length >= MAX_STEPS) return;
-    setSteps((prev) => [...prev, { commandId: "", args: {} }]);
-  }, [steps.length]);
-
-  const removeStep = useCallback((index: number) => {
-    setSteps((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const moveStep = useCallback((index: number, direction: "up" | "down") => {
-    setSteps((prev) => {
-      const next = [...prev];
-      const target = direction === "up" ? index - 1 : index + 1;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  }, []);
-
-  const updateStep = useCallback((index: number, field: "commandId" | "args", value: string) => {
-    setSteps((prev) =>
-      prev.map((step, i) => {
-        if (i !== index) return step;
-        if (field === "commandId") return { ...step, commandId: value };
-        try {
-          return { ...step, args: JSON.parse(value) as Record<string, unknown> };
-        } catch {
-          return step;
-        }
-      }),
-    );
-  }, []);
-
-  const handleSave = useCallback(async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-    const validSteps = steps
-      .filter((s) => s.commandId.trim() !== "")
-      .map((s) => ({ ...s, commandId: s.commandId.trim() }));
-    if (validSteps.length === 0) return;
-    if (validSteps.some((s) => unknownCommandError(s.commandId, commands, pickerCommands))) {
-      toast.error("Fix the steps marked in red before saving.");
-      return;
-    }
-
-    try {
-      if (initial) {
-        await updateMacro.mutateAsync({
-          macroId: initial.id,
-          name: trimmedName,
-          description: description.trim(),
-          steps: validSteps,
-        });
-      } else {
-        await createMacro.mutateAsync({
-          serverId,
-          name: trimmedName,
-          description: description.trim(),
-          steps: validSteps,
-        });
-      }
-      onSave();
-    } catch (err) {
-      toast.error(
-        graphqlErrorMessage(err, initial ? "Failed to update macro" : "Failed to create macro"),
-      );
-    }
-  }, [
-    name,
-    description,
-    steps,
-    commands,
-    pickerCommands,
-    initial,
-    serverId,
-    createMacro,
-    updateMacro,
-    onSave,
-  ]);
-
-  const isSaving = createMacro.isPending || updateMacro.isPending;
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="mb-1 block text-sm font-medium text-rim-text">Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="My macro"
-          className="w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none focus:border-rim-accent"
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-rim-text">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What does this macro do?"
-          rows={2}
-          className="w-full resize-none rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text outline-none focus:border-rim-accent"
-        />
-      </div>
-
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className="text-sm font-medium text-rim-text">
-            Steps ({steps.length}/{MAX_STEPS})
-          </label>
-          <button
-            type="button"
-            onClick={addStep}
-            disabled={steps.length >= MAX_STEPS}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rim-accent transition hover:bg-rim-accent/10 disabled:opacity-40"
-          >
-            <Plus className="h-3 w-3" /> Add step
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          {steps.map((step, index) => (
-            <div
-              key={index}
-              className="flex items-start gap-2 rounded-lg border border-rim-line bg-rim-void p-3"
-            >
-              <span className="mt-1 text-xs font-mono text-rim-text-muted">{index + 1}.</span>
-              <div className="flex-1 space-y-2">
-                <CommandIdInput
-                  value={step.commandId}
-                  onChange={(v) => updateStep(index, "commandId", v)}
-                  commands={stepCommands}
-                  placeholder="Search commands..."
-                  error={
-                    appOnlyIds.has(step.commandId)
-                      ? null
-                      : unknownCommandError(step.commandId, commands, pickerCommands)
-                  }
-                />
-                {appOnlyIds.has(step.commandId) && (
-                  <p className="text-xs text-rim-danger">
-                    This command only runs in the app, so it fails as a macro step.
-                  </p>
-                )}
-                <input
-                  type="text"
-                  defaultValue={
-                    step.args != null &&
-                    typeof step.args === "object" &&
-                    Object.keys(step.args as Record<string, unknown>).length > 0
-                      ? JSON.stringify(step.args)
-                      : ""
-                  }
-                  onBlur={(e) => updateStep(index, "args", e.target.value || "{}")}
-                  placeholder='{"key": "value"}'
-                  className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 text-xs font-mono text-rim-text-muted outline-none focus:border-rim-accent"
-                />
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => moveStep(index, "up")}
-                  disabled={index === 0}
-                  className="rounded p-0.5 text-rim-text-muted transition hover:text-rim-text disabled:opacity-30"
-                >
-                  <ChevronUp className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveStep(index, "down")}
-                  disabled={index === steps.length - 1}
-                  className="rounded p-0.5 text-rim-text-muted transition hover:text-rim-text disabled:opacity-30"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeStep(index)}
-                  disabled={steps.length <= 1}
-                  className="rounded p-0.5 text-rim-text-muted transition hover:text-rim-danger disabled:opacity-30"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-2 pt-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving || !name.trim()}
-          className="rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:opacity-50"
-        >
-          {isSaving ? "Saving..." : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-rim-line px-4 py-2 text-sm text-rim-text-muted transition hover:bg-rim-void/50"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-interface PendingAiMacro {
-  name: string;
-  description: string;
-  steps: MacroStep[];
-}
-
+/**
+ * Settings → Macros: the person's macros, their own commands made of other commands. Each one
+ * is listed with its steps, turned on or off, run, edited or deleted, and new ones are made
+ * here, by hand or with the AI agent.
+ */
 export function MacroSettings() {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const { data: macros, isLoading } = useMyMacros(workspaceId ?? undefined);
-  const { data: commands } = useCommands("PALETTE");
-  const deleteMacro = useDeleteMacroMutation();
-  // The client lists only its own macros, so it shows the workspace's cap without a count.
-  const macroLimit = limitView(
-    useServerInfo().limits?.macrosPerWorkspace,
-    undefined,
-    ["macro", "macros"],
-    "macros per workspace",
-  );
-
+  const { data: macros, isLoading, isError, error } = useAccountMacros();
+  const choices = useStepCommandChoices();
+  const registry = useMacroRegistry();
+  const updateMutation = useUpdateUserCommandMutation();
+  const deleteMutation = useDeleteUserCommandMutation();
   const aiAvailable = agentAvailable();
-  const [editing, setEditing] = useState<Macro | "new" | null>(null);
-  const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
-  const [pendingAiMacro, setPendingAiMacro] = useState<PendingAiMacro | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [executingId, setExecutingId] = useState<string | null>(null);
 
-  const handleAiStepsGenerated = useCallback((macro: GeneratedMacro) => {
-    setPendingAiMacro({
-      name: macro.name,
-      description: macro.description,
-      steps: macro.steps,
+  const [editing, setEditing] = useState<AccountMacro | "new" | null>(null);
+  const [prefill, setPrefill] = useState<MacroPrefill | undefined>(undefined);
+  const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const count = macros?.length ?? 0;
+  const limit = limitView(MAX_MACROS, macros ? count : undefined, ["macro", "macros"], "macros");
+  const full = count >= MAX_MACROS;
+
+  const handleGenerated = useCallback((generated: GeneratedMacro) => {
+    setPrefill({
+      title: generated.name,
+      description: generated.description,
+      steps: generated.steps.map((step) => ({ commandId: step.commandId, args: step.args })),
     });
     setEditing("new");
   }, []);
 
-  const handleDelete = useCallback(
-    async (macroId: string) => {
-      try {
-        await deleteMacro.mutateAsync(macroId);
-        toast.success("Macro deleted");
-        setConfirmDeleteId(null);
-      } catch {
-        toast.error("Failed to delete macro");
-      }
-    },
-    [deleteMacro],
-  );
+  /** Runs `app.run_macro` on the macro, as the palette's Run Macro… does. */
+  function run(macro: AccountMacro) {
+    void runCommandFromClick("app.run_macro", { macro_id: macro.id });
+  }
 
-  /** Runs a macro; one with a dangerous step asks for confirmation first. */
-  const handleRunMacro = useCallback(
-    async (macro: Macro) => {
-      if (!workspaceId) return;
-      setExecutingId(macro.id);
-      try {
-        await runMacro(macro, workspaceId, commands);
-      } finally {
-        setExecutingId(null);
-      }
-    },
-    [commands, workspaceId],
-  );
+  function toggle(macro: AccountMacro) {
+    updateMutation.mutate({
+      commandId: macro.id,
+      title: macro.title,
+      description: macro.description,
+      steps: macro.steps.map((step) => ({
+        commandId: step.commandId,
+        ...(step.args != null ? { args: step.args as Record<string, unknown> } : {}),
+        ask: step.ask,
+      })),
+      isEnabled: !macro.isEnabled,
+    });
+  }
+
+  function remove(macroId: string) {
+    deleteMutation.mutate({ commandId: macroId }, { onSuccess: () => setConfirmDeleteId(null) });
+  }
+
+  function stepSummary(macro: AccountMacro): string {
+    const titles = macro.steps.map((step) =>
+      registry ? stepTitle(step.commandId, registry) : step.commandId,
+    );
+    const shown = titles.slice(0, SHOWN_STEP_TITLES).join(" → ");
+    const more = titles.length - SHOWN_STEP_TITLES;
+    const count = `${titles.length} ${titles.length === 1 ? "step" : "steps"}`;
+    return `${count}: ${shown}${more > 0 ? ` and ${more} more` : ""}`;
+  }
 
   if (editing !== null) {
     const isNew = editing === "new";
+    const done = () => {
+      setEditing(null);
+      setPrefill(undefined);
+    };
     return (
       <div>
         <h2 className="mb-4 text-base font-semibold text-rim-text">
-          {isNew ? "Create Macro" : `Edit: ${editing.name}`}
+          {isNew ? "New macro" : `Edit: ${showInvisibleCharacters(editing.title)}`}
         </h2>
-        <MacroEditor
-          initial={isNew ? undefined : editing}
-          initialSteps={isNew ? (pendingAiMacro?.steps ?? undefined) : undefined}
-          initialName={isNew ? (pendingAiMacro?.name ?? undefined) : undefined}
-          initialDescription={isNew ? (pendingAiMacro?.description ?? undefined) : undefined}
-          serverId={workspaceId ?? ""}
-          onSave={() => {
-            setEditing(null);
-            setPendingAiMacro(null);
-          }}
-          onCancel={() => {
-            setEditing(null);
-            setPendingAiMacro(null);
-          }}
-        />
+        {choices.loaded ? (
+          <MacroEditor
+            initial={isNew ? undefined : editing}
+            prefill={isNew ? prefill : undefined}
+            macros={macros ?? []}
+            choices={choices}
+            onDone={done}
+          />
+        ) : (
+          <p className="text-sm text-rim-text-muted">Loading commands...</p>
+        )}
       </div>
     );
   }
@@ -379,7 +126,8 @@ export function MacroSettings() {
             <button
               type="button"
               onClick={() => setAiBuilderOpen(true)}
-              className="flex items-center gap-1 rounded-lg border border-rim-line px-3 py-1.5 text-sm font-medium text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+              disabled={full}
+              className="flex items-center gap-1 rounded-lg border border-rim-line px-3 py-1.5 text-sm font-medium text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text disabled:opacity-50"
             >
               <Wand2 className="h-4 w-4" /> Build with AI
             </button>
@@ -387,101 +135,264 @@ export function MacroSettings() {
           <button
             type="button"
             onClick={() => setEditing("new")}
-            className="flex items-center gap-1 rounded-lg bg-rim-accent px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rim-accent/90"
+            disabled={full}
+            className="flex items-center gap-1 rounded-lg bg-rim-text px-3 py-1.5 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
           >
-            <Plus className="h-4 w-4" /> New Macro
+            <Plus className="h-4 w-4" /> New macro
           </button>
         </div>
       </div>
 
-      <LimitNote limit={macroLimit} />
+      <p className="text-sm text-rim-text-muted">
+        A macro is your own command, made of commands that run one after another. It works in every
+        workspace: run it from the command palette, a key, a Home quick box or by typing / in the
+        message box.
+      </p>
+
+      <LimitNote limit={limit} />
 
       {aiAvailable && (
         <AiMacroBuilder
           open={aiBuilderOpen}
           onClose={() => setAiBuilderOpen(false)}
-          onStepsGenerated={handleAiStepsGenerated}
+          onStepsGenerated={handleGenerated}
+          commands={choices.offered}
         />
       )}
 
       {isLoading && <p className="text-sm text-rim-text-muted">Loading macros...</p>}
+      {isError && (
+        <p role="alert" className="text-sm text-rim-danger">
+          {errorSentence(error, "Your macros could not be loaded.")}
+        </p>
+      )}
+      {(updateMutation.isError || deleteMutation.isError) && (
+        <p role="alert" className="text-sm text-rim-danger">
+          {errorSentence(
+            updateMutation.error ?? deleteMutation.error,
+            "The macro could not be changed.",
+          )}
+        </p>
+      )}
 
-      {!isLoading && (!macros || macros.length === 0) && (
+      {macros && macros.length === 0 && (
         <p className="text-sm text-rim-text-muted">
-          No macros yet. Create one to automate a sequence of commands.
+          No macros yet. Make one to run several commands with one action.
         </p>
       )}
 
       {macros && macros.length > 0 && (
-        <div className="divide-y divide-rim-line rounded-lg border border-rim-line">
-          {macros.map((macro) => (
-            <div key={macro.id} className="flex items-center justify-between gap-4 px-4 py-3">
+        <ul className="divide-y divide-rim-line rounded-lg border border-rim-line">
+          {macros.map((macro) => {
+            const title = showInvisibleCharacters(macro.title);
+            return (
+              <li key={macro.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "text-sm font-medium",
+                      macro.isEnabled ? "text-rim-text" : "text-rim-text-muted",
+                    )}
+                  >
+                    {title}
+                    {!macro.isEnabled && (
+                      <span className="ml-2 text-xs font-normal text-rim-text-faint">Off</span>
+                    )}
+                  </div>
+                  {macro.description && (
+                    <div className="truncate text-xs text-rim-text-muted">
+                      {showInvisibleCharacters(macro.description)}
+                    </div>
+                  )}
+                  <div className="truncate text-xs text-rim-text-faint">
+                    {showInvisibleCharacters(stepSummary(macro))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={macro.isEnabled}
+                    aria-label={`${title} is ${macro.isEnabled ? "on" : "off"}`}
+                    onClick={() => toggle(macro)}
+                    disabled={updateMutation.isPending}
+                    className={cn(
+                      "relative h-5 w-9 rounded-full transition disabled:opacity-50",
+                      macro.isEnabled ? "bg-rim-accent" : "bg-rim-line",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 h-4 w-4 rounded-full bg-rim-panel transition",
+                        macro.isEnabled ? "left-4" : "left-0.5",
+                      )}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => run(macro)}
+                    disabled={!macro.isEnabled}
+                    title="Run macro"
+                    aria-label={`Run ${title}`}
+                    className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-accent/10 hover:text-rim-accent disabled:opacity-50"
+                  >
+                    <Play className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(macro)}
+                    title="Edit macro"
+                    aria-label={`Edit ${title}`}
+                    className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  {confirmDeleteId === macro.id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => remove(macro.id)}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/10"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-void/50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(macro.id)}
+                      title="Delete macro"
+                      aria-label={`Delete ${title}`}
+                      className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <NotMovedYet />
+    </div>
+  );
+}
+
+/**
+ * The workspace macros that stayed in their workspace when the person's macros moved: each with
+ * its workspace and why it stayed, to move again or delete. Nothing when none stayed.
+ */
+function NotMovedYet() {
+  const userId = useAuthStore((s) => s.session?.userId);
+  const stayed = useStayedMacros();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (!userId || stayed.length === 0) return null;
+
+  async function tryAgain(entry: StayedMacro) {
+    if (!userId) return;
+    setProblem(null);
+    setBusyId(entry.macroId);
+    try {
+      await retryWorkspaceMove(userId, { id: entry.workspaceId, name: entry.workspaceName });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(entry: StayedMacro) {
+    if (!userId) return;
+    setProblem(null);
+    setBusyId(entry.macroId);
+    try {
+      await deleteStayedMacro(userId, entry);
+      setConfirmId(null);
+    } catch (err) {
+      setProblem(errorSentence(err, "The workspace macro could not be deleted."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section aria-labelledby="not-moved-yet" className="space-y-2">
+      <h3 id="not-moved-yet" className="text-sm font-semibold text-rim-text">
+        Not moved yet
+      </h3>
+      <p className="text-xs text-rim-text-muted">
+        These macros from your workspaces could not become your macros. They are still kept in their
+        workspace and run only there.
+      </p>
+      {problem && (
+        <p role="alert" className="text-xs text-rim-danger">
+          {problem}
+        </p>
+      )}
+      <ul className="divide-y divide-rim-line rounded-lg border border-rim-line">
+        {stayed.map((entry) => {
+          const title = showInvisibleCharacters(entry.title);
+          return (
+            <li key={entry.macroId} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-rim-text">{macro.name}</div>
-                {macro.description && (
-                  <div className="truncate text-xs text-rim-text-muted">{macro.description}</div>
-                )}
-                <div className="text-xs text-rim-text-faint">
-                  {macro.steps.length} step{macro.steps.length !== 1 ? "s" : ""}
+                <div className="text-sm font-medium text-rim-text">{title}</div>
+                <div className="truncate text-xs text-rim-text-muted">
+                  In {showInvisibleCharacters(entry.workspaceName)}: {entry.reason}
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => void handleRunMacro(macro)}
-                  disabled={executingId === macro.id}
-                  title="Run macro"
-                  className={cn(
-                    "rounded-md p-1.5 text-rim-text-muted transition",
-                    "hover:bg-rim-accent/10 hover:text-rim-accent disabled:opacity-50",
-                  )}
+                  onClick={() => void tryAgain(entry)}
+                  disabled={busyId !== null}
+                  aria-label={`Try moving ${title} again`}
+                  className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text disabled:opacity-50"
                 >
-                  {executingId === macro.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                  Try again
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setEditing(macro)}
-                  title="Edit macro"
-                  className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-void/50 hover:text-rim-text"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                {confirmDeleteId === macro.id ? (
-                  <div className="flex items-center gap-1">
+                {confirmId === entry.macroId ? (
+                  <>
                     <button
                       type="button"
-                      onClick={() => handleDelete(macro.id)}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/10"
+                      onClick={() => void remove(entry)}
+                      disabled={busyId !== null}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-rim-danger transition hover:bg-rim-danger/10 disabled:opacity-50"
                     >
-                      Confirm
+                      Delete it
                     </button>
                     <button
                       type="button"
-                      onClick={() => setConfirmDeleteId(null)}
+                      onClick={() => setConfirmId(null)}
                       className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-void/50"
                     >
                       Cancel
                     </button>
-                  </div>
+                  </>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setConfirmDeleteId(macro.id)}
-                    title="Delete macro"
-                    className="rounded-md p-1.5 text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger"
+                    onClick={() => setConfirmId(entry.macroId)}
+                    disabled={busyId !== null}
+                    aria-label={`Delete ${title} from ${showInvisibleCharacters(entry.workspaceName)}`}
+                    className="rounded-md px-2 py-1 text-xs text-rim-text-muted transition hover:bg-rim-danger/10 hover:text-rim-danger disabled:opacity-50"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    Delete
                   </button>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

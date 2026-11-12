@@ -1,33 +1,21 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Terminal, Plug, User, Zap } from "lucide-react";
 import { Highlight } from "@nozbe/microfuzz/react";
 import { Z } from "../../../shared/ui/zIndex";
 import { useCommandStore } from "../state/useCommandStore";
-import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
+import { useExecuteCommandMutation } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import { usePluginCommands } from "../../plugins/api/usePluginCommands";
 import { isRegistryPaletteItem, useRegistryPaletteItems } from "../../plugins/registry/palette";
 import { useRegistryStore } from "../../plugins/registry/state";
 import { useRunnableHere } from "../../plugins/runtime/pluginContext";
-import {
-  isCancelledResult,
-  toastPluginCommandResult,
-} from "../../plugins/runtime/pluginCommandInfo";
+import { isCancelledResult } from "../../plugins/runtime/pluginCommandInfo";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import {
-  argumentPromptName,
-  commandResultOf,
-  dispatchCommand,
-  hasLocalHandler,
-  isLocalActionResult,
-  targetPickerKind,
-} from "../runtime/commandDispatcher";
-import {
-  serverRunsWithContext,
-  unfilledRequiredArguments,
-  type ArgumentContext,
-} from "../runtime/commandArguments";
-import { commandSuccessText } from "../runtime/commandResultText";
+import { commandResultOf, dispatchCommand, targetPickerKind } from "../runtime/commandDispatcher";
+import { serverRunsWithContext, type ArgumentContext } from "../runtime/commandArguments";
+import { runsFromPalette } from "../runtime/commandRunnable";
+import { runPersonCommand } from "../runtime/runPersonCommand";
 import { currentCommandContext } from "../runtime/commandContext";
 import { CONFIRMATION_REQUIRED, runWithHumanConfirmation } from "../runtime/humanConfirmation";
 import {
@@ -49,7 +37,7 @@ import { useHostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { PipelineResultView } from "./PipelineResultView";
 import { PaletteTargetPicker, type PickerTarget } from "./PaletteTargetPicker";
 import { CommandResultView } from "./CommandResultView";
-import { presentReadResult } from "../runtime/readCommandResult";
+import { SearchBox } from "./SearchBox";
 import { toast } from "../../../shared/toast";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { commandOfferedHere } from "../../agent/agentAvailability";
@@ -58,7 +46,7 @@ import { offeredInSituation } from "../runtime/paletteAvailability";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
-import { workspaceCommandOffered } from "../../workspaces/workspaceActions";
+import { offeredLocalCommands } from "../runtime/offeredLocalCommands";
 import type {
   CommandContextInput,
   CommandDefinition,
@@ -82,24 +70,13 @@ function sourceIcon(source: CommandSourceKind) {
   }
 }
 
-/**
- * Whether the palette can run `command` as picked, with no arguments typed: this app runs it
- * itself, or every argument it requires comes from the context or from the surface that asks
- * for it.
- */
-function runsFromPalette(command: CommandDefinition, context: ArgumentContext): boolean {
-  if (hasLocalHandler(command.id)) return true;
-  const prompted = argumentPromptName(command.id);
-  return unfilledRequiredArguments(command, context).every(
-    (argument) => argument.name === prompted,
-  );
-}
-
 function CommandPaletteDialog() {
   const isOpen = useCommandStore((s) => s.isCommandPaletteOpen);
   const searchQuery = useCommandStore((s) => s.searchQuery);
   const setSearchQuery = useCommandStore((s) => s.setSearchQuery);
   const closeCommandPalette = useCommandStore((s) => s.closeCommandPalette);
+  const mode = useCommandStore((s) => s.mode);
+  const setMode = useCommandStore((s) => s.setMode);
   const targetPicker = useCommandStore((s) => s.targetPicker);
   const closeTargetPicker = useCommandStore((s) => s.closeTargetPicker);
   const openConversationById = useOpenConversation();
@@ -111,7 +88,7 @@ function CommandPaletteDialog() {
     [workspaceId, selectedConversationId],
   );
 
-  const { data: commands, isLoading: isLoadingCommands } = useCommands("PALETTE");
+  const { data: commands, isLoading: isLoadingCommands } = useCommandsWithMacros("PALETTE");
   const pluginCommands = usePluginCommands();
   const runnableHere = useRunnableHere();
   const registryItems = useRegistryPaletteItems();
@@ -120,6 +97,16 @@ function CommandPaletteDialog() {
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+
+  // The box opens just under the top bar, wherever banners above it have put it.
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!isOpen || !frame) return;
+    const bar = document.querySelector<HTMLElement>('[data-panel="topBar"]');
+    const bottom = bar?.getBoundingClientRect().bottom ?? 0;
+    frame.style.paddingTop = `${bottom > 0 ? bottom + 4 : 56}px`;
+  }, [isOpen]);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Pipe chain state: segments locked in before the current search query
@@ -130,13 +117,14 @@ function CommandPaletteDialog() {
 
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const hasDirectOrigin = useApplicableDirectOrigin() !== null;
+  const unreadsOpen = useShellStore((s) => s.mainSurface.kind === "unreads");
   // Whether a panel is open is read when the palette opens; nothing opens one behind it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const panelOpen = useMemo(() => hasPanelToClose(), [isOpen]);
 
   const situation = useMemo(
-    () => ({ inDirectSpace, panelOpen, hasDirectOrigin }),
-    [inDirectSpace, panelOpen, hasDirectOrigin],
+    () => ({ inDirectSpace, panelOpen, hasDirectOrigin, unreadsOpen }),
+    [inDirectSpace, panelOpen, hasDirectOrigin, unreadsOpen],
   );
 
   // Pre-filter to palette-visible commands, merge with plugin commands
@@ -148,12 +136,8 @@ function CommandPaletteDialog() {
         .filter((cmd) => offeredInSituation(cmd.id, situation))
         .map(withClientLabel) ?? [];
     const serverIds = new Set(base.map((cmd) => cmd.id));
-    const local = LOCAL_COMMANDS.filter(
-      (cmd) =>
-        !serverIds.has(cmd.id) &&
-        commandOfferedHere(cmd.id) &&
-        workspaceCommandOffered(cmd.id) &&
-        offeredInSituation(cmd.id, situation),
+    const local = offeredLocalCommands(serverIds).filter(
+      (cmd) => commandOfferedHere(cmd.id) && offeredInSituation(cmd.id, situation),
     );
     return [
       ...base,
@@ -246,7 +230,7 @@ function CommandPaletteDialog() {
   // keyboard back, so typing and Escape reach the palette.
   useEffect(() => {
     if (isOpen && !targetPicker) requestAnimationFrame(() => inputRef.current?.focus());
-  }, [isOpen, targetPicker]);
+  }, [isOpen, targetPicker, mode]);
 
   const dialogOpen = useHostDialogOpen();
   // A dialog that opens over the palette, a command's confirmation included, takes over: the
@@ -267,6 +251,12 @@ function CommandPaletteDialog() {
   // Handle typing `|` to lock in a pipe segment
   const handleSearchChange = useCallback(
     (value: string) => {
+      // In the search box, a leading `>` asks for commands only.
+      if (useCommandStore.getState().mode === "search" && value.startsWith(">")) {
+        setMode("commands");
+        setSearchQuery(value.slice(1).trimStart());
+        return;
+      }
       if (value.endsWith("|")) {
         const segment = value.slice(0, -1).trim();
         if (segment) {
@@ -277,7 +267,7 @@ function CommandPaletteDialog() {
       }
       setSearchQuery(value);
     },
-    [setSearchQuery],
+    [setSearchQuery, setMode],
   );
 
   // Execute a pipe chain as a single command string
@@ -352,44 +342,17 @@ function CommandPaletteDialog() {
 
   // Run a command and tell the person how it went.
   const runCommand = useCallback(
-    async (
+    (
       command: CommandDefinition,
       args?: Record<string, unknown>,
       options?: { commandContext?: CommandContextInput; onSuccess?: () => void },
-    ) => {
-      try {
-        const result = await dispatchCommand(
-          command,
-          (input) => executeCommandMutation.mutateAsync(input),
-          { args, commandContext: options?.commandContext ?? currentCommandContext() },
-        );
-        if (command.sourceKind === "PLUGIN") {
-          // A plugin answers in words (its payload is for scripts and the agent).
-          toastPluginCommandResult(command.title, result);
-        } else if (isCancelledResult(result)) {
-          // The user declined the confirmation, or was told it expired.
-        } else if (isLocalActionResult(result)) {
-          // The command shows what it did.
-        } else if (result === null || result.status === "ERROR") {
-          toast.error(`${command.title}: ${result?.message ?? "Command failed"}`);
-        } else {
-          // A read command shows what it read; anything else says it ran.
-          const shown = await presentReadResult(
-            command.id,
-            command.title,
-            result,
-            args,
-            options?.commandContext ?? currentCommandContext(),
-          );
-          if (!shown) toast.success(commandSuccessText(command.title, result));
-          options?.onSuccess?.();
-        }
-      } catch (err) {
-        // Show the server's own message (e.g. FORBIDDEN, RATE_LIMITED)
-        // rather than graphql-request's serialized response dump.
-        toast.error(`${command.title}: ${graphqlErrorMessage(err, "Command failed")}`);
-      }
-    },
+    ) =>
+      runPersonCommand(
+        command,
+        (input) => executeCommandMutation.mutateAsync(input),
+        args,
+        options,
+      ),
     [executeCommandMutation],
   );
 
@@ -442,6 +405,19 @@ function CommandPaletteDialog() {
         case "workspace":
           await runCommand(command, { workspaceId: target.id });
           break;
+        case "member":
+        case "messageableMember":
+          await runCommand(command, { userId: target.id });
+          break;
+        case "macro":
+          await runCommand(command, { macroId: target.id });
+          break;
+        case "pipeline":
+          await runCommand(command, { pipelineId: target.id });
+          break;
+        case "agent":
+          await runCommand(command, { agentId: target.id });
+          break;
         case "joinableChannel":
           await runCommand(
             command,
@@ -491,6 +467,12 @@ function CommandPaletteDialog() {
           }
           break;
         case "Backspace":
+          // On an empty field, Backspace leaves commands for the search box.
+          if (searchQuery === "" && pipeSegments.length === 0 && !targetPicker) {
+            event.preventDefault();
+            setMode("search");
+            break;
+          }
           // Remove last pipe segment when search input is empty
           if (searchQuery === "" && pipeSegments.length > 0) {
             event.preventDefault();
@@ -522,6 +504,8 @@ function CommandPaletteDialog() {
       searchQuery,
       setSearchQuery,
       executePipeChain,
+      setMode,
+      targetPicker,
     ],
   );
 
@@ -529,19 +513,22 @@ function CommandPaletteDialog() {
 
   return (
     <div
-      className="fixed inset-0 flex items-start justify-center pt-[12vh]"
+      ref={frameRef}
+      className="fixed inset-0 flex items-start justify-center px-2 pt-14"
       style={{ zIndex: Z.OVERLAY_CONTENT }}
       onClick={closeCommandPalette}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-black/40" />
 
-      {/* Palette */}
+      {/* The search box, under the top bar: search first, or the command palette. */}
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
-        className="relative w-full max-w-lg rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
+        aria-label={
+          mode === "search" && !targetPicker ? "Search or run a command" : "Command palette"
+        }
+        className="relative w-full max-w-xl rounded-xl border border-rim-line bg-rim-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -550,6 +537,15 @@ function CommandPaletteDialog() {
             kind={targetPicker.kind}
             onPick={(target) => void pickTarget(target)}
             onBack={closeTargetPicker}
+          />
+        ) : mode === "search" ? (
+          <SearchBox
+            inputRef={inputRef}
+            query={searchQuery}
+            onQueryChange={handleSearchChange}
+            commands={sortedResults}
+            onRunCommand={(command) => void executeSelected(command)}
+            onClose={closeCommandPalette}
           />
         ) : (
           <>

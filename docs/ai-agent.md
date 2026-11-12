@@ -18,7 +18,7 @@ commands and their sensitivity, and rim-server's
   the provider bills you for what it uses. RIM ships neither a model nor a key.
 - **It never acts on its own.** It runs only when you send it a prompt, and stops when it has
   answered. A change waits for you in a confirmation dialog the agent cannot answer, and it cannot
-  run your user commands, your macros, or a plugin command you did not approve.
+  run a macro you did not let it run, or a plugin command you did not approve.
 
 ## Setting it up
 
@@ -58,12 +58,19 @@ over the app. Sending `/agent` with some text from the composer opens it too; th
 passed on, so ask in the agent itself. The first time, "AI Agent — Data Sharing Notice" says what
 goes to the provider: **I understand** goes on, **Cancel** closes the agent.
 
-**A conversation.** The header shows the provider and the model, **+** for a new conversation,
-and the close button. Type in "Ask the agent..." and press <kbd>Enter</kbd>. The answer streams
+**A conversation.** The header shows the model, **+** for a new conversation, and the close
+button. Type in "Ask the agent..." and press <kbd>Enter</kbd>. The answer streams
 in as Markdown. While it runs, the stop button or <kbd>Esc</kbd> stops it; otherwise
 <kbd>Esc</kbd> closes the window. After an answer the footer shows the tokens it used, as
 "\<n\> in / \<n\> out tokens". Further prompts continue the conversation while the window stays
 open; opening it again after an answer starts a new one.
+
+**Switching models.** The model's name in the header opens the models you can use now: those of
+each provider with a key set, from its live list when it has been fetched, else the built-in
+one, grouped by provider, with **Model settings…** last to open Settings → AI Agent. Choosing one
+sets the model Settings → AI Agent shows, and the next prompt goes to it; the conversation
+carries on, also with another provider, since only its text is sent. "Switched to \<model\>"
+marks the place in the conversation. The model cannot be switched while an answer is coming.
 
 **What it knows.** Each run tells the model the ids of the open workspace and conversation and
 whether a thread is open, and every command it runs gets the same context: the workspace, the
@@ -99,12 +106,15 @@ workspace may run:
   checkboxes, **Approve all** and **Revoke all** change that, and the first approval asks in
   **Grant AI Access?** (**Grant Access**). **Revoke all grants** takes back every plugin's
   approvals. The agent calls an approved command without asking each time, except a dangerous
-  one, which it can only propose: it tells you, and you run it from the plugin's panel.
+  one, which it can only propose: it tells you, and you run it yourself in RIM.
   [Using a plugin](plugins.md#using-a-plugin) has the rest.
 
-It never sees user commands, macros or any command not marked callable. Kept off the AI surface on
-purpose: editing and deleting messages, kicking, banning, changing roles, removing members and
-inviting to the workspace.
+It never sees any command not marked callable. Your own macros it sees only when you tick **The AI
+agent can run this** on one in Settings → Macros, which takes a macro whose steps are all commands
+the AI agent may run, run on RIM's server, with every argument fixed. It runs such a macro as one
+command, in the workspaces of your home server, and its confirmation lists the macro's steps.
+Kept off the AI surface on purpose: editing and deleting messages, kicking, banning, changing
+roles, removing members and inviting to the workspace.
 
 **Limits of a run.** A run is one prompt and everything the agent does to answer it.
 
@@ -186,7 +196,7 @@ without their tool results, in the app's local storage; the settings; and the en
 
 The RIM server runs the agent's built-in commands as it runs yours and records each in its audit
 log with the initiator `agent`. Arguments that look secret are stored as `[REDACTED]`, by the same
-rules as the dialog. The **Audit log** in the side rail shows your own entries, and a workspace's
+rules as the dialog. The **Audit log** at the foot of the workspace rail shows your own entries, and a workspace's
 Owners and Moderators see all of the workspace's. Each entry names who ran it and, for an action
 on a member, that member. Masking keeps values out of the dialog and the log, not out of the
 provider: the model wrote those arguments. Plugin commands run on this device;
@@ -213,8 +223,160 @@ The desktop app writes `rim.log`, and Settings → About has **Open log folder**
 ([Logs](install.md#logs)). It holds the agent's errors and the key events above, never message
 text or keys.
 
+## Agents on this computer
+
+Apart from the agent above, a program that runs on your computer with its own model provider, such
+as Claude Code, can ask to connect to the desktop app. [Connect an AI agent](agents.md) walks
+through it step by step; this section has every detail. **Settings → Agents** holds the switch,
+which is off by default. It is optional, and RIM works the same without it. The web app does not have it.
+
+- **The switch.** **Let agents on this computer connect** makes the app listen on a port that only
+  this computer can reach. While it is off, nothing listens and connected programs cannot reach RIM.
+  If something else holds the port, the tab says so.
+- **Connecting a program.** The program asks to connect and shows a code. The app comes forward and
+  shows a dialog with the same code and the name the program gives itself. That name is the
+  program's claim; RIM has no way to check it. Compare the codes, then choose **The code matches,
+  connect** or **Don't connect**. Closing the dialog or pressing Escape refuses, and a request that
+  nobody answers expires after two minutes. After a refusal or an expiry, a new request is turned
+  away for ten seconds. An account has to be unlocked for any of this, and locking it closes the
+  dialog.
+- **Connecting from the app.** **Connect an agent** in the tab, or the **Connect an Agent…**
+  command, connects a program without a code: you name it, RIM adds it with nothing granted, and
+  shows the address, its token behind **Show**, and the setup for Claude Code, Codex, opencode,
+  Gemini CLI, Cursor, VS Code or any other MCP client, once. **Done** closes it and RIM forgets the
+  token. While the switch is off, the dialog says so and connects nothing. No macro step, plugin or
+  agent can run the command, and the web app does not have it
+  ([Connect another agent](agents.md#connect-another-agent)).
+- **What a connected program gets.** A token, once, which works for this account on this device
+  only. It is listed as connected when it collects that token, and a program that doesn't within
+  two minutes of your approval is not connected. RIM keeps only the token's hash. A server knows nothing about connected programs, and the
+  token does not reach one.
+- **Disconnecting.** Each connected program has a **Disconnect** button in the tab. It stops the
+  program reaching RIM. It takes nothing back: what the program has already read stays with it.
+
+A connected program can read only what you grant it, and it can change nothing without you
+confirming that one change, unless a plugin says a command you approved only reads:
+
+- **Grants.** Everything starts off. **Choose what it can read** on a program's row gives that
+  program one or more channels, or **All channels you can see** in a workspace. That includes private
+  channels you're in and channels you join later. Reads within a grant don't prompt. You can change
+  a grant at any time, and the change applies to the program's next call. Grants stay on this
+  device, sealed with your account. Only workspaces on your own server are offered: one hosted on
+  another server can't be granted yet.
+- **What it can ask.** Nine tools, over the Model Context Protocol: `rim_list_workspaces`,
+  `rim_list_channels`, `rim_read_messages`, `rim_search_messages`, `rim_send_message`,
+  `rim_list_plugin_commands`, `rim_run_plugin_command`, `rim_list_commands` and
+  `rim_run_command`. Each acts on the workspace it names,
+  whichever one you have open. A message comes with its id, channel,
+  thread, the author's display name, its text, its times, and each attachment's name, type and size.
+  Text that people wrote is marked untrusted, which makes it less able to steer the program but
+  cannot make that impossible.
+- **Where it reads from.** The messages stored on this device. A channel not stored yet gets a
+  refusal saying to try again shortly, and RIM starts storing it. A channel you can no longer see
+  is refused, and a change can take up to 30 seconds to show. A search of a whole workspace looks at
+  the first 100 hits and keeps those within the grant, so it can miss some: naming the channel
+  doesn't.
+- **What stays closed.** Encrypted conversations, direct messages and groups are refused and
+  dropped from search. There is no grant that opens them. A refusal reads the same whether a channel
+  is closed, not granted, or does not exist.
+- **Sending.** A program can ask to send a message to a channel its grant covers, and nowhere else:
+  encrypted conversations, direct messages and groups are refused the same way, and nothing is sent.
+  The app comes forward with a dialog showing the program's name, the workspace, the channel and the
+  whole text with its length, with invisible and direction-changing characters shown by name. The
+  text is what you are confirming, and the program may have read something meant to steer it, so
+  read it. What you discard never leaves this device: the text goes to the server only after you confirm, and
+  the app then answers the server's own confirmation for you. **Send** stays disabled for the first second, so a click or key press meant for something else
+  can't answer it. Cancel, Close and Escape discard the message, and if you don't answer it expires
+  after 60 seconds. The program hears which of those happened. After a discard or an expiry, that
+  program's next request within 10 seconds is refused. While any dialog is open, a program's
+  request is refused and can be retried; your own commands replace a program's dialog, which ends as
+  discarded. Locking the account or turning the switch off also ends it as discarded. The message
+  goes out under your name, and the others in the channel are not told a program wrote it. The audit
+  log records that an agent started it, which an Owner or Moderator can read. The server's AI
+  command switch applies: on a server that has it off, sending is refused before you're asked.
+- **RIM commands.** Nothing is approved to start with, and what you approved for the agent above
+  doesn't carry over. The **RIM commands** section of **Choose its commands** lists, by category,
+  the commands the server lists for agents in the workspaces the program has a grant in, that the
+  server runs and that are not `SAFE`. Sending a message (it has its own tool), plugin commands and
+  the commands that answer or manage agents are left out. `rim_list_commands` gives the program
+  each one's id, title, description, category, argument schema, mode and whether you approved it.
+  Every call of `rim_run_command` opens a dialog like the one for sending, with the workspace, the
+  channel when it names one, the command and every argument in full; a `RESTRICTED` command also asks
+  for its word. A dangerous command is only suggested and never runs. The program names the
+  workspace and every conversation, message and thread itself: each conversation must be one its
+  grant covers, a message or thread id needs a conversation beside it, a workspace argument must be
+  the workspace it named, and nothing comes from what you have open. Before running, RIM fetches
+  the server's list again and checks the approval and the grant, and checks both again after you
+  confirm; the app then answers the server's own confirmation for you. The server's AI command
+  switch applies, discards, expiries and the 10 seconds after them work as they do for sending, and
+  what a command returns goes to the program marked untrusted, up to 512 KiB.
+- **Plugin commands.** Nothing is approved to start with, and what you approved for the agent above
+  doesn't carry over. **Choose its commands** on a program's row lists, for each turned-on
+  plugin, the commands it offers to agents, and you tick them one by one. A command the plugin
+  marks `read_only` runs without asking. That is the plugin's claim: RIM can't check it, and the
+  screen says so. Any other approved command opens a dialog like the one for sending, with the
+  plugin, the command, what the plugin says about it marked as the plugin's words, and every argument
+  in full, except values that look like secrets, which are masked. Discards, expiries, the 10 seconds
+  after them and a dialog already being open work as they do for sending, and the 10 seconds cover
+  both. A dangerous command is only suggested: the program tells you, and you run it yourself in RIM. "Uses:" lists the capabilities a command needs, and the plugin's heading
+  lists all it can use. A plugin holding `chat.read` can read every conversation you can and return it, whatever you chose the program can read, and the screen warns of this. One holding `chat.read.encrypted` can read an encrypted conversation
+  itself and return it, and the screen warns of this. When a plugin's manifest changes, its approvals stop working and the screen asks
+  you to choose again. The program gives any ids a command needs, and a command never uses what you
+  have open. One that needs a workspace or a conversation, or is given a `workspace_id` or `conversation_id`,
+  runs only where the program has a grant. A plugin can name such an argument anything else, or read
+  by itself what its capabilities allow, and a grant can't limit that.
+  What a command returns goes to the program marked untrusted, up to 512 KiB. A refusal reads the
+  same whether a command isn't approved, its plugin changed or is turned off, or it doesn't exist.
+- **The record.** **What it was given** lists what RIM handed to that program, what it asked to send
+  or run and what it refused: when, which tool, which channel, how many messages and their ids, how a
+  request to send ended, with the message's id if it went out, and which RIM or plugin command was run,
+  asked for or suggested. It never holds a command's arguments or what it returned. **What agents were given** lists it
+  for every program, including those since disconnected. It holds no message text and no search
+  text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most
+  500 refusals, so a program can't push out what another was given, or bury what it was given in
+  refused calls. **Clear the whole record** clears it for every program and leaves one line saying
+  you did. It is a record of what RIM handed over, not of what
+  the program did with it.
+- **Opening it.** The command **Open Agents** opens this screen from the palette or a key you bind it to. No program gets a tool that opens it.
+- **Runs.** **Its runs** (or **All runs**) groups the record into runs: one program's calls with no
+  more than 15 minutes between them. A run is a grouping by time, not a task: RIM doesn't see where a
+  program's task starts or ends, nor what it did between two calls, which model it used, or where
+  the content went. A run opens to its steps, what the workspace host recorded for it, where the
+  content goes and what the program may read now. The host's lines are your own audit entries
+  carrying the run's identifier (the app sends it with the changes of a run); those who can read
+  that workspace's log can read them too. A change to what a program may read or run starts a new
+  run. Runs are shown on this device only, and nothing in
+  them stops a program: **Disconnect** and the grants do.
+
+The [contract for what agents are given](https://github.com/rim-platform/rim-server/blob/master/docs/specs/agent-data-flow-v1.md)
+is rim-server's.
+
+There are limits to what this does:
+
+- RIM controls what it hands to a program. It does not control what happens after that: what a
+  program reads goes to its model provider, and RIM can't see or limit where it goes from there.
+- Connecting keeps an ordinary program from reaching RIM by accident. It is not a boundary against
+  malware. Another program running as you can do what you can, so connect only programs you trust.
+- The desktop app enforces these rules, and a server does not know about them, so they do not bind
+  a modified client.
+
+### Claude Code
+
+Claude Code connects through a plugin in this repository, which Claude Code fetches from GitHub
+itself. In a terminal, run:
+
+```sh
+claude plugin marketplace add rim-platform/rim-ui --sparse .claude-plugin integrations/claude-code
+claude plugin install rim@rim-platform
+```
+
+Then type "connect to RIM" in Claude Code's chat. The steps, and how to add the plugin from a local
+checkout, are in [Connect an AI agent](agents.md#connect-claude-code) and the
+[plugin's README](../integrations/claude-code/README.md).
+
 ## Next
 
+- [Connect an AI agent](agents.md): connecting Claude Code or another program on this computer.
 - [Commands and automation](commands-and-automation.md): sensitivity, the palette, macros and
   pipelines.
 - [Plugins](plugins.md): installing and trusting plugins, and approving their commands for the

@@ -6,13 +6,17 @@ import { cn } from "../../../shared/ui/cn";
 import { MarkdownRenderer } from "../../../shared/ui/MarkdownRenderer";
 import { useAgentStore } from "../state/useAgentStore";
 import { liveModel, useLiveModelsStore } from "../state/useLiveModelsStore";
-import type { AgentMessage } from "../state/useAgentStore";
+import type { AgentChatMessage, AgentMessage } from "../state/useAgentStore";
 import { runAgent } from "../runtime/agentEngine";
-import type { AiMessage } from "../providers/types";
+import type { AiMessage, AiModelDef } from "../providers/types";
 import { loadAgentTools } from "../tools/loader";
 import { invoke } from "@tauri-apps/api/core";
-import { registerProvider } from "../providers/registry";
+import { getProvider } from "../providers/registry";
+import { loadProvider } from "../providers/configuredProvider";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { settingsTabCommandId } from "../../settings/settingsTabs";
 import { AgentDisclaimerDialog } from "./AgentDisclaimerDialog";
+import { AgentModelPicker } from "./AgentModelPicker";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { FeatureOffNotice } from "../../updater/components/FeatureOffNotice";
@@ -23,7 +27,8 @@ import { AGENT_DESKTOP_ONLY_MESSAGE, agentAvailable } from "../agentAvailability
 
 // Register tools once per workspace (hardcoded builtins + backend AI surface, the backend
 // winning a name clash). The backend AI surface is per workspace (feature-gated commands
-// are only offered where the feature is on), so switching workspace reloads the registry.
+// are only offered where the feature is on), so switching workspace reloads the registry. A load
+// that could not reach the server is tried again on the next use.
 let toolsRegisteredFor: string | null | undefined;
 let toolsLoading: Promise<void> | null = null;
 let toolsLoadingFor: string | null | undefined;
@@ -35,8 +40,8 @@ function ensureToolsRegistered(): Promise<void> {
   if (toolsLoading && toolsLoadingFor === workspaceId) return toolsLoading;
   toolsLoadingFor = workspaceId;
   toolsLoading = loadAgentTools()
-    .then(() => {
-      toolsRegisteredFor = workspaceId;
+    .then((result) => {
+      toolsRegisteredFor = result.fetchFailed ? undefined : workspaceId;
     })
     .finally(() => {
       toolsLoading = null;
@@ -47,21 +52,10 @@ function ensureToolsRegistered(): Promise<void> {
 // Providers are registered once per providerId. The provider never holds the
 // key: the Rust proxy reads it from the secret vault on every request, so
 // switching the key in Settings is invisible at this layer and the next
-// `chat()` uses whatever the keyring currently holds.
-const registeredProviders = new Set<string>();
-
+// `chat()` uses whatever the keyring currently holds. A provider this app does
+// not support stays unregistered, and the run says so.
 async function ensureProviderRegistered(providerId: string): Promise<void> {
-  if (registeredProviders.has(providerId)) return;
-
-  if (providerId === "anthropic") {
-    const { createAnthropicProvider } = await import("../providers/anthropic");
-    registerProvider(createAnthropicProvider());
-  } else if (providerId === "openai") {
-    const { createOpenAiProvider } = await import("../providers/openai");
-    registerProvider(createOpenAiProvider());
-  }
-
-  registeredProviders.add(providerId);
+  await loadProvider(providerId).catch(() => undefined);
 }
 
 const DISCLAIMER_FLAG = "agent-disclaimer-accepted";
@@ -75,13 +69,17 @@ function acceptDisclaimer(): void {
 }
 
 /**
- * Convert stored AgentMessages to AiMessages for the provider.
+ * The prompts and answers of a transcript as the provider takes them. The history is plain text
+ * in every provider's shape, so a conversation continues after a switch to another provider;
+ * the lines marking a switch are left out.
  */
 function toAiMessages(messages: AgentMessage[]): AiMessage[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  return messages
+    .filter((m): m is AgentChatMessage => m.role !== "model-switch")
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 }
 
 export function AgentOverlay() {
@@ -92,8 +90,13 @@ export function AgentOverlay() {
   const usage = useAgentStore((s) => s.usage);
   const settings = useAgentStore((s) => s.settings);
   const modelLabel = useLiveModelsStore(
-    (s) => liveModel(s.byProvider, settings.providerId, settings.modelId)?.name ?? settings.modelId,
+    (s) =>
+      liveModel(s.byProvider, settings.providerId, settings.modelId)?.name ??
+      getProvider(settings.providerId)?.config.models.find((m) => m.id === settings.modelId)
+        ?.name ??
+      settings.modelId,
   );
+  const switchModel = useAgentStore((s) => s.switchModel);
   const close = useAgentStore((s) => s.close);
   const reset = useAgentStore((s) => s.reset);
   const startNewConversation = useAgentStore((s) => s.startNewConversation);
@@ -133,6 +136,8 @@ export function AgentOverlay() {
   useEffect(() => {
     if (!isOpen) return;
     function handleGlobalEscape(e: KeyboardEvent) {
+      // An open menu, such as the model picker, closes on its own Escape.
+      if (e.target instanceof Element && e.target.closest('[role="menu"]')) return;
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
@@ -250,6 +255,19 @@ export function AgentOverlay() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [startNewConversation]);
 
+  const handleModelPick = useCallback(
+    (providerId: string, model: AiModelDef) => {
+      switchModel(providerId, model.id, model.name);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [switchModel],
+  );
+
+  const handleOpenModelSettings = useCallback(() => {
+    close();
+    void runCommandFromClick(settingsTabCommandId("agent"), undefined, { source: "menu" });
+  }, [close]);
+
   if (!isOpen) return null;
 
   if (!desktop) return <AgentDesktopOnly onClose={close} />;
@@ -309,23 +327,26 @@ export function AgentOverlay() {
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
           <Bot className="h-4 w-4 shrink-0 text-rim-accent" />
-          <span className="text-sm font-medium text-rim-text">RIM Agent</span>
+          <span className="shrink-0 text-sm font-medium text-rim-text">RIM Agent</span>
+          <AgentModelPicker
+            label={modelLabel}
+            disabled={isStreaming}
+            onPick={handleModelPick}
+            onOpenSettings={handleOpenModelSettings}
+          />
           <button
             type="button"
             onClick={handleNewConversation}
-            className="ml-2 rounded p-0.5 text-rim-text-faint transition hover:text-rim-accent"
+            className="rounded p-0.5 text-rim-text-faint transition hover:text-rim-accent"
             title="New conversation"
             aria-label="New conversation"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
-          <span className="ml-auto text-[10px] text-rim-text-faint">
-            {settings.providerId} / {modelLabel}
-          </span>
           <button
             type="button"
             onClick={close}
-            className="rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
+            className="ml-auto rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
             aria-label="Close agent"
           >
             <X className="h-4 w-4" />
@@ -441,6 +462,7 @@ function AgentDesktopOnly({ onClose }: { onClose: () => void }) {
 }
 
 function MessageBubble({ message }: { message: AgentMessage }) {
+  if (message.role === "model-switch") return <ModelSwitchLine model={message.content} />;
   const isUser = message.role === "user";
 
   return (
@@ -460,6 +482,17 @@ function MessageBubble({ message }: { message: AgentMessage }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/** The transcript's mark where the person switched to `model`; later answers come from it. */
+function ModelSwitchLine({ model }: { model: string }) {
+  return (
+    <div role="note" className="flex items-center gap-2 text-[11px] text-rim-text-faint">
+      <span aria-hidden="true" className="h-px flex-1 bg-rim-line" />
+      <span>Switched to {model}</span>
+      <span aria-hidden="true" className="h-px flex-1 bg-rim-line" />
     </div>
   );
 }

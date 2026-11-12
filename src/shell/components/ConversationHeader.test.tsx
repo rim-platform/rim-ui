@@ -16,6 +16,11 @@ import { useShellStore } from "../state/useShellStore";
 
 const requestMock = vi.fn();
 
+/** The server info read of a server that lists no capabilities. */
+const NO_CAPABILITIES = {
+  serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
+};
+
 vi.mock("../../core/graphql/client", () => ({
   graphqlClient: {
     request: (...args: unknown[]) => requestMock(...args),
@@ -29,11 +34,27 @@ vi.mock("../../features/commands/hooks/useKeybindLabel", () => ({
   useKeybindLabel: () => null,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
+import { useSearchOverlayStore } from "../../features/messages/state/useSearchOverlayStore";
 import { lockVault } from "../../core/accountVault/accountVault";
 import { unlockTestVault } from "../../test/accountVault";
 import { ConversationHeader } from "./ConversationHeader";
 import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../test/clickCommands";
+import { toast } from "../../shared/toast";
+import {
   emptyInbox,
+  graphqlError,
   makeConversation,
   workspaceMembers,
 } from "../../features/conversations/__fixtures__/conversations";
@@ -58,6 +79,7 @@ describe("ConversationHeader — keyboard", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({
           server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.OWNER },
@@ -85,8 +107,17 @@ describe("ConversationHeader — keyboard", () => {
   });
 });
 
-function serveConversation(conversation: ConversationSummary, viewerRole?: ServerMemberRoleGql) {
+function serveConversation(
+  conversation: ConversationSummary,
+  viewerRole?: ServerMemberRoleGql,
+  execute: () => Promise<unknown> = async () => commandSucceeded(),
+) {
   requestMock.mockImplementation((document: string) => {
+    if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
+    if (document.includes("mutation ExecuteCommand")) return execute();
+    if (document.includes("mutation UpdateConversationTopic")) {
+      return Promise.resolve({ updateConversationTopic: { id: conversation.id, topic: "" } });
+    }
     if (document.includes("query Conversation(")) {
       return Promise.resolve({ conversation });
     }
@@ -109,6 +140,7 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
   afterEach(() => {
     useWorkspaceStore.setState({ workspaceId: null });
     useShellStore.getState().reset();
+    clearServedCommands();
   });
 
   it("shows a lock and the member count for a private channel; the count opens the members panel", async () => {
@@ -154,27 +186,69 @@ describe("ConversationHeader — channel privacy, members and menu", () => {
     expect(screen.queryByText(/1 members/)).not.toBeInTheDocument();
   });
 
+  /** Opens the topic edit from the conversation menu and types `topic` into it. */
+  async function editTopic(topic: string) {
+    renderHeader();
+    fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
+    const input = await screen.findByPlaceholderText("Set a topic...");
+    expect(input).toHaveValue("Old topic");
+    await waitFor(() => expect(input).toHaveFocus());
+    fireEvent.change(input, { target: { value: topic } });
+    return input;
+  }
+
   it("edits the topic from the conversation menu and saves it with Enter", async () => {
+    serveCommands("srv-1", ["chat.set_topic"]);
     serveConversation(
       makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
       ServerMemberRoleGql.MODERATOR,
     );
-    renderHeader();
-    fireEvent.click(await screen.findByRole("button", { name: "Conversation menu" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Edit topic…" }));
-
-    const input = await screen.findByPlaceholderText("Set a topic...");
-    expect(input).toHaveValue("Old topic");
-    await waitFor(() => expect(input).toHaveFocus());
-    fireEvent.change(input, { target: { value: "New topic" } });
+    const input = await editTopic("New topic");
     fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "chat.set_topic",
+          args: { server_id: "srv-1", conversation_id: "conv-1", topic: "New topic" },
+          commandContext: { workspaceId: "srv-1", conversationId: "conv-1" },
+        },
+      ]),
+    );
+    expect(useTopicEditStore.getState().conversationId).toBeNull();
+    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
+  });
+
+  it("sets the topic with the mutation on a host without the command", async () => {
+    serveCommands("srv-1", ["chat.join_channel"]);
+    serveConversation(
+      makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
+      ServerMemberRoleGql.MODERATOR,
+    );
+    fireEvent.keyDown(await editTopic("New topic"), { key: "Enter" });
     await waitFor(() =>
       expect(
         requestMock.mock.calls.filter(([doc]) => String(doc).includes("UpdateConversationTopic")),
       ).toHaveLength(1),
     );
-    expect(useTopicEditStore.getState().conversationId).toBeNull();
-    expect(screen.queryByPlaceholderText("Set a topic...")).not.toBeInTheDocument();
+    expect(sentCommands(requestMock)).toEqual([]);
+  });
+
+  it("tells why the server refused a topic", async () => {
+    const error = vi.spyOn(toast, "error");
+    serveCommands("srv-1", ["chat.set_topic"]);
+    serveConversation(
+      makeConversation({ id: "conv-1", serverId: "srv-1", topic: "Old topic" }),
+      ServerMemberRoleGql.MODERATOR,
+      async () => {
+        throw graphqlError("VALIDATION", "the topic is too long");
+      },
+    );
+    fireEvent.keyDown(await editTopic("x".repeat(600)), { key: "Enter" });
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("The topic could not be changed: the topic is too long"),
+    );
+    error.mockRestore();
   });
 
   it("marks an archived channel", async () => {
@@ -313,6 +387,7 @@ describe("ConversationHeader — group without a title", () => {
       memberCount: 3,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
       if (document.includes("query ServerMembers"))
         return Promise.resolve({ serverMembers: workspaceMembers });
@@ -335,6 +410,7 @@ describe("ConversationHeader — group without a title", () => {
       memberCount: 1,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) return Promise.resolve({ conversation: group });
       if (document.includes("query ServerMembers"))
         return Promise.resolve({ serverMembers: workspaceMembers });
@@ -375,6 +451,7 @@ describe("ConversationHeader — DM sent as a request", () => {
       memberCount: 2,
     });
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query ConversationDmRequestPending")) {
         return Promise.resolve({ conversation: { id: dm.id, dmRequestPending: pending } });
       }
@@ -415,6 +492,7 @@ describe("ConversationHeader — invite gate", () => {
     [ServerMemberRoleGql.GUEST, false],
   ])("viewer %s: Invite member shown = %s", async (role, shown) => {
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({ server: { id: "srv-1", name: "Acme", viewerRole: role } });
       }
@@ -434,6 +512,7 @@ describe("ConversationHeader — draft DM", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Server(")) {
         return Promise.resolve({
           server: { id: "srv-1", name: "Acme", viewerRole: ServerMemberRoleGql.MEMBER },
@@ -489,6 +568,7 @@ describe("ConversationHeader — way back from a DM", () => {
   beforeEach(() => {
     requestMock.mockReset();
     requestMock.mockImplementation((document: string) => {
+      if (document.includes("query ServerInfo")) return Promise.resolve(NO_CAPABILITIES);
       if (document.includes("query Conversation(")) {
         return Promise.resolve({
           conversation: makeConversation({
@@ -563,5 +643,68 @@ describe("ConversationHeader — no conversation open", () => {
     renderHeader();
     expect(screen.getByRole("heading", { name: "No conversation" })).toBeInTheDocument();
     expect(document.body.querySelector("svg.lucide-hash")).toBeNull();
+  });
+
+  it("wraps in a narrow window: the controls drop to a second line, and the count stays whole", async () => {
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ shellWidth: "narrow", selectedConversationId: "conv-1" });
+    serveConversation(makeConversation({ title: "design", memberCount: 1 }));
+    renderHeader();
+
+    const count = await screen.findByRole("button", { name: "1 member" });
+    expect(count.className).toContain("whitespace-nowrap");
+    // The top bar holds the navigation button.
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+    const bar = count.closest("div.border-b") as HTMLElement;
+    expect(bar.className).toContain("flex-wrap");
+    expect(bar.className).toContain("min-h-10");
+    useShellStore.setState({ shellWidth: "wide" });
+  });
+});
+
+describe("ConversationHeader — the commands its controls run", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
+    useWorkspaceStore.setState({ workspaceId: "srv-1" });
+    useShellStore.setState({ selectedConversationId: "conv-1" });
+    useMembersPanelStore.setState({ open: false });
+  });
+
+  afterEach(() => {
+    useSearchOverlayStore.getState().close();
+    useWorkspaceStore.setState({ workspaceId: null });
+    useShellStore.getState().reset();
+  });
+
+  it("runs the member count, Invite member, Pinned messages and Search in the open conversation", async () => {
+    const user = userEvent.setup();
+    serveConversation(
+      makeConversation({ id: "conv-1", title: "general", memberCount: 3 }),
+      ServerMemberRoleGql.OWNER,
+    );
+    renderHeader();
+
+    await user.click(await screen.findByRole("button", { name: "3 members" }));
+    expect(useMembersPanelStore.getState().open).toBe(true);
+    await user.click(await screen.findByRole("button", { name: "Invite member" }));
+    expect(useShellStore.getState().showInviteDialog).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Pinned messages" }));
+    expect(useShellStore.getState().pinnedPanelOpen).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Search in #general" }));
+    expect(useSearchOverlayStore.getState()).toMatchObject({
+      isOpen: true,
+      scope: { kind: "conversation", conversationId: "conv-1" },
+    });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_conversation_members"],
+      ["admin.invite_member"],
+      ["workspace.toggle_pinned_messages"],
+      ["workspace.search_in_channel"],
+    ]);
+    expect(
+      requestMock.mock.calls.filter(([doc]) => String(doc).includes("ExecuteCommand")),
+    ).toEqual([]);
   });
 });

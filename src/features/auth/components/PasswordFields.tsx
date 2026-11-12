@@ -9,9 +9,9 @@ import {
 } from "../password";
 
 const inputClass =
-  "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40 disabled:opacity-50";
+  "w-full rounded-[9px] border border-rim-line-strong bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent disabled:opacity-50";
 
-const labelClass = "block text-xs font-medium uppercase tracking-wider text-rim-text-faint";
+const labelClass = "block text-[13px] font-medium text-rim-text";
 
 /** What the person reads before choosing a password. */
 export const PASSWORD_EXPLANATION =
@@ -28,6 +28,8 @@ export function PasswordInput({
   disabled,
   autoFocus,
   autoComplete = "current-password",
+  invalid,
+  describedBy,
 }: {
   label: string;
   value: string;
@@ -35,18 +37,23 @@ export function PasswordInput({
   disabled?: boolean;
   autoFocus?: boolean;
   autoComplete?: string;
+  /** Marks the field as refused, with `describedBy` naming the text that says why. */
+  invalid?: boolean;
+  describedBy?: string;
 }) {
   return (
     <label className={labelClass}>
       {label}
       <input
         type="password"
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
         disabled={disabled}
         autoFocus={autoFocus}
         autoComplete={autoComplete}
-        className={`mt-1 normal-case tracking-normal ${inputClass}`}
+        className={`mt-1.5 ${inputClass}`}
       />
     </label>
   );
@@ -90,14 +97,15 @@ export function NewPasswordFields({
           <label
             key={kind}
             className={cn(
-              "flex flex-1 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+              "flex flex-1 cursor-pointer items-center gap-2 rounded-[9px] border px-3 py-2 text-xs",
               value.kind === kind
-                ? "border-rim-accent/40 bg-rim-panel text-rim-text"
+                ? "border-rim-accent bg-rim-void text-rim-text"
                 : "border-rim-line text-rim-text-muted",
             )}
           >
             <input
               type="radio"
+              className="accent-rim-accent-strong"
               name={name}
               checked={value.kind === kind}
               onChange={() => choose(kind)}
@@ -142,9 +150,10 @@ export function KeepSignedInCheckbox({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-rim-text-muted">
+    <label className="flex items-center gap-2 text-[13px] text-rim-text-muted">
       <input
         type="checkbox"
+        className="h-4 w-4 accent-rim-accent-strong"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.checked)}

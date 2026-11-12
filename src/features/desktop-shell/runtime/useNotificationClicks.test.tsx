@@ -101,6 +101,16 @@ describe("useNotificationClicks", () => {
     setWorkspaceId.mockRestore();
   });
 
+  it("opens the agent session an agent session notification names", async () => {
+    await mount();
+    await click({ rimAgentSession: { key: "session-7" } });
+    expect(showCalls()).toHaveLength(1);
+    expect(useShellStore.getState().mainSurface).toEqual({
+      kind: "agent-session",
+      key: "session-7",
+    });
+  });
+
   it("switches workspace first when the message is in another one", async () => {
     await mount();
     await click({ rimMessage: TARGET });

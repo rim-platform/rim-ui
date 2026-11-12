@@ -1,10 +1,14 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useShellStore } from "../../../shell/state/useShellStore";
-import { usePinMessageMutation, useUnpinMessageMutation } from "../api/usePinMessage";
+import { runPinCommand } from "../api/messageCommands";
 import { toast } from "../../../shared/toast";
 import { useSearchOverlayStore } from "../state/useSearchOverlayStore";
 import { vimModeEnabled } from "../../commands/state/useKeybindProfileStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
+import {
+  useSelectedMessageStore,
+  type MessageSelectionTarget,
+} from "../state/useSelectedMessageStore";
 
 interface MessageNavItem {
   id: string;
@@ -75,27 +79,31 @@ export function useMessageNavigation({
   scrollToIndex,
   pointerEntryRef,
 }: UseMessageNavigationOptions) {
-  // Selection is tracked by message id so it stays on the same message when
-  // older pages are prepended (which shifts every index).
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  // Selection is tracked by message id so it stays on the same message when older pages are
+  // prepended (which shifts every index). It lives in the shared store, so commands run from
+  // keybinds and other surfaces act on the same message.
+  const selectedMessageId = useSelectedMessageStore((s) =>
+    s.selection &&
+    s.selection.workspaceId === workspaceId &&
+    s.selection.conversationId === conversationId
+      ? s.selection.messageId
+      : null,
+  );
+  const setSelectedMessageId = useCallback(
+    (messageId: string | null) => {
+      if (!conversationId) return;
+      const store = useSelectedMessageStore.getState();
+      if (messageId === null || !workspaceId) store.clear(conversationId);
+      else store.select({ workspaceId, conversationId, messageId });
+    },
+    [workspaceId, conversationId],
+  );
   const selectedMessageIndex = useMemo(
     () => (selectedMessageId ? items.findIndex((m) => m.id === selectedMessageId) : -1),
     [items, selectedMessageId],
   );
   const [deleteConfirmMessageId, setDeleteConfirmMessageId] = useState<string | null>(null);
   const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
-
-  const pinMessage = usePinMessageMutation();
-  const unpinMessage = useUnpinMessageMutation();
-
-  // Stabilize mutation functions via refs so the handleMessageListKeyDown
-  // callback is not recreated every render (useMutation returns new objects).
-  const pinMessageRef = useRef(pinMessage.mutate);
-  const unpinMessageRef = useRef(unpinMessage.mutate);
-  useLayoutEffect(() => {
-    pinMessageRef.current = pinMessage.mutate;
-    unpinMessageRef.current = unpinMessage.mutate;
-  }, [pinMessage.mutate, unpinMessage.mutate]);
 
   /** Select a row and scroll it into view. */
   const selectIndex = useCallback(
@@ -105,17 +113,21 @@ export function useMessageNavigation({
       setSelectedMessageId(msg.id);
       scrollToIndex(index);
     },
-    [items, scrollToIndex],
+    [items, scrollToIndex, setSelectedMessageId],
   );
 
-  // Reset the selection and the pending delete when the conversation changes, while rendering
-  // it, and the editing state and the delete timer once it is shown.
+  // Reset the pending delete when the conversation changes, while rendering it, and the
+  // editing state and the delete timer once it is shown. The selection of a conversation is
+  // dropped when the list leaves it or unmounts.
   const [selectionConversationId, setSelectionConversationId] = useState(conversationId);
   if (selectionConversationId !== conversationId) {
     setSelectionConversationId(conversationId);
-    setSelectedMessageId(null);
     setDeleteConfirmMessageId(null);
   }
+  useEffect(() => {
+    if (!conversationId) return;
+    return () => useSelectedMessageStore.getState().clear(conversationId);
+  }, [conversationId]);
   useEffect(() => {
     setEditingMessageId(null);
     if (deleteConfirmTimerRef.current) {
@@ -130,7 +142,7 @@ export function useMessageNavigation({
       setSelectedMessageId(messageId);
       setDeleteConfirmMessageId(null);
     },
-    [items],
+    [items, setSelectedMessageId],
   );
 
   // Select the newest message when entering navigation mode with nothing selected; a pointer
@@ -147,7 +159,7 @@ export function useMessageNavigation({
       }
     });
     return unsub;
-  }, [selectedMessageIndex, items, selectIndex, pointerEntryRef]);
+  }, [selectedMessageIndex, items, selectIndex, setSelectedMessageId, pointerEntryRef]);
 
   // Clean up delete confirmation timer on unmount
   useEffect(() => {
@@ -157,6 +169,32 @@ export function useMessageNavigation({
       }
     };
   }, []);
+
+  /** Moves the selection as the list's navigation keys do; `false` when the list is empty. */
+  const moveSelection = useCallback(
+    (target: MessageSelectionTarget): boolean => {
+      if (items.length === 0) return false;
+      setDeleteConfirmMessageId(null);
+      if (target === "first") selectIndex(0);
+      else if (target === "last") selectIndex(items.length - 1);
+      else if (target === "next") selectIndex(Math.min(selectedMessageIndex + 1, items.length - 1));
+      else selectIndex(selectedMessageIndex <= 0 ? 0 : selectedMessageIndex - 1);
+      return true;
+    },
+    [items, selectedMessageIndex, selectIndex],
+  );
+
+  /** Shows more or less of a message whose tall text folds; `false` when it does not fold. */
+  const toggleFold = useCallback(
+    (messageId: string): boolean => {
+      const fold = useMessageFoldStore.getState();
+      if (messageId === editingMessageId || !fold.foldable.has(messageId)) return false;
+      onFoldToggle?.(messageId, !fold.expanded.has(messageId));
+      fold.toggleExpanded(messageId);
+      return true;
+    },
+    [editingMessageId, onFoldToggle],
+  );
 
   const handleMessageListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -212,22 +250,19 @@ export function useMessageNavigation({
       // Home and End: first and last message
       if (e.key === "Home" || e.key === "End") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(e.key === "Home" ? 0 : items.length - 1);
+        moveSelection(e.key === "Home" ? "first" : "last");
         return;
       }
 
       // Navigation: j/k and ArrowDown/ArrowUp
       if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(Math.min(selectedMessageIndex + 1, items.length - 1));
+        moveSelection("next");
         return;
       }
       if (e.key === "ArrowUp" || e.key === "k") {
         e.preventDefault();
-        setDeleteConfirmMessageId(null);
-        selectIndex(selectedMessageIndex <= 0 ? 0 : selectedMessageIndex - 1);
+        moveSelection("previous");
         return;
       }
 
@@ -288,14 +323,15 @@ export function useMessageNavigation({
           if (!canPin) break;
           e.preventDefault();
           if (!workspaceId || !conversationId) break;
-          const vars = { serverId: workspaceId, conversationId, messageId: msg.id };
-          if (msg.isPinned) {
-            unpinMessageRef.current(vars);
-            toast.success("Message unpinned");
-          } else {
-            pinMessageRef.current(vars);
-            toast.success("Message pinned");
-          }
+          // The list key runs the pin or unpin command on the selected message.
+          void runPinCommand(
+            { workspaceId, conversationId, selectedMessageId: msg.id },
+            !msg.isPinned,
+            {
+              source: "key",
+              successToast: msg.isPinned ? "Message unpinned" : "Message pinned",
+            },
+          );
           break;
         }
         case "d": {
@@ -324,11 +360,7 @@ export function useMessageNavigation({
         }
         // o shows more or less of a message whose tall text folds.
         case "o": {
-          const fold = useMessageFoldStore.getState();
-          if (msg.id === editingMessageId || !fold.foldable.has(msg.id)) break;
-          e.preventDefault();
-          onFoldToggle?.(msg.id, !fold.expanded.has(msg.id));
-          fold.toggleExpanded(msg.id);
+          if (toggleFold(msg.id)) e.preventDefault();
           break;
         }
         case "/": {
@@ -356,11 +388,13 @@ export function useMessageNavigation({
       canStartThread,
       canPin,
       onOpenActions,
-      onFoldToggle,
+      toggleFold,
+      moveSelection,
       workspaceId,
       conversationId,
       firstNewIndex,
       selectIndex,
+      setSelectedMessageId,
     ],
   );
 
@@ -369,5 +403,7 @@ export function useMessageNavigation({
     deleteConfirmMessageId,
     handleMessageListKeyDown,
     selectPressedMessage,
+    moveSelection,
+    toggleFold,
   };
 }

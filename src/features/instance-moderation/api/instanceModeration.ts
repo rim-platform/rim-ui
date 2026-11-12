@@ -1,8 +1,19 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { FORBIDDEN, graphqlErrorCode, isSchemaRefusal } from "../../../core/graphql/errors";
+import {
+  FORBIDDEN,
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  isSchemaRefusal,
+} from "../../../core/graphql/errors";
 import type {
   InstanceAbuseReport,
   InstanceIpBlock,
@@ -19,6 +30,7 @@ import type {
   MutationInstanceUnblockPrincipalArgs,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 
 /**
@@ -267,10 +279,13 @@ function useModerationMutationEffects(keys: readonly (readonly unknown[])[]) {
     onSuccess: () => {
       for (const queryKey of keys) qc.invalidateQueries({ queryKey });
     },
-    onError: (err: unknown) => {
-      if (isOperatorRefusal(err)) qc.invalidateQueries({ queryKey: ["me", "instanceOperator"] });
-    },
+    onError: (err: unknown) => afterOperatorRefusal(qc, err),
   };
+}
+
+/** Asks again whether the viewer is an operator when the server refused `err` with `FORBIDDEN`. */
+function afterOperatorRefusal(qc: QueryClient, err: unknown): void {
+  if (isOperatorRefusal(err)) void qc.invalidateQueries({ queryKey: ["me", "instanceOperator"] });
 }
 
 const REPORTS_ROOT = ["instanceModeration", "reports"] as const;
@@ -315,16 +330,41 @@ export function useClearProfileMutation() {
   });
 }
 
+/**
+ * Lifts the server's block on a principal and says in a toast what happened: lifted (with the
+ * email), not blocked, or why it failed. A refusal for not being an operator any more reads that
+ * again. The blocked list and the Unblock Principal command both lift blocks with it.
+ *
+ * @param name - How the toast names the principal.
+ */
+export async function liftPrincipalBlock(
+  qc: QueryClient,
+  vars: MutationInstanceUnblockPrincipalArgs,
+  name: string,
+): Promise<void> {
+  let outcome: InstancePrincipalUnblockOutcome;
+  try {
+    const res = await graphqlClient.request<{
+      instanceUnblockPrincipal: InstancePrincipalUnblockOutcome;
+    }>(UNBLOCK_PRINCIPAL, vars);
+    outcome = res.instanceUnblockPrincipal;
+  } catch (err) {
+    afterOperatorRefusal(qc, err);
+    toast.error(graphqlErrorMessage(err, "Could not lift the block"));
+    return;
+  }
+  void qc.invalidateQueries({ queryKey: queryKeys.instancePrincipalBlocks });
+  if (!outcome.lifted) toast.info(`${name} was not blocked`);
+  else if (outcome.emailUnblocked) toast.success(`Unblocked ${name} and their email`);
+  else toast.success(`Unblocked ${name}`);
+}
+
+/** {@link liftPrincipalBlock} as a mutation, whose pending state a row shows. */
 export function useUnblockPrincipalMutation() {
-  const effects = useModerationMutationEffects([queryKeys.instancePrincipalBlocks]);
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: MutationInstanceUnblockPrincipalArgs) => {
-      const res = await graphqlClient.request<{
-        instanceUnblockPrincipal: InstancePrincipalUnblockOutcome;
-      }>(UNBLOCK_PRINCIPAL, vars);
-      return res.instanceUnblockPrincipal;
-    },
-    ...effects,
+    mutationFn: ({ name, ...vars }: MutationInstanceUnblockPrincipalArgs & { name: string }) =>
+      liftPrincipalBlock(qc, vars, name),
   });
 }
 
@@ -342,13 +382,33 @@ export function useBlockIpMutation() {
   });
 }
 
+/**
+ * Lifts the server's block on an address and says in a toast what happened: lifted, not
+ * blocked, or why it failed. The blocked list and the Unblock Address command both lift blocks
+ * with it.
+ */
+export async function liftIpBlock(
+  qc: QueryClient,
+  vars: MutationInstanceUnblockIpArgs,
+): Promise<void> {
+  let lifted: boolean;
+  try {
+    const res = await graphqlClient.request<{ instanceUnblockIp: boolean }>(UNBLOCK_IP, vars);
+    lifted = res.instanceUnblockIp;
+  } catch (err) {
+    afterOperatorRefusal(qc, err);
+    toast.error(graphqlErrorMessage(err, "Could not lift the block"));
+    return;
+  }
+  void qc.invalidateQueries({ queryKey: queryKeys.instanceIpBlocks });
+  if (lifted) toast.success(`Unblocked ${vars.cidr}`);
+  else toast.info(`${vars.cidr} was not blocked`);
+}
+
+/** {@link liftIpBlock} as a mutation, whose pending state a row shows. */
 export function useUnblockIpMutation() {
-  const effects = useModerationMutationEffects([queryKeys.instanceIpBlocks]);
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: MutationInstanceUnblockIpArgs) => {
-      const res = await graphqlClient.request<{ instanceUnblockIp: boolean }>(UNBLOCK_IP, vars);
-      return res.instanceUnblockIp;
-    },
-    ...effects,
+    mutationFn: (vars: MutationInstanceUnblockIpArgs) => liftIpBlock(qc, vars),
   });
 }

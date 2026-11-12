@@ -147,4 +147,86 @@ describe("useAgentStore", () => {
     expect(conv.messages).toHaveLength(1);
     expect(conv.messages[0].content).toBe("Hello world");
   });
+
+  describe("switchModel", () => {
+    function activeMessages(): AgentMessage[] {
+      const state = useAgentStore.getState();
+      return state.conversations.find((c) => c.id === state.activeConversationId)!.messages;
+    }
+
+    function openWithAnswer() {
+      useAgentStore.getState().open();
+      const convId = useAgentStore.getState().activeConversationId!;
+      useAgentStore.getState().addMessage(convId, {
+        role: "user",
+        content: "Hi",
+        timestamp: "2026-11-10T10:00:00.000Z",
+      });
+      useAgentStore.getState().appendText("Hello");
+    }
+
+    it("sets the provider and model the settings hold and marks the switch", () => {
+      openWithAnswer();
+      useAgentStore.getState().switchModel("openai", "gpt-5.5", "GPT-5.5");
+
+      expect(useAgentStore.getState().settings).toEqual({
+        providerId: "openai",
+        modelId: "gpt-5.5",
+        systemPrompt: "",
+      });
+      const messages = activeMessages();
+      expect(messages).toHaveLength(3);
+      expect(messages[2]).toMatchObject({ role: "model-switch", content: "GPT-5.5" });
+    });
+
+    it("adds no line to a conversation with no messages yet", () => {
+      useAgentStore.getState().open();
+      useAgentStore.getState().switchModel("anthropic", "claude-haiku-5-5", "Claude Haiku 5.5");
+
+      expect(useAgentStore.getState().settings.modelId).toBe("claude-haiku-5-5");
+      expect(activeMessages()).toEqual([]);
+    });
+
+    it("keeps one line for two switches in a row, naming the last model", () => {
+      openWithAnswer();
+      useAgentStore.getState().switchModel("anthropic", "claude-haiku-5-5", "Claude Haiku 5.5");
+      useAgentStore.getState().switchModel("anthropic", "claude-opus-5-5", "Claude Opus 5.5");
+
+      const messages = activeMessages();
+      expect(messages).toHaveLength(3);
+      expect(messages[2]).toMatchObject({ role: "model-switch", content: "Claude Opus 5.5" });
+    });
+
+    it("starts a new answer after the line rather than appending to the one before it", () => {
+      openWithAnswer();
+      useAgentStore.getState().switchModel("anthropic", "claude-haiku-5-5", "Claude Haiku 5.5");
+      useAgentStore.getState().appendText("From Haiku");
+
+      const messages = activeMessages();
+      expect(messages.map((m) => m.role)).toEqual([
+        "user",
+        "assistant",
+        "model-switch",
+        "assistant",
+      ]);
+      expect(messages[1].content).toBe("Hello");
+      expect(messages[3].content).toBe("From Haiku");
+    });
+
+    it("is refused while a turn runs", () => {
+      openWithAnswer();
+      useAgentStore.getState().setStatus("streaming");
+      useAgentStore.getState().switchModel("openai", "gpt-5.5", "GPT-5.5");
+
+      expect(useAgentStore.getState().settings.providerId).toBe("anthropic");
+      expect(activeMessages()).toHaveLength(2);
+    });
+
+    it("does nothing for the model already chosen", () => {
+      openWithAnswer();
+      useAgentStore.getState().switchModel("anthropic", "claude-sonnet-5-5", "Claude Sonnet 5.5");
+
+      expect(activeMessages()).toHaveLength(2);
+    });
+  });
 });

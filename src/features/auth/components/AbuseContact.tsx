@@ -7,11 +7,11 @@ export function AbuseContact() {
   const contact = useServerInfo().info?.abuseContact?.trim();
   if (!contact) return null;
   return (
-    <p className="text-center text-xs text-rim-text-faint">
+    <p className="ml-auto text-xs text-rim-text-muted">
       Report abuse on this server:{" "}
       <ExternalLink
         href={abuseContactHref(contact)}
-        className="break-all text-rim-text-muted underline underline-offset-2 hover:text-rim-text"
+        className="break-all text-rim-text underline underline-offset-2 hover:text-rim-accent"
       >
         {contact}
       </ExternalLink>

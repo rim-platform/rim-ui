@@ -5,10 +5,17 @@ import { MAX_ATTACHMENT_BYTES } from "../api/attachmentTypes";
 import { useDraftStore } from "../state/useDraftStore";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
+import { queryClient } from "../../../core/query/queryClient";
 import {
   PostingPolicy,
   ServerFeatureState,
@@ -51,6 +58,10 @@ vi.mock("../../../shared/toast/useToastStore", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
   useToastStore: vi.fn(),
 }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
+}));
 vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: markTypingSent }),
 }));
@@ -70,8 +81,8 @@ function serve(
   });
 }
 
-function renderComposer() {
-  const qc = createTestQueryClient();
+/** Renders the composer; `qc` is the cache it reads, a fresh one unless given. */
+function renderComposer(qc: QueryClient = createTestQueryClient()) {
   render(
     <QueryClientProvider client={qc}>
       <Composer workspaceId="ws-1" conversationId="conv-1" />
@@ -103,10 +114,10 @@ describe("Composer — membership and archive gate", () => {
 
   it("replaces the composer with a join bar for an unjoined public channel", async () => {
     const unjoined = makeConversation({ isMember: false, memberCount: 42 });
-    serve(unjoined, ServerMemberRoleGql.GUEST, {
-      "mutation JoinChannel": () => ({ joinChannel: { ...unjoined, isMember: true } }),
-    });
-    renderComposer();
+    serve(unjoined, ServerMemberRoleGql.GUEST);
+    serveCommands("ws-1", ["chat.join_channel"]);
+    // The app's own cache, which the join's effect refreshes.
+    renderComposer(queryClient);
 
     const bar = await screen.findByTestId("join-channel-bar");
     expect(bar).toHaveTextContent("42 members");
@@ -114,15 +125,36 @@ describe("Composer — membership and archive gate", () => {
 
     // After joining, the conversation refetches as a member and the composer returns.
     serve({ ...unjoined, isMember: true }, ServerMemberRoleGql.GUEST, {
-      "mutation JoinChannel": () => ({ joinChannel: { ...unjoined, isMember: true } }),
+      "mutation ExecuteCommand": () => commandSucceeded(),
     });
     fireEvent.click(screen.getByRole("button", { name: "Join channel" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1" },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "chat.join_channel",
+          args: { server_id: "ws-1", conversation_id: "conv-1" },
+          commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+        },
       ]),
     );
     expect(await screen.findByRole("textbox")).toBeInTheDocument();
+    clearServedCommands();
+    queryClient.clear();
+  });
+
+  it("shows why joining failed in the join bar", async () => {
+    const unjoined = makeConversation({ isMember: false, memberCount: 42 });
+    serve(unjoined, ServerMemberRoleGql.GUEST, {
+      "mutation ExecuteCommand": () => {
+        throw graphqlError("TIMED_OUT", "You are timed out");
+      },
+    });
+    serveCommands("ws-1", ["chat.join_channel"]);
+    renderComposer();
+    fireEvent.click(await screen.findByRole("button", { name: "Join channel" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("You are timed out");
+    expect(toast.error).not.toHaveBeenCalled();
+    clearServedCommands();
   });
 
   it("shows an archived bar without Unarchive for a guest", async () => {
@@ -138,17 +170,21 @@ describe("Composer — membership and archive gate", () => {
 
   it("lets an owner unarchive from the archived bar", async () => {
     serve(makeConversation({ isArchived: true }), ServerMemberRoleGql.OWNER, {
-      "mutation SetConversationArchived": () => ({
-        setConversationArchived: makeConversation(),
-      }),
+      "mutation ExecuteCommand": () => commandSucceeded(),
     });
+    serveCommands("ws-1", ["chat.unarchive_channel"]);
     renderComposer();
     fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation SetConversationArchived")).toEqual([
-        { serverId: "ws-1", conversationId: "conv-1", archived: false },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "chat.unarchive_channel",
+          args: { server_id: "ws-1", conversation_id: "conv-1" },
+          commandContext: { workspaceId: "ws-1", conversationId: "conv-1" },
+        },
       ]),
     );
+    clearServedCommands();
   });
 
   it("shows the server message and flips to the archived bar when a send hits CONVERSATION_ARCHIVED", async () => {
@@ -872,6 +908,56 @@ describe("Composer — mentions by handle", () => {
     expect(row).toHaveTextContent("@alice:elsewhere.example");
     fireEvent.click(row);
     expect(textbox).toHaveValue("@alice:elsewhere.example ");
+  });
+});
+
+describe("Composer — mentioning a bot", () => {
+  const bot = {
+    ...workspaceMembers[1],
+    userId: "u-helper",
+    username: "helper",
+    displayName: "Helper",
+    isBot: true,
+  };
+
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  async function typeMention() {
+    renderComposer();
+    const textbox = await screen.findByRole("textbox");
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query ServerMembers").length).toBeGreaterThan(0),
+    );
+    await waitFor(() =>
+      expect(callsTo(requestMock, "query Conversation(").length).toBeGreaterThan(0),
+    );
+    fireEvent.change(textbox, { target: { value: "@Help", selectionStart: 5 } });
+  }
+
+  it("offers a bot with its badge in a channel it was added to", async () => {
+    serve(makeConversation({ memberIds: ["me", "u-helper"] }), ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({ serverMembers: [...workspaceMembers, bot] }),
+    });
+    await typeMention();
+    const row = await screen.findByRole("button", { name: /Helper/ });
+    expect(within(row).getByTestId("bot-badge")).toBeInTheDocument();
+  });
+
+  it("does not offer a bot in a channel it is not in", async () => {
+    serve(makeConversation({ memberIds: ["me"] }), ServerMemberRoleGql.MEMBER, {
+      "query ServerMembers": () => ({ serverMembers: [...workspaceMembers, bot] }),
+    });
+    await typeMention();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Helper/ })).toBeNull());
   });
 });
 

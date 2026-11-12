@@ -4,6 +4,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Dialog } from "../../../../shared/ui/Dialog";
 import { KIND_CONSENT_TEXT, listedSites } from "../../components/consentText";
 import type { UpdatePrompt } from "../state";
+import { showInvisibleCharacters } from "../../../agents/runtime/invisibleCharacters";
 
 interface UpdatePromptDialogProps {
   prompt: UpdatePrompt;
@@ -15,12 +16,13 @@ interface UpdatePromptDialogProps {
 /** An update that needs the person: what is new, with a warning when the publisher changed. */
 export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDialogProps) {
   const { plugin, check, plan, workspaceName } = prompt;
+  const name = showInvisibleCharacters(plugin.display_name);
   return (
-    <Dialog open onClose={onLater} title={`Update ${plugin.display_name}?`} maxWidth="max-w-md">
+    <Dialog open onClose={onLater} title={`Update ${name}?`} maxWidth="max-w-md">
       <div className="space-y-3 text-xs text-rim-text-muted">
         <p>
-          {workspaceName} updated {plugin.display_name} from {plugin.version} to{" "}
-          {check.statement.version}. This update needs your approval.
+          {workspaceName} updated {name} from {plugin.version} to {check.statement.version}. This
+          update needs your approval.
         </p>
         <ul className="space-y-1 text-rim-text">
           {plan.publisherChanged && (
@@ -36,6 +38,9 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
           {plan.newAiCommands.length > 0 && (
             <li>New commands the AI agent can run: {plan.newAiCommands.join(", ")}</li>
           )}
+          {plan.newCommands.length > 0 && (
+            <li>New commands it can run: {plan.newCommands.join(", ")}</li>
+          )}
           {plan.sitesChanged && (
             <li>
               Connects to other sites:{" "}
@@ -46,6 +51,7 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
             !plan.kindChanged &&
             plan.newCapabilities.length === 0 &&
             plan.newAiCommands.length === 0 &&
+            plan.newCommands.length === 0 &&
             !plan.sitesChanged && <li>It runs steps after installing.</li>}
         </ul>
         <p>Until you update, the installed version keeps running.</p>

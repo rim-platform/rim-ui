@@ -77,6 +77,11 @@ export function StatusDropdown({ position, onClose }: StatusDropdownProps) {
 
   const hasStatus = !!user?.statusText;
 
+  // The first preset takes the focus, so the menu works from the keyboard as it opens.
+  useEffect(() => {
+    menuRef.current?.querySelector("button")?.focus();
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -266,7 +271,7 @@ export function StatusDropdown({ position, onClose }: StatusDropdownProps) {
               type="button"
               onClick={handleCustomSave}
               disabled={!customText.trim() || updateProfile.isPending}
-              className="flex-1 rounded bg-rim-accent px-2 py-1.5 text-xs font-medium text-rim-void transition hover:bg-rim-accent/90 disabled:opacity-50"
+              className="flex-1 rounded bg-rim-text px-2 py-1.5 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
             >
               Save
             </button>

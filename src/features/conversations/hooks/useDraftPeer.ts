@@ -4,7 +4,7 @@ import { usePresenceStore } from "../../presence/state/usePresenceStore";
 import { useServerMembers } from "../../workspaces/api/useServerMembers";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 
-/** The person a draft direct message is to, as the side rail and header show them. */
+/** The person a draft direct message is to, as the conversation list and header show them. */
 export interface DraftPeer {
   name: string;
   avatarUrl: string | null | undefined;

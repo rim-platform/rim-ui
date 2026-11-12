@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 
 // Mock feature dependencies
 vi.mock("../../features/conversations/components/ConversationList", () => ({
@@ -16,8 +16,19 @@ vi.mock("../../features/conversations/components/NewMessagePicker", () => ({
 }));
 
 vi.mock("../../features/conversations/components/ConversationMembersPanel", () => ({
-  ConversationMembersPanel: ({ conversationId }: { conversationId: string }) => (
-    <div data-testid="members-panel">{conversationId}</div>
+  ConversationMembersPanel: ({
+    conversationId,
+    onClose,
+  }: {
+    conversationId: string;
+    onClose: () => void;
+  }) => (
+    <div data-testid="members-panel">
+      {conversationId}
+      <button type="button" onClick={onClose}>
+        Close members
+      </button>
+    </div>
   ),
 }));
 
@@ -27,17 +38,33 @@ vi.mock("../../features/workspaces/api/useMyServerRole", () => ({
 }));
 
 vi.mock("../../features/workspaces/components/WorkspaceMemberDirectory", () => ({
-  WorkspaceMemberDirectory: ({ workspaceId }: { workspaceId: string }) => (
-    <div data-testid="member-directory">{workspaceId}</div>
+  WorkspaceMemberDirectory: ({
+    workspaceId,
+    onClose,
+  }: {
+    workspaceId: string;
+    onClose: () => void;
+  }) => (
+    <div data-testid="member-directory">
+      {workspaceId}
+      <button type="button" onClick={onClose}>
+        Close directory
+      </button>
+    </div>
   ),
 }));
 
 vi.mock("../../features/notifications/components/NotificationsPanel", () => ({
-  NotificationsPanel: ({ workspaceId }: { workspaceId: string }) => (
-    <div data-testid="notifications-panel">{workspaceId}</div>
-  ),
+  NotificationsPanel: () => <div data-testid="notifications-panel" />,
 }));
 
+vi.mock("../../features/commands/runtime/runFromClick", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../features/commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useShellStore } from "../state/useShellStore";
 import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
@@ -55,16 +82,17 @@ describe("ToolPanel", () => {
     useNotificationsPanelStore.setState({ open: false });
     useWorkspaceStore.setState({ workspaceId: null });
     roleGate.isGuest = false;
+    vi.mocked(runCommandFromClick).mockClear();
   });
 
-  it("shows the notification inbox over the members panel while it is open", () => {
+  it("keeps the members panel while the notification inbox is open under the top bar", () => {
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useShellStore.setState({ activePanel: "inbox", selectedConversationId: "c-1" });
     useMembersPanelStore.setState({ open: true });
     useNotificationsPanelStore.setState({ open: true });
     render(<ToolPanel />);
-    expect(screen.getByTestId("notifications-panel")).toHaveTextContent("ws-1");
-    expect(screen.queryByTestId("members-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notifications-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("members-panel")).toHaveTextContent("c-1");
   });
 
   it("renders with 'Conversations' heading when inbox panel is active", () => {
@@ -133,5 +161,29 @@ describe("ToolPanel", () => {
     newMessage.focus();
     await user.keyboard("{Enter}");
     expect(useShellStore.getState().showNewMessagePicker).toBe(true);
+  });
+
+  it("runs its buttons and its panels' close buttons through the commands that show the panels", async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useShellStore.setState({ activePanel: "inbox", selectedConversationId: "c-1" });
+    render(<ToolPanel />);
+
+    await user.click(screen.getByRole("button", { name: "Workspace members" }));
+    expect(useMemberDirectoryStore.getState().open).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Close directory" }));
+    expect(useMemberDirectoryStore.getState().open).toBe(false);
+    await user.click(screen.getByRole("button", { name: "New message" }));
+    expect(useShellStore.getState().showNewMessagePicker).toBe(true);
+    act(() => useMembersPanelStore.setState({ open: true }));
+    await user.click(screen.getByRole("button", { name: "Close members" }));
+    expect(useMembersPanelStore.getState().open).toBe(false);
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_member_directory"],
+      ["workspace.toggle_member_directory"],
+      ["chat.create_group"],
+      ["workspace.toggle_conversation_members"],
+    ]);
   });
 });

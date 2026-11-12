@@ -1,4 +1,7 @@
-import type { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
+import type {
+  CommandArgumentType,
+  CommandSensitivity,
+} from "../../../core/graphql/generated/schema-types";
 import {
   useConfirmationModalStore,
   type ConfirmationRequest,
@@ -9,6 +12,8 @@ export interface ConfirmationChallengeData {
   commandId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** The types the server declares for `args`. */
+  argumentTypes?: Readonly<Record<string, CommandArgumentType>>;
   token: string;
   argsHash: string;
   expiresAt: string;
@@ -87,6 +92,7 @@ export async function runWithConfirmation(
       commandId: challenge.commandId,
       toolName: challenge.toolName,
       args: challenge.args,
+      argumentTypes: challenge.argumentTypes,
       token: challenge.token,
       argsHash: challenge.argsHash,
       expiresAt: challenge.expiresAt,

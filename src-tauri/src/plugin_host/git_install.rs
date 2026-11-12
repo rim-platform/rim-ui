@@ -115,6 +115,11 @@ pub struct PluginUpdateResult {
     /// `network.fetch` when the new copy lists other sites.
     pub added_capabilities: Vec<String>,
     pub removed_capabilities: Vec<String>,
+    /// Commands the new copy's `runs_commands` lists that the old one did not; the
+    /// person grants them, or not, in the permission prompt.
+    pub added_commands: Vec<String>,
+    /// Commands the new copy no longer lists; their grants are dropped.
+    pub removed_commands: Vec<String>,
 }
 
 fn staging_dir() -> PathBuf {
@@ -511,6 +516,7 @@ async fn apply_fetched_update(
         .collect();
 
     let capabilities_changed = !added.is_empty() || !removed.is_empty();
+    let (added_commands, removed_commands) = runs_commands_diff(old_manifest, &new_manifest);
 
     // Re-detect on the merged working tree (source of truth for what runs);
     // gate_and_run re-applies the consent check.
@@ -535,9 +541,29 @@ async fn apply_fetched_update(
         capabilities_changed,
         added_capabilities: added,
         removed_capabilities: removed,
+        added_commands,
+        removed_commands,
     };
 
     Ok((new_manifest, result))
+}
+
+/// The ids `new`'s `runs_commands` adds to `old`'s, and those it drops, each in the
+/// order its manifest lists them.
+fn runs_commands_diff(old: &PluginManifest, new: &PluginManifest) -> (Vec<String>, Vec<String>) {
+    let added = new
+        .runs_commands
+        .iter()
+        .filter(|id| !old.runs_commands.contains(id))
+        .cloned()
+        .collect();
+    let removed = old
+        .runs_commands
+        .iter()
+        .filter(|id| !new.runs_commands.contains(id))
+        .cloned()
+        .collect();
+    (added, removed)
 }
 
 /// Returns the manifest of an updated working tree after the checks a fresh
@@ -745,6 +771,36 @@ mod tests {
             .expect("the update applies");
         assert!(result.added_capabilities.is_empty());
         assert!(!result.capabilities_changed);
+    }
+
+    /// Makes the manifest in `dir` list `ids` in `runs_commands`.
+    fn runs(dir: &Path, ids: &[&str]) {
+        let path = dir.join(MANIFEST_FILE);
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        manifest["runs_commands"] = serde_json::json!(ids);
+        std::fs::write(path, manifest.to_string()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_update_reports_the_commands_it_adds_and_drops() {
+        let (_tmp, origin, clone) = origin_and_clone(|dir| {
+            write_git_layout(dir);
+            runs(dir, &["workspace.go_back", "workspace.open_home"]);
+        });
+        let old = detect_manifest(&clone).unwrap();
+        push_upstream(&origin, &clone, |dir| {
+            runs(dir, &["workspace.open_home", "chat.post_message"])
+        });
+        let (new, result) = apply_fetched_update(&clone, &old, false, &[])
+            .await
+            .expect("the update applies");
+        assert_eq!(result.added_commands, vec!["chat.post_message"]);
+        assert_eq!(result.removed_commands, vec!["workspace.go_back"]);
+        assert!(!result.capabilities_changed);
+
+        let (added, removed) = runs_commands_diff(&new, &new);
+        assert!(added.is_empty() && removed.is_empty());
     }
 
     #[tokio::test]

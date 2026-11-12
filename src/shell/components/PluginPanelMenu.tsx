@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { Puzzle, Settings } from "lucide-react";
 
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import type { RunningPluginPanel } from "../../features/plugins/pluginPanels";
 import { panelSlot } from "../../features/plugins/types";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
@@ -30,7 +31,6 @@ export function PluginPanelMenu({
   onClose,
 }: PluginPanelMenuProps) {
   const openPluginPanel = useShellStore((s) => s.openPluginPanel);
-  const setMainSurface = useShellStore((s) => s.setMainSurface);
 
   const items: DropdownMenuItem[] = [
     ...panels.map(({ pluginId, pluginName, panel }) => ({
@@ -50,8 +50,8 @@ export function PluginPanelMenu({
       icon: <Settings className="h-3.5 w-3.5 shrink-0 text-rim-text-muted" />,
       separatorBefore: true,
       onSelect: () => {
-        setMainSurface({ kind: "settings", tab: "plugins" });
         onClose();
+        void runCommandFromClick("plugins.open_settings", undefined, { source: "menu" });
       },
     },
   ];

@@ -1,10 +1,8 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
-import { errorSentence } from "../../../core/graphql/errors";
 import { queryKeys } from "../../../core/query/keys";
-import { toast } from "../../../shared/toast";
 
 const UPDATE_CONVERSATION_TOPIC = gql`
   mutation UpdateConversationTopic($input: UpdateConversationTopicInput!) {
@@ -21,26 +19,19 @@ interface UpdateTopicVars {
   topic: string;
 }
 
-export function useUpdateTopicMutation() {
-  const qc = useQueryClient();
+/** Refreshes the conversation lists of a workspace once a topic in it changed. */
+export function invalidateTopicQueries(qc: QueryClient, serverId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.channels(serverId) });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations(serverId) });
+}
 
-  return useMutation({
-    mutationFn: (vars: UpdateTopicVars) =>
-      graphqlClient.request(UPDATE_CONVERSATION_TOPIC, {
-        input: {
-          serverId: vars.serverId,
-          conversationId: vars.conversationId,
-          topic: vars.topic,
-        },
-      }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: queryKeys.channels(vars.serverId) });
-      qc.invalidateQueries({ queryKey: queryKeys.conversations(vars.serverId) });
-    },
-    onError: (err) => {
-      toast.error("The topic could not be changed", {
-        description: errorSentence(err, "Try again."),
-      });
-    },
+/** Sets a conversation's topic with the `updateConversationTopic` mutation, then refreshes its lists. */
+export async function updateConversationTopic(
+  qc: QueryClient,
+  vars: UpdateTopicVars,
+): Promise<void> {
+  await graphqlClient.request(UPDATE_CONVERSATION_TOPIC, {
+    input: { serverId: vars.serverId, conversationId: vars.conversationId, topic: vars.topic },
   });
+  invalidateTopicQueries(qc, vars.serverId);
 }

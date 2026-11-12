@@ -28,7 +28,11 @@ vi.mock("../../../core/graphql/client", () => ({
   graphqlClient: {
     request: (document: unknown, variables: unknown) => {
       const text = String(document);
-      if (text.includes("serverInfo")) return new Promise(() => {});
+      if (text.includes("serverInfo")) {
+        return Promise.resolve({
+          serverInfo: { version: "0.0.0", apiVersion: 1, features: [], capabilities: [] },
+        });
+      }
       return text.includes("listAuditLog")
         ? requestMock(document, variables)
         : serverMock(document, variables);
@@ -542,5 +546,21 @@ describe("AuditLogPage", () => {
 
     expect(screen.getByRole("heading", { name: "Audit Log" })).toBeInTheDocument();
     expect(screen.queryByTestId("audit-retention-note")).not.toBeInTheDocument();
+  });
+
+  it("scrolls the table sideways in a narrow window and keeps the retention note in the filter bar", async () => {
+    useShellStore.setState({ shellWidth: "narrow" });
+    requestMock.mockResolvedValue(makePage([]));
+    renderWithProviders(<AuditLogPage />);
+
+    const header = (await screen.findByText("Outcome")).parentElement as HTMLElement;
+    expect(header.parentElement?.className).toContain("min-w-[760px]");
+    expect(header.parentElement?.parentElement?.className).toContain("overflow-x-auto");
+    expect(screen.getByRole("heading", { name: "Audit Log" }).className).toContain(
+      "whitespace-nowrap",
+    );
+    // The top bar holds the navigation button.
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+    useShellStore.setState({ shellWidth: "wide" });
   });
 });

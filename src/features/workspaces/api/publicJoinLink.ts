@@ -1,6 +1,7 @@
 import {
   useInfiniteQuery,
   useMutation,
+  queryOptions,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -19,6 +20,8 @@ import {
   type UpdatePublicJoinLinkInput,
 } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { toast } from "../../../shared/toast";
+import { publicLinkErrorMessage } from "../publicJoinLink";
 
 const PUBLIC_JOIN_LINK_FIELDS = gql`
   fragment PublicJoinLinkFields on PublicJoinLink {
@@ -413,8 +416,13 @@ export function useJoinRequests(serverId: string | null | undefined, enabled = t
  * @param enabled Whether to fetch at all.
  */
 export function useJoinRequestCount(serverId: string | null | undefined, enabled = true) {
+  return useQuery(joinRequestCountQueryOptions(serverId, enabled));
+}
+
+/** The query behind {@link useJoinRequestCount}. */
+export function joinRequestCountQueryOptions(serverId: string | null | undefined, enabled = true) {
   const id = serverId ?? undefined;
-  return useQuery({
+  return queryOptions({
     queryKey: queryKeys.joinRequestCount(id),
     enabled: Boolean(id) && enabled,
     retry: false,
@@ -462,32 +470,62 @@ export function useMyJoinRequests(enabled = true) {
 }
 
 /** A moderator accepts an open request; the person joins with the link's current role. */
-export function useAcceptJoinRequest() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { serverId: string; requestId: string }) =>
-      graphqlClient.request<{ acceptJoinRequest: { id: string; status: JoinRequestStatus } }>(
-        ACCEPT_JOIN_REQUEST,
-        vars,
-      ),
-    onSuccess: (_data, vars) => {
-      invalidateJoinRequests(qc, vars.serverId);
-      void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(vars.serverId) });
-    },
-  });
+export async function acceptJoinRequest(
+  qc: QueryClient,
+  vars: { serverId: string; requestId: string },
+): Promise<void> {
+  await graphqlClient.request<{ acceptJoinRequest: { id: string; status: JoinRequestStatus } }>(
+    ACCEPT_JOIN_REQUEST,
+    vars,
+  );
+  invalidateJoinRequests(qc, vars.serverId);
+  void qc.invalidateQueries({ queryKey: queryKeys.serverMembers(vars.serverId) });
 }
 
 /** A moderator declines an open request; the person may ask again after 24 hours. */
-export function useDeclineJoinRequest() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { serverId: string; requestId: string }) =>
-      graphqlClient.request<{ declineJoinRequest: { id: string; status: JoinRequestStatus } }>(
-        DECLINE_JOIN_REQUEST,
-        vars,
+export async function declineJoinRequest(
+  qc: QueryClient,
+  vars: { serverId: string; requestId: string },
+): Promise<void> {
+  await graphqlClient.request<{ declineJoinRequest: { id: string; status: JoinRequestStatus } }>(
+    DECLINE_JOIN_REQUEST,
+    vars,
+  );
+  invalidateJoinRequests(qc, vars.serverId);
+}
+
+/** A moderator's answer to one open join request, and the name the toasts call the person. */
+export interface JoinRequestDecision {
+  serverId: string;
+  requestId: string;
+  /** The person who asked, as the toasts name them. */
+  name: string;
+  accept: boolean;
+}
+
+/**
+ * Accepts or declines an open join request and says how it went in a toast. Settings and the
+ * Accept and Decline Join Request commands both run it.
+ *
+ * @returns Whether the request was answered.
+ */
+export async function decideJoinRequest(
+  qc: QueryClient,
+  { serverId, requestId, name, accept }: JoinRequestDecision,
+): Promise<boolean> {
+  try {
+    await (accept ? acceptJoinRequest : declineJoinRequest)(qc, { serverId, requestId });
+  } catch (err) {
+    toast.error(
+      publicLinkErrorMessage(
+        err,
+        accept ? "Could not accept the request" : "Could not decline the request",
       ),
-    onSuccess: (_data, vars) => invalidateJoinRequests(qc, vars.serverId),
-  });
+    );
+    return false;
+  }
+  toast.success(accept ? `${name} joined the workspace` : `Declined ${name}'s request`);
+  return true;
 }
 
 /** The person takes back their own open request. */

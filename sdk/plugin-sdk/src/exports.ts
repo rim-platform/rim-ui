@@ -8,6 +8,8 @@ export {
   type CommandContext,
   type CommandDefinition,
   type CommandOutput,
+  type CommandRunResult,
+  type Commands,
   type Host,
   type Initiator,
   type Logger,

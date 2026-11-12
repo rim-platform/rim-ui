@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { renderWithProviders } from "../../../test/utils";
+import { DmRequestStatus } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useToastStore } from "../../../shared/toast";
 import { useRelayStore } from "../state/useRelayStore";
@@ -15,6 +16,8 @@ const api = vi.hoisted(() => ({
   ignoreDmRequest: vi.fn(),
   blockPrincipal: vi.fn(),
   reportDmRequest: vi.fn(),
+  fetchBlockedPrincipals: vi.fn(),
+  unblockPrincipal: vi.fn(),
 }));
 const identity = vi.hoisted(() => ({ resolveIdentity: vi.fn() }));
 const crypto = vi.hoisted(() => ({ verifyCard: vi.fn() }));
@@ -26,13 +29,22 @@ vi.mock("../crypto/relayCrypto", () => ({ relayCrypto: () => crypto }));
 vi.mock("../runtime/relayRuntime", () => ({ relayProcessor: () => processor }));
 vi.mock("../../conversations/api/useChannelMembership", () => membership);
 const conversations = vi.hoisted(() => ({ fetchConversation: vi.fn() }));
-vi.mock("../../conversations/api/useConversation", () => conversations);
+vi.mock("../../conversations/api/useConversation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../conversations/api/useConversation")>()),
+  ...conversations,
+}));
 vi.mock("../../e2ee/runtime/session", () => ({ e2eeSession: async () => null }));
 const groups = vi.hoisted(() => ({ processWelcomes: vi.fn() }));
 vi.mock("../../e2ee/runtime/groups", () => groups);
 const cacheSync = vi.hoisted(() => ({ requestCacheSync: vi.fn() }));
 vi.mock("../../messages/runtime/messageCacheSync", () => cacheSync);
+vi.mock("../../instance-moderation/api/instanceModeration", () => ({
+  useIsInstanceOperator: () => ({ isOperator: false }),
+}));
 
+import { ManageCommandHost } from "../../commands/components/ManageCommandHost";
+import { useManageCommandStore } from "../../commands/state/useManageCommandStore";
+import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { DmRequestBar } from "./DmRequestBar";
 
 const REQUEST = {
@@ -47,7 +59,28 @@ const REQUEST = {
   expiresAt: "",
 };
 
+/**
+ * The bar with the app's host of the dialogs its commands open, on the app's query client that
+ * the commands read the pending requests from.
+ */
+function renderWithProviders(ui: React.ReactElement) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+      <ManageCommandHost />
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  queryClient.clear();
+  useManageCommandStore.setState({ request: null, workspaceId: null });
+  useWorkspaceStore.getState().clearWorkspaceId();
+});
+
 beforeEach(() => {
+  useWorkspaceStore.getState().setWorkspaceId("direct-1");
+  queryClient.setQueryData(queryKeys.dmRequests(DmRequestStatus.PENDING), [REQUEST]);
   for (const fn of [
     ...Object.values(api),
     identity.resolveIdentity,
@@ -122,6 +155,25 @@ describe("DmRequestBar", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("conv-1");
   });
 
+  it("acts on its own request, whatever conversation is open", async () => {
+    const user = userEvent.setup();
+    useShellStore.setState({ selectedConversationId: "conv-9" });
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(api.acceptDmRequest).toHaveBeenCalledWith("req-1"));
+  });
+
+  it("holds its buttons while a decision runs", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    api.acceptDmRequest.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)));
+    renderWithProviders(<DmRequestBar request={REQUEST} />);
+    await user.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ignore" })).toBeDisabled());
+    finish();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ignore" })).toBeEnabled());
+  });
+
   it("ignores and leaves the conversation's view", async () => {
     const user = userEvent.setup();
     useShellStore.setState({ selectedConversationId: "conv-1" });
@@ -142,7 +194,7 @@ describe("DmRequestBar", () => {
     renderWithProviders(<DmRequestBar request={REQUEST} />);
     expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Block" }));
-    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    const dialog = await screen.findByRole("dialog", { name: "Block Alice?" });
     expect(
       within(dialog).getByText(
         "You won't get their messages or requests, and your DMs with them and the groups they started stay hidden until you unblock them. They are removed from your contacts and won't be told. You can unblock them in Settings → Direct messages.",
@@ -167,7 +219,7 @@ describe("DmRequestBar", () => {
     renderWithProviders(<DmRequestBar request={REQUEST} />);
     expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Block" }));
-    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    const dialog = await screen.findByRole("dialog", { name: "Block Alice?" });
     await user.click(within(dialog).getByRole("button", { name: "Block" }));
     await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
@@ -182,7 +234,7 @@ describe("DmRequestBar", () => {
     renderWithProviders(<DmRequestBar request={REQUEST} />);
     expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Block" }));
-    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    const dialog = await screen.findByRole("dialog", { name: "Block Alice?" });
     await user.click(within(dialog).getByRole("button", { name: "Block" }));
     await waitFor(() => expect(api.blockPrincipal).toHaveBeenCalledWith(REQUEST.fromPrincipalId));
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBeNull());
@@ -198,7 +250,7 @@ describe("DmRequestBar", () => {
     renderWithProviders(<DmRequestBar request={REQUEST} />);
     expect(await screen.findByText("Alice wants to message you.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Block" }));
-    const dialog = screen.getByRole("dialog", { name: "Block Alice?" });
+    const dialog = await screen.findByRole("dialog", { name: "Block Alice?" });
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.blockPrincipal).not.toHaveBeenCalled();

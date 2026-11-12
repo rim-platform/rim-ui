@@ -29,8 +29,12 @@ export type KeybindSource = "DEFAULT" | "USER" | "WORKSPACE";
 
 export type CommandResultStatus = "SUCCESS" | "ERROR" | "CONFIRMATION_REQUIRED";
 
-/** What the client reads of an argument a command declares. */
-export type CommandArgumentInfo = Pick<CommandArgument, "name" | "argumentType" | "required">;
+/**
+ * What the client reads of an argument a command declares. The fields past `required` are
+ * absent on arguments the client describes itself.
+ */
+export type CommandArgumentInfo = Pick<CommandArgument, "name" | "argumentType" | "required"> &
+  Partial<Pick<CommandArgument, "title" | "description" | "defaultValue" | "allowedValues">>;
 
 export interface CommandDefinition {
   id: string;
@@ -47,8 +51,16 @@ export interface CommandDefinition {
   dangerous: boolean;
   /** Server classification; a `RESTRICTED` command needs its verb typed to confirm. */
   sensitivity?: CommandSensitivity;
-  /** The arguments the server declares for the command; absent on commands the client defines. */
+  /**
+   * The arguments the command takes: those the server declares, or, for a command this app
+   * defines, those its handler reads; absent when it takes none.
+   */
   arguments?: CommandArgumentInfo[];
+  /**
+   * Set on an app command a plugin may be granted: one that only opens, shows, or moves
+   * focus or selection, or starts a form the person finishes. Absent means no plugin runs it.
+   */
+  pluginRunnable?: boolean;
 }
 
 export interface ResolvedKeybind {
@@ -129,16 +141,25 @@ export interface DeleteKeybindInput {
 export interface UserCommandStepInput {
   commandId: string;
   args?: Record<string, unknown>;
+  /** The arguments asked for when the macro runs; only a server listing `account_macros` takes it. */
+  ask?: string[];
 }
 
-export interface CreateUserCommandInput {
+/** What a server listing `account_macros` also takes for a macro: how the AI agent may use it. */
+export interface MacroAgentFields {
+  aiCallable?: boolean;
+  nlDescription?: string;
+  intentSamples?: string[];
+}
+
+export interface CreateUserCommandInput extends MacroAgentFields {
   commandId: string;
   title: string;
   description: string;
   steps: UserCommandStepInput[];
 }
 
-export interface UpdateUserCommandInput {
+export interface UpdateUserCommandInput extends MacroAgentFields {
   commandId: string;
   title: string;
   description: string;

@@ -66,6 +66,11 @@ export type AuditLogEntry = {
   id: Scalars['ID']['output'];
   initiator: Scalars['String']['output'];
   outcome: AuditOutcomeGql;
+  /**
+   * The identifier the desktop app gave the stretch of an agent's calls this entry belongs to.
+   * Null unless the initiator was `AGENT`.
+   */
+  runId?: Maybe<Scalars['String']['output']>;
   sensitivity: Scalars['String']['output'];
   serverId: Scalars['ID']['output'];
   typedVerb?: Maybe<TypedVerbGql>;
@@ -74,6 +79,7 @@ export type AuditLogEntry = {
 export type AuditLogFilterInput = {
   actorUserId?: InputMaybe<Scalars['ID']['input']>;
   commandId?: InputMaybe<Scalars['String']['input']>;
+  runId?: InputMaybe<Scalars['String']['input']>;
   serverId?: InputMaybe<Scalars['ID']['input']>;
   since?: InputMaybe<Scalars['String']['input']>;
   typedVerb?: InputMaybe<TypedVerbGql>;
@@ -127,6 +133,45 @@ export type BlockedPrincipal = {
   userId?: Maybe<Scalars['ID']['output']>;
   /** That account's username; null when no account here holds the principal. */
   username?: Maybe<Scalars['String']['output']>;
+};
+
+/** A bot account of a workspace. */
+export type Bot = {
+  /** Who added it. */
+  addedByName?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  /** When it was deactivated; null while it is active. */
+  deactivatedAt?: Maybe<Scalars['DateTime']['output']>;
+  name: Scalars['String']['output'];
+  /** Where what it reads goes, as the person who added it says. */
+  readsGoTo: Scalars['String']['output'];
+  /** Who runs it, as the person who added it says. */
+  runBy: Scalars['String']['output'];
+  /** Whether an Owner or Moderator let it see members joining the workspace. */
+  seesMemberJoins: Scalars['Boolean']['output'];
+  serverId: Scalars['ID']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+/** What the person who added a bot says about it. RIM cannot check it. */
+export type BotInfo = {
+  /** Who added it. */
+  addedByName?: Maybe<Scalars['String']['output']>;
+  /** Where what it reads goes. */
+  readsGoTo: Scalars['String']['output'];
+  /** Who runs it. */
+  runBy: Scalars['String']['output'];
+};
+
+/** A bot's token, without its secret, which is shown once when it is created. */
+export type BotToken = {
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  label: Scalars['String']['output'];
+  /** When it was last used, to the minute; null when it never was. */
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** When it was revoked; null while it works. */
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
 };
 
 export type ChannelCursorInput = {
@@ -293,7 +338,9 @@ export enum CommandInitiator {
   /** User typed/clicked in the command palette. */
   PALETTE = 'PALETTE',
   /** Plugin's own runtime invoked the command. */
-  PLUGIN = 'PLUGIN'
+  PLUGIN = 'PLUGIN',
+  /** A button or other control in the app. */
+  UI = 'UI'
 }
 
 export type CommandResult = {
@@ -526,6 +573,18 @@ export type CreateAttachmentInput = {
   sizeBytes: Scalars['Int']['input'];
 };
 
+/** Create a bot in a workspace. */
+export type CreateBotInput = {
+  name: Scalars['String']['input'];
+  /** Where what it reads goes: 1 to 200 characters of plain text. */
+  readsGoTo: Scalars['String']['input'];
+  /** Who runs it: 1 to 200 characters of plain text. */
+  runBy: Scalars['String']['input'];
+  /** Whether it sees members joining the workspace; off when left out. */
+  seesMemberJoins?: InputMaybe<Scalars['Boolean']['input']>;
+  serverId: Scalars['ID']['input'];
+};
+
 export type CreateChannelLensInput = {
   conversationId: Scalars['ID']['input'];
   filterSpec: FilterSpecInput;
@@ -563,6 +622,24 @@ export type CreateCustomEmojiInput = {
   imageBase64: Scalars['String']['input'];
   name: Scalars['String']['input'];
   serverId: Scalars['ID']['input'];
+};
+
+/** Create a channel's incoming webhook. */
+export type CreateIncomingWebhookInput = {
+  /** The bot it posts as, an active bot of the channel's workspace. */
+  botUserId: Scalars['ID']['input'];
+  conversationId: Scalars['ID']['input'];
+  preset: WebhookPreset;
+  /**
+   * The webhook's own format, with the preset `PLAIN`. Sent only to a server that lists the
+   * capability `webhook_formats`.
+   */
+  template?: InputMaybe<Scalars['JSON']['input']>;
+  /**
+   * The caller's unbound test session whose URL the webhook keeps. Sent only to a server that
+   * lists the capability `webhook_test_sessions`.
+   */
+  testSessionId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type CreateInviteInput = {
@@ -625,10 +702,46 @@ export type CreateServerInput = {
 };
 
 export type CreateUserCommandInput = {
+  /**
+   * Lets the AI agent run the macro; refused unless every step is an AI-callable built-in
+   * the server runs, with every argument fixed.
+   */
+  aiCallable?: Scalars['Boolean']['input'];
   commandId: Scalars['String']['input'];
   description: Scalars['String']['input'];
+  /** Up to 10 example phrases for the AI agent, each at most 200 characters. */
+  intentSamples?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** How the macro is described to the AI agent, at most 1,000 characters. */
+  nlDescription?: InputMaybe<Scalars['String']['input']>;
   steps: Array<UserCommandStepInput>;
   title: Scalars['String']['input'];
+};
+
+/** A new bot and its first token. */
+export type CreatedBot = {
+  bot: Bot;
+  /** `rimbot_…`, shown this once. */
+  token: Scalars['String']['output'];
+};
+
+/** A new token of a bot. */
+export type CreatedBotToken = {
+  botToken: BotToken;
+  /** `rimbot_…`, shown this once. */
+  token: Scalars['String']['output'];
+};
+
+/** A new incoming webhook and its token. */
+export type CreatedIncomingWebhook = {
+  /** Whether the webhook kept the token of the test session named in `testSessionId`. */
+  keptTestUrl: Scalars['Boolean']['output'];
+  /**
+   * `rimhook_…`, shown this once. The URL is `/api/hooks/` and this on the server's address, and
+   * it is a secret. The empty string when `keptTestUrl` is true: the client already has the URL,
+   * and the server held only its hash.
+   */
+  token: Scalars['String']['output'];
+  webhook: IncomingWebhook;
 };
 
 export type CustomEmoji = {
@@ -863,6 +976,11 @@ export type ExecuteCommandInput = {
    */
   initiator?: InputMaybe<CommandInitiator>;
   isPipe?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * An identifier the desktop app gives one stretch of an agent's calls. Kept on the audit
+   * entry when the initiator is `AGENT`, and ignored otherwise.
+   */
+  runId?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ExecuteMacroInput = {
@@ -938,6 +1056,27 @@ export type HeartbeatInput = {
   workspaceId: Scalars['ID']['input'];
 };
 
+/** The signed-in person's Home layout, kept on their home server. */
+export type HomeLayout = {
+  /** When the person made the edit, never later than the server's clock when it was stored. */
+  editedAt: Scalars['DateTime']['output'];
+  /** The layout: `{ "version": 1, "boxes": [{ "id", "kind", "width", "settings"? }] }`. */
+  layout: Scalars['JSON']['output'];
+  /** When the server stored it. */
+  updatedAt: Scalars['DateTime']['output'];
+};
+
+/** The answer to `saveHomeLayout`. */
+export type HomeLayoutSaved = {
+  /**
+   * True when the layout sent was stored; false when the stored layout had a later
+   * `editedAt` and was kept instead.
+   */
+  kept: Scalars['Boolean']['output'];
+  /** The layout just stored, or the stored one that was kept. */
+  layout: HomeLayout;
+};
+
 export type InBandTokenInput = {
   argsHash: Scalars['String']['input'];
   token: Scalars['String']['input'];
@@ -951,6 +1090,22 @@ export type InboxCursorInput = {
 export type InboxCursorOutput = {
   conversationId: Scalars['ID']['output'];
   lastActivityAt: Scalars['DateTime']['output'];
+};
+
+/** A URL that posts to one channel as one bot, without its token, which is shown once. */
+export type IncomingWebhook = {
+  /** The bot it posts as. */
+  botUserId: Scalars['ID']['output'];
+  conversationId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /** When it was last used, to the minute; null when it never was. */
+  lastUsedAt?: Maybe<Scalars['DateTime']['output']>;
+  preset: WebhookPreset;
+  /** When it was revoked; null until then. */
+  revokedAt?: Maybe<Scalars['DateTime']['output']>;
+  /** Its own format; null for a webhook that follows its preset, such as an unedited GitHub one. */
+  template?: Maybe<Scalars['JSON']['output']>;
 };
 
 /** An abuse report filed with this server, by a local user or from the abuse address. */
@@ -1331,6 +1486,12 @@ export type MarkAllAsReadInput = {
 export type MarkAsReadInput = {
   conversationId: Scalars['ID']['input'];
   readAt: Scalars['DateTime']['input'];
+  workspaceId: Scalars['ID']['input'];
+};
+
+export type MarkAsUnreadInput = {
+  conversationId: Scalars['ID']['input'];
+  messageId: Scalars['ID']['input'];
   workspaceId: Scalars['ID']['input'];
 };
 
@@ -1729,15 +1890,47 @@ export type Mutation = {
   /** Called by the new device right after its first `loginWithKey`. */
   completeDeviceLink: Scalars['Boolean']['output'];
   createAttachment: UploadTicket;
+  /**
+   * Create a bot, a guest of the workspace in no channel, and its first token, shown this once.
+   * Owner or Moderator; `FORBIDDEN` for anyone else, `VALIDATION` for the direct space, a bad
+   * field or a workspace with 25 active bots, `FEATURE_DISABLED` while the `bots` feature is
+   * off.
+   */
+  createBot: CreatedBot;
+  /**
+   * Create a token for an active bot, shown this once; a label is 1 to 64 characters and a bot
+   * has at most 5 active tokens (`VALIDATION`). Owner or Moderator of its workspace.
+   */
+  createBotToken: CreatedBotToken;
   createChannelLens: ChannelLens;
   createConversation: Conversation;
   createCustomEmoji: CustomEmoji;
+  /**
+   * Create a channel's incoming webhook, bound to a bot of its workspace, and add the bot to the
+   * channel if it is not there. The token is shown this once. Owner or Moderator, and for a
+   * private channel one who is in it; `FORBIDDEN` for anyone else, `VALIDATION` for anything but
+   * a plaintext channel that is not archived and for a bot of another workspace or a deactivated
+   * one, `CONFLICT` when the channel already has a webhook that is not revoked.
+   */
+  createIncomingWebhook: CreatedIncomingWebhook;
   createInvite: CreateInvitePayload;
   createKeybind: Keybind;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   createMacro: MacroDef;
+  /**
+   * Create a pipeline. Any member, but only an Owner or Moderator may give it a Post as bot
+   * action (`FORBIDDEN`), on the Member Joined trigger, with an active bot of the workspace and
+   * a plaintext channel that is not archived and that the bot is in (`VALIDATION`).
+   */
   createPipeline: PipelineGql;
   createServer: Server;
   createUserCommand: Command;
+  /**
+   * Deactivate a bot: its tokens stop working, its webhooks are revoked and it leaves the
+   * workspace and its channels. Its messages stay. Doing it again changes nothing. There is no
+   * way back. Owner or Moderator of its workspace.
+   */
+  deactivateBot: Bot;
   /** Decline the caller's pending invitation; `NOT_FOUND` when there is none. */
   declineConversationInvite: Scalars['Boolean']['output'];
   /**
@@ -1749,6 +1942,7 @@ export type Mutation = {
   deleteChannelLens: Scalars['Boolean']['output'];
   deleteCustomEmoji: Scalars['Boolean']['output'];
   deleteKeybind: Scalars['Boolean']['output'];
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   deleteMacro: Scalars['Boolean']['output'];
   /**
    * Delete a person's messages in the workspace's channels, thread replies included, sent at
@@ -1786,7 +1980,13 @@ export type Mutation = {
   /** A new envelope carrying an encrypted message's complete new content. */
   editEncryptedMessage: Message;
   editMessage: Message;
+  /**
+   * Drop a test session and what it holds. Its starter alone; `NOT_FOUND` for anyone else and
+   * for one that ended.
+   */
+  endWebhookTestSession: Scalars['Boolean']['output'];
   executeCommand: CommandResult;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   executeMacro: CommandResult;
   finalizeAttachment: Attachment;
   forwardMessage: Message;
@@ -1905,6 +2105,12 @@ export type Mutation = {
   logoutOtherSessions: Scalars['Int']['output'];
   markAllAsRead: Scalars['Boolean']['output'];
   markAsRead: Scalars['Boolean']['output'];
+  /**
+   * Moves the viewer's read marker back so that the message and every later one count as
+   * unread. Nothing becomes less unread: when they already count, the marker stays.
+   * Notifications already read stay read.
+   */
+  markAsUnread: Scalars['Boolean']['output'];
   /**
    * Mark the viewer's notifications read: the given `ids`, or every notification created at
    * or before `allBefore` (exactly one of the two). Returns how many changed.
@@ -2059,12 +2265,27 @@ export type Mutation = {
   /** Ask the group's other devices to remove and add the session's device again. */
   requestMlsReadd: Scalars['Boolean']['output'];
   /**
+   * Delete the signed-in person's Home layout, so every device shows the default. Answers
+   * whether one was stored. `FORBIDDEN` for a person from another server.
+   */
+  resetHomeLayout: Scalars['Boolean']['output'];
+  /**
    * Close an open report as resolved or dismissed (Owner/Moderator; for the direct space,
    * an instance operator). Audited (`admin.resolve_report`).
    */
   resolveReport: MessageReport;
+  /**
+   * Revoke a token. Revoking it again changes nothing. `NOT_FOUND` for an unknown token and for
+   * a token of a bot in a workspace the caller does not moderate.
+   */
+  revokeBotToken: BotToken;
   /** Revoke a device, signed by the identity key or by the device itself. Ends its sessions. */
   revokeDeviceKey: DeviceKey;
+  /**
+   * Revoke a webhook. Revoking it again changes nothing. `NOT_FOUND` for an unknown webhook and
+   * for one of a workspace the caller does not moderate.
+   */
+  revokeIncomingWebhook: IncomingWebhook;
   /**
    * Revoke a workspace invite: from now on it admits nobody, and members who joined with it
    * stay. Owner of the invite's workspace only (`FORBIDDEN` for its other members);
@@ -2077,6 +2298,13 @@ export type Mutation = {
    * session, revokes every device and session, and enrolls the device given with it.
    */
   rotateIdentityKey: KeyIdentity;
+  /**
+   * Save the signed-in person's Home layout, made at `editedAt` on their device. The stored
+   * layout is kept instead when its `editedAt` is later, an `editedAt` later than the
+   * server's clock counting as the clock; `kept` says which. `VALIDATION` names the check a
+   * layout fails; `FORBIDDEN` for a person from another server.
+   */
+  saveHomeLayout: HomeLayoutSaved;
   /**
    * The old device's sealed answer, carrying the new device's certificate. The link then
    * lives another 10 minutes.
@@ -2167,6 +2395,14 @@ export type Mutation = {
    */
   startTyping: Scalars['Boolean']['output'];
   /**
+   * Open a test session that holds what arrives, in memory, for the caller alone. Without
+   * `webhookId` it answers a token for a URL that posts nothing; with one it copies that
+   * webhook's deliveries. Owner or Moderator; `FORBIDDEN` without the standing of creating a
+   * webhook or changing that one's format, `NOT_FOUND` for an unknown webhook or one of another
+   * workspace, `RATE_LIMITED` past 3 open sessions in the workspace or 20 on the server.
+   */
+  startWebhookTestSession: WebhookTestSession;
+  /**
    * A Commit for the group's current epoch, or an incarnation's first Commit (epoch 0).
    * `STALE_EPOCH` names the current incarnation and epoch when another Commit came first.
    */
@@ -2201,9 +2437,23 @@ export type Mutation = {
   unblockPrincipal: Scalars['Boolean']['output'];
   unmuteConversation: Scalars['Boolean']['output'];
   unpinMessage: Scalars['Boolean']['output'];
+  /**
+   * Change a bot's name, what is said about it or whether it sees members joining. Owner or
+   * Moderator of its workspace.
+   */
+  updateBot: Bot;
   updateChannelLens: ChannelLens;
   updateConversationTopic: Conversation;
+  /**
+   * Change how a webhook turns a delivery into a message. The URL stays the same. A `template`
+   * needs the preset `PLAIN`; `PLAIN` or `GITHUB` with no `template` goes back to that preset.
+   * `VALIDATION` for a format that is refused, naming the rule, and for a revoked webhook;
+   * `FORBIDDEN` for a private channel the caller is not in; `NOT_FOUND` for an unknown webhook
+   * and for one of a workspace the caller does not moderate.
+   */
+  updateIncomingWebhookFormat: IncomingWebhook;
   updateKeybind: Keybind;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   updateMacro: MacroDef;
   /**
    * Update fields on the authenticated user's profile.
@@ -2244,7 +2494,10 @@ export type Mutation = {
   updateNotificationSettings: NotificationSettings;
   /**
    * Replace a pipeline's definition. Allowed for its creator and for an Owner or Moderator
-   * of its workspace; anyone else gets `FORBIDDEN`.
+   * of its workspace; anyone else gets `FORBIDDEN`. Adding or changing a Post as bot action
+   * takes an Owner or Moderator; keeping one unchanged takes only the right to change the
+   * pipeline. A client that does not know the action sends it back as `chat.post_message` with
+   * the `args` it was given, which keeps it; other `args` are `VALIDATION`.
    */
   updatePipeline: PipelineGql;
   /**
@@ -2373,6 +2626,17 @@ export type MutationCreateAttachmentArgs = {
 };
 
 
+export type MutationCreateBotArgs = {
+  input: CreateBotInput;
+};
+
+
+export type MutationCreateBotTokenArgs = {
+  botUserId: Scalars['ID']['input'];
+  label: Scalars['String']['input'];
+};
+
+
 export type MutationCreateChannelLensArgs = {
   input: CreateChannelLensInput;
 };
@@ -2385,6 +2649,11 @@ export type MutationCreateConversationArgs = {
 
 export type MutationCreateCustomEmojiArgs = {
   input: CreateCustomEmojiInput;
+};
+
+
+export type MutationCreateIncomingWebhookArgs = {
+  input: CreateIncomingWebhookInput;
 };
 
 
@@ -2415,6 +2684,11 @@ export type MutationCreateServerArgs = {
 
 export type MutationCreateUserCommandArgs = {
   input: CreateUserCommandInput;
+};
+
+
+export type MutationDeactivateBotArgs = {
+  botUserId: Scalars['ID']['input'];
 };
 
 
@@ -2496,6 +2770,11 @@ export type MutationEditEncryptedMessageArgs = {
 
 export type MutationEditMessageArgs = {
   input: EditMessageInput;
+};
+
+
+export type MutationEndWebhookTestSessionArgs = {
+  sessionId: Scalars['ID']['input'];
 };
 
 
@@ -2620,6 +2899,11 @@ export type MutationMarkAllAsReadArgs = {
 
 export type MutationMarkAsReadArgs = {
   input: MarkAsReadInput;
+};
+
+
+export type MutationMarkAsUnreadArgs = {
+  input: MarkAsUnreadInput;
 };
 
 
@@ -2777,8 +3061,18 @@ export type MutationResolveReportArgs = {
 };
 
 
+export type MutationRevokeBotTokenArgs = {
+  tokenId: Scalars['ID']['input'];
+};
+
+
 export type MutationRevokeDeviceKeyArgs = {
   revocation: SignedStatementInput;
+};
+
+
+export type MutationRevokeIncomingWebhookArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -2789,6 +3083,12 @@ export type MutationRevokeInviteArgs = {
 
 export type MutationRotateIdentityKeyArgs = {
   input: RotateIdentityKeyInput;
+};
+
+
+export type MutationSaveHomeLayoutArgs = {
+  editedAt: Scalars['DateTime']['input'];
+  layout: Scalars['JSON']['input'];
 };
 
 
@@ -2891,6 +3191,12 @@ export type MutationStartTypingArgs = {
 };
 
 
+export type MutationStartWebhookTestSessionArgs = {
+  serverId: Scalars['ID']['input'];
+  webhookId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+
 export type MutationSubmitMlsCommitArgs = {
   input: SubmitMlsCommitInput;
 };
@@ -2941,6 +3247,11 @@ export type MutationUnpinMessageArgs = {
 };
 
 
+export type MutationUpdateBotArgs = {
+  input: UpdateBotInput;
+};
+
+
 export type MutationUpdateChannelLensArgs = {
   input: UpdateChannelLensInput;
 };
@@ -2948,6 +3259,13 @@ export type MutationUpdateChannelLensArgs = {
 
 export type MutationUpdateConversationTopicArgs = {
   input: UpdateConversationTopicInput;
+};
+
+
+export type MutationUpdateIncomingWebhookFormatArgs = {
+  id: Scalars['ID']['input'];
+  preset: WebhookPreset;
+  template?: InputMaybe<Scalars['JSON']['input']>;
 };
 
 
@@ -3210,13 +3528,24 @@ export type PipeStageResult = {
 
 export type PipelineActionGql = {
   actionType: Scalars['String']['output'];
+  /**
+   * For a Post as bot action, the bot, channel and text, as a client that does not know
+   * `postAsBot` shows them.
+   */
   args?: Maybe<Scalars['JSON']['output']>;
+  /** For a Post as bot action, `chat.post_message`, the command it runs. */
   commandId?: Maybe<Scalars['String']['output']>;
+  /** The bot, channel and text of a Post as bot action; null for any other. */
+  postAsBot?: Maybe<PipelinePostAsBotGql>;
 };
 
 export type PipelineActionInput = {
+  /** The command's arguments; left out with `postAsBot`. */
   args?: InputMaybe<Scalars['JSON']['input']>;
+  /** The command to run; `chat.post_message` with `postAsBot`. */
   commandId: Scalars['String']['input'];
+  /** Makes this a Post as bot action, on the Member Joined trigger only. Owner or Moderator. */
+  postAsBot?: InputMaybe<PipelinePostAsBotInput>;
 };
 
 export type PipelineFilterConditionGql = {
@@ -3256,6 +3585,24 @@ export type PipelineGql = {
   serverId: Scalars['ID']['output'];
   trigger: PipelineTriggerGql;
   updatedAt: Scalars['DateTime']['output'];
+};
+
+/** A message a bot posts when someone joins. */
+export type PipelinePostAsBotGql = {
+  botUserId: Scalars['ID']['output'];
+  conversationId: Scalars['ID']['output'];
+  /** The text as saved, with its placeholders. */
+  text: Scalars['String']['output'];
+};
+
+/** A message a bot posts when someone joins. */
+export type PipelinePostAsBotInput = {
+  /** An active bot of the workspace. */
+  botUserId: Scalars['ID']['input'];
+  /** A plaintext channel that is not archived, which the bot is already in. */
+  conversationId: Scalars['ID']['input'];
+  /** What it posts, which may hold `{username}` and `{name}`. */
+  text: Scalars['String']['input'];
 };
 
 export type PipelineTriggerGql = {
@@ -3425,6 +3772,17 @@ export enum PublicJoinLinkViewer {
 
 export type Query = {
   applyChannelLens: Array<Message>;
+  /**
+   * The bot's tokens, revoked ones included, never their secret. Owner or Moderator of its
+   * workspace; `FORBIDDEN` for anyone else, `NOT_FOUND` for an unknown bot, `FEATURE_DISABLED`
+   * while the `bots` feature is off.
+   */
+  botTokens: Array<BotToken>;
+  /**
+   * The workspace's bots, deactivated ones included. Any member; `FORBIDDEN` for anyone else,
+   * `FEATURE_DISABLED` while the `bots` feature is off.
+   */
+  bots: Array<Bot>;
   channelLenses: Array<ChannelLens>;
   channels: ChannelPage;
   /**
@@ -3438,8 +3796,8 @@ export type Query = {
    *
    * With `intentPhrase` the commands are ranked by how well the phrase matches their
    * intent samples, title and natural-language description. `limit` defaults to 50 and is
-   * capped at 100. `workspaceId` scopes the list to one workspace, including its AI-callable
-   * macros.
+   * capped at 100. `workspaceId` scopes the list to one workspace; the caller's
+   * agent-callable macros are listed for a workspace where they may run every step.
    *
    * Limited to 5 calls per 60-second sliding window per user; more fail with
    * `RATE_LIMITED`. Fails with `FEATURE_DISABLED` while the AI command surface is off.
@@ -3455,8 +3813,8 @@ export type Query = {
    * apart from a confirmation, a timeout in force and the arguments given. Naming the direct
    * space makes the caller a guest of it.
    *
-   * `AI` lists only the AI-callable commands, plus the caller's AI-callable macros of the
-   * workspace, and fails with `FEATURE_DISABLED` while the AI command surface is off.
+   * `AI` lists only the AI-callable commands, the caller's agent-callable macros among them,
+   * and fails with `FEATURE_DISABLED` while the AI command surface is off.
    */
   commands: Array<Command>;
   /** The caller's contacts, oldest first. */
@@ -3483,7 +3841,18 @@ export type Query = {
   deviceRevocationStatus: Array<RevocationFanout>;
   /** The caller's DM requests, newest first. */
   dmRequests: Array<DmRequest>;
+  /**
+   * The signed-in person's Home layout, or null when none is stored and the client shows its
+   * default Home. `FORBIDDEN` for a person from another server, whose layout lives at their
+   * own server.
+   */
+  homeLayout?: Maybe<HomeLayout>;
   inboxConversations: ConversationPage;
+  /**
+   * The workspace's incoming webhooks, revoked ones included, never their token. Owner or
+   * Moderator; `FORBIDDEN` for anyone else, `FEATURE_DISABLED` while the `bots` feature is off.
+   */
+  incomingWebhooks: Array<IncomingWebhook>;
   /**
    * This server's IP deny list, expired blocks included, oldest first. Instance operators
    * only; anyone else gets `FORBIDDEN`.
@@ -3517,7 +3886,15 @@ export type Query = {
    * to themselves. A filter with neither is rejected.
    */
   listAuditLog: AuditLogPage;
+  /** @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand */
   macroByName?: Maybe<MacroDef>;
+  /**
+   * Every built-in and app command a macro step may name, sorted by id, whatever the
+   * caller's role and workspace: the built-ins the server runs and those the client runs,
+   * and the app commands other than the agent-management ones. Plugin commands are not in
+   * it.
+   */
+  macroStepCommands: Array<Command>;
   me: User;
   /**
    * How many of a person's messages in the workspace's channels, sent at or after `since`
@@ -3565,7 +3942,10 @@ export type Query = {
   myJoinRequests: Array<JoinRequest>;
   /** The signed-in account's key log, devices and profile card on this server. */
   myKeyIdentity: KeyIdentity;
-  /** The caller's own macros in the workspace. `FORBIDDEN` for a non-member. */
+  /**
+   * The caller's own macros in the workspace. `FORBIDDEN` for a non-member.
+   * @deprecated Workspace macros are replaced by the person's macros: use userCommands, createUserCommand, updateUserCommand, deleteUserCommand and executeCommand
+   */
   myMacros: Array<MacroDef>;
   /** The session device's stored key packages, per cipher suite. */
   myMlsKeyPackageStatus: Array<MlsKeyPackageStatus>;
@@ -3595,6 +3975,12 @@ export type Query = {
    * per IP; no authentication required.
    */
   previewInviteToken: InviteTokenPreviewGql;
+  /**
+   * What a sample delivery would come to under `template`, as a delivery runs it. Nothing is
+   * posted or stored. Owner or Moderator of the workspace; `FORBIDDEN` for anyone else,
+   * `VALIDATION` for a sample over 256 KiB.
+   */
+  previewWebhookFormat: WebhookFormatPreview;
   /**
    * The certified devices of principals who share a workspace with the caller (the direct
    * space included); an empty list for any other principal. At most 100 ids.
@@ -3685,6 +4071,17 @@ export type Query = {
   /** The caller's user commands, enabled or not, with their steps, sorted by id. */
   userCommands: Array<UserCommand>;
   /**
+   * The ready-made webhook formats, the same for everyone signed in. `FEATURE_DISABLED` while
+   * the `bots` feature is off.
+   */
+  webhookFormats: Array<WebhookFormatInfo>;
+  /**
+   * What a test session holds after `after`, oldest first, and its expiry, which this read
+   * extends. Its starter alone; `NOT_FOUND` for anyone else, for one that ended and once the
+   * starter lacks the standing to start it.
+   */
+  webhookTestDeliveries: WebhookTestDeliveries;
+  /**
    * The workspace's invites, newest first (`createdAt DESC, id DESC`), revoked, expired and
    * used-up ones included. `AFTER` pages go to older invites. Defaults: `dir` `AFTER`,
    * `limit` 50 (clamped to 1..=100). Owner only: anyone else gets `FORBIDDEN`. An invite's
@@ -3707,6 +4104,16 @@ export type QueryApplyChannelLensArgs = {
   conversationId: Scalars['ID']['input'];
   lensId: Scalars['ID']['input'];
   limit?: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryBotTokensArgs = {
+  botUserId: Scalars['ID']['input'];
+};
+
+
+export type QueryBotsArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3781,6 +4188,11 @@ export type QueryInboxConversationsArgs = {
   cursor?: InputMaybe<InboxCursorInput>;
   dir: PageDir;
   limit: Scalars['Int']['input'];
+  serverId: Scalars['ID']['input'];
+};
+
+
+export type QueryIncomingWebhooksArgs = {
   serverId: Scalars['ID']['input'];
 };
 
@@ -3922,6 +4334,14 @@ export type QueryPreviewInviteTokenArgs = {
 };
 
 
+export type QueryPreviewWebhookFormatArgs = {
+  body: Scalars['String']['input'];
+  headers: Array<WebhookHeaderInput>;
+  serverId: Scalars['ID']['input'];
+  template: Scalars['JSON']['input'];
+};
+
+
 export type QueryPrincipalDevicesArgs = {
   principalIds: Array<Scalars['String']['input']>;
 };
@@ -4017,6 +4437,12 @@ export type QueryUnreadCountsArgs = {
 
 export type QueryUserCommandArgs = {
   id: Scalars['String']['input'];
+};
+
+
+export type QueryWebhookTestDeliveriesArgs = {
+  after?: InputMaybe<Scalars['Int']['input']>;
+  sessionId: Scalars['ID']['input'];
 };
 
 
@@ -4395,7 +4821,7 @@ export type ServerFeatureInfo = {
   /**
    * The feature's name, as `RIM_FEATURES_DISABLED` takes it: `attachments`, `link_previews`,
    * `email`, `custom_emoji`, `workspace_plugins`, `ai_commands`, `avatars`, `plugin_link_fetch`,
-   * `text_art_check` or `avatar_check`. A client ignores a name it does not know.
+   * `text_art_check`, `avatar_check` or `bots`. A client ignores a name it does not know.
    */
   key: Scalars['String']['output'];
   /** Why an unavailable feature is unavailable; null otherwise. */
@@ -4435,7 +4861,13 @@ export type ServerInfo = {
    * `deleteMemberMessages`, the `MessagesDeleted` event), `member_timeout_changed`
    * (`ServerMember.timeoutReason`, the `MemberTimeoutChanged` event),
    * `conversation_member_removals` (`conversationMemberRemovals`), `notification_events`
-   * (`notificationEvents`). A client ignores names it does not know.
+   * (`notificationEvents`), `bot_disclosure` (`User.isBot`, `User.bot`, `ServerMember.isBot`,
+   * `ServerMember.bot`), `command_run_id` (`ExecuteCommandInput.runId`, `AuditLogEntry.runId`),
+   * `read_marker` (`UnreadCount.unreadAfter`, `markAsUnread`, the `ReadMarkerRewound` event),
+   * `bot_events` (`Bot.seesMemberJoins`, the same field of `CreateBotInput` and `UpdateBotInput`,
+   * and `/api/bot/v1/events`), `pipeline_post_as_bot` (`PipelineActionGql.postAsBot`,
+   * `PipelineActionInput.postAsBot`).
+   * A client ignores names it does not know.
    */
   capabilities: Array<Scalars['String']['output']>;
   /**
@@ -4546,7 +4978,11 @@ export type ServerMember = {
   /** End of the active ban; null for a permanent ban or no ban. */
   bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
+  /** What the person who added this bot says about it; null for anyone but a bot. */
+  bot?: Maybe<BotInfo>;
   displayName?: Maybe<Scalars['String']['output']>;
+  /** Whether this member is a bot, an account nobody signs in to. */
+  isBot: Scalars['Boolean']['output'];
   joinedAt: Scalars['DateTime']['output'];
   memberRole: ServerMemberRoleGql;
   /** The member's key identity (`rimp1_…`), once enrolled; null for a password-only account. */
@@ -4795,6 +5231,18 @@ export type UnpinMessageInput = {
 export type UnreadCount = {
   conversationId: Scalars['ID']['output'];
   count: Scalars['Int']['output'];
+  /** Messages sent after this time count as unread. */
+  unreadAfter: Scalars['DateTime']['output'];
+};
+
+/** Change a bot; a field left out stays as it is. */
+export type UpdateBotInput = {
+  botUserId: Scalars['ID']['input'];
+  name?: InputMaybe<Scalars['String']['input']>;
+  readsGoTo?: InputMaybe<Scalars['String']['input']>;
+  runBy?: InputMaybe<Scalars['String']['input']>;
+  /** Whether it sees members joining the workspace. */
+  seesMemberJoins?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type UpdateChannelLensInput = {
@@ -4884,9 +5332,18 @@ export type UpdatePublicJoinLinkInput = {
 };
 
 export type UpdateUserCommandInput = {
+  /**
+   * Omitted, keeps the stored value, which turns off when the new steps no longer let the
+   * agent run the macro.
+   */
+  aiCallable?: InputMaybe<Scalars['Boolean']['input']>;
   commandId: Scalars['String']['input'];
   description: Scalars['String']['input'];
+  /** Omitted, keeps the stored value. */
+  intentSamples?: InputMaybe<Array<Scalars['String']['input']>>;
   isEnabled: Scalars['Boolean']['input'];
+  /** Omitted, keeps the stored value. */
+  nlDescription?: InputMaybe<Scalars['String']['input']>;
   steps: Array<UserCommandStepInput>;
   title: Scalars['String']['input'];
 };
@@ -4918,6 +5375,8 @@ export type User = {
   /** End of the active workspace ban; null for a permanent ban or no ban. */
   bannedUntil?: Maybe<Scalars['DateTime']['output']>;
   bio?: Maybe<Scalars['String']['output']>;
+  /** What the person who added this bot says about it; null for anyone but a bot. */
+  bot?: Maybe<BotInfo>;
   /**
    * When the account's pending deletion runs, after its grace period (`requestAccountDeletion`);
    * null while none is pending, and always null except on `me`. Once it runs, the account is
@@ -4931,7 +5390,7 @@ export type User = {
    * handle domain, or a person from another server's username at their home server and that
    * server's handle domain. Null when it is not known (a person from another server whose
    * home server did not say, or whose handle domain does not point back at it) and for a
-   * deleted account.
+   * deleted account or a bot.
    */
   handle?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
@@ -4941,6 +5400,8 @@ export type User = {
    * everyone else.
    */
   instanceOperator: Scalars['Boolean']['output'];
+  /** Whether this account is a bot, which nobody signs in to. */
+  isBot: Scalars['Boolean']['output'];
   /**
    * Key-based principal id (`rimp1_...`); null only for a purged account that never had one.
    * Plugins see this id, and the host maps a provisional `rimp0_` id to it once.
@@ -4961,26 +5422,58 @@ export type User = {
   username: Scalars['String']['output'];
 };
 
-/** A user command as its owner saved it, in the shape `updateUserCommand` takes. */
+/**
+ * A macro, the person's own command, as its owner saved it, in the shape `updateUserCommand`
+ * takes.
+ */
 export type UserCommand = {
+  /**
+   * Whether the owner lets the AI agent run the macro. The agent runs it only while every
+   * step is an AI-callable built-in the server runs, with every argument fixed.
+   */
+  aiCallable: Scalars['Boolean']['output'];
   description: Scalars['String']['output'];
   /** The command id, `user.<key>`, the same as the listed `Command.id`. */
   id: Scalars['String']['output'];
+  /** Example phrases for the AI agent. */
+  intentSamples: Array<Scalars['String']['output']>;
   /** `false` while the command is disabled; a disabled command is not listed by `commands`. */
   isEnabled: Scalars['Boolean']['output'];
+  /** How the macro is described to the AI agent; empty when its description serves. */
+  nlDescription: Scalars['String']['output'];
   /** The steps in the order they run. */
   steps: Array<UserCommandStep>;
   title: Scalars['String']['output'];
 };
 
-/** One step of a user command: the command it runs and the arguments it passes. */
+/**
+ * One step of a macro: the command it runs, the arguments fixed for it and the arguments the
+ * client asks for when the macro runs.
+ */
 export type UserCommandStep = {
   args?: Maybe<Scalars['JSON']['output']>;
+  /**
+   * Names of the arguments the client asks the person for before the first step runs;
+   * empty when the step asks for none.
+   */
+  ask: Array<Scalars['String']['output']>;
+  /**
+   * A built-in, app or plugin command id, or on a macro saved before steps could name app
+   * and plugin commands, another macro.
+   */
   commandId: Scalars['String']['output'];
 };
 
+/** One step of a macro. */
 export type UserCommandStepInput = {
   args?: InputMaybe<Scalars['JSON']['input']>;
+  /**
+   * Names of the arguments the client asks for when the macro runs: at most 32, each 1 to
+   * 64 bytes, none twice and none a key of `args`. Omitted, none on create, and on update
+   * what the stored step at the same position asked for when it names the same command.
+   */
+  ask?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** A built-in, app or plugin command id. */
   commandId: Scalars['String']['input'];
 };
 
@@ -4988,6 +5481,108 @@ export type UserPresenceGql = {
   lastSeenAt: Scalars['DateTime']['output'];
   status: PresenceStatus;
   userId: Scalars['ID']['output'];
+};
+
+/** A ready-made webhook format RIM ships, the same for everyone. */
+export type WebhookFormatInfo = {
+  format: Scalars['JSON']['output'];
+  /** A short name that stays the same, such as `github`. */
+  key: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  /** A delivery's body as the service sends it. */
+  sampleBody: Scalars['String']['output'];
+  sampleHeaders: Array<WebhookHeader>;
+  /** What to set up on the service's side. */
+  setupNote: Scalars['String']['output'];
+};
+
+/** What a sample delivery would come to under a format. Nothing is posted or stored. */
+export type WebhookFormatPreview = {
+  /** The link after the text, when it passes its check. */
+  link?: Maybe<Scalars['String']['output']>;
+  outcome: WebhookPreviewOutcome;
+  /** The placeholder with no value, as written between its braces. */
+  placeholder?: Maybe<Scalars['String']['output']>;
+  /** Why the body or the format would be refused. */
+  reason?: Maybe<Scalars['String']['output']>;
+  /** The rule that decides or that a refusal is about, counted from 1. */
+  rule?: Maybe<Scalars['Int']['output']>;
+  /** What would post, without the link. */
+  text?: Maybe<Scalars['String']['output']>;
+};
+
+/** A header of a sample delivery. */
+export type WebhookHeader = {
+  name: Scalars['String']['output'];
+  value: Scalars['String']['output'];
+};
+
+/** A header of a sample delivery. */
+export type WebhookHeaderInput = {
+  name: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+};
+
+/** How an incoming webhook's body becomes text. */
+export enum WebhookPreset {
+  /**
+   * GitHub's published releases, pull requests opened, closed or merged and issues opened or
+   * closed, by the `X-GitHub-Event` header.
+   */
+  GITHUB = 'GITHUB',
+  /** `{"text": "..."}`, at most 4,000 characters. */
+  PLAIN = 'PLAIN'
+}
+
+/** What a sample delivery would come to. */
+export enum WebhookPreviewOutcome {
+  /** The body would be refused. */
+  BODY_REFUSED = 'BODY_REFUSED',
+  /** The format would be refused. */
+  FORMAT_REFUSED = 'FORMAT_REFUSED',
+  /** No rule holds, so nothing would post. */
+  NO_RULE = 'NO_RULE',
+  /** The rule that holds has a placeholder with no value, so nothing would post. */
+  NO_VALUE = 'NO_VALUE',
+  /** A rule holds and posts. */
+  POSTS = 'POSTS'
+}
+
+/** What a test session holds of a delivery's body. */
+export enum WebhookTestBodyState {
+  /** Not UTF-8; its bytes are not held. */
+  NOT_TEXT = 'NOT_TEXT',
+  /** `body` is the body exactly as it came. */
+  TEXT = 'TEXT',
+  /** Over 256 KiB; its bytes are not held. */
+  TOO_LARGE = 'TOO_LARGE'
+}
+
+/** The deliveries a read of a test session answers, and when it now expires. */
+export type WebhookTestDeliveries = {
+  deliveries: Array<WebhookTestDelivery>;
+  expiresAt: Scalars['DateTime']['output'];
+};
+
+/** A delivery a test session holds. */
+export type WebhookTestDelivery = {
+  /** The body, for `TEXT` alone. A client shows it as plain text. */
+  body?: Maybe<Scalars['String']['output']>;
+  bodyState: WebhookTestBodyState;
+  contentType?: Maybe<Scalars['String']['output']>;
+  /** The `x-` headers a format may use. */
+  headers: Array<WebhookHeader>;
+  /** Its place in the session, counted from 1; pass the last one read as `after`. */
+  id: Scalars['Int']['output'];
+  receivedAt: Scalars['DateTime']['output'];
+};
+
+/** A webhook test session just started. */
+export type WebhookTestSession = {
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  /** `rimhook_…` for an unbound session's URL, shown this once; null for a bound session. */
+  token?: Maybe<Scalars['String']['output']>;
 };
 
 /** A workspace's DM rules. */

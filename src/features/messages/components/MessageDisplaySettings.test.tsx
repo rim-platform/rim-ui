@@ -9,7 +9,7 @@ import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettin
 const STORAGE_KEY = "rim:message-display-settings";
 
 afterEach(() => {
-  useMessageDisplaySettingsStore.setState({ showInlineMedia: true });
+  useMessageDisplaySettingsStore.setState({ showInlineMedia: true, markReadByHand: false });
   useClockFormatStore.setState({ clockFormat: "auto" });
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem("rim:clock-format");
@@ -34,6 +34,27 @@ describe("MessageDisplaySettings", () => {
     expect(useMessageDisplaySettingsStore.getState().showInlineMedia).toBe(false);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}")).toEqual({
       showInlineMedia: false,
+      markReadByHand: false,
+    });
+  });
+
+  it("offers marking read by hand, off by default, says what it does and keeps it", async () => {
+    const user = userEvent.setup();
+    render(<MessageDisplaySettings />);
+    const toggle = screen.getByRole("switch", { name: "Only when I mark it read" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(
+      screen.getByText(
+        "Conversations stay unread until you mark them, even after you read to the end. This needs a server that keeps read markers: on an older one, reading still marks them.",
+      ),
+    ).toBeInTheDocument();
+    toggle.focus();
+    await user.keyboard(" ");
+    expect(useMessageDisplaySettingsStore.getState().markReadByHand).toBe(true);
+    expect(useMessageDisplaySettingsStore.getState().showInlineMedia).toBe(true);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}")).toEqual({
+      showInlineMedia: true,
+      markReadByHand: true,
     });
   });
 

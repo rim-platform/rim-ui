@@ -5,7 +5,7 @@ import { activeBan, useBanExpiry } from "../../messages/hooks/useBanExpiry";
 import { useThreadByRootMessage, useThreadMessages } from "../api/useThreads";
 import { useConversationMessages } from "../../messages/api/useMessages";
 import { useEditMessageMutation } from "../../messages/api/useEditMessage";
-import { useToggleReactionMutation } from "../../messages/api/useToggleReaction";
+import { runReactionCommand } from "../../messages/api/messageCommands";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
@@ -117,7 +117,6 @@ export function ThreadPanel() {
   ]);
 
   const currentUserId = useAuthStore((s) => s.session?.userId);
-  const toggleReaction = useToggleReactionMutation();
   const rights = usePostingRights(workspaceId, conversationId);
 
   // Get the root message from the conversation messages cache
@@ -199,6 +198,8 @@ export function ThreadPanel() {
       ),
       role: inDirectSpace ? undefined : member.role,
       inDirectSpace,
+      isBot: member.isBot ?? msg.author?.isBot,
+      bot: member.bot ?? msg.author?.bot,
     };
   };
   useEffect(
@@ -248,18 +249,22 @@ export function ThreadPanel() {
     return () => clearTimeout(timer);
   }, [highlightedMessageId, setHighlightedMessageId, items]);
 
-  const toggleReactionMutate = toggleReaction.mutate;
+  // A reaction chip runs `chat.toggle_reaction` on its own message, in this thread.
   const handleToggleReaction = useCallback(
     (messageId: string, emoji: string) => {
       if (!workspaceId || !conversationId) return;
-      toggleReactionMutate({
-        serverId: workspaceId,
-        conversationId,
-        messageId,
+      void runReactionCommand(
+        {
+          workspaceId,
+          conversationId,
+          selectedMessageId: messageId,
+          ...(threadId && { threadId }),
+        },
         emoji,
-      });
+        "button",
+      );
     },
-    [workspaceId, conversationId, toggleReactionMutate],
+    [workspaceId, conversationId, threadId],
   );
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);

@@ -95,26 +95,31 @@ export function leaveInvitation(qc: QueryClient, workspaceId: string, conversati
  * Accept an invitation: the viewer becomes a member, the conversation loads like any other, and
  * this device's view of the group is read again while a member's device adds it.
  */
+export async function acceptConversationInvite(
+  qc: QueryClient,
+  vars: MutationAcceptConversationInviteArgs,
+): Promise<ConversationSummary> {
+  const res = await graphqlClient.request<{ acceptConversationInvite: ConversationSummary }>(
+    ACCEPT_CONVERSATION_INVITE,
+    vars,
+  );
+  const conversation = res.acceptConversationInvite;
+  qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
+  patchInbox(qc, vars.serverId, vars.conversationId, conversation);
+  invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+  void e2eeSession()
+    .then((session) =>
+      session ? refreshGroups(session, vars.serverId, [vars.conversationId]) : null,
+    )
+    .catch((err: unknown) => logger.warn("[RIM:e2ee] group status after joining:", err));
+  return conversation;
+}
+
+/** {@link acceptConversationInvite} as a mutation. */
 export function useAcceptConversationInviteMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: MutationAcceptConversationInviteArgs) => {
-      const res = await graphqlClient.request<{ acceptConversationInvite: ConversationSummary }>(
-        ACCEPT_CONVERSATION_INVITE,
-        vars,
-      );
-      return res.acceptConversationInvite;
-    },
-    onSuccess: (conversation, vars) => {
-      qc.setQueryData(queryKeys.conversation(vars.serverId, vars.conversationId), conversation);
-      patchInbox(qc, vars.serverId, vars.conversationId, conversation);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-      void e2eeSession()
-        .then((session) =>
-          session ? refreshGroups(session, vars.serverId, [vars.conversationId]) : null,
-        )
-        .catch((err: unknown) => logger.warn("[RIM:e2ee] group status after joining:", err));
-    },
+    mutationFn: (vars: MutationAcceptConversationInviteArgs) => acceptConversationInvite(qc, vars),
   });
 }
 
@@ -122,25 +127,29 @@ export function useAcceptConversationInviteMutation() {
  * Decline an invitation: the conversation leaves the inbox. The server tells the viewer they
  * left it, which is no news to them, so the removal toast stays quiet.
  */
+export async function declineConversationInvite(
+  qc: QueryClient,
+  vars: MutationDeclineConversationInviteArgs,
+): Promise<boolean> {
+  markLeaving(vars.conversationId);
+  try {
+    const res = await graphqlClient.request<{ declineConversationInvite: boolean }>(
+      DECLINE_CONVERSATION_INVITE,
+      vars,
+    );
+    leaveInvitation(qc, vars.serverId, vars.conversationId);
+    return res.declineConversationInvite;
+  } finally {
+    clearLeaving(vars.conversationId);
+    invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
+  }
+}
+
+/** {@link declineConversationInvite} as a mutation. */
 export function useDeclineConversationInviteMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: MutationDeclineConversationInviteArgs) => {
-      const res = await graphqlClient.request<{ declineConversationInvite: boolean }>(
-        DECLINE_CONVERSATION_INVITE,
-        vars,
-      );
-      return res.declineConversationInvite;
-    },
-    onMutate: (vars) => {
-      markLeaving(vars.conversationId);
-    },
-    onSuccess: (_data, vars) => {
-      leaveInvitation(qc, vars.serverId, vars.conversationId);
-    },
-    onSettled: (_data, _err, vars) => {
-      clearLeaving(vars.conversationId);
-      invalidateConversationQueries(qc, vars.serverId, vars.conversationId);
-    },
+    mutationFn: (vars: MutationDeclineConversationInviteArgs) =>
+      declineConversationInvite(qc, vars),
   });
 }

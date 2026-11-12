@@ -2,20 +2,20 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { activeBan, banLabel, useBanExpiry } from "../hooks/useBanExpiry";
 import { useDeleteMessage } from "../hooks/useDeleteMessage";
-import { authorNameOf, useMessageMembers } from "../hooks/useMessageMembers";
+import { authorNameOf, messageAuthorView, useMessageMembers } from "../hooks/useMessageMembers";
 import { useMessageNavigation } from "../hooks/useMessageNavigation";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useMemberLookup } from "../../workspaces/hooks/useMemberLookup";
 import { rememberHandles } from "../../workspaces/state/useKnownHandles";
-import { viewHandle } from "../../../shared/utils/handles";
 import { useUserContextMenu } from "../../workspaces/hooks/useUserContextMenu";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { LensBanner } from "../../lenses/components/LensBanner";
 import { cn } from "../../../shared/ui/cn";
 import { MessageItem } from "./MessageItem";
 import { useMessageContextMenu } from "../hooks/useMessageContextMenu";
+import { AttachmentDeleteDialog } from "./AttachmentDeleteDialog";
 import { ForwardDialog } from "./ForwardDialog";
 import { E2eeNoticeRow } from "../../e2ee/components/E2eeNoticeRow";
 import { useMemberRemovals } from "../../conversations/api/useMemberRemovals";
@@ -55,6 +55,12 @@ import { useTimelineScroll } from "./timeline/useTimelineScroll";
 import { replyQuoteFor } from "./message-item/replyQuoteView";
 import { useReplyTargetStore } from "../state/useReplyTargetStore";
 import { useMessageFoldStore } from "../state/useMessageFoldStore";
+import { useSelectedMessageStore } from "../state/useSelectedMessageStore";
+import {
+  isDeletableAttachment,
+  selectedMessageActions,
+  type SelectedMessageSource,
+} from "./timeline/selectedMessageActions";
 import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
 import { usePostingRights } from "../../conversations/api/useChannelPosting";
 import { useCanModerate } from "../../workspaces/api/useMyServerRole";
@@ -90,6 +96,8 @@ function usePendingPeer(): string | null {
   const pending = useDmRequestPending(workspaceId, conversationId);
   return pending && conversation ? (directPeerId(conversation, currentUserId) ?? null) : null;
 }
+
+const NO_ITEMS: TimelineMessage[] = [];
 
 function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
@@ -155,19 +163,30 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   const isAtBottomRef = useRef(true);
   const {
     firstNewIndex,
+    firstNewKnown,
+    awaitingFirstNew,
+    moreAbove,
     dividerFading,
+    markShownRead,
     onScrollPosition: onDividerScrollPosition,
   } = useNewMessagesDivider({
     workspaceId,
     conversationId,
     items,
+    currentUserId,
     isLensActive,
     isAtBottomRef,
+    firstPagePending: timeline.isPending,
+    hasNextPage: timeline.hasNextPage,
+    isFetchingNextPage: timeline.isFetchingNextPage,
+    fetchNextPage: timeline.fetchNextPage,
   });
+  // What the viewer can be said to have in front of them: nothing until the list opens.
+  const shownItems = awaitingFirstNew ? NO_ITEMS : items;
   const { onScrollPosition: onSeenScrollPosition } = useMarkSeen({
     workspaceId,
     conversationId,
-    items,
+    items: shownItems,
     isLensActive,
     currentUserId,
     isAtBottomRef,
@@ -207,6 +226,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     currentUserId,
     displayDensity,
     firstNewIndex,
+    firstNewKnown,
     hasNextPage: timeline.hasNextPage,
     isFetchingNextPage: timeline.isFetchingNextPage,
     fetchNextPage: timeline.fetchNextPage,
@@ -216,10 +236,15 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     hintBarShown: navigationMode,
     pointerPressRef: pointerEntryRef,
   });
-  const highlightedMessageId = useHighlightedMessage({ items, scrollContainerRef, scrollToIndex });
+  const highlightedMessageId = useHighlightedMessage({
+    items: shownItems,
+    scrollContainerRef,
+    scrollToIndex,
+  });
 
   const [forwardMessage, setForwardMessage] = useState<{ id: string; text: string } | null>(null);
   const forward = useCallback((id: string, text: string) => setForwardMessage({ id, text }), []);
+  const [attachmentDeleteFor, setAttachmentDeleteFor] = useState<string | null>(null);
 
   // Reply is offered where the composer, not a bar in its place, is shown.
   const rights = usePostingRights(workspaceId, conversationId);
@@ -259,6 +284,37 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   });
   const getMenuItems = (target: TimelineMenuTarget) =>
     messageMenu.getItems({ ...target, message: itemsById.get(target.messageId) });
+
+  // The commands on the selected message act through this list while it is on screen.
+  const selectedActionsRef = useRef<SelectedMessageSource>({
+    itemsById,
+    currentUserId,
+    onReply,
+    report: messageMenu.report,
+    forward,
+    deleteAttachment: setAttachmentDeleteFor,
+  });
+  useLayoutEffect(() => {
+    selectedActionsRef.current = {
+      ...selectedActionsRef.current,
+      itemsById,
+      currentUserId,
+      onReply,
+      report: messageMenu.report,
+      forward,
+      deleteAttachment: setAttachmentDeleteFor,
+    };
+  }, [itemsById, currentUserId, onReply, messageMenu.report, forward]);
+  useEffect(() => {
+    if (!conversationId) return;
+    const actions = selectedMessageActions(conversationId, selectedActionsRef);
+    useSelectedMessageStore.getState().setActions(actions);
+    return () => {
+      if (useSelectedMessageStore.getState().actions === actions) {
+        useSelectedMessageStore.getState().setActions(null);
+      }
+    };
+  }, [conversationId]);
 
   const {
     handlers: rowHandlers,
@@ -317,9 +373,10 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
   );
 
   const deleteMessageFn = useDeleteMessage(workspaceId, conversationId);
+  // The list's delete key runs the delete command on the selected message.
   const handleDeleteMessage = useCallback(
     async (msg: { id: string }) => {
-      await deleteMessageFn(msg.id);
+      await deleteMessageFn(msg.id, { source: "key" });
     },
     [deleteMessageFn],
   );
@@ -330,6 +387,8 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     deleteConfirmMessageId,
     handleMessageListKeyDown,
     selectPressedMessage,
+    moveSelection,
+    toggleFold,
   } = useMessageNavigation({
     items,
     conversationId,
@@ -349,6 +408,13 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     scrollToIndex,
     pointerEntryRef,
   });
+  useLayoutEffect(() => {
+    selectedActionsRef.current = {
+      ...selectedActionsRef.current,
+      select: moveSelection,
+      toggleFold,
+    };
+  }, [moveSelection, toggleFold]);
   const selectedId = selectedMessageIndex >= 0 ? items[selectedMessageIndex]?.id : undefined;
   const selectedFoldable = useMessageFoldStore((s) =>
     selectedId ? s.foldable.has(selectedId) : false,
@@ -365,7 +431,7 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
     );
   }
 
-  if (timeline.isPending) {
+  if (timeline.isPending || awaitingFirstNew) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-rim-text-muted">
         {isLensActive ? "Applying lens..." : "Loading messages..."}
@@ -515,34 +581,22 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
                     className={cn("absolute left-0 top-0 w-full", row.index > 0 && "pt-0.5")}
                     style={{ transform: `translateY(${row.start}px)` }}
                   >
-                    {row.index === firstNewIndex && <NewMessagesDivider fading={dividerFading} />}
+                    {row.index === firstNewIndex && (
+                      <NewMessagesDivider
+                        fading={dividerFading}
+                        moreAbove={moreAbove}
+                        onMarkRead={markShownRead ?? undefined}
+                      />
+                    )}
                     <MessageItem
                       view={{
                         message: msg,
                         replyTo,
-                        author: {
-                          name: authorNameOf(msg, member),
-                          isFormerMember: member.isFormerMember,
-                          ban: {
-                            banned: activeBan(msg.author),
-                            bannedUntil: msg.author?.bannedUntil,
-                            banReason: msg.author?.banReason,
-                          },
-                          avatarUrl: member.avatarUrl ?? msg.author?.avatarUrl,
-                          username: member.username ?? msg.author?.username,
-                          handle: viewHandle(
-                            msg.author?.username ?? member.username,
-                            msg.author?.handle ?? member.handle,
-                            memberLookup.ownDomain,
-                          ),
-                          statusText: member.statusText,
-                          role: inDirectSpace ? undefined : member.role,
+                        author: messageAuthorView(msg, member, {
+                          ownDomain: memberLookup.ownDomain,
                           inDirectSpace,
-                          joinedAt: member.joinedAt,
-                          bio: member.bio,
-                          isCurrentUser:
-                            currentUserId !== undefined && msg.authorId === currentUserId,
-                        },
+                          currentUserId,
+                        }),
                         isSelected: row.index === selectedMessageIndex,
                         isHighlighted: msg.id === highlightedMessageId,
                         isDeleteConfirming: msg.id === deleteConfirmMessageId,
@@ -600,6 +654,18 @@ function Timeline({ pendingPeerId }: { pendingPeerId: string | null }) {
       {contextMenu}
       {messageMenu.dialog}
       {userMenu.element}
+      {attachmentDeleteFor && workspaceId && (
+        <AttachmentDeleteDialog
+          serverId={workspaceId}
+          attachments={(itemsById.get(attachmentDeleteFor)?.attachments ?? []).filter(
+            isDeletableAttachment,
+          )}
+          onClose={() => {
+            setAttachmentDeleteFor(null);
+            scrollContainerRef.current?.focus();
+          }}
+        />
+      )}
       {forwardMessage && workspaceId && (
         <ForwardDialog
           open={!!forwardMessage}

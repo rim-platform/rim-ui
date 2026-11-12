@@ -1,5 +1,6 @@
 import { Plus, Users } from "lucide-react";
 
+import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { ConversationList } from "../../features/conversations/components/ConversationList";
 import { ConversationMembersPanel } from "../../features/conversations/components/ConversationMembersPanel";
 import { useMembersPanelStore } from "../../features/conversations/state/useMembersPanelStore";
@@ -9,8 +10,6 @@ import { useIsGuest } from "../../features/workspaces/api/useMyServerRole";
 import { WorkspaceMemberDirectory } from "../../features/workspaces/components/WorkspaceMemberDirectory";
 import { NewChannelDialog } from "../../features/conversations/components/NewChannelDialog";
 import { NewMessagePicker } from "../../features/conversations/components/NewMessagePicker";
-import { NotificationsPanel } from "../../features/notifications/components/NotificationsPanel";
-import { useNotificationsPanelStore } from "../../features/notifications/state/useNotificationsPanelStore";
 import { useShellStore } from "../state/useShellStore";
 
 export function ToolPanel() {
@@ -24,23 +23,13 @@ export function ToolPanel() {
   const selectedConversationId = useShellStore((s) => s.selectedConversationId);
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const membersOpen = useMembersPanelStore((s) => s.open);
-  const setMembersOpen = useMembersPanelStore((s) => s.setOpen);
   const directoryOpen = useMemberDirectoryStore((s) => s.open);
-  const setDirectoryOpen = useMemberDirectoryStore((s) => s.setOpen);
   // Guests have no member directory; the server narrows their member list too.
   const isGuest = useIsGuest(workspaceId ?? undefined);
-  const notificationsOpen = useNotificationsPanelStore((s) => s.open);
-  const setNotificationsOpen = useNotificationsPanelStore((s) => s.setOpen);
-  // The notification inbox (side-rail bell) takes over the tool panel while open.
-  const showNotifications = notificationsOpen && Boolean(workspaceId);
   // The members panel takes over the tool panel while a conversation is open in the inbox.
   const showMembers =
-    !showNotifications &&
-    membersOpen &&
-    activePanel === "inbox" &&
-    Boolean(workspaceId && selectedConversationId);
-  const showDirectory =
-    !showNotifications && !showMembers && directoryOpen && activePanel === "inbox" && !isGuest;
+    membersOpen && activePanel === "inbox" && Boolean(workspaceId && selectedConversationId);
+  const showDirectory = !showMembers && directoryOpen && activePanel === "inbox" && !isGuest;
 
   return (
     <div
@@ -49,18 +38,16 @@ export function ToolPanel() {
       onFocus={() => useShellStore.getState().setFocusedSurface("toolPanel")}
       className="flex w-64 shrink-0 flex-col border-r border-rim-line bg-rim-panel outline-none"
     >
-      {showNotifications && workspaceId ? (
-        <NotificationsPanel workspaceId={workspaceId} onClose={() => setNotificationsOpen(false)} />
-      ) : showMembers && workspaceId && selectedConversationId ? (
+      {showMembers && workspaceId && selectedConversationId ? (
         <ConversationMembersPanel
           workspaceId={workspaceId}
           conversationId={selectedConversationId}
-          onClose={() => setMembersOpen(false)}
+          onClose={() => void runCommandFromClick("workspace.toggle_conversation_members")}
         />
       ) : showDirectory && workspaceId ? (
         <WorkspaceMemberDirectory
           workspaceId={workspaceId}
-          onClose={() => setDirectoryOpen(false)}
+          onClose={() => void runCommandFromClick("workspace.toggle_member_directory")}
         />
       ) : (
         <>
@@ -71,10 +58,7 @@ export function ToolPanel() {
                 {!isGuest && workspaceId && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setMembersOpen(false);
-                      setDirectoryOpen(true);
-                    }}
+                    onClick={() => void runCommandFromClick("workspace.toggle_member_directory")}
                     title="Workspace members"
                     aria-label="Workspace members"
                     className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
@@ -84,7 +68,7 @@ export function ToolPanel() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setShowNewMessage(true)}
+                  onClick={() => void runCommandFromClick("chat.create_group")}
                   title="New message"
                   aria-label="New message"
                   className="rounded-lg p-1 text-rim-text-muted transition hover:bg-white/5 hover:text-rim-text"
@@ -95,9 +79,7 @@ export function ToolPanel() {
             )}
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            {activePanel === "inbox" && (
-              <ConversationList onNewChannel={() => setShowNewChannel(true)} />
-            )}
+            {activePanel === "inbox" && <ConversationList />}
           </div>
         </>
       )}

@@ -36,10 +36,12 @@
  * - `invitedBy`, `ownerName` — who invited and who owns the workspace, from its preview.
  * - `onSuccess(userId, serverId?)` — called after successful signup.
  *
- * A workspace invite link can pass `signIn`, shown above the signup.
+ * A workspace invite link can pass `signIn`, shown above the signup. Without it, a link under the
+ * form leads to the sign-in page, which comes back to the invite link when there is one.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
@@ -163,6 +165,11 @@ export function JoinForm({
       : workspaceId
     : undefined;
   const inviteReady = !byCode || invite.ready;
+  const inviteReason = invite.checking
+    ? "Checking the invite code..."
+    : invite.error
+      ? "This invite code can't be used. Check it, or ask for another."
+      : "Enter your invite code to continue. Someone on this server can give you one.";
   const invitedWorkspace =
     (byCode ? invite.preview?.workspace?.serverName : workspaceName) ?? "the workspace";
 
@@ -215,7 +222,7 @@ export function JoinForm({
 
   return (
     <div className="flex min-h-full items-center justify-center bg-rim-void p-4">
-      <div className="w-full max-w-lg space-y-6">
+      <div className="w-full max-w-[440px] space-y-6">
         <InstanceNotice />
 
         <header className="text-center">
@@ -238,7 +245,7 @@ export function JoinForm({
           </p>
         )}
 
-        <div className="rounded-xl border border-rim-line bg-rim-panel p-6">
+        <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
           {finishedUserId && joinOutcome ? (
             joinError ? (
               <div role="alert" className="space-y-3 text-sm">
@@ -279,12 +286,25 @@ export function JoinForm({
                 onSuccess={signedUp}
                 onBusyChange={setKeySignupBusy}
                 ready={inviteReady}
+                notReadyReason={inviteReason}
                 onFailure={inviteRefused}
                 onAccountCreated={accountCreated}
               />
             </div>
           )}
         </div>
+
+        {!created && !signIn && (
+          <p className="text-center text-sm text-rim-text-muted">
+            <Link
+              to="/login"
+              state={token ? { returnTo: `/join/${encodeURIComponent(token)}` } : undefined}
+              className="font-medium text-rim-accent hover:underline"
+            >
+              I already have an account
+            </Link>
+          </p>
+        )}
 
         <AbuseContact />
 

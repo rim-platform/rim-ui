@@ -37,6 +37,21 @@ export const MessageEditForm = memo(function MessageEditForm({
     });
   }, [initialText]);
 
+  // The form unmounts when the edit ends; focus it left behind goes back to the message's row,
+  // or the list or panel that holds it.
+  useEffect(
+    () => () => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const row = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+      const target =
+        row?.closest<HTMLElement>("[tabindex]") ??
+        document.querySelector<HTMLElement>("[data-message-list]");
+      target?.focus({ preventScroll: true });
+    },
+    [messageId],
+  );
+
   function submit() {
     const trimmed = editText.trim();
     if (trimmed && trimmed !== initialText) {
@@ -70,7 +85,7 @@ export const MessageEditForm = memo(function MessageEditForm({
       <div className="mt-1 flex gap-2">
         <button
           type="button"
-          className="rounded bg-rim-accent px-2 py-0.5 text-xs text-rim-text transition hover:brightness-110"
+          className="rounded bg-rim-text px-2 py-0.5 text-xs text-rim-panel transition hover:brightness-110"
           onClick={submit}
         >
           Save

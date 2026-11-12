@@ -23,6 +23,7 @@ import { canModerate } from "../../workspaces/role";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { useListAuditLog, type AuditLogScope } from "../api/useListAuditLog";
 import { auditTargetUserId, shortUserId } from "../auditTarget";
+import { useShellWidth } from "../../../shell/hooks/useShellWidth";
 
 // ── Typed verb display config ──────────────────────────────────────────────
 
@@ -232,11 +233,14 @@ function AuditRow({ entry, nameOf }: AuditRowProps) {
  * How long the server keeps audit entries; nothing while loading or when the server does not
  * report it.
  */
-function RetentionNote() {
+function RetentionNote({ className }: { className?: string }) {
   const days = useServerInfo().info?.auditRetentionDays;
   if (days === undefined) return null;
   return (
-    <span className="text-xs text-rim-text-faint" data-testid="audit-retention-note">
+    <span
+      className={cn("text-xs text-rim-text-faint", className)}
+      data-testid="audit-retention-note"
+    >
       {days === null
         ? "Entries are kept forever"
         : `Entries are kept for ${days} day${days === 1 ? "" : "s"}`}
@@ -345,6 +349,11 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
   const hasNext = Boolean(pageInfo?.hasNextPage);
   const filterActive = verbFilter != null;
 
+  const narrow = useShellWidth() === "narrow";
+  const gutter = narrow ? "px-4" : "px-8";
+  // The notices stay in view while the table scrolls sideways.
+  const pinned = narrow ? "sticky left-0 w-screen" : "";
+
   const summary = useMemo(() => {
     if (query.isPending) return "Loading audit log...";
     if (forbidden) return "Not permitted.";
@@ -355,7 +364,9 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
   return (
     <div className="flex h-full flex-col" data-testid="audit-log-page">
       {/* Header */}
-      <header className="flex h-10 items-center justify-between border-b border-rim-line px-8">
+      <header
+        className={cn("flex h-10 items-center justify-between border-b border-rim-line", gutter)}
+      >
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -366,8 +377,8 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <ClipboardList className="h-4 w-4 text-rim-accent" />
-          <h1 className="text-lg font-semibold text-rim-text">Audit Log</h1>
-          <RetentionNote />
+          <h1 className="whitespace-nowrap text-lg font-semibold text-rim-text">Audit Log</h1>
+          {!narrow && <RetentionNote />}
         </div>
         <button
           type="button"
@@ -381,7 +392,8 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
       </header>
 
       {/* Filter bar */}
-      <div className="flex flex-col gap-3 border-b border-rim-line px-8 py-3">
+      <div className={cn("flex flex-col gap-3 border-b border-rim-line py-3", gutter)}>
+        {narrow && <RetentionNote />}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-rim-text-faint">Verb</span>
           {VERB_OPTIONS.map((opt) => (
@@ -410,87 +422,123 @@ function AuditLogView({ scope, ownOnly }: AuditScope) {
       </div>
 
       {/* Table */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Column headers */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           className={cn(
-            ROW_GRID,
-            "border-b border-rim-line px-4 py-1.5 text-[10px] uppercase tracking-wide text-rim-text-faint",
+            "flex min-h-0 flex-1 flex-col",
+            narrow ? "overflow-x-auto" : "overflow-hidden",
           )}
         >
-          <span>Verb</span>
-          <span>Outcome</span>
-          <span>Risk</span>
-          <span>Who</span>
-          <span>Command</span>
-          <span>Initiator</span>
-          <span className="text-right">Time</span>
-        </div>
-
-        <div className="flex items-center justify-between px-8 py-2 text-xs text-rim-text-faint">
-          <span>{summary}</span>
-          {query.isFetching && !query.isPending && <span>Refreshing...</span>}
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {query.isPending && (
-            <ul aria-label="Loading audit log">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <SkeletonRow key={i} />
-              ))}
-            </ul>
-          )}
-
-          {forbidden && (
-            <div role="alert" className="flex flex-col items-center gap-2 py-12 text-center">
-              <p className="text-sm text-rim-danger">You are not allowed to read this audit log.</p>
-              <p className="text-xs text-rim-text-muted">
-                Workspace owners and moderators see the whole log. Everyone else sees their own
-                actions.
-              </p>
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-hidden",
+              narrow && "min-w-[760px]",
+            )}
+          >
+            {/* Column headers */}
+            <div
+              className={cn(
+                ROW_GRID,
+                "border-b border-rim-line px-4 py-1.5 text-[10px] uppercase tracking-wide text-rim-text-faint",
+              )}
+            >
+              <span>Verb</span>
+              <span>Outcome</span>
+              <span>Risk</span>
+              <span>Who</span>
+              <span>Command</span>
+              <span>Initiator</span>
+              <span className="text-right">Time</span>
             </div>
-          )}
 
-          {query.isError && !forbidden && (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <p className="text-sm text-rim-danger">Failed to load audit log.</p>
-              <button
-                type="button"
-                onClick={() => query.refetch()}
-                className="rounded border border-rim-line px-3 py-1 text-xs text-rim-text-muted transition hover:bg-rim-panel-soft hover:text-rim-text"
-              >
-                Retry
-              </button>
+            <div
+              className={cn(
+                "flex items-center justify-between py-2 text-xs text-rim-text-faint",
+                gutter,
+              )}
+            >
+              <span>{summary}</span>
+              {query.isFetching && !query.isPending && <span>Refreshing...</span>}
             </div>
-          )}
 
-          {!query.isPending && !query.isError && items.length === 0 && (
-            <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-rim-text-muted">
-              <p>{filterActive ? "No entries match this filter." : "No audit log entries yet."}</p>
-              {filterActive && (
-                <button
-                  type="button"
-                  onClick={handleClearFilter}
-                  className="text-xs text-rim-accent hover:underline"
+            <div className="flex-1 overflow-y-auto">
+              {query.isPending && (
+                <ul aria-label="Loading audit log">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <SkeletonRow key={i} />
+                  ))}
+                </ul>
+              )}
+
+              {forbidden && (
+                <div
+                  role="alert"
+                  className={cn("flex flex-col items-center gap-2 py-12 text-center", pinned)}
                 >
-                  Clear filter
-                </button>
+                  <p className="text-sm text-rim-danger">
+                    You are not allowed to read this audit log.
+                  </p>
+                  <p className="text-xs text-rim-text-muted">
+                    Workspace owners and moderators see the whole log. Everyone else sees their own
+                    actions.
+                  </p>
+                </div>
+              )}
+
+              {query.isError && !forbidden && (
+                <div className={cn("flex flex-col items-center gap-3 py-12 text-center", pinned)}>
+                  <p className="text-sm text-rim-danger">Failed to load audit log.</p>
+                  <button
+                    type="button"
+                    onClick={() => query.refetch()}
+                    className="rounded border border-rim-line px-3 py-1 text-xs text-rim-text-muted transition hover:bg-rim-panel-soft hover:text-rim-text"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {!query.isPending && !query.isError && items.length === 0 && (
+                <div
+                  className={cn(
+                    "flex flex-col items-center gap-2 py-12 text-center text-sm text-rim-text-muted",
+                    pinned,
+                  )}
+                >
+                  <p>
+                    {filterActive ? "No entries match this filter." : "No audit log entries yet."}
+                  </p>
+                  {filterActive && (
+                    <button
+                      type="button"
+                      onClick={handleClearFilter}
+                      className="text-xs text-rim-accent hover:underline"
+                    >
+                      Clear filter
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {!query.isPending && !query.isError && items.length > 0 && (
+                <ul aria-label="Audit log entries">
+                  {items.map((entry) => (
+                    <AuditRow key={entry.id} entry={entry} nameOf={nameOf} />
+                  ))}
+                </ul>
               )}
             </div>
-          )}
-
-          {!query.isPending && !query.isError && items.length > 0 && (
-            <ul aria-label="Audit log entries">
-              {items.map((entry) => (
-                <AuditRow key={entry.id} entry={entry} nameOf={nameOf} />
-              ))}
-            </ul>
-          )}
+          </div>
         </div>
 
         {/* Pagination */}
         {(hasPrev || hasNext) && (
-          <div className="flex items-center justify-between border-t border-rim-line px-8 py-2">
+          <div
+            className={cn(
+              "flex items-center justify-between border-t border-rim-line py-2",
+              gutter,
+            )}
+          >
             <button
               type="button"
               onClick={handlePrevPage}

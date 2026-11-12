@@ -2,8 +2,45 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const approve = vi.hoisted(() => vi.fn());
+const grant = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginCapabilities", () => ({
   useApproveCapabilities: vi.fn(() => ({ mutate: approve, isPending: false })),
+  useGrantCommands: vi.fn(() => ({ mutate: grant, isPending: false })),
+}));
+const serverCommands = vi.hoisted(() => [
+  {
+    id: "chat.post_message",
+    title: "Post Message",
+    description: "",
+    category: "Messages",
+    sourceKind: "BUILT_IN",
+    executionTarget: "BACKEND",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: false,
+    sensitivity: "MUTATING",
+  },
+  {
+    id: "chat.delete_message",
+    title: "Delete Message",
+    description: "",
+    category: "Messages",
+    sourceKind: "BUILT_IN",
+    executionTarget: "BACKEND",
+    requiredContext: [],
+    requiredCapabilities: [],
+    visibleInPalette: true,
+    visibleInContextMenus: false,
+    keybindCapable: true,
+    dangerous: true,
+    sensitivity: "RESTRICTED",
+  },
+]);
+vi.mock("../../commands/api/useCommands", () => ({
+  useCommands: vi.fn(() => ({ data: serverCommands })),
 }));
 const enable = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginActions", () => ({
@@ -182,5 +219,67 @@ describe("PluginCapabilityPrompt after an install", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(approve).toHaveBeenCalledTimes(2);
     expect(enable).not.toHaveBeenCalled();
+  });
+});
+
+describe("PluginCapabilityPrompt commands it can run", () => {
+  type Callbacks = { onSuccess?: () => void; onError?: (err: { message: string }) => void };
+  const succeed = (_vars: unknown, options: Callbacks) => options.onSuccess?.();
+
+  const asking = plugin({
+    runs_commands: [
+      "workspace.open_home",
+      "chat.post_message",
+      "chat.delete_message",
+      "app.quit",
+      "example.unknown",
+    ],
+    granted_commands: [],
+  });
+
+  it("lists each command, nothing checked, and greys those it can't run here", () => {
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={asking} />);
+    const section = screen.getByRole("region", { name: "Commands it can run" });
+    expect(section).toBeInTheDocument();
+    const home = screen.getByRole("checkbox", { name: "Let it run Open Home" });
+    const post = screen.getByRole("checkbox", { name: "Let it run Post Message" });
+    expect(home).not.toBeChecked();
+    expect(post).not.toBeChecked();
+    expect(screen.getByText("asks you each time")).toBeInTheDocument();
+    expect(screen.getAllByText("Plugins can't run this")).toHaveLength(2);
+    expect(screen.getByText("Not available here")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Delete Message|Quit RIM|example/ })).toBeNull();
+  });
+
+  it("grants only the ticked commands after the permissions", () => {
+    approve.mockReset().mockImplementation(succeed);
+    grant.mockReset().mockImplementation(succeed);
+    const onClose = vi.fn();
+    render(<PluginCapabilityPrompt open onClose={onClose} plugin={asking} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Let it run Post Message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(grant).toHaveBeenCalledWith(
+      { pluginId: "chat.rim.github-prs", commandIds: ["chat.post_message"] },
+      expect.anything(),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("grants nothing when nothing is ticked, and shows granted ones as granted", () => {
+    approve.mockReset().mockImplementation(succeed);
+    grant.mockReset();
+    render(
+      <PluginCapabilityPrompt
+        open
+        onClose={() => {}}
+        plugin={{ ...asking, granted_commands: ["workspace.open_home"] }}
+      />,
+    );
+    const home = screen.getByRole("checkbox", { name: "Let it run Open Home" });
+    expect(home).toBeChecked();
+    expect(home).toBeDisabled();
+    expect(screen.getByText("Granted")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(grant).not.toHaveBeenCalled();
   });
 });

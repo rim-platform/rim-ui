@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -37,15 +37,6 @@ const MY_NOTIFICATION_SETTINGS = gql`
 const UPDATE_NOTIFICATION_SETTINGS = gql`
   mutation UpdateNotificationSettings($serverId: ID!, $input: UpdateNotificationSettingsInput!) {
     updateNotificationSettings(serverId: $serverId, input: $input) {
-      ...NotificationSettingsFields
-    }
-  }
-  ${NOTIFICATION_SETTINGS_FIELDS}
-`;
-
-const SET_DO_NOT_DISTURB = gql`
-  mutation SetDoNotDisturb($serverId: ID!, $paused: Boolean!, $until: DateTime) {
-    setDoNotDisturb(serverId: $serverId, paused: $paused, until: $until) {
       ...NotificationSettingsFields
     }
   }
@@ -113,26 +104,7 @@ export function useUpdateNotificationSettings() {
   });
 }
 
-interface SetDoNotDisturbVars {
-  serverId: string;
-  paused: boolean;
-  /** RFC 3339 end of the pause; null pauses until turned off. Ignored when `paused` is false. */
-  until: string | null;
-}
-
-/** Turns the manual do-not-disturb pause on (until an instant or until turned off) or off. */
-export function useSetDoNotDisturb() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ serverId, paused, until }: SetDoNotDisturbVars) => {
-      const res = await graphqlClient.request<{ setDoNotDisturb: NotificationSettingsData }>(
-        SET_DO_NOT_DISTURB,
-        { serverId, paused, until: paused ? until : null },
-      );
-      return res.setDoNotDisturb;
-    },
-    onSuccess: (settings, { serverId }) => {
-      qc.setQueryData(queryKeys.notificationSettings(serverId), settings);
-    },
-  });
+/** Refreshes a workspace's notification settings once its do-not-disturb pause changed. */
+export function invalidateNotificationSettings(qc: QueryClient, serverId: string): void {
+  qc.invalidateQueries({ queryKey: queryKeys.notificationSettings(serverId) });
 }

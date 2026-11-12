@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ShieldAlert, X } from "lucide-react";
 
 import { CommandSensitivity } from "../../../core/graphql/generated/schema-types";
@@ -7,6 +7,7 @@ import { cn } from "../../../shared/ui/cn";
 import { trackOpenDialog } from "../../../shared/ui/hostDialogs";
 import { Z } from "../../../shared/ui/zIndex";
 import { useShellStore } from "../../../shell/state/useShellStore";
+import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacters";
 import {
   useConfirmationModalStore,
   type ConfirmationRequest,
@@ -16,8 +17,22 @@ import {
   maskForDisplay,
   REDACTED_PLACEHOLDER,
 } from "./ConfirmCommandModal/argsMasker";
+import {
+  destinationInWords,
+  idKindOfArg,
+  useArgIdentity,
+  workspaceArgOf,
+  type ArgumentTypes,
+} from "./ConfirmCommandModal/argIdentity";
 import { detectCrossChannel } from "./ConfirmCommandModal/crossChannelDetector";
-import { deriveConfirmationVerb, verbMatches } from "./ConfirmCommandModal/verbDeriver";
+import { IdArgRow } from "./ConfirmCommandModal/IdArgRow";
+import { MacroSteps } from "./ConfirmCommandModal/MacroSteps";
+import { verbMatches } from "./ConfirmCommandModal/verbDeriver";
+import {
+  OUTSIDE_AGENT_ARM_MS,
+  shownSensitivity,
+  typedWordFor,
+} from "./ConfirmCommandModal/confirmGuards";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -30,12 +45,12 @@ interface SeverityVisuals {
   borderAccent: string;
   confirmBg: string;
   confirmHover: string;
+  /** The text colour on the Confirm button and its shortcut hint. */
+  confirmText: string;
   confirmLabel: string;
   srLabel: string;
   /** Block accidental dismiss (backdrop click) at MUTATING and above. */
   disableBackdropClose: boolean;
-  /** Always require type-to-confirm at this sensitivity. */
-  requireTypeToConfirm: boolean;
 }
 
 function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
@@ -43,43 +58,43 @@ function severityVisuals(sev: CommandSensitivity | undefined): SeverityVisuals {
     case CommandSensitivity.RESTRICTED:
       return {
         borderAccent: "border-l-rim-danger",
-        confirmBg: "bg-rim-danger",
-        confirmHover: "hover:bg-rim-danger/90",
+        confirmBg: "bg-rim-danger-solid",
+        confirmHover: "hover:bg-rim-danger-solid/90",
+        confirmText: "text-white",
         confirmLabel: "I understand — execute",
         srLabel: "Restricted action",
         disableBackdropClose: true,
-        requireTypeToConfirm: true,
       };
     case CommandSensitivity.MUTATING:
       return {
-        borderAccent: "border-l-rim-warm",
-        confirmBg: "bg-rim-warm",
-        confirmHover: "hover:bg-rim-warm/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Run anyway",
         srLabel: "Mutating action",
         disableBackdropClose: true,
-        requireTypeToConfirm: false,
       };
     case CommandSensitivity.SENSITIVE:
       return {
-        borderAccent: "border-l-rim-accent",
-        confirmBg: "bg-rim-accent",
-        confirmHover: "hover:bg-rim-accent/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Confirm",
         srLabel: "Sensitive action",
         disableBackdropClose: false,
-        requireTypeToConfirm: false,
       };
     case CommandSensitivity.SAFE:
     default:
       return {
-        borderAccent: "border-l-rim-success",
-        confirmBg: "bg-rim-accent",
-        confirmHover: "hover:bg-rim-accent/90",
+        borderAccent: "border-l-rim-signal",
+        confirmBg: "bg-rim-signal",
+        confirmHover: "hover:bg-rim-signal/90",
+        confirmText: "text-rim-panel",
         confirmLabel: "Confirm",
         srLabel: "Safe action",
         disableBackdropClose: false,
-        requireTypeToConfirm: false,
       };
   }
 }
@@ -92,7 +107,9 @@ interface ContainerProps {
 
 /**
  * Confirmation dialog for a command the server holds with `CONFIRMATION_REQUIRED`, whether
- * the AI agent or the user started it. A `RESTRICTED` command needs its verb typed first.
+ * the AI agent, the user or a program outside RIM started it. A `RESTRICTED` command needs its
+ * verb typed first. For a program outside RIM, Confirm waits a second and the dialog shows exactly
+ * what would go out.
  */
 export function ConfirmCommandModal() {
   const request = useConfirmationModalStore((s) => s.request);
@@ -107,21 +124,14 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const currentConversationId = useShellStore((s) => s.selectedConversationId);
 
   const byUser = request.initiator === "user";
-  // The server holds a user's command only when it is dangerous or stricter, so an unknown
-  // sensitivity is shown as MUTATING.
-  const sensitivity = request.sensitivity ?? (byUser ? CommandSensitivity.MUTATING : undefined);
+  const outside = request.outsideAgent;
+  const fromOutside = outside !== undefined;
+  const sensitivity = shownSensitivity(request);
   const visuals = useMemo(() => severityVisuals(sensitivity), [sensitivity]);
   const sameTurn = !!request.sameTurnAfterToolResult;
-  // Type-to-confirm applies to RESTRICTED, and to MUTATING when the challenge
-  // came in the same turn as a tool result; a `null` verb turns it off.
-  const requireType =
-    request.verb !== null &&
-    (visuals.requireTypeToConfirm || (sameTurn && sensitivity === CommandSensitivity.MUTATING));
-
-  const expectedVerb = useMemo(
-    () => request.verb ?? deriveConfirmationVerb(request.commandId),
-    [request.verb, request.commandId],
-  );
+  const typedWord = useMemo(() => typedWordFor(request), [request]);
+  const requireType = typedWord !== null;
+  const expectedVerb = typedWord ?? "";
 
   const crossChannel = useMemo(
     () => detectCrossChannel(request.args, currentConversationId),
@@ -129,11 +139,22 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   );
 
   const maskedArgs = useMemo(() => maskForDisplay(request.args), [request.args]);
+  const argsWorkspaceId = workspaceArgOf(request.args, request.argumentTypes);
+  const destination = useArgIdentity(
+    crossChannel && !fromOutside
+      ? (idKindOfArg(crossChannel.argName, request.argumentTypes) ?? "conversation")
+      : null,
+    crossChannel?.targetId ?? null,
+    argsWorkspaceId,
+  );
 
   const [typedVerb, setTypedVerb] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const verbOk = !requireType || verbMatches(typedVerb, expectedVerb);
-  const confirmEnabled = !submitting && verbOk;
+  // Compared with the request's token, so a new request is never armed by the previous one's wait.
+  const [armedToken, setArmedToken] = useState<string | null>(null);
+  const armed = !fromOutside || armedToken === request.token;
+  const confirmEnabled = !submitting && verbOk && armed;
 
   // Refs for focus management.
   const panelRef = useRef<HTMLDivElement>(null);
@@ -149,6 +170,12 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
       requestIdRef.current = request.token;
     }
   }, [request.token]);
+
+  useEffect(() => {
+    if (!fromOutside) return;
+    const t = setTimeout(() => setArmedToken(request.token), OUTSIDE_AGENT_ARM_MS);
+    return () => clearTimeout(t);
+  }, [fromOutside, request.token]);
 
   // Body scroll lock + focus restoration on unmount. Mirrors Dialog.
   useEffect(() => {
@@ -235,6 +262,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
   const subtitle =
     request.description ??
     (request.dangerous ? "This is a dangerous command." : request.nlDescription);
+  const confirmText = request.dangerous ? "text-white" : visuals.confirmText;
   const titleId = `confirm-cmd-title-${request.token}`;
   const descId = `confirm-cmd-desc-${request.token}`;
 
@@ -249,6 +277,10 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
       <div
         className="fixed inset-0 flex items-center justify-center p-4"
         style={{ zIndex: Z.OVERLAY_CONTENT }}
+        // A click beside the panel keeps focus in it, so its keys and Tab go on working.
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) e.preventDefault();
+        }}
       >
         <div
           ref={panelRef}
@@ -259,13 +291,14 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           onKeyDown={onPanelKeyDown}
           data-dangerous={request.dangerous ? "true" : undefined}
           className={cn(
-            "w-full max-w-lg rounded-xl border border-rim-line border-l-4 bg-rim-panel",
+            "max-h-full w-full max-w-lg overflow-y-auto rounded-xl border border-rim-card-confirm-line border-l-4 bg-rim-card-confirm",
             request.dangerous ? "border-l-rim-danger" : visuals.borderAccent,
           )}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-rim-line px-6 py-3">
+          <div className="flex items-center justify-between border-b border-rim-card-confirm-line px-6 py-3">
             <div className="flex items-center gap-2">
+              <ShieldAlert aria-hidden="true" className="h-4 w-4 text-rim-signal" />
               <RimSystemBadge />
               <span className="text-[10px] font-medium uppercase tracking-wide text-rim-text-muted">
                 Confirm command
@@ -291,9 +324,9 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           <div className="space-y-4 px-6 py-5">
             {/* Title + subtitle */}
             <div>
-              <h2 id={titleId} className="text-xl font-medium text-rim-text">
-                {byUser ? "Confirm:" : "Agent wants to:"}{" "}
-                <span className="text-rim-accent">{request.toolName}</span>
+              <h2 id={titleId} className="break-words text-xl font-medium text-rim-text">
+                {outside ? `${outside.name} wants to:` : byUser ? "Confirm:" : "Agent wants to:"}{" "}
+                <span className="font-mono text-rim-warm">{request.toolName}</span>
               </h2>
               {/* `description` is the human-facing consequence line, written
                   for humans and not clamp-prone the way `nlDescription` (model-facing, tuned for
@@ -308,9 +341,18 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 tool-result origin, then the word to type */}
             <span id={descId} className="sr-only">
               {request.dangerous ? "Dangerous command. " : ""}
-              {visuals.srLabel}. {byUser ? "Initiated by you." : "Initiated by AI agent."}
+              {visuals.srLabel}.{" "}
+              {outside
+                ? "Initiated by a program outside RIM."
+                : byUser
+                  ? "Initiated by you."
+                  : "Initiated by AI agent."}
               {crossChannel
-                ? ` Destination differs from active conversation; will post in conversation ${crossChannel.targetId.slice(0, 8)}.`
+                ? ` Destination differs from active conversation; will post in ${
+                    fromOutside
+                      ? `conversation ${crossChannel.targetId.slice(0, 8)}`
+                      : destinationInWords(destination)
+                  }.`
                 : ""}
               {sameTurn
                 ? " This action was suggested while the agent was reading external content."
@@ -328,15 +370,15 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                   )}
                   data-testid="initiator-chip"
                 >
-                  <Bot className="h-3 w-3" /> AGENT
+                  <Bot className="h-3 w-3" /> AGENT{fromOutside && " outside RIM"}
                 </span>
+                {fromOutside && <ExpiresIn key={request.token} expiresAt={request.expiresAt} />}
               </div>
             )}
 
-            {/* Cross-channel warning chip. Shows the first 8 chars of the raw
-             * conversation id: it guards against a command reaching another
-             * conversation than the one in view, so whether the destination
-             * differs is what matters, not the channel's name. */}
+            {/* Cross-channel warning chip: it guards against a command reaching another
+             * conversation than the one in view. It names the destination and gives its id,
+             * so two channels with one name can be told apart. */}
             {crossChannel && (
               <div
                 className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
@@ -345,9 +387,20 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <div>
                   <div className="font-medium">Destination differs from active conversation</div>
-                  <div className="text-rim-text-muted">
-                    Will post in conversation {crossChannel.targetId.slice(0, 8)}…
-                  </div>
+                  {fromOutside ? (
+                    <div className="text-rim-text-muted">
+                      Will post in conversation {crossChannel.targetId.slice(0, 8)}…
+                    </div>
+                  ) : (
+                    <div className="text-rim-text-muted">
+                      <span className="break-words">
+                        Will post in {destinationInWords(destination)}
+                      </span>
+                      <span className="block break-all font-mono text-[10px] text-rim-text-faint">
+                        {showInvisibleCharacters(crossChannel.targetId)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -366,8 +419,19 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               </div>
             )}
 
-            {/* Arguments block */}
-            <ArgsBlock args={maskedArgs} />
+            {/* What a program outside RIM asks for, or the arguments block */}
+            {outside ? (
+              <OutsideAgentDetails outside={outside} />
+            ) : (
+              <ArgsBlock
+                args={maskedArgs}
+                argumentTypes={request.argumentTypes}
+                workspaceId={argsWorkspaceId}
+              />
+            )}
+
+            {/* What one of the person's macros will run, step by step */}
+            <MacroSteps commandId={request.commandId} />
 
             {/* Type-to-confirm input */}
             {requireType && (
@@ -403,11 +467,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-2 border-t border-rim-line px-6 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-rim-card-confirm-line px-6 py-3">
             <button
               type="button"
               onClick={onReject}
-              className="rounded border border-rim-line bg-rim-void px-4 py-2 text-xs text-rim-text-muted transition hover:text-rim-text"
+              className="rounded border border-rim-card-confirm-line bg-rim-void px-4 py-2 text-xs text-rim-text transition hover:bg-white/5"
             >
               Cancel
             </button>
@@ -417,9 +481,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
               aria-disabled={!confirmEnabled}
               disabled={!confirmEnabled}
               className={cn(
-                "inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-medium text-rim-void transition",
-                request.dangerous ? "bg-rim-danger hover:bg-rim-danger/90" : visuals.confirmBg,
-                !request.dangerous && visuals.confirmHover,
+                "inline-flex items-center gap-2 rounded px-4 py-2 text-xs font-medium transition",
+                request.dangerous
+                  ? "bg-rim-danger-solid hover:bg-rim-danger-solid/90"
+                  : cn(visuals.confirmBg, visuals.confirmHover),
+                confirmText,
                 !confirmEnabled && "cursor-not-allowed opacity-50",
               )}
               data-testid="confirm-button"
@@ -428,8 +494,8 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 <span>Executing…</span>
               ) : (
                 <>
-                  <span>{visuals.confirmLabel}</span>
-                  <span className="text-rim-void/70">{confirmShortcutLabel()}</span>
+                  <span>{outside?.text === undefined ? visuals.confirmLabel : "Send"}</span>
+                  <span className={confirmText}>{confirmShortcutLabel()}</span>
                 </>
               )}
             </button>
@@ -456,7 +522,159 @@ function RimSystemBadge() {
   );
 }
 
-function ArgsBlock({ args }: { args: Record<string, unknown> }) {
+function secondsUntil(time: number): number {
+  return Math.max(0, Math.ceil((time - Date.now()) / 1000));
+}
+
+/** The seconds left until `expiresAt`, updating each second. */
+function ExpiresIn({ expiresAt }: { expiresAt: string }) {
+  const expiry = Date.parse(expiresAt);
+  const [left, setLeft] = useState(() => secondsUntil(expiry));
+
+  useEffect(() => {
+    const t = setInterval(() => setLeft(secondsUntil(expiry)), 1000);
+    return () => clearInterval(t);
+  }, [expiry]);
+
+  if (!Number.isFinite(expiry)) return null;
+  return (
+    <span className="text-xs text-rim-text-muted" data-testid="outside-agent-expiry">
+      Expires in {left} s
+    </span>
+  );
+}
+
+/** How long a text is, so what lies below a scrolled box isn't missed. */
+function textSize(text: string): string {
+  const lines = text.split("\n").length;
+  const characters = Array.from(text).length;
+  return `${lines} ${lines === 1 ? "line" : "lines"}, ${characters} ${characters === 1 ? "character" : "characters"}`;
+}
+
+/**
+ * The arguments a program outside RIM asks to run a command with, each one whole and with secrets
+ * masked, in a box that scrolls.
+ */
+function OutsideAgentArgs({ args }: { args: Record<string, unknown> }) {
+  const shown = useMemo(
+    () =>
+      Object.entries(maskForDisplay(args)).map(
+        ([name, value]) =>
+          [showInvisibleCharacters(name), showInvisibleCharacters(formatArgValue(value))] as const,
+      ),
+    [args],
+  );
+  if (shown.length === 0) {
+    return (
+      <div className="text-xs italic text-rim-text-faint" data-testid="outside-agent-args">
+        (no arguments)
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="text-xs text-rim-text-muted" data-testid="outside-agent-args-size">
+        {textSize(shown.map(([, value]) => value).join("\n"))}
+      </div>
+      <dl
+        role="group"
+        aria-label="The arguments"
+        tabIndex={0}
+        className="max-h-64 space-y-1 overflow-y-auto rounded border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
+        data-testid="outside-agent-args"
+      >
+        {shown.map(([name, value]) => (
+          <div key={name}>
+            <dt className="break-words font-mono text-xs text-rim-text-muted">{name}</dt>
+            <dd className="whitespace-pre-wrap break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  );
+}
+
+/**
+ * What a program outside RIM asks to do: the warning, what it acts on, what a plugin's author says
+ * about it, and the whole text or arguments. Text is rendered as plain text, with invisible
+ * characters shown by name; what is sent stays exact.
+ */
+function OutsideAgentDetails({
+  outside,
+}: {
+  outside: NonNullable<ConfirmationRequest["outsideAgent"]>;
+}) {
+  const shownText = useMemo(
+    () => (outside.text === undefined ? null : showInvisibleCharacters(outside.text)),
+    [outside.text],
+  );
+  return (
+    <>
+      <div
+        className="flex items-start gap-2 rounded border border-rim-warm/40 bg-rim-warm/10 px-3 py-2 text-xs text-rim-warm"
+        data-testid="outside-agent-warning"
+      >
+        <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <div>
+          This came from a program outside RIM. It may have read text meant to steer it, so check
+          that this is what you want.
+        </div>
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+        {outside.target.map(({ label, value }) => (
+          <Fragment key={label}>
+            <dt className="text-rim-text-muted">{label}</dt>
+            <dd className="break-words text-rim-text">{showInvisibleCharacters(value)}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      {outside.pluginWords && (
+        <div
+          role="group"
+          aria-label="In the plugin's words"
+          tabIndex={0}
+          className="max-h-32 overflow-y-auto text-sm"
+          data-testid="outside-agent-plugin-words"
+        >
+          <div className="text-xs text-rim-text-muted">In the plugin&apos;s words:</div>
+          <div className="whitespace-pre-wrap break-words text-rim-text">
+            {showInvisibleCharacters(outside.pluginWords.title)}
+          </div>
+          <div className="whitespace-pre-wrap break-words text-xs text-rim-text-muted">
+            {showInvisibleCharacters(outside.pluginWords.description)}
+          </div>
+        </div>
+      )}
+      {outside.args !== undefined && <OutsideAgentArgs args={outside.args} />}
+      {shownText !== null && (
+        <div className="text-xs text-rim-text-muted" data-testid="outside-agent-text-size">
+          {textSize(outside.text ?? "")}
+        </div>
+      )}
+      {shownText !== null && (
+        <div
+          role="group"
+          aria-label="The text to send"
+          tabIndex={0}
+          className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
+          data-testid="outside-agent-text"
+        >
+          {shownText}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ArgsBlock({
+  args,
+  argumentTypes,
+  workspaceId,
+}: {
+  args: Record<string, unknown>;
+  argumentTypes?: ArgumentTypes;
+  workspaceId: string | null;
+}) {
   const entries = Object.entries(args);
   const visible = entries.slice(0, ARG_DISPLAY_LIMIT);
   const overflow = entries.length - visible.length;
@@ -471,7 +689,7 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
       {entries.length === 0 ? (
         <div className="text-xs italic text-rim-text-faint">(no arguments)</div>
       ) : (
-        <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1">
+        <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1">
           {visible.map(([k, v]) => {
             const formatted = formatArgValue(v);
             const truncated =
@@ -479,6 +697,18 @@ function ArgsBlock({ args }: { args: Record<string, unknown> }) {
                 ? formatted.slice(0, ARG_VALUE_TRUNCATE_AT) + "…"
                 : formatted;
             const isRedacted = formatted === REDACTED_PLACEHOLDER;
+            const kind = isRedacted || typeof v !== "string" ? null : idKindOfArg(k, argumentTypes);
+            if (kind && v) {
+              return (
+                <IdArgRow
+                  key={k}
+                  argName={k}
+                  kind={kind}
+                  id={truncated}
+                  workspaceId={workspaceId}
+                />
+              );
+            }
             return <ArgRow key={k} keyName={k} display={truncated} redacted={isRedacted} />;
           })}
           {overflow > 0 && (
@@ -511,7 +741,7 @@ function ArgRow({
         className="break-words font-mono text-xs text-rim-text"
         aria-label={redacted ? "redacted" : undefined}
       >
-        {display}
+        {showInvisibleCharacters(display)}
       </dd>
     </>
   );

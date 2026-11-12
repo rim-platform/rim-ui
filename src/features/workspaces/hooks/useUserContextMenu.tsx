@@ -8,8 +8,10 @@ import {
   useContextMenu,
   type ContextMenuBindings,
 } from "../../../shared/ui/contextMenu/useContextMenu";
+import { queryClient } from "../../../core/query/queryClient";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import type { ConversationSummary } from "../../conversations/types";
 import { conversationLabel } from "../../conversations/utils";
 import { openDirectWithMember } from "../../conversations/state/openDirect";
@@ -22,7 +24,7 @@ import { StatusDropdown } from "../../settings/components/StatusDropdown";
 import { DELETE_MEMBER_MESSAGES, hasCapability } from "../../updater/api/serverCapabilities";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
 import { useMyServerRole } from "../api/useMyServerRole";
-import { useClearTimeoutMutation } from "../api/useModeration";
+import { clearMemberTimeout } from "../api/useModeration";
 import { useServerMembers } from "../api/useServerMembers";
 import {
   MemberModerationDialog,
@@ -125,7 +127,6 @@ export function useUserContextMenu({
   const contacts = useContacts();
   const { addContact } = useAddMemberContact();
   const removeContact = useRemoveContact();
-  const clearTimeoutMutation = useClearTimeoutMutation();
   const { info: serverInfo } = useServerInfo();
   const inDirectSpace = useIsDirectSpace(workspaceId);
   const [overlay, setOverlay] = useState<Overlay | null>(null);
@@ -136,7 +137,9 @@ export function useUserContextMenu({
     const info = memberLookup.resolve(userId);
     const member = members?.find((m) => m.userId === userId);
     const name = target.displayName ?? info.displayName;
-    const handle = info.handleView;
+    // A bot has no handle, no contact card and no direct messages, and its role never changes.
+    const isBot = Boolean(info.isBot ?? member?.isBot);
+    const handle = isBot ? null : info.handleView;
     const items: DropdownMenuItem[] = [
       {
         id: "view-profile",
@@ -155,7 +158,7 @@ export function useUserContextMenu({
           setOverlay({ kind: "status", position: { x: rect.left, y: rect.bottom } });
         },
       });
-    } else {
+    } else if (!isBot) {
       items.push({
         id: "send-message",
         label: "Send message",
@@ -183,7 +186,7 @@ export function useUserContextMenu({
       return items;
     }
 
-    const principalId = member?.principalId;
+    const principalId = isBot ? undefined : member?.principalId;
     if (principalId && myPrincipalId && principalId !== myPrincipalId && contacts.data) {
       if (contacts.data.some((c) => c.principalId === principalId)) {
         items.push({
@@ -205,7 +208,7 @@ export function useUserContextMenu({
       }
     }
 
-    const blockTarget = blockTargetOf(userId, workspaceId);
+    const blockTarget = isBot ? null : blockTargetOf(userId, workspaceId);
     if (blockTarget) {
       items.push({
         id: "block",
@@ -253,7 +256,7 @@ export function useUserContextMenu({
     const moderate = (moderation: MemberModeration) =>
       setOverlay({ kind: "moderation", moderation });
     const moderation: DropdownMenuItem[] = [];
-    const roles = assignableRoles(viewerRole, moderated.role);
+    const roles = isBot ? [] : assignableRoles(viewerRole, moderated.role);
     if (roles.length > 0) {
       moderation.push({
         id: "change-role",
@@ -275,12 +278,15 @@ export function useUserContextMenu({
         id: "clear-timeout",
         label: "Clear timeout",
         onSelect: () =>
-          clearTimeoutMutation.mutate(
-            { serverId: workspaceId, userId },
+          void runCommandFromClick(
+            "admin.clear_timeout",
+            { server_id: workspaceId, user_id: userId },
             {
-              onSuccess: () => toast.success(`Cleared ${name}'s timeout`),
-              onError: (err) =>
-                toast.error(graphqlErrorMessage(err, "Could not clear the timeout")),
+              source: "menu",
+              target: { workspaceId },
+              successToast: `Cleared ${name}'s timeout`,
+              errorTitle: "Could not clear the timeout",
+              fallback: () => clearMemberTimeout(queryClient, { serverId: workspaceId, userId }),
             },
           ),
       });

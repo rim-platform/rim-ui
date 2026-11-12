@@ -41,6 +41,23 @@ export function findCachedConversation(
 }
 
 /**
+ * A conversation as this app has it cached already: in one of its workspace's lists, else from
+ * its own query. Nothing is fetched.
+ */
+export function knownConversation(
+  qc: QueryClient,
+  workspaceId: string | undefined,
+  conversationId: string | undefined,
+): ConversationSummary | undefined {
+  return (
+    findCachedConversation(qc, workspaceId, conversationId) ??
+    (workspaceId && conversationId
+      ? qc.getQueryData<ConversationSummary>(queryKeys.conversation(workspaceId, conversationId))
+      : undefined)
+  );
+}
+
+/**
  * One conversation by id, including the viewer's membership (`isMember`) and archive state.
  * Works for public channels the viewer has not joined; a private channel the viewer is not in
  * answers `NOT_FOUND`. Asks only once the inbox says whether the viewer is just invited: an
@@ -69,7 +86,8 @@ export function useIsDirectConversation(
   return data?.conversationType === ConversationTypeEnum.DIRECT;
 }
 
-async function requestConversation(
+/** Asks the server for one conversation by id, without the query cache. */
+export async function requestConversation(
   workspaceId: string,
   conversationId: string,
 ): Promise<ConversationSummary> {
@@ -89,6 +107,8 @@ export function fetchConversation(
   return qc.fetchQuery({
     queryKey: queryKeys.conversation(workspaceId, conversationId),
     staleTime: 30_000,
+    // Offline it fails at once, so the caller can fall back, rather than waiting to come online.
+    networkMode: "always",
     queryFn: () => requestConversation(workspaceId, conversationId),
   });
 }

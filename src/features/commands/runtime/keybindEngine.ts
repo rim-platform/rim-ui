@@ -102,7 +102,7 @@ export function surfaceToContext(focusedSurface: string | null): KeybindContext 
       return "THREAD_VIEW";
     case "conversationView":
       return "CONVERSATION_VIEW";
-    case "sideRail":
+    case "topBar":
     case "toolPanel":
     case "workspaceRail":
     case "panel":

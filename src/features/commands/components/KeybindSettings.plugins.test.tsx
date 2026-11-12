@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { commandOfferedHere } from "../../agent/agentAvailability";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -128,12 +129,23 @@ describe("KeybindSettings and plugin commands", () => {
 
   it("offers this app's own commands too and keeps their bindings on this device", async () => {
     const { user, picker } = await openPicker();
-    for (const { id, title } of LOCAL_COMMANDS) {
-      if (id === QUIT_COMMAND_ID) continue;
-      expect(within(picker).getByRole("option", { name: title })).toBeInTheDocument();
+    const offered = within(picker)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    for (const { id, title, keybindCapable } of LOCAL_COMMANDS) {
+      if (id === QUIT_COMMAND_ID || id === "workspace.open_agents" || !keybindCapable) continue;
+      // The desktop's own commands and the updater's are not offered in the web app.
+      if (!commandOfferedHere(id)) continue;
+      expect(offered).toContain(title);
     }
-    // The web app has no window to quit.
+    // Editing Home is never a keybind's to start.
+    expect(within(picker).queryByRole("option", { name: "Edit Home" })).not.toBeInTheDocument();
+    // The web app has no window to quit and no connected programs.
     expect(within(picker).queryByRole("option", { name: "Quit RIM" })).not.toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: "Open Agents" })).not.toBeInTheDocument();
+    expect(
+      within(picker).queryByRole("option", { name: "Approve the Agent's Request…" }),
+    ).not.toBeInTheDocument();
     screen.getByRole("textbox", { name: "Keystroke" }).focus();
     await user.keyboard("{Control>}{Alt>}v{/Alt}{/Control}");
     await user.selectOptions(picker, "workspace.toggle_vim_mode");

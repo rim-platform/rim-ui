@@ -11,15 +11,26 @@ import { useShellStore } from "../../../shell/state/useShellStore";
 import { usePluginSettingsDialogStore } from "../../plugins/state/usePluginSettingsDialogStore";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
+import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
 import { useCommandStore } from "../state/useCommandStore";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
-import { dispatchCommand, runDesktopLocalCommand } from "./commandDispatcher";
+import {
+  dispatchCommand,
+  hasLocalHandler,
+  runDesktopLocalCommand,
+  runLocalCommandForCaller,
+} from "./commandDispatcher";
+import { useConversationDialogStore } from "../../conversations/state/useConversationDialogStore";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
 import { LOCAL_COMMANDS } from "./localCommands";
 import type { CommandDefinition } from "../types";
 import type { PluginInfo } from "../../plugins/types";
 import { webPluginHost } from "../../plugins/web/webPluginHost";
 import { useBlockedConversations } from "../../relay/state/useBlockedConversations";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { toast } from "../../../shared/toast";
 
 function serveConversations(ids: string[]) {
@@ -36,6 +47,9 @@ describe("this app's own commands", () => {
   });
 
   afterEach(() => {
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().setOpen(false);
     queryClient.clear();
     useUnreadStore.setState({ counts: {} });
     useWorkspaceStore.setState({ workspaceId: null });
@@ -44,8 +58,19 @@ describe("this app's own commands", () => {
 
   it("each has a handler", () => {
     for (const { id } of LOCAL_COMMANDS) {
-      expect(runDesktopLocalCommand(id), id).toBe(true);
+      // The commands that answer and manage agents never run through the agent's path.
+      if (AGENT_MANAGEMENT_COMMAND_IDS.has(id)) {
+        expect(hasLocalHandler(id), id).toBe(true);
+        expect(runDesktopLocalCommand(id), id).toBe(false);
+      } else {
+        expect(runDesktopLocalCommand(id), id).toBe(true);
+      }
     }
+  });
+
+  it("opens the agents settings", () => {
+    runDesktopLocalCommand("workspace.open_agents");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
   });
 
   it("goes to the previous unread conversation, wrapping to the last one", () => {
@@ -182,12 +207,89 @@ describe("this app's own commands", () => {
   it("takes a navigation target under either spelling of its argument", () => {
     runDesktopLocalCommand("workspace.navigate_to_channel", { conversation_id: "c-snake" });
     expect(useShellStore.getState().selectedConversationId).toBe("c-snake");
-    runDesktopLocalCommand("workspace.navigate_to_dm", { conversationId: "c-camel" });
+    runDesktopLocalCommand("workspace.navigate_to_dm", {
+      conversationId: "c-camel",
+      serverId: "ws-1",
+    });
     expect(useShellStore.getState().selectedConversationId).toBe("c-camel");
     runDesktopLocalCommand("workspace.switch_workspace", { workspace_id: "ws-snake" });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-snake");
     runDesktopLocalCommand("workspace.switch_workspace", { workspaceId: "ws-camel" });
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-camel");
+  });
+
+  describe("a DM named by its id alone, as a saved keybind or macro step names it", () => {
+    const dm: CommandDefinition = {
+      id: "workspace.navigate_to_dm",
+      title: "Navigate to DM",
+      description: "",
+      category: "Workspace",
+      sourceKind: "BUILT_IN",
+      executionTarget: "DESKTOP_LOCAL",
+      requiredContext: [],
+      requiredCapabilities: [],
+      visibleInPalette: true,
+      visibleInContextMenus: false,
+      keybindCapable: true,
+      dangerous: false,
+    };
+    const inbox = (ids: string[]) => ({
+      items: ids.map((id) => ({ id, serverId: "", conversationType: "DIRECT" })),
+      pageInfo: { hasNext: false, hasPrev: false },
+    });
+
+    beforeEach(() => {
+      useRelayStore.setState({
+        info: { directSpaceId: "direct-1" } as never,
+        spaces: {
+          "direct-2": { spaceId: "direct-2", kind: "direct", hostServerId: "relay-2" } as never,
+        },
+        forked: [],
+      });
+    });
+
+    afterEach(() => {
+      useRelayStore.setState({ info: null, spaces: {}, forked: [] });
+    });
+
+    it("opens it in the direct space that holds it", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox(["dm-bob"]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox(["dm-alice"]));
+
+      const result = await dispatchCommand(dm, vi.fn(), {
+        args: { conversation_id: "dm-alice" },
+        typedArgs: true,
+      });
+
+      expect(result?.status).toBe("SUCCESS");
+      expect(useWorkspaceStore.getState().workspaceId).toBe("direct-2");
+      expect(useShellStore.getState().selectedConversationId).toBe("dm-alice");
+    });
+
+    it("opens a DM of the open workspace there", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("ws-1"), inbox(["dm-here"]));
+
+      await dispatchCommand(dm, vi.fn(), { args: { conversation_id: "dm-here" } });
+
+      expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+      expect(useShellStore.getState().selectedConversationId).toBe("dm-here");
+    });
+
+    it("says so when no space of the person's holds it", async () => {
+      queryClient.setQueryData(queryKeys.conversations("direct-1"), inbox([]));
+      queryClient.setQueryData(queryKeys.conversations("direct-2"), inbox([]));
+      useShellStore.getState().setSelectedConversationId("c-here");
+
+      const result = await dispatchCommand(dm, vi.fn(), { args: { conversation_id: "dm-gone" } });
+
+      expect(result).toMatchObject({
+        status: "ERROR",
+        message: "That direct message isn't among your conversations",
+      });
+      expect(useShellStore.getState().selectedConversationId).toBe("c-here");
+    });
   });
 
   it("navigates nowhere without a target", () => {
@@ -413,5 +515,54 @@ describe("Search Messages", () => {
       isPipe: true,
     });
     expect(useSearchOverlayStore.getState().isOpen).toBe(false);
+  });
+});
+
+describe("the dialogs of a workspace a control names", () => {
+  beforeEach(() => {
+    useWorkspaceStore.getState().setWorkspaceId("ws-1");
+    useShellStore.getState().reset();
+  });
+
+  afterEach(() => {
+    useConversationDialogStore.setState({ inviteTo: null, createChannelIn: null });
+    useWorkspaceStore.getState().clearWorkspaceId();
+  });
+
+  it("opens another workspace's invite and new-channel dialogs without opening it", async () => {
+    expect(
+      await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-2" }),
+    ).toEqual({
+      ok: true,
+      message: "",
+    });
+    await runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-2" });
+
+    expect(useConversationDialogStore.getState()).toMatchObject({
+      inviteTo: "ws-2",
+      createChannelIn: "ws-2",
+    });
+    expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
+    expect(useShellStore.getState().showNewChannelDialog).toBe(false);
+  });
+
+  it("opens the open workspace's invite dialog in its conversation's header, and its new-channel dialog beside its list", async () => {
+    useShellStore.getState().setSelectedConversationId("c-1");
+    useShellStore.getState().setMainSurface({ kind: "conversation" });
+    await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
+    await runLocalCommandForCaller("chat.create_channel", {}, { workspaceId: "ws-1" });
+
+    expect(useShellStore.getState().showInviteDialog).toBe(true);
+    expect(useConversationDialogStore.getState().inviteTo).toBeNull();
+    expect(useConversationDialogStore.getState().createChannelIn).toBeNull();
+    expect(useShellStore.getState().showNewChannelDialog).toBe(true);
+  });
+
+  it("opens the open workspace's invite dialog on its own away from a conversation", async () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
+    await runLocalCommandForCaller("admin.invite_member", {}, { workspaceId: "ws-1" });
+
+    expect(useConversationDialogStore.getState().inviteTo).toBe("ws-1");
+    expect(useShellStore.getState().showInviteDialog).toBe(false);
   });
 });

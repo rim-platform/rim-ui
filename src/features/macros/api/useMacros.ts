@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
+import { routedToWorkspace } from "../../relay/state/useRelayStore";
 import type {
   ConfirmationChallenge,
   MacroStep as MacroStepGql,
@@ -41,6 +42,40 @@ const MyMacrosDocument = gql`
     }
   }
 `;
+
+const MacrosToMoveDocument = gql`
+  query MacrosToMove($serverId: ID!) {
+    myMacros(serverId: $serverId) {
+      id
+      name
+      description
+      aiCallable
+      nlDescription
+      intentSamples
+      steps {
+        commandId
+        args
+      }
+    }
+  }
+`;
+
+/** A workspace macro with what moving it into the person's macros keeps. */
+export type MacroToMove = Pick<
+  MacroDef,
+  "id" | "name" | "description" | "steps" | "aiCallable" | "nlDescription" | "intentSamples"
+>;
+
+/**
+ * The person's workspace macros in `serverId`, read from the server that hosts it, with what
+ * moving them keeps.
+ */
+export async function fetchMacrosToMove(serverId: string): Promise<MacroToMove[]> {
+  const res = await graphqlClient.request<{ myMacros: MacroToMove[] }>(MacrosToMoveDocument, {
+    serverId,
+  });
+  return res.myMacros;
+}
 
 const CreateMacroDocument = gql`
   mutation CreateMacro($input: CreateMacroInput!) {
@@ -114,20 +149,34 @@ export function useCreateMacroMutation() {
   });
 }
 
+/** Changes a workspace macro, on the server that hosts `workspaceId`. */
 export function useUpdateMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: UpdateMacroInput) => graphqlClient.request(UpdateMacroDocument, { input }),
+    mutationFn: ({ input, workspaceId }: { input: UpdateMacroInput; workspaceId: string }) =>
+      graphqlClient.request(UpdateMacroDocument, routedToWorkspace({ input }, workspaceId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },
   });
 }
 
+/**
+ * Deletes the workspace macro `macroId`, on the server that hosts `workspaceId`.
+ *
+ * @param macroId - The workspace macro's id.
+ * @param workspaceId - The workspace it is kept in.
+ */
+export async function deleteWorkspaceMacro(macroId: string, workspaceId: string): Promise<void> {
+  await graphqlClient.request(DeleteMacroDocument, routedToWorkspace({ macroId }, workspaceId));
+}
+
+/** Deletes a workspace macro, on the server that hosts `workspaceId`. */
 export function useDeleteMacroMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (macroId: string) => graphqlClient.request(DeleteMacroDocument, { macroId }),
+    mutationFn: ({ macroId, workspaceId }: { macroId: string; workspaceId: string }) =>
+      deleteWorkspaceMacro(macroId, workspaceId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.macros() });
     },

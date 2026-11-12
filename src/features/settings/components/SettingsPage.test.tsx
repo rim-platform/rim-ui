@@ -16,12 +16,7 @@ vi.mock("../../relay/components/ContactsSettings", () => ({
 }));
 
 vi.mock("./AccountSettings", () => ({
-  AccountSettings: ({ onNavigateToProfile }: { onNavigateToProfile: () => void }) => (
-    <div data-testid="account-settings">
-      Account Panel
-      <button onClick={onNavigateToProfile}>Go to profile</button>
-    </div>
-  ),
+  AccountSettings: () => <div data-testid="account-settings">Account Panel</div>,
 }));
 
 vi.mock("../../commands/components/KeyboardSettings", () => ({
@@ -48,14 +43,26 @@ vi.mock("../../agent/settings/AgentSettingsPanel", () => ({
   AgentSettingsPanel: () => <div data-testid="agent-settings">Agent Panel</div>,
 }));
 
+vi.mock("../../agents/components/AgentsSettings", () => ({
+  AgentsSettings: () => <div data-testid="agents-settings">Agents Panel</div>,
+}));
+
 vi.mock("../../notifications/components/NotificationSettings", () => ({
   NotificationSettings: () => <div data-testid="notification-settings">Notifications Panel</div>,
 }));
 
+vi.mock("../../macros/components/WorkspaceMacroSettings", () => ({
+  WorkspaceMacroSettings: () => (
+    <div data-testid="workspace-macro-settings">Workspace Macros Panel</div>
+  ),
+}));
 vi.mock("../../macros/components/MacroSettings", () => ({
   MacroSettings: () => <div data-testid="macro-settings">Macros Panel</div>,
 }));
 
+vi.mock("../../bots/components/BotsSettings", () => ({
+  BotsSettings: () => <div data-testid="bots-settings">Bots Panel</div>,
+}));
 vi.mock("../../emoji/components/EmojiManagement", () => ({
   EmojiManagement: () => <div data-testid="emoji-settings">Emoji Panel</div>,
 }));
@@ -66,7 +73,9 @@ const mockSetMainSurface = vi.fn();
 const mockShellState: {
   setMainSurface: typeof mockSetMainSurface;
   mainSurface: Record<string, unknown>;
+  shellWidth: string;
 } = {
+  shellWidth: "wide",
   setMainSurface: mockSetMainSurface,
   mainSurface: { kind: "settings" },
 };
@@ -156,6 +165,8 @@ vi.mock("../../updater/components/AboutServer", () => ({
   AboutServerFeatures: () => <ul aria-label="Server features" />,
 }));
 
+import { queryClient } from "../../../core/query/queryClient";
+import { queryKeys } from "../../../core/query/keys";
 import { SettingsPage } from "./SettingsPage";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
@@ -183,6 +194,7 @@ describe("SettingsPage", () => {
     vi.clearAllMocks();
     // Reset to default settings surface with no tab hint between tests.
     mockShellState.mainSurface = { kind: "settings" };
+    mockShellState.shellWidth = "wide";
     mockGate.canModerate = false;
     mockOperator.isOperator = false;
     mockWorkspace.workspaceId = "ws-1";
@@ -295,6 +307,37 @@ describe("SettingsPage", () => {
     }
   });
 
+  it("switches to the Agents tab, listed right before AI Agent", async () => {
+    inDesktopApp(true);
+    try {
+      const user = userEvent.setup();
+      renderSettings();
+
+      const extensions = screen.getByRole("group", { name: "Extensions" });
+      const names = within(extensions)
+        .getAllByRole("button")
+        .map((button) => button.textContent);
+      expect(names.indexOf("AI Agent")).toBe(names.indexOf("Agents") + 1);
+      await user.click(screen.getByRole("button", { name: "Agents" }));
+      expect(await screen.findByTestId("agents-settings")).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
+  it("lists Agents only in the desktop app", () => {
+    const web = renderSettings();
+    expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument();
+    web.unmount();
+    inDesktopApp(true);
+    try {
+      renderSettings();
+      expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
   it("lists AI Agent and Plugin AI only in the desktop app", () => {
     const web = renderSettings();
     expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
@@ -310,13 +353,17 @@ describe("SettingsPage", () => {
     }
   });
 
-  it.each(["agent", "plugin-ai"])("opens Profile for a link to the %s tab on the web", (tab) => {
-    mockShellState.mainSurface = { kind: "settings", tab };
-    renderSettings();
-    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
-    expect(screen.queryByTestId("agent-settings")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("plugin-ai-settings")).not.toBeInTheDocument();
-  });
+  it.each(["agents", "agent", "plugin-ai"])(
+    "opens Profile for a link to the %s tab on the web",
+    (tab) => {
+      mockShellState.mainSurface = { kind: "settings", tab };
+      renderSettings();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+      expect(screen.queryByTestId("agents-settings")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("agent-settings")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("plugin-ai-settings")).not.toBeInTheDocument();
+    },
+  );
 
   it("switches to Account tab", async () => {
     const user = userEvent.setup();
@@ -364,15 +411,6 @@ describe("SettingsPage", () => {
     expect(mockSetMainSurface).toHaveBeenCalledWith({ kind: "conversation" });
   });
 
-  it("Account tab can navigate back to Profile", async () => {
-    const user = userEvent.setup();
-    renderSettings();
-
-    await user.click(screen.getByText("Account"));
-    await user.click(screen.getByText("Go to profile"));
-    expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
-  });
-
   it("Notifications tab renders", async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -389,12 +427,26 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("switch", { name: "Show inline media" })).toBeInTheDocument();
   });
 
-  it("Macros tab renders", async () => {
+  it("Macros tab renders the workspace's macros where the home server keeps none", async () => {
     const user = userEvent.setup();
     renderSettings();
 
     await user.click(screen.getByText("Macros"));
-    expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-macro-settings")).toBeInTheDocument();
+    expect(screen.getByText("Commands")).toBeInTheDocument();
+  });
+
+  it("Macros tab renders the person's macros, and Commands opens it, where the home server keeps them", async () => {
+    queryClient.setQueryData(queryKeys.serverInfo, { capabilities: ["account_macros"] });
+    try {
+      mockShellState.mainSurface = { kind: "settings", tab: "commands" };
+      renderSettings();
+
+      expect(screen.getByTestId("macro-settings")).toBeInTheDocument();
+      expect(screen.queryByText("Commands")).not.toBeInTheDocument();
+    } finally {
+      queryClient.clear();
+    }
   });
 
   // ── Tab routing via MainSurface ─────────────────────────────────────────────
@@ -558,6 +610,40 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("list", { name: "Server features" })).toBeInTheDocument();
   });
 
+  describe("Bots tab", () => {
+    it("is offered to a moderator and opens the bots panel", async () => {
+      mockGate.canModerate = true;
+      const user = userEvent.setup();
+      renderSettings();
+      const workspace = screen.getByRole("group", { name: "Workspace" });
+      await user.click(within(workspace).getByRole("button", { name: "Bots" }));
+      expect(await screen.findByTestId("bots-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden from a member, even when deep-linked", () => {
+      mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+      renderSettings();
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden while the bots feature is switched off", () => {
+      mockGate.canModerate = true;
+      mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+      renderSettings({ bots: ServerFeatureState.DISABLED });
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+    });
+
+    it("is hidden in a direct space", () => {
+      startRelayWithDirectSpace();
+      mockWorkspace.workspaceId = DIRECT_SPACE_ID;
+      mockGate.canModerate = true;
+      renderSettings();
+      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("Emoji tab", () => {
     it("is offered while the server runs custom emoji", () => {
       renderSettings();
@@ -595,5 +681,52 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Profile" }));
     expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
+  });
+
+  it("moves focus to the main panel when a settings tab is opened, unless it is already inside", () => {
+    const panel = () => (
+      <main data-panel="mainSurface" tabIndex={-1} data-testid="panel">
+        <SettingsPage />
+      </main>
+    );
+    mockShellState.mainSurface = { kind: "settings", tab: "agents" };
+    const wrapper = withServerInfo();
+    const { rerender } = render(panel(), { wrapper });
+    expect(screen.getByTestId("panel")).toHaveFocus();
+
+    screen.getByRole("button", { name: "Close settings" }).focus();
+    mockShellState.mainSurface = { kind: "settings", tab: "bots" };
+    rerender(
+      <main data-panel="mainSurface" tabIndex={-1} data-testid="panel">
+        <SettingsPage />
+      </main>,
+    );
+    expect(screen.getByRole("button", { name: "Close settings" })).toHaveFocus();
+  });
+
+  it("turns the section list into one menu above the content in a narrow window", async () => {
+    const user = userEvent.setup();
+    mockShellState.shellWidth = "narrow";
+    mockGate.canModerate = true;
+    renderSettings();
+
+    expect(screen.queryByRole("navigation", { name: "Settings sections" })).not.toBeInTheDocument();
+    const menu = screen.getByRole("combobox", { name: "Settings sections" });
+    expect(menu).toHaveValue("profile");
+    const labels = within(menu)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(labels).toEqual(expect.arrayContaining(["Profile", "Keybinds", "Plugins", "Workspace"]));
+
+    await user.selectOptions(menu, "keybinds");
+    expect(screen.getByTestId("keybind-settings")).toBeInTheDocument();
+    expect(menu).toHaveValue("keybinds");
+  });
+
+  it("keeps the section list beside the content in a medium window", () => {
+    mockShellState.shellWidth = "medium";
+    renderSettings();
+    expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 });

@@ -1,34 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 
-import { ConversationTypeEnum } from "../../../core/graphql/generated/schema-types";
-import { queryKeys } from "../../../core/query/keys";
-import { handleDomain, personName } from "../../../shared/utils/handles";
 import { cn } from "../../../shared/ui/cn";
-import { useAuthStore } from "../../auth/state/useAuthStore";
-import { useChannels, useJoinedChannels } from "../../conversations/api/useChannels";
-import { useInboxConversations } from "../../conversations/api/useInboxConversations";
-import type { ConversationSummary } from "../../conversations/types";
-import { directPeerId, untitledGroupName } from "../../conversations/utils";
-import { useContactStore } from "../../relay/contacts/useContactStore";
-import { useDirectInbox } from "../../relay/api/useDirectInbox";
-import { isDirectSpace, useIsDirectSpace, useRelayStore } from "../../relay/state/useRelayStore";
-import { useCurrentUser } from "../../workspaces/api/useCurrentUser";
-import { useMyServers } from "../../workspaces/api/useMyServers";
-import { fetchServerMembers } from "../../workspaces/api/useServerMembers";
-import { useKnownHandles } from "../../workspaces/state/useKnownHandles";
+import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
-import { ownerName, workspaceLabels } from "../../workspaces/workspaceLabel";
 import type { TargetPickerKind } from "../state/useCommandStore";
+import {
+  useAgentTargets,
+  useChannelTargets,
+  useDirectTargets,
+  useJoinableTargets,
+  useMacroTargets,
+  useMemberTargets,
+  useMessageableTargets,
+  usePipelineTargets,
+  useWorkspaceTargets,
+  type PickerTarget,
+  type Targets,
+} from "./paletteTargets";
 
-/** What the palette can run a command on: a conversation or a workspace. */
-export interface PickerTarget {
-  id: string;
-  /** The workspace the target is in; the target itself for a workspace. */
-  serverId: string;
-  label: string;
-}
+export type { PickerTarget } from "./paletteTargets";
 
 interface PickerText {
   title: string;
@@ -57,134 +48,32 @@ const TEXT: Record<TargetPickerKind, PickerText> = {
     placeholder: "Search channels...",
     empty: "No channels to join",
   },
+  member: {
+    title: "Choose a person",
+    placeholder: "Search people...",
+    empty: "No people here.",
+  },
+  messageableMember: {
+    title: "Message someone",
+    placeholder: "Search people...",
+    empty: "No one to message here.",
+  },
+  macro: {
+    title: "Run a macro",
+    placeholder: "Search macros...",
+    empty: "No macros yet",
+  },
+  pipeline: {
+    title: "Turn a pipeline on or off",
+    placeholder: "Search pipelines...",
+    empty: "No pipelines in this workspace",
+  },
+  agent: {
+    title: "Choose an agent",
+    placeholder: "Search connected agents...",
+    empty: "No agents are connected",
+  },
 };
-
-interface Targets {
-  items: PickerTarget[];
-  isPending: boolean;
-}
-
-/** The names of the people in `conversations`, as the side rail shows them. */
-function useConversationLabels(conversations: readonly ConversationSummary[]) {
-  const userId = useAuthStore((s) => s.session?.userId);
-  const { data: me } = useCurrentUser();
-  const aliases = useContactStore((s) => s.aliases);
-  const handles = useKnownHandles((s) => s.byUser);
-  const serverIds = useMemo(
-    () => [...new Set(conversations.map((c) => c.serverId))].sort(),
-    [conversations],
-  );
-  const members = useQueries({
-    queries: serverIds.map((serverId) => ({
-      queryKey: queryKeys.serverMembers(serverId),
-      queryFn: () => fetchServerMembers(serverId),
-      staleTime: 60_000,
-      networkMode: "offlineFirst" as const,
-    })),
-  });
-
-  return useMemo(() => {
-    const ownDomain = handleDomain(me?.handle);
-    const names = new Map<string, string>();
-    for (const { data } of members) {
-      for (const member of data ?? []) {
-        const alias = member.principalId ? aliases[member.principalId] : undefined;
-        names.set(
-          member.userId,
-          alias ??
-            personName({ ...member, handle: handles[member.userId] }, member.userId, ownDomain),
-        );
-      }
-    }
-    if (me) names.set(me.id, me.displayName || me.username);
-    const nameOf = (id: string) => names.get(id) ?? "Unknown user";
-    return (conversation: ConversationSummary): string => {
-      if (conversation.conversationType === ConversationTypeEnum.CHANNEL) {
-        return `#${conversation.title ?? "channel"}`;
-      }
-      if (conversation.title) return conversation.title;
-      if (conversation.conversationType === ConversationTypeEnum.DIRECT) {
-        const peer = directPeerId(conversation, userId);
-        return peer ? nameOf(peer) : "Untitled";
-      }
-      return untitledGroupName(conversation, userId, nameOf) ?? "Untitled";
-    };
-  }, [members, me, aliases, handles, userId]);
-}
-
-/** Names `conversations` for the list. */
-function useNamed(conversations: readonly ConversationSummary[]): PickerTarget[] {
-  const labelOf = useConversationLabels(conversations);
-  return useMemo(
-    () => conversations.map((c) => ({ id: c.id, serverId: c.serverId, label: labelOf(c) })),
-    [conversations, labelOf],
-  );
-}
-
-/** The open workspace's channels the viewer is in, and its DMs and groups, as the sidebar lists them. */
-function useChannelTargets(): Targets {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
-  const joined = useJoinedChannels(workspaceId);
-  const inbox = useInboxConversations(workspaceId);
-  const conversations = useMemo(
-    () => [
-      ...(joined.data?.items ?? []).filter((c) => !c.isArchived),
-      ...(inbox.data?.items ?? []),
-    ],
-    [joined.data, inbox.data],
-  );
-  return { items: useNamed(conversations), isPending: joined.isPending || inbox.isPending };
-}
-
-/** The DMs and groups of every direct space, as the direct message list shows them. */
-function useDirectTargets(): Targets {
-  const { items, isPending } = useDirectInbox();
-  return { items: useNamed(items), isPending };
-}
-
-/** The open workspace's unarchived channels the viewer has not joined, as Browse channels lists them. */
-function useJoinableTargets(): Targets {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId) ?? undefined;
-  const { data, isPending } = useChannels(workspaceId);
-  const conversations = useMemo(
-    () => (data?.items ?? []).filter((c) => !c.isMember && !c.isArchived),
-    [data],
-  );
-  return { items: useNamed(conversations), isPending };
-}
-
-/** The workspaces on the rail other than the open one and the direct space. */
-function useWorkspaceTargets(): Targets {
-  const workspaceId = useWorkspaceStore((s) => s.workspaceId);
-  const { data: servers, isPending } = useMyServers();
-  const remoteSpaces = useRelayStore((s) => s.spaces);
-  const origins = useRelayStore((s) => s.origins);
-  const forked = useRelayStore((s) => s.forked);
-
-  const items = useMemo(() => {
-    const elsewhere = Object.values(remoteSpaces)
-      .filter((space) => space.kind === "workspace" && !forked.includes(space.hostServerId))
-      .map((space) => ({
-        id: space.spaceId,
-        name: space.name ?? "Workspace",
-        ownerName: space.ownerName,
-        origin: origins[space.hostServerId] ?? space.hostServerId,
-      }));
-    const all = [
-      ...(servers ?? []).map((server) => ({
-        id: server.id,
-        name: server.name,
-        ownerName: ownerName(server.owner),
-      })),
-      ...elsewhere,
-    ];
-    const labels = workspaceLabels(all);
-    return all
-      .map((ws, i) => ({ id: ws.id, serverId: ws.id, label: labels[i] }))
-      .filter((ws) => ws.id !== workspaceId && !isDirectSpace(ws.id));
-  }, [servers, remoteSpaces, origins, forked, workspaceId]);
-  return { items, isPending };
-}
 
 interface PaletteTargetPickerProps {
   kind: TargetPickerKind;
@@ -212,6 +101,16 @@ export function PaletteTargetPicker(props: PaletteTargetPickerProps) {
       return <TargetList key={source} {...props} useTargets={useWorkspaceTargets} />;
     case "joinableChannel":
       return <TargetList key={source} {...props} useTargets={useJoinableTargets} />;
+    case "member":
+      return <TargetList key={source} {...props} useTargets={useMemberTargets} />;
+    case "messageableMember":
+      return <TargetList key={source} {...props} useTargets={useMessageableTargets} />;
+    case "macro":
+      return <TargetList key={source} {...props} useTargets={useMacroTargets} />;
+    case "pipeline":
+      return <TargetList key={source} {...props} useTargets={usePipelineTargets} />;
+    case "agent":
+      return <TargetList key={source} {...props} useTargets={useAgentTargets} />;
   }
 }
 

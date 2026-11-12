@@ -58,12 +58,14 @@ export function UnlockScreen() {
           <p className="text-center text-sm text-rim-text-muted">
             What this device keeps for the account opens only with its password.
           </p>
-          <PasswordSignInForm
-            principalId={principalId}
-            accountLabel="this account"
-            submitLabel="Unlock"
-            onSignedIn={() => undefined}
-          />
+          <div className="rounded-[14px] border border-rim-line bg-rim-panel-soft p-5">
+            <PasswordSignInForm
+              principalId={principalId}
+              accountLabel="this account"
+              submitLabel="Unlock"
+              onSignedIn={() => undefined}
+            />
+          </div>
         </>
       ) : (
         principalId === null && (

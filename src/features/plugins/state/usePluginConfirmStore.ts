@@ -1,16 +1,27 @@
 import { create } from "zustand";
 
-/** A dangerous plugin command waiting for the user to say yes or no. */
+/**
+ * A run waiting for the user to say yes or no: a dangerous plugin command, or one of the
+ * app's own commands a plugin asks to run.
+ */
 export interface PluginConfirmRequest {
   pluginName: string;
   commandTitle: string;
   description: string;
   args: Record<string, unknown>;
+  /**
+   * Set when the plugin asks the app to run one of the app's own commands for it: where the
+   * command acts, such as the conversation's name, or `null` when it names none.
+   */
+  runsAppCommand?: { target: string | null };
 }
 
 interface PluginConfirmState {
   request: PluginConfirmRequest | null;
-  /** Show the dialog; resolves `true` only when the user confirms this run. */
+  /**
+   * Show the dialog; resolves `true` only when the user confirms this run, and `false` at
+   * once while another request is open.
+   */
   ask: (request: PluginConfirmRequest) => Promise<boolean>;
   confirm: () => void;
   cancel: () => void;

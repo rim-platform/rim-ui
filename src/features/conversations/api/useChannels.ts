@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
@@ -25,7 +25,7 @@ const ChannelsDocument = gql`
 `;
 
 /** Every channel the viewer can see that is not archived: the browse list. */
-const BROWSE_FILTER: ChannelListFilter = { joinedOnly: false, includeArchived: false };
+export const BROWSE_FILTER: ChannelListFilter = { joinedOnly: false, includeArchived: false };
 
 /** Channels the viewer has joined, archived ones included: the sidebar list. */
 const JOINED_FILTER: ChannelListFilter = { joinedOnly: true, includeArchived: true };
@@ -33,7 +33,8 @@ const JOINED_FILTER: ChannelListFilter = { joinedOnly: true, includeArchived: tr
 /** Every channel the viewer can see, archived ones included: the source of the Archived list. */
 const ARCHIVED_FILTER: ChannelListFilter = { joinedOnly: false, includeArchived: true };
 
-async function fetchChannels(serverId: string, filter: ChannelListFilter) {
+/** The first page of a workspace's channels under `filter`. */
+export async function fetchChannels(serverId: string, filter: ChannelListFilter) {
   const res = await graphqlClient.request<{ channels: ConversationSummaryPage }>(ChannelsDocument, {
     serverId,
     dir: "AFTER",
@@ -84,8 +85,15 @@ export function useArchivedChannels(workspaceId: string | undefined, enabled: bo
 export function useJoinedChannels(workspaceId?: string) {
   const direct = useIsDirectSpace(workspaceId);
   return useQuery({
-    queryKey: queryKeys.joinedChannels(workspaceId),
+    ...joinedChannelsQueryOptions(workspaceId),
     enabled: Boolean(workspaceId) && !direct,
+  });
+}
+
+/** The joined channels query's options, for reading it across workspaces. */
+export function joinedChannelsQueryOptions(workspaceId?: string) {
+  return queryOptions({
+    queryKey: queryKeys.joinedChannels(workspaceId),
     staleTime: 30_000,
     networkMode: "offlineFirst",
     queryFn: () =>

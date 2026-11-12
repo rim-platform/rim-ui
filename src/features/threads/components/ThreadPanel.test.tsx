@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
@@ -7,6 +7,8 @@ import { server } from "../../../test/mocks/server";
 import { createTestQueryClient } from "../../../test/utils";
 import { ServerMemberRoleGql } from "../../../core/graphql/generated/schema-types";
 import { queryKeys } from "../../../core/query/keys";
+import { queryClient } from "../../../core/query/queryClient";
+import { backendCommand, COMMAND_OK, serveHostCommands } from "../../../test/clickCommands";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useRelayStore } from "../../relay/state/useRelayStore";
@@ -31,7 +33,9 @@ vi.mock("../../../core/graphql/client", () => ({
 vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
-vi.mock("../../plugins/api/usePluginCommands", () => ({
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
   usePluginContextMenuCommands: () => [],
 }));
 vi.mock("../../e2ee/hooks/useE2eeConversation", () => ({
@@ -84,7 +88,10 @@ vi.mock("../api/useThreads", () => ({
         { ...reply("r-other", "u-bob", "bob's reply"), editedAt: fixture.editedAt },
         // An own reply as the `NewMessage` event stores it, without an author object.
         { ...reply("r-own-event", "me", "my new reply"), author: null },
-        reply("r-mention", "u-alice", "thanks <@u-bob>"),
+        {
+          ...reply("r-mention", "u-alice", "thanks <@u-bob>"),
+          reactions: [{ emoji: "👍", count: 1, reactedByMe: false, userIds: [] }],
+        },
       ],
     },
     status: "success",
@@ -98,6 +105,10 @@ function serve(
   viewerRole: ServerMemberRoleGql = ServerMemberRoleGql.MEMBER,
   extra: Record<string, (vars: Record<string, unknown>) => unknown> = {},
 ) {
+  serveHostCommands("ws-1", [
+    backendCommand("chat.unpin_message"),
+    backendCommand("chat.toggle_reaction"),
+  ]);
   routeRequests(requestMock, {
     ...baseReadHandlers,
     "query Server(": () => ({
@@ -105,6 +116,7 @@ function serve(
     }),
     "query PinnedMessages": () => ({ pinnedMessages: [{ id: "r-other" }] }),
     "mutation UnpinMessage": () => ({ unpinMessage: true }),
+    "mutation ExecuteCommand": () => ({ executeCommand: COMMAND_OK }),
     ...extra,
   });
 }
@@ -145,6 +157,10 @@ describe("ThreadPanel — message context menu", () => {
     useShellStore.setState({ selectedConversationId: "c-1", selectedRootMessageId: "root-1" });
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    queryClient.clear();
   });
 
   it("offers Edit message on the viewer's reply, without Reply in thread", async () => {
@@ -295,11 +311,29 @@ describe("ThreadPanel — message context menu", () => {
       "Report message…",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Unpin message" }));
-    await waitFor(() =>
-      expect(callsTo(requestMock, "mutation UnpinMessage")).toEqual([
-        { input: { serverId: "ws-1", conversationId: "c-1", messageId: "r-other" } },
-      ]),
-    );
+    // The unpin command on that reply, in its thread.
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0].input).toMatchObject({
+      commandId: "chat.unpin_message",
+      commandContext: {
+        workspaceId: "ws-1",
+        conversationId: "c-1",
+        selectedMessageId: "r-other",
+        threadId: "t-1",
+      },
+    });
+  });
+
+  it("toggles a reaction on a reply in its thread from the reaction chip", async () => {
+    serve();
+    await renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /👍/ }));
+    await waitFor(() => expect(callsTo(requestMock, "mutation ExecuteCommand")).toHaveLength(1));
+    expect(callsTo(requestMock, "mutation ExecuteCommand")[0].input).toMatchObject({
+      commandId: "chat.toggle_reaction",
+      args: { emoji: "👍" },
+      commandContext: { workspaceId: "ws-1", conversationId: "c-1", threadId: "t-1" },
+    });
   });
 
   it("offers a moderator the author's menu on an own reply that carries no author object", async () => {

@@ -9,7 +9,9 @@ import {
 import { useAttachmentUploads } from "../api/useAttachmentUploads";
 import { attachmentProblem } from "../api/attachmentTypes";
 import { AttachmentRetries } from "./AttachmentRetries";
-import { useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { useCommands, useExecuteCommandMutation } from "../../commands/api/useCommands";
+import { runComposerPipe } from "../../commands/runtime/composerCommand";
+import { pipeStageCommandId } from "../../commands/runtime/pipeStages";
 import { queryKeys } from "../../../core/query/keys";
 import { replaceShortcodes } from "../utils/emojiShortcodes";
 import { isSlashCommand } from "../utils/slashCommands";
@@ -177,6 +179,8 @@ function MessageComposer(props: ComposerProps) {
   const [isStarting, setIsStarting] = useState(false);
   const startingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Set by the box while Esc has closed its command list: the line is then sent as text.
+  const commandListClosedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Maps the text after `@` of each picked mention (username or handle) to its user id
   const mentionMapRef = useRef<Map<string, string>>(new Map());
@@ -188,6 +192,7 @@ function MessageComposer(props: ComposerProps) {
   // renders and does not need to appear in hook dependency arrays.
   const draftStore = useDraftStore;
   const executeCommand = useExecuteCommandMutation();
+  const { data: paletteCommands } = useCommands("PALETTE");
   // A thread reply does not announce typing in the conversation.
   const { handleKeystroke, markSent } = useTypingIndicator(
     workspaceId,
@@ -196,19 +201,24 @@ function MessageComposer(props: ComposerProps) {
   const { data: serverMembers } = useServerMembers(workspaceId);
   const memberLookup = useMemberLookup(workspaceId);
   // Members as the mention list offers them: by the handle that reads, never an `r_…` name.
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  // A bot is offered only in a conversation it was added to.
   const mentionMembers = useMemo(
     () =>
-      serverMembers?.map((m) => {
-        const info = memberLookup.resolve(m.userId);
-        return {
-          userId: m.userId,
-          mention: info.handleView?.shown.slice(1) ?? null,
-          handle: info.handleView?.copied.slice(1) ?? null,
-          displayName: m.displayName,
-          avatarUrl: m.avatarUrl,
-        };
-      }),
-    [serverMembers, memberLookup],
+      serverMembers
+        ?.filter((m) => !m.isBot || conversation?.memberIds.includes(m.userId))
+        .map((m) => {
+          const info = memberLookup.resolve(m.userId);
+          return {
+            userId: m.userId,
+            mention: info.handleView?.shown.slice(1) ?? null,
+            handle: info.handleView?.copied.slice(1) ?? null,
+            displayName: m.displayName,
+            avatarUrl: m.avatarUrl,
+            isBot: m.isBot,
+          };
+        }),
+    [serverMembers, memberLookup, conversation?.memberIds],
   );
 
   /** The picked mentions, and every member's whole handle typed out, to user ids. */
@@ -221,7 +231,6 @@ function MessageComposer(props: ComposerProps) {
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const sendBlocked = Boolean(encryption?.sendBlock);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const { data: conversation } = useConversation(workspaceId, conversationId);
   // A timed-out viewer reads but cannot write; slow mode spaces out members' messages
   // (Owner/Moderator are exempt). The server enforces both.
   const timedOutUntil = useMyTimeout(workspaceId);
@@ -368,6 +377,13 @@ function MessageComposer(props: ComposerProps) {
     }
   }
 
+  /** Whether `line` is a pipe (`/a | b`) that starts with a command this app knows. */
+  function isKnownPipe(line: string): boolean {
+    if (!line.startsWith("/") || !line.includes("|")) return false;
+    const first = pipeStageCommandId(line.slice(1).split("|")[0]);
+    return Boolean(paletteCommands?.some((cmd) => cmd.id === first));
+  }
+
   async function submit() {
     const replyTo = replyTarget;
     if (timedOutUntil || offline) return;
@@ -392,24 +408,14 @@ function MessageComposer(props: ComposerProps) {
     }
 
     // Detect piped slash commands: `/cmd1 | cmd2 | cmd3`
-    if (!thread && trimmed.startsWith("/") && trimmed.includes("|")) {
-      const pipeExpression = trimmed.slice(1).trim(); // strip leading `/`
-      const segmentCount = pipeExpression.split("|").filter((s) => s.trim()).length;
+    if (!thread && !commandListClosedRef.current && isKnownPipe(trimmed)) {
       setText("");
       if (debounceRef.current) clearTimeout(debounceRef.current);
       draftStore.getState().clearDraft(textKey);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-      try {
-        await executeCommand.mutateAsync({
-          commandId: pipeExpression,
-          commandContext: { workspaceId },
-        });
-        toast.success(`Piped ${segmentCount} commands successfully`);
-      } catch {
-        toast.error("Failed to execute piped commands");
-      }
+      await runComposerPipe(trimmed, paletteCommands, (input) => executeCommand.mutateAsync(input));
       return;
     }
 
@@ -762,6 +768,7 @@ function MessageComposer(props: ComposerProps) {
           serverMembers={mentionMembers}
           onFilePickerOpen={attachments ? () => fileInputRef.current?.click() : undefined}
           variant={thread ? "thread" : "conversation"}
+          commandListClosedRef={commandListClosedRef}
           onEscape={() => {
             if (!replyTarget || !conversationId) return false;
             useReplyTargetStore.getState().clear(conversationId);

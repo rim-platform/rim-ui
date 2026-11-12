@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { gql } from "graphql-request";
 
+import type { BotInfo } from "../../../core/graphql/generated/schema-types";
 import type { AuthorBan } from "../../messages/hooks/useBanExpiry";
 import { graphqlClient } from "../../../core/graphql/client";
 import { queryKeys } from "../../../core/query/keys";
 import { encryptedStoreAccount, readCachedThread } from "../../messages/api/messageCache";
-import { MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
+import { MESSAGE_BOT_FIELDS, MESSAGE_WITH_REACTIONS } from "../../../graphql/fragments/message";
 import { messageReadDocument } from "../../updater/api/serverCapabilities";
 
 const THREAD_BY_ROOT_MESSAGE_QUERY = gql`
@@ -96,11 +97,29 @@ const THREAD_MESSAGES_WITH_FLAGS_QUERY = gql`
   ${MESSAGE_WITH_REACTIONS}
 `;
 
+/** The same with the author's bot disclosure, for a server that lists `bot_disclosure`. */
+const THREAD_MESSAGES_WITH_BOTS_QUERY = gql`
+  query ThreadMessagesWithBots(${THREAD_MESSAGES_VARIABLES}) {
+    threadMessages(${THREAD_MESSAGES_ARGUMENTS}) {
+      items {
+        ...MessageWithReactions
+        ...MessageBotFields
+        editedAt
+        flagged
+      }
+      ${THREAD_MESSAGES_PAGE_INFO}
+    }
+  }
+  ${MESSAGE_WITH_REACTIONS}
+  ${MESSAGE_BOT_FIELDS}
+`;
+
 /** A thread's replies documents, for `messageReadDocument`. */
 const THREAD_MESSAGES_DOCUMENTS = {
   plain: THREAD_MESSAGES_QUERY,
   withEdits: THREAD_MESSAGES_WITH_EDITS_QUERY,
   withFlags: THREAD_MESSAGES_WITH_FLAGS_QUERY,
+  withBots: THREAD_MESSAGES_WITH_BOTS_QUERY,
 };
 
 interface ThreadDetail {
@@ -128,6 +147,10 @@ interface ThreadMessageAuthor extends AuthorBan {
   avatarUrl: string | null;
   /** `@<username>:<domain>`; null when the server does not know it. */
   handle?: string | null;
+  /** Whether the account is a bot; absent from a server without `bot_disclosure`. */
+  isBot?: boolean;
+  /** What the person who added a bot says about it; null for anyone else. */
+  bot?: BotInfo | null;
 }
 
 interface ThreadMessageLinkPreview {

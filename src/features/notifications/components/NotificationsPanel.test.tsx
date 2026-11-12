@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
 import {
   ConversationTypeEnum,
   NotificationReason,
@@ -36,6 +43,12 @@ vi.mock("../../../shared/toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
 }));
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { NotificationBellButton } from "./NotificationBellButton";
 
@@ -108,15 +121,32 @@ function serve(pages: Handler, extra: Record<string, Handler> = {}) {
     "query MyNotifications": (vars) => ({ myNotifications: pages(vars) }),
     "mutation MarkNotificationsRead": () => ({ markNotificationsRead: 1 }),
     "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 1 }),
+    "mutation ExecuteCommand": () => commandSucceeded(),
     ...extra,
   });
 }
 
+beforeEach(() => {
+  serveCommands("ws-1", [
+    "notifications.mark_all_read",
+    "notifications.mute_conversation",
+    "notifications.unmute_conversation",
+  ]);
+});
+
+afterEach(() => {
+  clearServedCommands();
+});
+
+/** The spy the rendered panel calls to close the inbox. */
+const closeInbox = vi.fn();
+
 function renderPanel() {
+  closeInbox.mockReset();
   const qc = createTestQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <NotificationsPanel workspaceId="ws-1" onClose={vi.fn()} />
+      <NotificationsPanel workspaceId="ws-1" onClose={closeInbox} />
     </QueryClientProvider>,
   );
   return qc;
@@ -309,7 +339,7 @@ describe("NotificationsPanel", () => {
     );
   });
 
-  it("clicking an entry opens its message and marks it read", async () => {
+  it("clicking an entry opens its message, marks it read and closes the inbox", async () => {
     let read = false;
     serve(() => page([notification({ readAt: read ? "2026-10-05T10:00:00Z" : null })]), {
       "mutation MarkNotificationsRead": () => {
@@ -329,6 +359,7 @@ describe("NotificationsPanel", () => {
     expect(shell.mainSurface).toEqual({ kind: "conversation" });
     expect(shell.selectedConversationId).toBe("c-general");
     expect(shell.highlightedMessageId).toBe("m-1");
+    expect(closeInbox).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByText("Unread")).not.toBeInTheDocument());
   });
 
@@ -358,22 +389,23 @@ describe("NotificationsPanel", () => {
     ]);
   });
 
-  it("Mark all read sends allBefore: now", async () => {
+  it("Mark all read runs Mark All Notifications Read for the panel's workspace", async () => {
     serve(() => page([notification()]));
     renderPanel();
     await screen.findByText("can you look at the deploy?");
 
-    const before = Date.now();
     fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
 
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation MarkNotificationsRead")).toHaveLength(1),
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "notifications.mark_all_read",
+          args: { server_id: "ws-1" },
+          commandContext: { workspaceId: "ws-1" },
+        },
+      ]),
     );
-    const vars = callsTo(requestMock, "mutation MarkNotificationsRead")[0];
-    expect(vars).toMatchObject({ serverId: "ws-1", ids: null });
-    const allBefore = Date.parse(vars.allBefore as string);
-    expect(allBefore).toBeGreaterThanOrEqual(before);
-    expect(allBefore).toBeLessThanOrEqual(Date.now());
+    expect(callsTo(requestMock, "mutation MarkNotificationsRead")).toEqual([]);
   });
 
   it("Load more walks to older entries with the next cursor", async () => {
@@ -406,12 +438,14 @@ describe("NotificationsPanel", () => {
     );
     expect(useShellStore.getState().selectedConversationId).toBeNull();
     expect(useShellStore.getState().highlightedMessageId).toBeNull();
+    expect(closeInbox).not.toHaveBeenCalled();
   });
 });
 
 describe("NotificationBellButton", () => {
   beforeEach(() => {
     requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
     useShellStore.getState().reset();
     useWorkspaceStore.setState({ workspaceId: "ws-1" });
     useNotificationsPanelStore.setState({ open: false, unreadOnly: false });
@@ -442,7 +476,7 @@ describe("NotificationBellButton", () => {
     expect(await screen.findByRole("button", { name: "Notifications" })).not.toHaveTextContent("3");
   });
 
-  it("toggles the inbox and returns to the conversation surface", async () => {
+  it("toggles the inbox under the bell and leaves the page behind it open", async () => {
     routeRequests(requestMock, {
       "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
     });
@@ -453,11 +487,74 @@ describe("NotificationBellButton", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-    expect(useShellStore.getState().mainSurface).toEqual({ kind: "conversation" });
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    expect(bell).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(bell);
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings" });
     expect(useNotificationsPanelStore.getState().open).toBe(true);
+    expect(bell).toHaveAttribute("aria-expanded", "true");
+    const inbox = screen.getByRole("region", { name: "Notifications" });
+    expect(bell).toHaveAttribute("aria-controls", inbox.id);
+    expect(inbox).toHaveFocus();
 
+    fireEvent.click(bell);
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(screen.queryByRole("region", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("closes the inbox from its close button through the notifications command", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close notifications" }));
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.toggle_notifications"],
+      ["workspace.toggle_notifications"],
+    ]);
+  });
+
+  it("closes the inbox on Escape and gives focus back to the bell", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    bell.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("region", { name: "Notifications" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(useNotificationsPanelStore.getState().open).toBe(false);
+    expect(bell).toHaveFocus();
+  });
+
+  it("closes the inbox on a press outside it", async () => {
+    routeRequests(requestMock, {
+      "query MyUnreadNotificationCount": () => ({ myUnreadNotificationCount: 0 }),
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <NotificationBellButton />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(screen.getByRole("region", { name: "Notifications" }));
+    expect(useNotificationsPanelStore.getState().open).toBe(true);
+    await user.click(document.body);
     expect(useNotificationsPanelStore.getState().open).toBe(false);
   });
 });
@@ -513,9 +610,7 @@ describe("NotificationsPanel — entry context menu", () => {
   });
 
   it("mutes the conversation for the duration chosen in the submenu", async () => {
-    serve(() => page([notification()]), {
-      "mutation MuteConversation": () => ({ muteConversation: true }),
-    });
+    serve(() => page([notification()]));
     renderPanel();
     fireEvent.contextMenu(await screen.findByText("can you look at the deploy?"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Mute conversation" }));
@@ -528,13 +623,17 @@ describe("NotificationsPanel — entry context menu", () => {
     const before = Date.now();
     fireEvent.click(within(submenu).getByRole("menuitem", { name: "Mute for 1 hour" }));
 
-    await waitFor(() => expect(callsTo(requestMock, "mutation MuteConversation")).toHaveLength(1));
-    const { input } = callsTo(requestMock, "mutation MuteConversation")[0] as {
-      input: { serverId: string; conversationId: string; mutedUntil: string };
-    };
-    expect(input.serverId).toBe("ws-1");
-    expect(input.conversationId).toBe("c-general");
-    expect(Date.parse(input.mutedUntil) - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
+    await waitFor(() => expect(sentCommands(requestMock)).toHaveLength(1));
+    const [sent] = sentCommands(requestMock);
+    const until = String(sent.args?.until);
+    // The entry's own conversation, as a context-menu run.
+    expect(sent).toEqual({
+      commandId: "notifications.mute_conversation",
+      args: { server_id: "ws-1", conversation_id: "c-general", duration: "until", until },
+      commandContext: { workspaceId: "ws-1", conversationId: "c-general" },
+      initiator: "CONTEXT_MENU",
+    });
+    expect(Date.parse(until) - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
   });
 
   it("offers Unmute conversation while the conversation is muted", async () => {
@@ -542,7 +641,6 @@ describe("NotificationsPanel — entry context menu", () => {
       "query MutedConversations": () => ({
         mutedConversations: [{ conversationId: "c-general", mutedUntil: null }],
       }),
-      "mutation UnmuteConversation": () => ({ unmuteConversation: true }),
     });
     renderPanel();
     const entry = await screen.findByText("can you look at the deploy?");
@@ -553,8 +651,13 @@ describe("NotificationsPanel — entry context menu", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "Unmute conversation" }));
     await waitFor(() =>
-      expect(callsTo(requestMock, "mutation UnmuteConversation")).toEqual([
-        { input: { serverId: "ws-1", conversationId: "c-general" } },
+      expect(sentCommands(requestMock)).toEqual([
+        {
+          commandId: "notifications.unmute_conversation",
+          args: { server_id: "ws-1", conversation_id: "c-general" },
+          commandContext: { workspaceId: "ws-1", conversationId: "c-general" },
+          initiator: "CONTEXT_MENU",
+        },
       ]),
     );
   });

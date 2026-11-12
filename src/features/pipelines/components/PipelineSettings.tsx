@@ -9,10 +9,12 @@ import {
   useCreatePipelineMutation,
   useUpdatePipelineMutation,
   useDeletePipelineMutation,
-  useTogglePipelineMutation,
 } from "../api/usePipelines";
 import type { Pipeline, CreatePipelineInput, UpdatePipelineInput } from "../api/usePipelines";
 import { useCommands } from "../../commands/api/useCommands";
+import { PresetArgumentsSection } from "../../commands/components/ArgumentFields";
+import type { FieldValues } from "../../commands/runtime/argumentValues";
+import { actionArgs, actionForm } from "../actionArguments";
 import { CommandIdInput } from "../../commands/components/CommandIdInput";
 import {
   runsOnServer,
@@ -20,14 +22,23 @@ import {
   unknownCommandError,
 } from "../../commands/runtime/serverRunnable";
 import type { CommandDefinition } from "../../commands/types";
-import { PipelineTriggerKindGql } from "../../../core/graphql/generated/schema-types";
+import {
+  PipelineTriggerKindGql,
+  type PipelineActionInput,
+} from "../../../core/graphql/generated/schema-types";
 import { cn } from "../../../shared/ui/cn";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { toast } from "../../../shared/toast";
 import { LimitNote } from "../../limits/components/LimitNote";
 import { limitView } from "../../limits/limits";
+import { botsFeatureEnabled } from "../../bots/availability";
+import { PIPELINE_POST_AS_BOT } from "../../updater/api/serverCapabilities";
 import { useServerInfo } from "../../updater/hooks/useServerInfo";
+import { useSpaceHasCapability } from "../../updater/hooks/useSpaceHasCapability";
+import { POST_AS_BOT_COMMAND, postAsBotOf, type PostAsBot } from "../postAsBot";
 import { ConversationSelect } from "./ConversationSelect";
+import { PostAsBotFields, PostAsBotSummary, usePostAsBotNames } from "./PostAsBotAction";
 import { hourCycleOptions } from "../../../shared/utils/formatTime";
 
 const TRIGGER_OPTIONS: { value: PipelineTriggerKindGql; label: string }[] = [
@@ -67,9 +78,40 @@ const CONDITION_TYPES = [
   { value: "ConversationIs", label: "In conversation" },
 ];
 
-interface ActionDraft {
+interface CommandDraft {
+  kind: "command";
   commandId: string;
-  args: string;
+  /** The arguments the action was saved with. */
+  saved: unknown;
+  /** The fields changed since it loaded. */
+  edited: FieldValues;
+  /** Whether the saved arguments the fields cannot show were removed. */
+  removed: boolean;
+  /** Why each field cannot be saved; the empty name holds a problem of the whole form. */
+  problems: Record<string, string>;
+}
+
+interface PostDraft extends PostAsBot {
+  kind: "post";
+  /** The `args` the server listed it with, which keep it unchanged when sent back. */
+  listedArgs: unknown;
+}
+
+type ActionDraft = CommandDraft | PostDraft;
+
+/** A command action with nothing in it, which a save leaves out. */
+const EMPTY_COMMAND: CommandDraft = {
+  kind: "command",
+  commandId: "",
+  saved: undefined,
+  edited: {},
+  removed: false,
+  problems: {},
+};
+
+/** Whether a command draft has been left empty. */
+function isEmptyCommand(action: ActionDraft): boolean {
+  return action.kind === "command" && action.commandId.trim() === "";
 }
 
 interface ConditionDraft {
@@ -82,11 +124,83 @@ interface ConditionDraft {
 interface PipelineEditorProps {
   initial?: Pipeline;
   serverId: string;
+  /** Whether the workspace's host has Post as bot actions. */
+  hasPostAsBot: boolean;
   onSave: () => void;
   onCancel: () => void;
 }
 
-function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorProps) {
+interface ActionArgumentsProps {
+  action: CommandDraft;
+  command: CommandDefinition | undefined;
+  /** Whether the command registry has loaded, so the action's command is known or unknown. */
+  loaded: boolean;
+  triggerKind: PipelineTriggerKindGql;
+  serverId: string;
+  onEdit: (change: (action: CommandDraft) => CommandDraft) => void;
+}
+
+/**
+ * The arguments of one pipeline action: a field for each its command takes, and the saved
+ * arguments the fields cannot show, as JSON with a button that removes them.
+ */
+function ActionArguments({
+  action,
+  command,
+  loaded,
+  triggerKind,
+  serverId,
+  onEdit,
+}: ActionArgumentsProps) {
+  if (!loaded) return null;
+  const form = actionForm(command, action.saved, action.edited, action.removed, triggerKind);
+  return (
+    <>
+      {form.fields.length > 0 && (
+        <PresetArgumentsSection
+          fields={form.fields}
+          commandId={command?.id}
+          values={form.values}
+          problems={action.problems}
+          workspaceId={serverId}
+          emptyNote=""
+          intro="Nobody is there to ask when this runs, so a field marked Required must be filled. Other fields use the trigger's conversation or the command's default."
+          onChange={(name, value) =>
+            onEdit((a) => {
+              const problems = { ...a.problems };
+              delete problems[name];
+              return { ...a, edited: { ...a.edited, [name]: value }, problems };
+            })
+          }
+        />
+      )}
+      {form.extras !== undefined && (
+        <div className="space-y-1 text-xs text-rim-text-muted">
+          <p>
+            Saved arguments the form can&apos;t show:{" "}
+            <code className="break-all font-mono text-rim-text">{JSON.stringify(form.extras)}</code>
+          </p>
+          <button
+            type="button"
+            onClick={() => onEdit((a) => ({ ...a, removed: true }))}
+            className="rounded border border-rim-line px-2 py-0.5 text-rim-text transition hover:text-rim-danger"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+      {action.problems[""] && <p className="text-xs text-rim-danger">{action.problems[""]}</p>}
+    </>
+  );
+}
+
+function PipelineEditor({
+  initial,
+  serverId,
+  hasPostAsBot,
+  onSave,
+  onCancel,
+}: PipelineEditorProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [triggerKind, setTriggerKind] = useState<PipelineTriggerKindGql>(
@@ -107,13 +221,25 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       conversationId: c.conversationId ?? "",
     }));
   });
+  const canModerate = useCanModerate(serverId);
+  const { info } = useServerInfo();
+  const mayEditPosts = canModerate && hasPostAsBot;
   const [actions, setActions] = useState<ActionDraft[]>(() => {
-    if (!initial?.actions.length) return [{ commandId: "", args: "" }];
-    return initial.actions.map((a) => ({
-      commandId: a.commandId ?? "",
-      args: a.args ? JSON.stringify(a.args) : "",
-    }));
+    if (!initial?.actions.length) return [EMPTY_COMMAND];
+    return initial.actions.map((a): ActionDraft => {
+      const post = postAsBotOf(a);
+      if (post) return { kind: "post", ...post, listedArgs: a.args };
+      return {
+        kind: "command",
+        commandId: a.commandId ?? "",
+        saved: a.args ?? undefined,
+        edited: {},
+        removed: false,
+        problems: {},
+      };
+    });
   });
+  const [postError, setPostError] = useState<string | null>(null);
 
   const { data: allCommands } = useCommands("PALETTE");
   const { data: pickerCommands } = useCommands("KEYBIND_PICKER");
@@ -130,15 +256,41 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
 
   const addAction = useCallback(() => {
     if (actions.length >= 10) return;
-    setActions((prev) => [...prev, { commandId: "", args: "" }]);
+    setActions((prev) => [...prev, EMPTY_COMMAND]);
+  }, [actions.length]);
+
+  const addPostAction = useCallback(() => {
+    if (actions.length >= 10) return;
+    const post: PostDraft = {
+      kind: "post",
+      botUserId: "",
+      conversationId: "",
+      text: "",
+      listedArgs: null,
+    };
+    setActions((prev) => [...prev.filter((a) => !isEmptyCommand(a)), post]);
   }, [actions.length]);
 
   const removeAction = useCallback((index: number) => {
     setActions((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const updateAction = useCallback((index: number, field: "commandId" | "args", value: string) => {
-    setActions((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
+  const updateAction = useCallback((index: number, commandId: string) => {
+    setActions((prev) =>
+      prev.map((a, i) =>
+        i === index && a.kind === "command" ? { ...EMPTY_COMMAND, commandId } : a,
+      ),
+    );
+  }, []);
+
+  const editAction = useCallback((index: number, change: (a: CommandDraft) => CommandDraft) => {
+    setActions((prev) => prev.map((a, i) => (i === index && a.kind === "command" ? change(a) : a)));
+  }, []);
+
+  const updatePost = useCallback((index: number, next: PostAsBot) => {
+    setActions((prev) =>
+      prev.map((a, i) => (i === index && a.kind === "post" ? { ...a, ...next } : a)),
+    );
   }, []);
 
   const addCondition = useCallback(() => {
@@ -163,13 +315,28 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
   const handleSave = useCallback(async () => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
-    const validActions = actions.filter((a) => a.commandId.trim() !== "");
+    const validActions = actions.filter((a) => !isEmptyCommand(a));
     if (validActions.length === 0) {
       toast.error("Add at least one action with a command");
       return;
     }
-    if (validActions.some((a) => unknownCommandError(a.commandId, allCommands, pickerCommands))) {
+    if (
+      validActions.some(
+        (a) =>
+          a.kind === "command" && unknownCommandError(a.commandId, allCommands, pickerCommands),
+      )
+    ) {
       toast.error("Fix the actions marked in red before saving.");
+      return;
+    }
+    setPostError(null);
+    if (
+      validActions.some(
+        (a) =>
+          a.kind === "post" && mayEditPosts && !(a.botUserId && a.conversationId && a.text.trim()),
+      )
+    ) {
+      setPostError("Choose a bot and a channel, and write what it posts.");
       return;
     }
 
@@ -190,18 +357,42 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
           }
         : undefined;
 
-    const mappedActions: { commandId: string; args: unknown }[] = [];
+    const unsaved = new Map<ActionDraft, Record<string, string>>();
+    const savedArgs = new Map<ActionDraft, unknown>();
     for (const a of validActions) {
-      let args: unknown = undefined;
-      if (a.args.trim()) {
-        try {
-          args = JSON.parse(a.args);
-        } catch {
-          // Do not save with the args silently dropped.
-          toast.error(`Invalid JSON in args for action "${a.commandId}"`);
-          return;
-        }
+      if (a.kind !== "command") continue;
+      const command = commandsById.get(a.commandId.trim());
+      const form = actionForm(command, a.saved, a.edited, a.removed, triggerKind);
+      const result = actionArgs(command, form, serverId);
+      if (result.ok) savedArgs.set(a, result.args);
+      else unsaved.set(a, result.problems);
+    }
+    if (unsaved.size > 0) {
+      setActions((prev) =>
+        prev.map((a) => (unsaved.has(a) ? { ...a, problems: unsaved.get(a)! } : a)),
+      );
+      toast.error("Fix the actions marked in red before saving.");
+      return;
+    }
+
+    const mappedActions: PipelineActionInput[] = [];
+    for (const a of validActions) {
+      if (a.kind === "post") {
+        mappedActions.push(
+          !mayEditPosts
+            ? { commandId: POST_AS_BOT_COMMAND, args: a.listedArgs }
+            : {
+                commandId: POST_AS_BOT_COMMAND,
+                postAsBot: {
+                  botUserId: a.botUserId,
+                  conversationId: a.conversationId,
+                  text: a.text,
+                },
+              },
+        );
+        continue;
       }
+      const args = savedArgs.get(a);
       mappedActions.push({ commandId: a.commandId.trim(), args });
     }
 
@@ -235,7 +426,9 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       }
       onSave();
     } catch (err: unknown) {
-      toast.error(graphqlErrorMessage(err, "Failed to save pipeline"));
+      const message = graphqlErrorMessage(err, "Failed to save pipeline");
+      if (message.includes("Post as bot")) setPostError(message);
+      else toast.error(message);
     }
   }, [
     name,
@@ -247,6 +440,8 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
     actions,
     allCommands,
     pickerCommands,
+    commandsById,
+    mayEditPosts,
     initial,
     serverId,
     createPipeline,
@@ -255,6 +450,11 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
   ]);
 
   const isSaving = createPipeline.isPending || updatePipeline.isPending;
+  const offersPost =
+    mayEditPosts &&
+    botsFeatureEnabled(info) &&
+    triggerKind === PipelineTriggerKindGql.MEMBER_JOINED;
+  const firstPostIndex = actions.findIndex((a) => a.kind === "post");
 
   return (
     <div className="space-y-5">
@@ -398,18 +598,54 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-sm font-medium text-rim-text">Actions ({actions.length}/10)</label>
-          <button
-            type="button"
-            onClick={addAction}
-            disabled={actions.length >= 10}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rim-accent transition hover:bg-rim-accent/10 disabled:opacity-40"
-          >
-            <Plus className="h-3 w-3" /> Add action
-          </button>
+          <div className="flex flex-wrap justify-end gap-1">
+            {offersPost && (
+              <button
+                type="button"
+                onClick={addPostAction}
+                disabled={actions.length >= 10}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rim-accent transition hover:bg-rim-accent/10 disabled:opacity-40"
+              >
+                <Plus className="h-3 w-3" /> Post as bot
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={addAction}
+              disabled={actions.length >= 10}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rim-accent transition hover:bg-rim-accent/10 disabled:opacity-40"
+            >
+              <Plus className="h-3 w-3" /> Add action
+            </button>
+          </div>
         </div>
         <p className="mb-2 text-xs text-rim-text-muted">{ACTIONS_NOTE}</p>
         <div className="space-y-2">
           {actions.map((action, index) => {
+            if (action.kind === "post") {
+              return (
+                <PostAsBotFields
+                  key={index}
+                  serverId={serverId}
+                  index={index}
+                  action={action}
+                  lockedNote={
+                    mayEditPosts
+                      ? null
+                      : canModerate
+                        ? "This workspace's server doesn't let this app change it. You can keep it or remove it."
+                        : "Only an Owner or Moderator can change this. You can keep it or remove it."
+                  }
+                  triggerFits={triggerKind === PipelineTriggerKindGql.MEMBER_JOINED}
+                  error={index === firstPostIndex ? postError : null}
+                  onChange={(next) => {
+                    setPostError(null);
+                    updatePost(index, next);
+                  }}
+                  onRemove={() => removeAction(index)}
+                />
+              );
+            }
             const warning = actionWarning(commandsById.get(action.commandId));
             return (
               <div
@@ -420,7 +656,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
                 <div className="flex-1 space-y-2">
                   <CommandIdInput
                     value={action.commandId}
-                    onChange={(v) => updateAction(index, "commandId", v)}
+                    onChange={(v) => updateAction(index, v)}
                     commands={actionCommands}
                     error={
                       warning
@@ -429,12 +665,13 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
                     }
                   />
                   {warning && <p className="text-xs text-rim-danger">{warning}</p>}
-                  <input
-                    type="text"
-                    value={action.args}
-                    onChange={(e) => updateAction(index, "args", e.target.value)}
-                    placeholder='{"key": "value"} (optional)'
-                    className="w-full rounded border border-rim-line bg-rim-panel px-2 py-1.5 font-mono text-xs text-rim-text-muted outline-none focus:border-rim-accent"
+                  <ActionArguments
+                    action={action}
+                    command={commandsById.get(action.commandId.trim())}
+                    loaded={allCommands !== undefined}
+                    triggerKind={triggerKind}
+                    serverId={serverId}
+                    onEdit={(change) => editAction(index, change)}
                   />
                 </div>
                 <button
@@ -472,7 +709,7 @@ function PipelineEditor({ initial, serverId, onSave, onCancel }: PipelineEditorP
           type="button"
           onClick={handleSave}
           disabled={isSaving || !name.trim()}
-          className="rounded-lg bg-rim-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:opacity-50"
+          className="rounded-lg bg-rim-text px-4 py-2 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
         >
           {isSaving ? "Saving..." : "Save"}
         </button>
@@ -492,13 +729,31 @@ function triggerLabel(kind: PipelineTriggerKindGql): string {
   return TRIGGER_OPTIONS.find((o) => o.value === kind)?.label ?? kind;
 }
 
+/**
+ * What a pipeline's Post as bot actions do, for the list. Every member sees it, with a channel they
+ * can't see named only as that.
+ *
+ * @param serverId - The workspace.
+ * @param posts - The pipeline's Post as bot actions.
+ */
+function PipelinePosts({ serverId, posts }: { serverId: string; posts: PostAsBot[] }) {
+  const names = usePostAsBotNames(serverId);
+  return (
+    <div className="mt-1 space-y-1">
+      {posts.map((post, index) => (
+        <PostAsBotSummary key={index} action={post} names={names} />
+      ))}
+    </div>
+  );
+}
+
 export function PipelineSettings() {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const currentUserId = useAuthStore((s) => s.session?.userId);
   const canModerate = useCanModerate(workspaceId ?? undefined);
   const { data: pipelines, isLoading, isError } = usePipelines(workspaceId ?? undefined);
   const deletePipeline = useDeletePipelineMutation();
-  const togglePipeline = useTogglePipelineMutation();
+  const hasPostAsBot = useSpaceHasCapability(workspaceId, PIPELINE_POST_AS_BOT);
   const pipelineLimit = limitView(
     useServerInfo().limits?.pipelinesPerWorkspace,
     pipelines?.length,
@@ -522,17 +777,10 @@ export function PipelineSettings() {
     [deletePipeline, workspaceId],
   );
 
-  const handleToggle = useCallback(
-    async (pipelineId: string, enabled: boolean) => {
-      if (!workspaceId) return;
-      try {
-        await togglePipeline.mutateAsync({ pipelineId, enabled, serverId: workspaceId });
-      } catch (err: unknown) {
-        toast.error(graphqlErrorMessage(err, "Failed to toggle pipeline"));
-      }
-    },
-    [togglePipeline, workspaceId],
-  );
+  /** Runs `app.toggle_pipeline` on a pipeline, as the palette's command does. */
+  const handleToggle = useCallback((pipelineId: string) => {
+    void runCommandFromClick("app.toggle_pipeline", { pipeline_id: pipelineId });
+  }, []);
 
   if (editing !== null) {
     const isNew = editing === "new";
@@ -544,6 +792,7 @@ export function PipelineSettings() {
         <PipelineEditor
           initial={isNew ? undefined : editing}
           serverId={workspaceId ?? ""}
+          hasPostAsBot={hasPostAsBot}
           onSave={() => setEditing(null)}
           onCancel={() => setEditing(null)}
         />
@@ -559,7 +808,7 @@ export function PipelineSettings() {
           type="button"
           onClick={() => setEditing("new")}
           disabled={pipelineLimit?.full}
-          className="flex items-center gap-1 rounded-lg bg-rim-accent px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rim-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center gap-1 rounded-lg bg-rim-text px-3 py-1.5 text-sm font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-4 w-4" /> New Pipeline
         </button>
@@ -610,13 +859,19 @@ export function PipelineSettings() {
                     </span>
                   )}
                 </div>
+                {workspaceId && pipeline.actions.some((a) => postAsBotOf(a)) && (
+                  <PipelinePosts
+                    serverId={workspaceId}
+                    posts={pipeline.actions.flatMap((a) => postAsBotOf(a) ?? [])}
+                  />
+                )}
               </div>
               {/* Only the creator, an Owner or a Moderator may change a pipeline. */}
               {(canModerate || pipeline.createdBy === currentUserId) && (
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => handleToggle(pipeline.id, !pipeline.enabled)}
+                    onClick={() => handleToggle(pipeline.id)}
                     title={pipeline.enabled ? "Disable pipeline" : "Enable pipeline"}
                     className={cn(
                       "rounded-md p-1.5 transition",

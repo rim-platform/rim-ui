@@ -74,8 +74,17 @@ export const queryKeys = {
   // `["userCommands"]` prefix covers both.
   userCommands: ["userCommands"] as const,
   userCommand: (id?: string | null) => ["userCommands", "byId", id ?? null] as const,
+  // The account's macros with every field of their steps, read from the home server.
+  accountMacros: ["userCommands", "account"] as const,
+  // Every built-in and app command a macro step may name, as the home server lists them.
+  macroStepCommands: ["macroStepCommands"] as const,
+  // The workspace macros that stayed in their workspace when the account's macros moved.
+  macroMovesStayed: (userId?: string) => ["macroMovesStayed", userId ?? null] as const,
   searchMessages: (workspaceId?: string, conversationId?: string, query?: string) =>
     ["searchMessages", workspaceId, conversationId, query] as const,
+  // The search box's first page of one workspace's matches, in the all-workspaces scope.
+  searchBoxMessages: (workspaceId: string, query: string) =>
+    ["searchBoxMessages", workspaceId, query] as const,
   // Hits from the desktop app's local search index. Keyed by the signed-in user, as the cache
   // is per account.
   localSearchMessages: (
@@ -87,6 +96,10 @@ export const queryKeys = {
   pinnedMessages: (workspaceId?: string, conversationId?: string) =>
     ["pinnedMessages", workspaceId, conversationId] as const,
   customEmojis: (serverId?: string) => ["customEmojis", serverId] as const,
+  bots: (serverId?: string) => ["bots", serverId] as const,
+  botTokens: (botUserId?: string) => ["botTokens", botUserId] as const,
+  incomingWebhooks: (serverId?: string) => ["incomingWebhooks", serverId] as const,
+  webhookFormats: (serverId?: string) => ["webhookFormats", serverId] as const,
   plugins: () => ["plugins"] as const,
   // One plugin's settings form, apart from the list so reloading the list leaves an open form alone.
   pluginSettings: (pluginId: string) => ["pluginSettings", pluginId] as const,
@@ -104,23 +117,49 @@ export const queryKeys = {
     ["lensMessages", workspaceId, conversationId, lensId] as const,
   keybinds: (scope?: string, workspaceId?: string) => ["keybinds", scope, workspaceId] as const,
   unreadCounts: (workspaceId?: string) => ["unreadCounts", workspaceId] as const,
+  /** Everything the Unreads page has read of one conversation, or of a whole workspace. */
+  unreadGroupMessagesOf: (workspaceId: string, conversationId?: string) =>
+    (conversationId
+      ? ["unreadGroupMessages", workspaceId, conversationId]
+      : ["unreadGroupMessages", workspaceId]) as readonly string[],
+  /** One Unreads group's messages after `marker`, from the server or this device's store. */
+  unreadGroupMessages: (
+    workspaceId: string,
+    conversationId: string,
+    marker: string,
+    source: "server" | "store",
+  ) => ["unreadGroupMessages", workspaceId, conversationId, marker, source] as const,
+  /** Which conversations of a workspace are muted, as the Unreads page reads it for each one. */
+  unreadsMuted: (workspaceId: string) => ["unreadsMuted", workspaceId] as const,
   mutedConversations: (workspaceId?: string) => ["mutedConversations", workspaceId] as const,
   workspaceState: (serverId?: string, scope?: string, key?: string) =>
     ["workspaceState", serverId, scope ?? "SERVER", key] as const,
   workspaceStateList: (serverId?: string, scope?: string, prefix?: string) =>
     ["workspaceStateList", serverId, scope ?? "SERVER", prefix] as const,
   pipelines: (serverId?: string) => ["pipelines", serverId] as const,
-  listAuditLog: (serverId?: string, actorUserId?: string, typedVerb?: string, after?: string) =>
+  listAuditLog: (
+    serverId?: string,
+    actorUserId?: string,
+    typedVerb?: string,
+    after?: string,
+    runId?: string,
+  ) =>
     [
       "listAuditLog",
       serverId ?? null,
       actorUserId ?? null,
       typedVerb ?? null,
       after ?? null,
+      runId ?? null,
     ] as const,
   serverConfig: () => ["serverConfig"] as const,
   // The server's release and API version; read once per session.
   serverInfo: ["serverInfo"] as const,
+  // The account's Home layout as its home server keeps it.
+  homeLayout: ["homeLayout"] as const,
+  hostCapabilities: (hostServerId: string) => ["hostCapabilities", hostServerId] as const,
+  spaceCapability: (spaceId: string | undefined, capability: string) =>
+    ["spaceCapability", spaceId, capability] as const,
   // When the signed-in account's probation ends; under `me` so a refresh of the account covers it.
   probation: (userId?: string) => ["me", "probation", userId] as const,
   // Until when the operators locked the signed-in account's profile. Its own root, so a refresh
@@ -136,6 +175,7 @@ export const queryKeys = {
   notificationSettings: (serverId?: string) => ["notificationSettings", serverId] as const,
   notifications: (serverId?: string, unreadOnly?: boolean) =>
     ["notifications", serverId, unreadOnly ?? false] as const,
+  homeMentions: (serverId: string) => ["notifications", serverId, "home"] as const,
   unreadNotificationCount: (serverId?: string) => ["unreadNotificationCount", serverId] as const,
   // The relay: contacts, the people the caller blocked, the DM request inbox (keyed by status
   // filter; the `["dmRequests"]` prefix covers every list) and a person's identity as their relay
@@ -179,6 +219,8 @@ export const VOLATILE_WORKSPACE_KEY_ROOTS = [
   "lenses",
   "lensMessages",
   "unreadCounts",
+  "unreadGroupMessages",
+  "unreadsMuted",
   "mutedConversations",
   "workspacePresence",
   "serverMembers",

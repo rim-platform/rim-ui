@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { AuthorBan } from "../utils/banStatus";
 import type { PresenceStatus } from "./Avatar";
+import type { BotInfo } from "../../core/graphql/generated/schema-types";
 import type { HandleView } from "../utils/handles";
 import { UserCardContent } from "./UserCardContent";
 import { contextMenuOpen, subscribeContextMenus } from "./contextMenu/useContextMenu";
@@ -19,6 +20,10 @@ interface UserHoverCardProps {
   avatarUrl?: string | null;
   statusText?: string | null;
   role?: string;
+  /** The person is a bot: the card shows what its adder says and offers no message or block. */
+  isBot?: boolean;
+  /** What the person who added a bot says about it. */
+  bot?: BotInfo | null;
   joinedAt?: string;
   bio?: string | null;
   presenceStatus?: PresenceStatus | null;
@@ -40,6 +45,8 @@ export function UserHoverCard({
   avatarUrl,
   statusText,
   role,
+  isBot,
+  bot,
   joinedAt,
   bio,
   presenceStatus,
@@ -198,6 +205,8 @@ export function UserHoverCard({
               avatarUrl={avatarUrl}
               statusText={statusText}
               role={role}
+              isBot={isBot}
+              bot={bot}
               joinedAt={joinedAt}
               bio={bio}
               presenceStatus={presenceStatus}

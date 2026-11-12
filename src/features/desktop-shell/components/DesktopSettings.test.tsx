@@ -16,7 +16,7 @@ import { toast } from "../../../shared/toast";
 import { DesktopSettings } from "./DesktopSettings";
 
 const NO_TRAY =
-  "Your desktop doesn't show tray icons. RIM keeps running; open RIM again to bring the window back.";
+  "Your desktop has no tray, so RIM can't stay in one. On GNOME, the AppIndicator extension adds it.";
 const START_AT_LOGIN = "Start RIM when I sign in to this computer";
 const APP_IMAGE_SENTENCE =
   "If you move the RIM AppImage, open it once so it starts from the new place.";
@@ -126,10 +126,25 @@ describe("DesktopSettings", () => {
     expect(screen.queryByText(NO_TRAY)).not.toBeInTheDocument();
   });
 
-  it("shows the no-tray sentence", async () => {
+  it("disables the tray option and ties the reason to the select with no tray", async () => {
     trayAvailable = false;
     render(<DesktopSettings />);
-    expect(await screen.findByText(NO_TRAY)).toBeInTheDocument();
+    const reason = await screen.findByText(NO_TRAY);
+    const select = screen.getByRole("combobox", { name: "When I close the window" });
+    expect(select).toHaveAccessibleDescription(NO_TRAY);
+    expect(reason).toHaveAttribute("id", select.getAttribute("aria-describedby"));
+    expect(screen.getByRole("option", { name: "Keep running in the tray" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "Ask" })).toBeEnabled();
+  });
+
+  it("shows a saved tray choice as saved and says closing asks instead", async () => {
+    trayAvailable = false;
+    stored = "tray";
+    render(<DesktopSettings />);
+    expect(await screen.findByText(/closing the window asks what to do instead/)).toBeVisible();
+    const select = screen.getByRole("combobox", { name: "When I close the window" });
+    await waitFor(() => expect(select).toHaveValue("tray"));
+    expect(screen.getByRole("option", { name: "Keep running in the tray" })).toBeEnabled();
   });
 
   it("disables the start-at-login switch until the state is read", async () => {

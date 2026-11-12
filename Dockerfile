@@ -100,7 +100,7 @@ server {
         add_header Access-Control-Allow-Origin "*" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "no-referrer" always;
-        add_header Content-Security-Policy "default-src 'none'; script-src 'self' rim-plugin://shell blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self' rim-plugin://shell blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src 'self' blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
     }
 
     # SPA fallback — all routes serve index.html

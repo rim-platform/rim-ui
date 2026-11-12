@@ -87,6 +87,23 @@ impl DesktopShell {
         let mut current = self.lock_settings();
         let next = DesktopSettings {
             close_action: action,
+            ..*current
+        };
+        settings::save(&self.settings_path, &next)?;
+        *current = next;
+        Ok(())
+    }
+
+    fn agents_enabled(&self) -> bool {
+        self.lock_settings().agents_enabled
+    }
+
+    /// Saves whether agents may connect, and takes it into use once it is on disk.
+    fn set_agents_enabled(&self, enabled: bool) -> Result<(), String> {
+        let mut current = self.lock_settings();
+        let next = DesktopSettings {
+            agents_enabled: enabled,
+            ..*current
         };
         settings::save(&self.settings_path, &next)?;
         *current = next;
@@ -155,10 +172,13 @@ enum CloseDecision {
     AskPage,
 }
 
-fn close_decision(action: CloseAction) -> CloseDecision {
+/// What a close request does for `action`. With no tray host a window that hid could not be
+/// brought back, so the tray setting asks instead.
+fn close_decision(action: CloseAction, tray_host: bool) -> CloseDecision {
     match action {
         CloseAction::Ask => CloseDecision::AskPage,
-        CloseAction::Tray => CloseDecision::HideToTray,
+        CloseAction::Tray if tray_host => CloseDecision::HideToTray,
+        CloseAction::Tray => CloseDecision::AskPage,
         CloseAction::Quit => CloseDecision::Proceed,
     }
 }
@@ -203,7 +223,9 @@ pub(crate) fn on_close_requested<R: Runtime>(window: &Window<R>, api: &CloseRequ
     let Some(shell) = app.try_state::<DesktopShell>() else {
         return;
     };
-    match close_decision(shell.close_action()) {
+    let action = shell.close_action();
+    let tray_host = action != CloseAction::Tray || tray_available(&shell);
+    match close_decision(action, tray_host) {
         CloseDecision::Proceed => {}
         CloseDecision::HideToTray => {
             api.prevent_close();
@@ -264,6 +286,28 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     tray::sync_after_showing_window(app);
 }
 
+/// Whether the setting lets agents on this computer connect.
+pub(crate) fn agents_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<DesktopShell>()
+        .is_some_and(|shell| shell.agents_enabled())
+}
+
+/// Saves whether agents on this computer may connect.
+///
+/// # Errors
+///
+/// A message when the setting could not be saved; it then stays as it was.
+///
+/// # Panics
+///
+/// When the desktop shell has not been set up.
+pub(crate) fn save_agents_enabled<R: Runtime>(
+    app: &AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    app.state::<DesktopShell>().set_agents_enabled(enabled)
+}
+
 /// Asks for focus again shortly after a show. On Linux the show is queued, and a request for focus
 /// does nothing while the window is still hidden.
 #[cfg(target_os = "linux")]
@@ -302,6 +346,11 @@ fn tray_host_present() -> bool {
 #[cfg(not(target_os = "linux"))]
 fn tray_host_present() -> bool {
     true
+}
+
+/// Whether the tray icon can show: the icon did not fail to build and a host is on the bus.
+fn tray_available(shell: &DesktopShell) -> bool {
+    !shell.tray_failed() && tray_host_present()
 }
 
 /// The current close setting.
@@ -436,9 +485,28 @@ mod tests {
 
     #[test]
     fn each_setting_has_its_close_decision() {
-        assert_eq!(close_decision(CloseAction::Ask), CloseDecision::AskPage);
-        assert_eq!(close_decision(CloseAction::Tray), CloseDecision::HideToTray);
-        assert_eq!(close_decision(CloseAction::Quit), CloseDecision::Proceed);
+        for host in [true, false] {
+            assert_eq!(
+                close_decision(CloseAction::Ask, host),
+                CloseDecision::AskPage
+            );
+            assert_eq!(
+                close_decision(CloseAction::Quit, host),
+                CloseDecision::Proceed
+            );
+        }
+        assert_eq!(
+            close_decision(CloseAction::Tray, true),
+            CloseDecision::HideToTray
+        );
+    }
+
+    #[test]
+    fn the_tray_setting_asks_when_no_host_could_show_the_icon() {
+        assert_eq!(
+            close_decision(CloseAction::Tray, false),
+            CloseDecision::AskPage
+        );
     }
 
     #[test]
@@ -480,6 +548,27 @@ mod tests {
         first.set_close_action(CloseAction::Tray).unwrap();
         assert_eq!(first.close_action(), CloseAction::Tray);
         assert_eq!(shell(&dir).close_action(), CloseAction::Tray);
+    }
+
+    #[test]
+    fn saving_the_close_action_keeps_agents_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = shell(&dir);
+        first.set_agents_enabled(true).unwrap();
+        first.set_close_action(CloseAction::Tray).unwrap();
+        assert!(first.agents_enabled());
+        let reloaded = shell(&dir);
+        assert!(reloaded.agents_enabled());
+        assert_eq!(reloaded.close_action(), CloseAction::Tray);
+    }
+
+    #[test]
+    fn saving_agents_enabled_keeps_the_close_action() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = shell(&dir);
+        first.set_close_action(CloseAction::Quit).unwrap();
+        first.set_agents_enabled(true).unwrap();
+        assert_eq!(shell(&dir).close_action(), CloseAction::Quit);
     }
 
     #[test]

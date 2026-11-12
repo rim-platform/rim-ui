@@ -24,6 +24,8 @@ pub(crate) enum CloseAction {
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct DesktopSettings {
     pub(crate) close_action: CloseAction,
+    /// Whether agents on this computer may reach the app through the agent bridge.
+    pub(crate) agents_enabled: bool,
 }
 
 /// Reads the settings at `path`. A missing, unreadable or malformed file, or an unknown
@@ -79,6 +81,7 @@ mod tests {
 
     const TRAY: DesktopSettings = DesktopSettings {
         close_action: CloseAction::Tray,
+        agents_enabled: false,
     };
 
     fn settings_file(contents: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -139,6 +142,26 @@ mod tests {
         let (_dir, path) = settings_file(r#"{ "closeAction": "quit" }"#);
         save(&path, &TRAY).unwrap();
         assert_eq!(load(&path), TRAY);
+    }
+
+    #[test]
+    fn loads_with_agents_off_when_the_field_is_missing() {
+        let (_dir, path) = settings_file(r#"{ "closeAction": "quit" }"#);
+        assert!(!load(&path).agents_enabled);
+    }
+
+    #[test]
+    fn saves_and_loads_agents_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desktop-settings.json");
+        let settings = DesktopSettings {
+            agents_enabled: true,
+            ..TRAY
+        };
+        save(&path, &settings).unwrap();
+        assert_eq!(load(&path), settings);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains(r#""agentsEnabled": true"#), "{raw}");
     }
 
     #[test]

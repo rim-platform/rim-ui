@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 import { createTestQueryClient } from "../../../test/utils";
+import {
+  clearServedCommands,
+  commandSucceeded,
+  sentCommands,
+  serveCommands,
+} from "../../../test/clickCommands";
+import { queryClient } from "../../../core/query/queryClient";
 import { fakeServerInfo } from "../../../test/serverInfo";
 import { expectReachableByKeyboard } from "../../../test/keyboard";
 import {
@@ -35,7 +42,17 @@ vi.mock("../../commands/hooks/useKeybindLabel", () => ({ useKeybindLabel: () => 
 const prefetch = vi.hoisted(() => ({ usePrefetchMessages: vi.fn() }));
 vi.mock("../../../core/events/usePrefetchMessages", () => prefetch);
 
+vi.mock("../../commands/runtime/runFromClick", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../commands/runtime/runFromClick")>();
+  return { ...actual, runCommandFromClick: vi.fn(actual.runCommandFromClick) };
+});
+
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { useUnreadStore } from "../state/useUnreadStore";
+import { useConversationDialogStore } from "../state/useConversationDialogStore";
+import { ConversationCommandHost } from "./ConversationCommandHost";
 import { ConversationList } from "./ConversationList";
+import { ConversationSelectionRuntime } from "./ConversationSelectionRuntime";
 
 const general = makeConversation({ id: "c-general", title: "general", memberCount: 12 });
 const secret = makeConversation({ id: "c-secret", title: "secret", isPrivate: true });
@@ -80,14 +97,16 @@ function serve(
   });
 }
 
-function renderList(defaultWorkspace?: string) {
-  const qc = createTestQueryClient();
+/** Renders the list; `qc` is the cache it reads, a fresh one unless given. */
+function renderList(defaultWorkspace?: string, qc: QueryClient = createTestQueryClient()) {
   if (defaultWorkspace) {
     qc.setQueryData(queryKeys.serverInfo, fakeServerInfo({}, { defaultWorkspace }));
   }
   render(
     <QueryClientProvider client={qc}>
-      <ConversationList onNewChannel={vi.fn()} />
+      <ConversationSelectionRuntime />
+      <ConversationList />
+      <ConversationCommandHost />
     </QueryClientProvider>,
   );
   return qc;
@@ -103,6 +122,7 @@ describe("ConversationList — channels sidebar", () => {
   });
 
   afterEach(() => {
+    useConversationDialogStore.getState().closeBrowseChannels();
     useWorkspaceStore.setState({ workspaceId: null });
     useAuthStore.setState({ session: null });
     useRelayStore.getState().reset();
@@ -285,7 +305,15 @@ describe("ConversationList — channels sidebar", () => {
 
   it("browse lists channels with member counts, joins one and navigates to it", async () => {
     serve();
-    renderList();
+    const route = requestMock.getMockImplementation()!;
+    requestMock.mockImplementation((document: unknown, variables?: Record<string, unknown>) =>
+      String(document).includes("mutation ExecuteCommand")
+        ? Promise.resolve(commandSucceeded())
+        : route(document, variables),
+    );
+    serveCommands("ws-1", ["chat.join_channel"]);
+    // The app's own cache, which the join's effect refreshes.
+    renderList(undefined, queryClient);
     fireEvent.click(await screen.findByRole("button", { name: "Browse channels" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Browse channels" });
@@ -300,8 +328,12 @@ describe("ConversationList — channels sidebar", () => {
     fireEvent.click(within(randomRow).getByRole("button", { name: "Join random" }));
 
     await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-random"));
-    expect(callsTo(requestMock, "mutation JoinChannel")).toEqual([
-      { serverId: "ws-1", conversationId: "c-random" },
+    expect(sentCommands(requestMock)).toEqual([
+      {
+        commandId: "chat.join_channel",
+        args: { server_id: "ws-1", conversation_id: "c-random" },
+        commandContext: { workspaceId: "ws-1", conversationId: "c-random" },
+      },
     ]);
     expect(screen.queryByRole("dialog", { name: "Browse channels" })).not.toBeInTheDocument();
     // The joined list is refetched so the channel lands in the sidebar.
@@ -312,6 +344,8 @@ describe("ConversationList — channels sidebar", () => {
         ).length,
       ).toBeGreaterThan(1),
     );
+    clearServedCommands();
+    queryClient.clear();
   });
 
   it("Open on a joined channel navigates without joining", async () => {
@@ -435,5 +469,114 @@ describe("ConversationList — guest gate", () => {
     serveAs(ServerMemberRoleGql.OWNER);
     renderList("ws-1");
     expect(await screen.findByRole("button", { name: "New channel" })).toBeInTheDocument();
+  });
+});
+
+describe("ConversationList — navigation drawer", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+    useShellStore.getState().reset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+    useShellStore.getState().reset();
+  });
+
+  it("closes the drawer when the conversation already open is chosen again", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: "c-general", navDrawerOpen: true });
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByText("general"));
+    expect(useShellStore.getState().navDrawerOpen).toBe(false);
+  });
+
+  it("does not close the drawer when the first conversation opens by itself", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: null, navDrawerOpen: true });
+    renderList();
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+    expect(useShellStore.getState().navDrawerOpen).toBe(true);
+  });
+
+  it("opens the first conversation with no list mounted", async () => {
+    serve();
+    useShellStore.setState({ selectedConversationId: null });
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <ConversationSelectionRuntime />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(useShellStore.getState().selectedConversationId).toBe("c-general"));
+  });
+});
+
+describe("ConversationList — the commands its controls run", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+    vi.mocked(runCommandFromClick).mockClear();
+    useShellStore.getState().reset();
+    useShellStore.setState({ selectedConversationId: "c-general" });
+    useWorkspaceStore.setState({ workspaceId: "ws-1" });
+    useAuthStore.setState({ session: { userId: "me" } });
+  });
+
+  afterEach(() => {
+    useConversationDialogStore.getState().closeBrowseChannels();
+    useUnreadStore.setState({ counts: {}, spaceOf: {} });
+    useWorkspaceStore.setState({ workspaceId: null });
+    useAuthStore.setState({ session: null });
+  });
+
+  it("opens Unreads, Browse channels and New channel through their commands, on this device", async () => {
+    const user = userEvent.setup();
+    serve();
+    useUnreadStore.getState().setCounts("ws-1", { "c-secret": 2 });
+    renderList();
+
+    await user.click(await screen.findByRole("button", { name: /^Unreads/ }));
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "unreads" });
+    await user.click(screen.getByRole("button", { name: "Browse channels" }));
+    expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
+    act(() => useConversationDialogStore.getState().closeBrowseChannels());
+    await user.click(await screen.findByRole("button", { name: "New channel" }));
+    expect(useShellStore.getState()).toMatchObject({
+      showNewChannelDialog: true,
+      mainSurface: { kind: "conversation" },
+    });
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["workspace.open_unreads", undefined, { source: "button" }],
+      ["chat.browse_channels", undefined, { source: "button" }],
+      ["chat.create_channel", undefined, { source: "button" }],
+    ]);
+    expect(callsTo(requestMock, "mutation ExecuteCommand")).toEqual([]);
+  });
+
+  it("runs the Channels header menu's items as menu commands", async () => {
+    serve();
+    renderList();
+    await screen.findByText("general");
+    await waitFor(() => {
+      fireEvent.contextMenu(screen.getByText("Channels"));
+      expect(screen.getByRole("menuitem", { name: "Create channel…" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Browse channels…" }));
+    fireEvent.contextMenu(screen.getByText("Channels"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create channel…" }));
+
+    expect(vi.mocked(runCommandFromClick).mock.calls).toEqual([
+      ["chat.browse_channels", undefined, { source: "menu" }],
+      ["chat.create_channel", undefined, { source: "menu" }],
+    ]);
+    expect(await screen.findByRole("dialog", { name: "Browse channels" })).toBeInTheDocument();
   });
 });

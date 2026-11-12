@@ -13,13 +13,16 @@ import {
   type CloseAction,
   type StartAtLogin,
 } from "../api/desktopShell";
-import { NO_TRAY_SENTENCE } from "./noTraySentence";
+import { NO_TRAY_SAVED_SENTENCE, NO_TRAY_SENTENCE } from "./noTraySentence";
 
 const CLOSE_OPTIONS: { value: CloseAction; label: string }[] = [
   { value: "ask", label: "Ask" },
   { value: "tray", label: "Keep running in the tray" },
   { value: "quit", label: "Quit RIM" },
 ];
+
+/** The id of the sentence that says why the tray is not on offer. */
+const NO_TRAY_ID = "desktop-no-tray";
 
 const START_AT_LOGIN_LABEL = "Start RIM when I sign in to this computer";
 
@@ -143,14 +146,24 @@ export function DesktopSettings() {
         <DeviceSelect
           value={action ?? "ask"}
           onChange={change}
-          options={CLOSE_OPTIONS}
+          options={CLOSE_OPTIONS.map((option) =>
+            option.value === "tray" && !trayAvailable && action !== "tray"
+              ? { ...option, disabled: true }
+              : option,
+          )}
+          describedBy={trayAvailable ? undefined : NO_TRAY_ID}
           label="When I close the window"
           description="In the tray, RIM keeps getting messages and notifications."
           disabled={action === null}
         />
         <StartAtLoginRow />
       </div>
-      {!trayAvailable && <p className="text-sm text-rim-text-muted">{NO_TRAY_SENTENCE}</p>}
+      {!trayAvailable && (
+        <p id={NO_TRAY_ID} className="text-sm text-rim-text-muted">
+          {NO_TRAY_SENTENCE}
+          {action === "tray" && ` ${NO_TRAY_SAVED_SENTENCE}`}
+        </p>
+      )}
     </div>
   );
 }

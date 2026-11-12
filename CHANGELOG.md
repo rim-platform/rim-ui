@@ -24,6 +24,145 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Agent sessions in the desktop app: **Browse…** picks a session's folder in the system's folder
+  dialog; the session's header offers the agent's model and its other settings, and remembers the
+  model per agent; a notice with **Open** says when an agent finishes or waits while you're
+  elsewhere in RIM; and an **Agent sessions** box on Home and a top bar button, which counts the
+  sessions waiting for you, list them, running ones first.
+- The AI agent's header switches the model in the open conversation: it lists the models of
+  every provider with a key set, the conversation carries on with the new model, and "Switched
+  to \<model\>" marks where it changed.
+- Settings → Agents installs Claude Code, Codex, Gemini CLI, opencode and Goose for you, with
+  one confirmation, keeps them up to date and removes their files, shows how big each one is
+  before it downloads and how much space they use, and signs you in to them: in a terminal, in
+  your browser or by naming the variables to set. A session that finds its agent signed out
+  offers **Sign in** and **Try again**.
+- **Connect an agent** in Settings → Agents, and the **Connect an Agent…** command, connect Codex,
+  opencode, Gemini CLI, Cursor, VS Code or any other MCP tool to the desktop app without a helper:
+  name it, and RIM shows its address, its token and a ready-made setup for that tool, once.
+- Command forms pick more for you: a workspace state key comes from the workspace's keys with
+  their current values, a value to store gets its kind (Text, Number, Yes/No or JSON), a macro
+  step can name the workspace to switch to, the macro to run and the pipeline to turn on or off
+  from lists, a topic can be cleared with **No topic**, and choices such as a mute's length or a
+  scope read as they do elsewhere in the app ("Until I unmute it", "Only me").
+- **Agents RIM can start** in Settings → Agents, in the desktop app: add Claude Code, Codex,
+  Gemini CLI, opencode, Goose or another Agent Client Protocol program, each confirmed in a system
+  dialog with its exact command line, and RIM connects an agent for it with nothing granted. RIM
+  never installs one: a program it can't find shows how to install it and sign in.
+- **Agent sessions**, in the desktop app: start one of your agent programs in a folder, tell it
+  what to do, follow its answers, tool calls, diffs and plan as it works, approve or refuse each
+  step it asks about, and cancel or stop it. Desktop notifications say when it waits for you or
+  finishes. RIM keeps no transcripts; recent sessions reopen when the agent supports it.
+- Command forms pick times as choices: a ban's end, a mute, a notifications pause, a timeout and
+  a state entry's expiry offer their presets, a length in minutes, hours or days and, where it
+  fits, a date and time, so a macro step saved as "For 2 hours" counts from each run. The form a
+  command opens to ask for arguments starts with the current topic, slow mode, posting rule or
+  notification level, folds optional arguments under **More options**, and a macro's own form
+  asks each step with the same fields as its editor, a cleared topic included.
+- **Ask agent…** on a message, and **Ask agent about #channel** on a channel, in the desktop app:
+  pick a running agent session or start one, let the agent read that channel if it can't yet, and
+  write your question; the agent reads the channel or the message itself, under what you let it
+  read. When an agent in a session is refused a channel it can't read, the session offers
+  **Let it read #channel**.
+- Command forms pick people and conversations from fitting lists: the members of a new group or
+  channel, or people to invite, by name as chips; Unban lists the people banned, Clear Timeout
+  those timed out and Remove Member the conversation's members; a step that archives, unarchives,
+  joins or leaves offers only the conversations it can act on, Navigate to DM your direct
+  messages, and a reaction opens the emoji picker. Add to Contacts, Remove from Contacts and Block
+  can name the person in a keybind or macro step.
+- A macro step that takes a channel now also offers the public channels of the workspace you have
+  not joined, so a macro can join them and set their notifications, and a step's message text can
+  have several lines (Ctrl+Enter or Cmd+Enter sends it from a form).
+- **Upgrade:** with a server that keeps your macros as your own commands (rim-server listing
+  `account_macros`), a macro is your own command made of commands, and every macro is a command:
+  it shows under Macro in the palette, the keybind picker, Home quick boxes and the composer's `/`
+  list in every workspace, on this server or another, and a key to it follows you there. The app
+  runs it step by step: one form first asks for every argument the steps ask for, each server step
+  goes to the workspace's server with its own confirmation, app and plugin steps run in the app,
+  and the first step that fails stops the rest with "Step \<n\> (\<command\>) failed". A plugin
+  never runs your macros.
+- Settings → Macros makes and edits these macros: a title, a description and up to 20 steps,
+  each picked from a searchable list of built-in, app and plugin commands by category, with a
+  field for each argument to fix it or **Ask when I run it**. **The AI agent can run this** lets
+  the agent run a macro whose steps are all commands the agent may run, run on RIM's server,
+  with every argument fixed; otherwise it says why it is off.
+- The macros you made in each workspace move into your macros once, and are deleted where they
+  were; at 100 macros the rest stay, and a toast says how many stayed where. Those that stayed,
+  at the limit or refused by the server, are listed under **Not moved yet** in Settings → Macros
+  with the reason, to **Try again** or **Delete**.
+- Connected agents outside RIM, such as Claude Code, can ask to run RIM's own commands in the
+  desktop app: **Choose its commands** in Settings > Agents has a **RIM commands** section, by
+  category, where you tick the ones an agent may ask for. Every call shows an approval card first,
+  a dangerous command is only proposed, and a command acts only in the workspaces and channels the
+  agent can read. Agents get the tools `rim_list_commands` and `rim_run_command`.
+- Plugins can run RIM's own commands: a manifest lists the built-in and app commands it wants in
+  `runs_commands`, the permission prompt shows them under "Commands it can run" with nothing
+  ticked, and an update that lists more asks again. A plugin calls `host.commands.execute` in the
+  plugin SDK (`rim.command.execute` from plugin to host in protocol v1, and from a panel) and
+  hears only whether it ran. A command that changes something asks you each time in a card
+  naming the plugin; dangerous and restricted commands, other plugins' commands and agent
+  commands never run. Granted commands, with Revoke, and every run are in the plugin's row in
+  Settings → Plugins.
+- Commands for answering, connecting and managing agents in the desktop app: approve or refuse an
+  agent's request, connect or turn down a program asking to, disconnect an agent, choose what it
+  can read and its plugin commands, and open the runs and the record of what agents were given.
+  Approving an agent's request or connection from a key, the palette or a quick box always shows a
+  warning first, and none of these commands is ever offered to an agent.
+- New commands for replying, editing, forwarding, attachments, message selection, invitations, lenses, conversation invites, notifications and Unreads, so each can be run from the palette, a keybind or a quick box.
+- New commands for Settings tabs, signing out, updates, the window, status, profiles, macros and
+  pipelines, so every one of these can be run from the palette, a keybind or a quick box.
+- New commands for moderation, reports, invites, join requests, bots, webhooks, plugins, contacts, blocking and message requests, so each can be run from the palette, a keybind or a quick box.
+- Three new boxes for Home: Direct messages, Channel, which shows the latest messages of a channel
+  you pick, and Quick actions, buttons that run commands you choose (`docs/home.md`). Channel and
+  Quick actions can be added more than once, each with its own settings, and showing them marks
+  nothing read.
+- Home is made of boxes you can drag into order, or move from each box's ⋯ menu, resize, add and
+  remove, saved to your account (Edit Home, `docs/home.md`). Until you edit it, Home shows today's
+  layout. The edit made last wins across devices, an edit made offline is sent when your server
+  answers, and a box a device can't run can be hidden on that device alone. It needs a server that
+  lists `home_layout`; with an older one, Home stays as it is.
+- Webhook formats: New webhook offers Plain, GitHub, the host's other ready-made formats such as
+  Grafana, and Custom, and a webhook's row has Edit format. The format editor writes rules as cards,
+  tries them on a sample, copies and pastes them as JSON, and drafts them with the person's own AI,
+  or a prompt to copy into any AI. Where the host keeps test sessions, it also shows what a service
+  really sends, on a test URL that saving keeps. Needs a workspace server that lists
+  `webhook_formats`, and `webhook_test_sessions` for the log, in `serverInfo.capabilities`.
+- Every member sees a workspace's bots: a Bots section in the conversation list, each opening its
+  card, and "n bots" in a channel's header, which shows what each bot's adder says and that RIM
+  can't check it. The header also says when an agent you connected can read the channel. Needs a
+  workspace server that lists `bot_disclosure`.
+- Settings > Pipelines can post a welcome as a bot, and a bot can be allowed to see people joining.
+  Each needs a workspace server that lists `pipeline_post_as_bot` or `bot_events` in
+  `serverInfo.capabilities`.
+- A channel's menu can make its incoming webhook.
+- Unreads: one page with every unread message across your workspaces, where a message stays until
+  you mark it read. It's on Home, in the conversation list and on `workspace.open_unreads`.
+- A message or a conversation can be marked unread, on all your devices, and marking everything
+  read can be undone for a few seconds. Marking unread needs a workspace server that lists
+  `read_marker` in `serverInfo.capabilities`.
+- Home: one page across your workspaces with what's waiting for you, your mentions and
+  replies, your unread counts and your agents' runs. It's in the workspace rail and on
+  `workspace.open_home`.
+- Narrow windows work: side panels become a drawer, and threads, pins and plugin panels open
+  over the conversation instead of squeezing it. Settings shows its sections as one menu in a
+  narrow window. New commands open the audit log and the message requests, and show or hide the
+  pinned messages, the notifications and the member lists; the sidebar command opens the drawer
+  in a narrow window.
+- Settings > Agents shows an agent's runs: what it was handed and asked to do in a stretch of
+  calls, with what the server recorded (`ExecuteCommandInput.runId`).
+- Plugin commands can be approved per connected agent, one by one. A new optional manifest field
+  `read_only` marks commands that run for it without asking; every other approved command asks
+  first.
+- A connected agent can ask to send a message to a channel it has a grant for: you see the whole
+  text in a dialog and confirm each one.
+- Settings > Bots creates and manages a workspace's bots, their tokens and channels, and incoming
+  webhooks with a GitHub preset. Owners and Moderators see it on a server that has bots turned on,
+  and the webhooks section on one that lists `incoming_webhooks`. A token or webhook URL is shown
+  once. The command palette has "Open Bots".
+- Bots are marked in messages and member lists, and show who runs them and where what they read
+  goes, as the person who added them says. The marks and the statements need a workspace server
+  that lists `bot_disclosure` in `serverInfo.capabilities`; on an older one nothing is marked,
+  because it has no bots.
 - Closing the desktop app's window now asks whether RIM stays running in the system tray or quits,
   and Settings > Desktop can set the answer. Everyone sees this once, the first time they close the
   window after updating. Ctrl+Q quits, after a confirmation.
@@ -31,9 +170,92 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   Settings > Desktop.
 - The desktop app's tray icon shows a dot while you have unread notifications and offers "Restart
   to update" when an update is ready. Clicking a message notification opens that conversation.
+- Settings > Agents lets a program on this computer, such as Claude Code, ask to connect to the desktop
+  app. It is off by default. You compare a code and approve it, and you can disconnect it at any time.
+- A Claude Code plugin in `integrations/claude-code` connects Claude Code to the desktop app: it shows the code to compare and adds RIM as an MCP server.
+- A connected agent can read the channels you choose in Settings > Agents, from the messages on this device. It
+  can't change anything, and it can't read encrypted conversations. "What it was given" shows what RIM handed over.
 
 ### Changed
 
+- A plugin panel opens over the page you are on, such as Home, Unreads or Agent sessions,
+  instead of switching to the conversation: a `tool_panel` panel is a narrow column at the left
+  of the page and stays open when you go to another page, and a `main_area` panel takes the
+  page's place until you close it or go to another page. A panel's `conversation.changed` is
+  `null` while no conversation is shown, and a plugin command that needs a conversation says
+  "Open a conversation first" on any other page.
+- A command picked from the message box's `/` list with nothing typed after it does what the
+  command palette does: it opens the palette's argument form, with the same fields and pickers
+  (state keys with their values, members, conversations, emoji, times, "More options"), instead of
+  leaving `key=value` to type. Typed `key=value` arguments still run; when they leave a required
+  one out or give a value its field cannot take, the same form opens with them filled in.
+- A pipeline action's arguments are fields for its command, with a picker where it has one, instead of a JSON box; a required argument the trigger cannot supply must be filled before Save, and saved arguments the fields cannot show are kept and can be removed.
+- A plugin manifest listing `agents.connect_agent`, `agents.start_session`, `agents.stop_session`,
+  `agents.ask_about_message`, `agents.ask_about_conversation` or `workspace.open_agent_sessions`
+  in `runs_commands` is refused at install, and by the plugin SDK's `validateManifest`, like the
+  other commands that answer and manage agents.
+- The buttons of the rail, the top bar, the side panels, the conversation header and list, Home
+  and Unreads run the same commands as the palette and keybinds, so a click does what the
+  command does. Open Direct Messages from the palette or a key now leaves Home and Unreads, as
+  the rail's button does.
+- The buttons of Settings > Plugins, Bots and Agents and of a message request run their commands,
+  as the palette does: Install from local folder and Install from git URL run Install Plugin,
+  New bot and New webhook run theirs, a message request's Accept, Ignore, Block and Report run
+  the message request commands, and an agent's Disconnect, Choose what it can read, Choose its
+  commands, What it was given and Its runs run the agent commands for that agent. New webhook
+  from the palette with no conversation open opens the form in Settings > Bots, and What Agents
+  Were Given and Open Agent Runs can name one agent. The rows that revoke invites, answer join
+  requests, unblock people, deactivate bots, revoke webhooks and take back a plugin's AI access do
+  the same as their commands, with the same messages.
+- The moderation dialogs (change role, time out, kick, ban, delete messages, slow mode, who can
+  post), unban, clear timeout, the conversation menu, the notification mutes, joining, archiving
+  and leaving channels, the members panel's invite and remove, and Mark all read run their
+  commands, as the palette does: the audit log records a click as `ui` or `context_menu`, a
+  click asks for the confirmation the palette asks for and only once, and a failure names the
+  missing permission.
+- A message's menu and reaction chips, the list's pin key, the pinned list's Unpin, the report
+  dialog, a workspace's menu on the rail, Pause notifications and the Settings buttons for
+  updates, the log folder, Back up now, shortcuts, macros, pipelines, status and signing out run
+  the same commands as the palette: the same confirmation, and a refusal says why, such as the
+  permission that is missing. Back up now and opening the log folder answer in a toast, and Set
+  status opens the status dialog.
+- A new logo: an R in three pieces held by an orange node, a wordmark with a lightning bolt for the I, new desktop, tray and browser icons, and a glowing bolt on the restoring-session screen.
+- When an agent asks to run one of your macros, its confirmation, and an outside agent's card,
+  list the macro's steps with the arguments fixed for each.
+- `/macro <title>` and **Run Macro…** run your macros, found by title whatever the letter case;
+  a workspace macro that moved into them still runs from a key or quick action that named it.
+  Workspace macros of a workspace another server hosts are now read, run, changed and deleted on
+  that server.
+- Open Marketplace (Ctrl+Shift+X) is now Browse Plugins and opens Settings > Plugins, instead of a
+  "coming soon" page. "Choose an Agent's Plugin Commands…" is now "Choose an Agent's Commands…".
+- Commands are grouped by what they do (Navigation, Messages, Moderation, Home…) in the palette and in Settings > Keybinds, and keyboard shortcuts for the app's own commands, such as Toggle Zen Mode and Go Back, follow you to your other devices on servers that support it. Shortcuts you already set for them on this device move to the server once, with a short note; plugin shortcuts stay on this device.
+- Commands that need more than the open conversation, such as Do Not Disturb, notification level and moderation actions, now ask for what they need in a form when run from the palette, a keybind or a quick box, instead of being left out. Settings > Keybinds can save a keybind's arguments, and Home's Quick actions settings take a command's arguments in the same fields instead of JSON; a field left empty is asked for when the command runs.
+- The top bar's search field opens one search box: channels and people, messages and commands
+  as you type, the open workspace or all of them (Tab), and Search all messages for the full
+  search. Ctrl+K opens it with commands first, as the command palette. Back and Forward in the
+  top bar move between the places you opened; bind them in Settings > Keybinds.
+- One top bar holds search, plugins and notifications; the tool column is gone, and Settings and
+  your account are at the bottom of the rail. Ctrl+B now hides the conversation list.
+- The plugins menu, the palette and suggested keybinds show the marks hidden in plugin names and titles.
+- Opening a conversation starts at your first unread message, from where the server says you
+  stopped, and it only counts as read once you've reached the end of what's new. A setting keeps
+  conversations unread until you mark them. It needs a workspace server that lists `read_marker`
+  in `serverInfo.capabilities`; on an older one conversations open and count as read as before.
+- Settings > Plugins groups plugins by how they run, and each opens in place with its
+  permissions, settings and what agents can do with it.
+- Settings > Agents shows each agent on one page: what it can read, what asks you first, what
+  stays closed, and what it has been given. A token or webhook URL is shown in full, over
+  several lines.
+- The agent's run view and the confirmation dialog use the same cards: orange when you're needed, and a different card for each way a step can end.
+- A refused command now shows a card that says which kind of refusal it was: not allowed, failed, or expired.
+- The sign-in, sign-up and join screens are clearer: one main action on each, and the other ways in
+  say when you'd use them.
+- A new look: new colours and fonts across the app, with the fonts bundled so nothing is fetched
+  from another host.
+- A command the server refuses now says why: "not done" when you lack a permission, naming it, with
+  no Retry; "failed" for a technical problem, with Retry only when repeating it is safe; and "expired"
+  when a confirmation ran out, in neutral colours. A keybind whose command is refused now says so
+  instead of doing nothing. The AI agent is told the same, so it does not retry a decision.
 - Notifications now come from all your workspaces, not only the open one, following each
   workspace's notification settings. One from another workspace names it in its title and updates
   its badge on the rail. This needs a server that lists `notification_events` for workspaces on
@@ -41,8 +263,32 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   workspace on another server that waited over five minutes while you were away goes to the inbox
   without popping up.
 
+### Removed
+
+- Settings → Commands, where the server keeps your macros as your own commands: what it made
+  are macros, in Settings → Macros, and the command that opened it opens Macros.
+
 ### Fixed
 
+- A keybind or a Home quick action can now save arguments for commands that open a dialog, such
+  as Create Channel, New Message, Invite Member, Reply, Edit and Report, in the same fields a macro
+  step offers, and runs with them instead of opening the dialog; with none saved, the dialog opens
+  as before. "Until tomorrow" in a macro step's mute now also ends at 09:00 tomorrow in your
+  timezone, not the server's.
+- In a workspace hosted on another server, the palette, keybinds, quick boxes, the message box,
+  context menus and plugins now list and run that server's commands.
+- Turning a keybind off or giving it other keys no longer drops the arguments saved with it.
+- Muting a conversation until tomorrow from the palette, a keybind or a quick box ends at 9:00 on this device's clock, as the conversation menu does.
+- Keybinds, quick boxes and the message box now run every command they offer, including ones that act on the selected message: Delete, Edit, Report, Reply, Copy Message Text and Open Thread work from a key on the message selected in the list, and say so when none is selected. The keybind and quick box pickers leave out commands that need arguments they cannot supply, and mark a saved one; the message box lists the app's own and the plugins' commands, and sends arguments typed after a command such as `/chat.create_channel name=ops` to it. Unreads, focus and the new Toggle Channel Lenses commands say where they work instead of doing nothing.
+- Commands run from the message box now show their result, as they do from the palette; a command runs when picked from the open list, with the arguments typed after its name, and Esc sends the line as text.
+- On a desktop with no tray, closing RIM asks what to do instead of hiding it with no way back.
+- The built-in agent finds channels by name and no longer asks for ids.
+- The confirmation dialog shows workspaces, channels and people by name, with their ids beside them,
+  and names where a message will go when that isn't the conversation in view.
+- The sign-up form says what's still missing when Create account can't be clicked.
+- Sign-up has a way back to sign-in, every join page has a way out, emoji-led names no longer break
+  a workspace's badge, and focus returns to the right place after closing dialogs in Settings > Bots.
+- Installing a plugin from a local folder works on Linux.
 - Starting the desktop app while it is already running brings the open window forward instead of
   starting a second copy on the same data.
 

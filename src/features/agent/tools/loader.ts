@@ -3,16 +3,21 @@ import { gql } from "graphql-request";
 
 import { graphqlClient } from "../../../core/graphql/client";
 import {
+  CommandArgumentType,
   CommandExecutionTarget,
   CommandInitiator,
   CommandResultStatus,
   CommandSensitivity,
   CommandSurface,
   type Command,
+  type CommandArgument,
   type CommandResult,
   type ConfirmationProofInput,
 } from "../../../core/graphql/generated/schema-types";
+import { looksLikeId } from "../../commands/runtime/commandArguments";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "../../commands/runtime/appCommands/agentCommandIds";
 import { runDesktopLocalCommand } from "../../commands/runtime/commandDispatcher";
+import { useRelayStore } from "../../relay/state/useRelayStore";
 import { fetchPluginList } from "../../plugins/api/usePluginList";
 import { withContextArguments } from "../../plugins/runtime/pluginContext";
 import { runtimeKind, type PluginCommandInfo, type PluginInfo } from "../../plugins/types";
@@ -28,6 +33,7 @@ import { registerGetCurrentContextTool } from "./getCurrentContext";
 import { buildAiToolFromCommand, buildAiToolRegistrationOptions } from "./generator";
 import { registerTool, getAllTools, getTool, unregisterTool } from "./registry";
 import type { AiToolHandler, RegisteredTool } from "./types";
+import { relativeBanRefusal } from "../../commands/runtime/relativeBanGuard";
 
 function clearRegistry(): void {
   for (const tool of getAllTools()) {
@@ -41,7 +47,7 @@ function clearRegistry(): void {
 // "challenge payload missing" branch and no dangerous command can ever be
 // confirmed. This selection set must stay exhaustive; losing any of {token, argsHash,
 // expiresAt} breaks the in-band-proof flow.
-const EXECUTE_COMMAND_MUTATION = gql`
+export const EXECUTE_COMMAND_MUTATION = gql`
   mutation AgentExecuteCommand($input: ExecuteCommandInput!) {
     executeCommand(input: $input) {
       status
@@ -58,7 +64,7 @@ const EXECUTE_COMMAND_MUTATION = gql`
 
 // Sent with the active workspace as context, so the AI surface is per workspace just like
 // the palette.
-const AI_COMMANDS_QUERY = gql`
+export const AI_COMMANDS_QUERY = gql`
   query AgentListAiCommands($commandContext: CommandContextInput) {
     commands(surface: AI, commandContext: $commandContext) {
       id
@@ -99,6 +105,8 @@ interface BackendTool {
 export interface MergeResult {
   winners: AiToolDefinition[];
   droppedBuiltinNames: string[];
+  /** The server's tools could not be fetched, so only the built-in one is registered. */
+  fetchFailed?: boolean;
 }
 
 export function mergeBackendWins(
@@ -134,6 +142,16 @@ async function callExecuteCommand(
   confirmation?: ConfirmationProofInput,
 ): Promise<CommandResult> {
   const commandContext = getCurrentCommandContext();
+  // The request goes to the connected server, whose capabilities the guard reads.
+  const refusal = await relativeBanRefusal(commandId, args, undefined);
+  if (refusal) {
+    return {
+      status: CommandResultStatus.ERROR,
+      message: refusal,
+      payload: null,
+      followUpCommands: [],
+    };
+  }
   const res = await graphqlClient.request<{ executeCommand: CommandResult }>(
     EXECUTE_COMMAND_MUTATION,
     {
@@ -194,6 +212,7 @@ function interpretResult(
       commandId,
       toolName,
       args,
+      argumentTypes: registered?.argumentTypes,
       token: result.confirmationRequired.token,
       argsHash: result.confirmationRequired.argsHash,
       expiresAt: result.confirmationRequired.expiresAt,
@@ -249,14 +268,69 @@ function isUnconfirmedLocalCommand(cmd: Command): boolean {
   );
 }
 
+/**
+ * `handler` refusing what the server could only fail on: a name where a conversation or a workspace
+ * id belongs, or a workspace on another server, which `executeCommand` does not reach. The server
+ * issues its confirmation before it reads the arguments, so without this the person would approve
+ * a post that can only fail; the refusal tells the model what really happened.
+ *
+ * @param args - The command's declared arguments.
+ * @param handler - The handler to run once every id has the shape of an id.
+ * @returns The checking handler.
+ */
+function withIdArguments(args: ReadonlyArray<CommandArgument>, handler: AiToolHandler) {
+  const conversationArgs = args
+    .filter((arg) => arg.argumentType === CommandArgumentType.CONVERSATION_ID)
+    .map((arg) => arg.name);
+  const workspaceArgs = args
+    .filter((arg) => arg.argumentType === CommandArgumentType.WORKSPACE_ID)
+    .map((arg) => arg.name);
+  const isRemoteWorkspace = (value: unknown) =>
+    typeof value === "string" && useRelayStore.getState().spaces[value]?.kind === "workspace";
+  const isName = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" && !looksLikeId(value);
+
+  return async (input: Record<string, unknown>) => {
+    for (const name of conversationArgs) {
+      if (isName(input[name])) {
+        throw new Error(
+          `${name} takes an id, not a name. List the workspace's channels, take the id of the one with that title and call this again, without asking the person for it.`,
+        );
+      }
+    }
+    for (const name of workspaceArgs) {
+      if (isName(input[name])) {
+        throw new Error(
+          `${name} takes an id, not a name. Use the server_id of the workspace from the context.`,
+        );
+      }
+      if (isRemoteWorkspace(input[name])) {
+        throw new Error(
+          "That workspace is on another server, which these tools cannot reach. Nothing ran. Tell the person so plainly.",
+        );
+      }
+    }
+    return handler(input);
+  };
+}
+
+/**
+ * The agent's tools for the server's AI commands. A command that answers or manages agents is
+ * left out even when listed: approving and granting are the person's own acts.
+ */
 export function commandsToBackendTools(commands: ReadonlyArray<Command>): BackendTool[] {
-  return commands.map((cmd) => ({
-    definition: buildAiToolFromCommand(cmd),
-    handler: isUnconfirmedLocalCommand(cmd)
-      ? makeDesktopLocalToolHandler(cmd.id)
-      : makeBackendToolHandler(cmd.id),
-    options: buildAiToolRegistrationOptions(cmd),
-  }));
+  return commands
+    .filter((cmd) => !AGENT_MANAGEMENT_COMMAND_IDS.has(cmd.id))
+    .map((cmd) => ({
+      definition: buildAiToolFromCommand(cmd),
+      handler: withIdArguments(
+        cmd.arguments,
+        isUnconfirmedLocalCommand(cmd)
+          ? makeDesktopLocalToolHandler(cmd.id)
+          : makeBackendToolHandler(cmd.id),
+      ),
+      options: buildAiToolRegistrationOptions(cmd),
+    }));
 }
 
 async function fetchAiCommands(): Promise<Command[]> {
@@ -403,6 +477,7 @@ function injectPluginTools(plugins: ReadonlyArray<PluginInfo>): void {
         keybind_capable: false,
         dangerous: false,
         ai_callable: true,
+        read_only: false,
         arguments: [],
       };
       const name = pluginToolName(plugin.manifest_id, commandId);
@@ -459,6 +534,7 @@ export async function loadAgentTools(): Promise<MergeResult> {
     return {
       winners: hardcodedSnapshot.map((t) => t.definition),
       droppedBuiltinNames: [],
+      fetchFailed: true,
     };
   }
 

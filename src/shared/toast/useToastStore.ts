@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ActionCardState } from "../ui/ActionCard";
 
 export type ToastVariant = "success" | "error" | "warning" | "info";
 
@@ -14,6 +15,8 @@ export interface Toast {
   title: string;
   description?: string;
   action?: ToastAction;
+  /** Shows the toast as an action card in this state. */
+  card?: ActionCardState;
   persistent?: boolean;
   duration?: number;
   createdAt: number;
@@ -42,7 +45,10 @@ interface ToastState {
   remove: (id: string) => void;
   dismissAll: () => void;
   /** Update an existing toast by id (for deduplication). */
-  update: (id: string, patch: Partial<Pick<Toast, "title" | "description" | "action">>) => void;
+  update: (
+    id: string,
+    patch: Partial<Pick<Toast, "title" | "description" | "action" | "card">>,
+  ) => void;
 }
 
 export const useToastStore = create<ToastState>((set, get) => ({
@@ -68,6 +74,7 @@ export const useToastStore = create<ToastState>((set, get) => ({
         title: toast.title,
         description: toast.description,
         action: toast.action,
+        card: toast.card,
       });
       return id;
     }
@@ -132,6 +139,7 @@ interface ToastOptions {
   id?: string;
   description?: string;
   action?: ToastAction;
+  card?: ActionCardState;
   duration?: number;
   persistent?: boolean;
 }
@@ -145,6 +153,7 @@ function createToast(variant: ToastVariant, title: string, options?: ToastOption
     title,
     description: options?.description,
     action: options?.action,
+    card: options?.card,
     duration: persistent ? undefined : (options?.duration ?? DEFAULT_DURATIONS[variant]),
     persistent,
   });

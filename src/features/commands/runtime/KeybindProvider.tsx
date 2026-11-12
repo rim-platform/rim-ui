@@ -5,32 +5,29 @@ import { logger } from "../../../core/logger";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useCommands, useExecuteCommandMutation } from "../api/useCommands";
+import { useCommandsWithMacros } from "../../macros/api/useMacroCommands";
 import {
   isKeystrokeRecorder,
   parseKeystroke,
   matchKeybind,
   surfaceToContext,
 } from "./keybindEngine";
-import { dispatchCommand, hasLocalHandler, isLocalActionResult } from "./commandDispatcher";
-import { commandSuccessText } from "./commandResultText";
+import { dispatchCommand } from "./commandDispatcher";
+import { showCommandOutcome } from "./commandOutcome";
+import { showCommandRefusal } from "./refusal";
 import { currentCommandContext } from "./commandContext";
 import { useCommandStore } from "../state/useCommandStore";
-import {
-  findPluginCommand,
-  toastPluginCommandResult,
-} from "../../plugins/runtime/pluginCommandInfo";
-import { isOpenPluginPanelCommand } from "../../plugins/pluginPanels";
-import { toast } from "../../../shared/toast";
 import { useCommandResultStore } from "../state/useCommandResultStore";
-import { presentReadResult } from "./readCommandResult";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { isTextEntry } from "../../../shared/ui/focusNavigation";
 import { hostDialogOpen } from "../../../shared/ui/hostDialogs";
 import { useEffectiveKeybinds } from "./effectiveKeybinds";
-import { LOCAL_COMMANDS } from "./localCommands";
+import { toast } from "../../../shared/toast";
+import { keybindCommand, keybindCommandTitle } from "./keybindCommand";
 import { installVimLayer } from "./vimLayer";
-import type { CommandDefinition } from "../types";
+import { CommandInitiator } from "../../../core/graphql/generated/schema-types";
+import { keybindAnswersWaitingAgent } from "./appCommands/agents";
 
 interface KeybindProviderProps {
   children: ReactNode;
@@ -74,7 +71,8 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
   const resolvedKeybinds = useEffectiveKeybinds();
-  const { data: commands } = useCommands("PALETTE");
+  const { data: keybindCommands } = useCommandsWithMacros("KEYBIND_PICKER");
+  const { data: paletteCommands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();
   const executeMutationRef = useRef(executeCommandMutation);
   executeMutationRef.current = executeCommandMutation;
@@ -82,8 +80,9 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const handleKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
   handleKeyDownRef.current = (event: KeyboardEvent) => {
     if (isKeystrokeRecorder(event.target)) return;
-    // A host dialog owns the keyboard: no keybind runs, the palette's included, until it closes.
-    if (hostDialogOpen()) return;
+    // A host dialog owns the keyboard: no keybind runs, the palette's included, until it closes,
+    // except one answering the agent request or connection the dialog asks about.
+    const dialogOpen = hostDialogOpen();
     const isTextInput = isTextEntry(event.target as Element);
 
     const keystroke = parseKeystroke(event);
@@ -112,6 +111,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       : matchKeybind(keystroke, context, resolvedKeybinds);
 
     if (!match) return;
+    if (dialogOpen && !keybindAnswersWaitingAgent(match.commandId)) return;
 
     // If an overlay/dialog is open, let it handle Escape instead of dispatching close_panel
     if (match.commandId === "workspace.close_panel") {
@@ -147,33 +147,14 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
     event.preventDefault();
     event.stopPropagation();
 
-    // Find command definition from backend. If commands haven't loaded yet,
-    // build a minimal dispatch stub so keybinds still work during loading.
-    // The stub is only used for dispatch — never shown in UI.
-    const isLocalPrefix =
-      match.commandId.startsWith("workspace.") ||
-      match.commandId.startsWith("chat.") ||
-      match.commandId.startsWith("admin.");
-    const isPluginCommand = match.commandId.startsWith("plugin.");
-    const pluginCommand = isPluginCommand ? findPluginCommand(match.commandId) : null;
-    const command: CommandDefinition = commands?.find((cmd) => cmd.id === match.commandId) ??
-      LOCAL_COMMANDS.find((cmd) => cmd.id === match.commandId) ?? {
-        id: match.commandId,
-        title: pluginCommand?.title ?? match.commandId,
-        description: "",
-        category: "",
-        sourceKind: isPluginCommand ? "PLUGIN" : "BUILT_IN",
-        executionTarget: isLocalPrefix || isPluginCommand ? "DESKTOP_LOCAL" : "BACKEND",
-        requiredContext: [],
-        requiredCapabilities: [],
-        visibleInPalette: false,
-        visibleInContextMenus: false,
-        keybindCapable: true,
-        dangerous: pluginCommand?.dangerous ?? false,
-      };
+    const command = keybindCommand(match.commandId, keybindCommands, paletteCommands);
+    if (!command) {
+      toast.error(`${keybindCommandTitle(match.commandId)}: This command isn't available here`);
+      return;
+    }
 
     // A search with its query given opens the search overlay on that query.
-    const presetArgs = match.presetArgs as Record<string, unknown> | undefined;
+    const presetArgs = (match.presetArgs ?? undefined) as Record<string, unknown> | undefined;
     const presetQuery = presetArgs?.query;
     if (
       match.commandId === "chat.search_messages" &&
@@ -184,38 +165,31 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
       return;
     }
 
-    dispatchCommand(command, (input) => executeMutationRef.current.mutateAsync(input), {
-      args: match.presetArgs as Record<string, unknown> | undefined,
-      commandContext: currentCommandContext(),
-    })
-      .then((result) => {
-        // A plugin command runs on this device, out of sight: say how it went.
-        if (isPluginCommand) {
-          toastPluginCommandResult(command.title, result);
-        } else if (isOpenPluginPanelCommand(command.id) && result?.status === "ERROR") {
-          // An open panel shows for itself; one that cannot open says why.
-          toast.error(result.message);
-        } else if (
-          hasLocalHandler(command.id) &&
-          result?.status === "SUCCESS" &&
-          result.message.trim() &&
-          !isLocalActionResult(result)
-        ) {
-          // A local command that has something to say says it, as the palette does.
-          toast.success(commandSuccessText(command.title, result));
-        } else if (!isPluginCommand) {
-          void presentReadResult(
-            command.id,
-            command.title,
-            result,
-            presetArgs,
-            currentCommandContext(),
-          );
-        }
+    // A retry runs where the key was pressed, wherever the person is by then.
+    const commandContext = currentCommandContext();
+    const run = (args: Record<string, unknown> | undefined) => {
+      // The arguments it ran with, with any the argument form asked for.
+      let ranWith = args;
+      const execute = (input: Parameters<typeof executeMutationRef.current.mutateAsync>[0]) =>
+        executeMutationRef.current.mutateAsync({ ...input, initiator: CommandInitiator.KEYBIND });
+      // Saved arguments are used as given, as a macro step's are: a server command runs with
+      // them even when this app has a dialog for it, which opens only when none are saved.
+      dispatchCommand(command, execute, {
+        args,
+        commandContext,
+        typedArgs: true,
+        askForArguments: true,
+        onArguments: (filled) => {
+          ranWith = filled;
+        },
       })
-      .catch((err: unknown) => {
-        logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
-      });
+        .then((result) => showCommandOutcome(command, result, ranWith, commandContext))
+        .catch((err: unknown) => {
+          logger.warn(`[RIM:Keybind] ${match.commandId} failed`, err);
+          showCommandRefusal(command.title, err, () => run(ranWith));
+        });
+    };
+    run(presetArgs);
   };
 
   // The Vim layer listens first, so a key it takes never reaches the keybinds.

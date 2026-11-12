@@ -1,4 +1,4 @@
-export type PanelId = "workspaceRail" | "sideRail" | "toolPanel" | "mainSurface" | "threadPane";
+export type PanelId = "workspaceRail" | "topBar" | "toolPanel" | "mainSurface" | "threadPane";
 
 export type Direction = "left" | "right";
 
@@ -11,20 +11,22 @@ interface ShellStateSlice {
 }
 
 /**
- * Returns the ordered list of currently visible panels based on shell state.
- * Order is left-to-right as they appear in the layout.
+ * Returns the ordered list of currently visible panels based on shell state: the workspace
+ * rail, the top bar above the rest, the conversation list, the main surface and the thread.
+ * Zen mode hides all but the main surface, and the collapsed sidebar hides the list.
  */
 export function getVisiblePanels(shellState: ShellStateSlice): PanelId[] {
   const panels: PanelId[] = [];
 
   if (!shellState.zenMode) {
-    panels.push("workspaceRail");
-    if (!shellState.sidebarCollapsed) {
-      panels.push("sideRail");
-    }
+    panels.push("workspaceRail", "topBar");
   }
 
-  if (shellState.mainSurface.kind === "conversation" && !shellState.zenMode) {
+  if (
+    shellState.mainSurface.kind === "conversation" &&
+    !shellState.zenMode &&
+    !shellState.sidebarCollapsed
+  ) {
     panels.push("toolPanel");
   }
 

@@ -25,19 +25,16 @@ import type { WorkspaceStateEntryGql, SetWorkspaceStateInput } from "../index";
 import { graphqlErrorMessage } from "../../../core/graphql/errors";
 import { toast } from "../../../shared/toast";
 import { useIsGuest } from "../../workspaces/api/useMyServerRole";
+import { stateKeyProblem } from "../stateKeyRules";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_KEY_LENGTH = 512;
 const MAX_VALUE_SIZE_KB = 64;
 const MAX_TTL_DAYS = 30;
 const MAX_TTL_SECONDS = MAX_TTL_DAYS * 24 * 60 * 60;
 const DEFAULT_LIST_LIMIT = 100;
-
-/** Key format: starts with a-z, body a-z0-9_./:-, ends with a-z0-9, max MAX_KEY_LENGTH chars total. */
-const KEY_REGEX = new RegExp(`^[a-z][a-z0-9_.:-]{0,${MAX_KEY_LENGTH - 2}}[a-z0-9]$`);
 
 /** The name each scope goes by in the page's copy; the `SERVER` scope is the workspace's. */
 const SCOPE_LABELS: Record<WorkspaceStateScopeGql, string> = {
@@ -84,9 +81,7 @@ function isExpired(entry: WorkspaceStateEntryGql): boolean {
 
 /** Validate key format against backend rules. */
 function isValidKey(key: string): boolean {
-  if (key.length < 2 || key.length > MAX_KEY_LENGTH) return false;
-  if (key.startsWith("system.")) return false;
-  return KEY_REGEX.test(key);
+  return stateKeyProblem(key) === null;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +253,7 @@ function EntryEditor({ serverId, scope, existingEntry, onClose }: EntryEditorPro
           type="button"
           onClick={handleSave}
           disabled={setWorkspaceState.isPending}
-          className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md bg-rim-text px-3 py-1.5 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90 disabled:opacity-50"
         >
           {setWorkspaceState.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -373,7 +368,7 @@ function EntryRow({ entry, onEdit, onDelete, isDeleting, readOnly }: EntryRowPro
                   type="button"
                   onClick={handleDelete}
                   disabled={isDeleting}
-                  className="rounded bg-rim-danger px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger/80 disabled:opacity-50"
+                  className="rounded bg-rim-danger-solid px-2 py-0.5 text-[10px] font-medium text-white hover:bg-rim-danger-solid/80 disabled:opacity-50"
                 >
                   {isDeleting ? "..." : "Delete"}
                 </button>
@@ -504,7 +499,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             onClick={() => setScope(WorkspaceStateScopeGql.SERVER)}
             className={`flex items-center gap-1.5 rounded-l-lg px-3 py-1.5 text-xs font-medium transition ${
               scope === WorkspaceStateScopeGql.SERVER
-                ? "bg-rim-accent text-white"
+                ? "bg-rim-accent text-rim-void"
                 : "text-rim-text-muted hover:text-rim-text"
             }`}
           >
@@ -516,7 +511,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
             onClick={() => setScope(WorkspaceStateScopeGql.USER)}
             className={`flex items-center gap-1.5 rounded-r-lg px-3 py-1.5 text-xs font-medium transition ${
               scope === WorkspaceStateScopeGql.USER
-                ? "bg-rim-accent text-white"
+                ? "bg-rim-accent text-rim-void"
                 : "text-rim-text-muted hover:text-rim-text"
             }`}
           >
@@ -542,7 +537,7 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
           <button
             type="button"
             onClick={() => setEditorMode({ kind: "create" })}
-            className="flex items-center gap-1.5 rounded-md bg-rim-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-rim-accent/80"
+            className="flex items-center gap-1.5 rounded-md bg-rim-text px-3 py-1.5 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90"
           >
             <Plus className="h-3.5 w-3.5" />
             New entry

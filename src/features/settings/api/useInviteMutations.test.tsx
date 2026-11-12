@@ -18,8 +18,8 @@ import {
   INVITE_EXPIRY_DAYS,
   inviteExpiresAt,
   useCreateInviteMutation,
+  revokeInvite,
   useJoinServerByInviteMutation,
-  useRevokeInviteMutation,
 } from "./useInviteMutations";
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -163,21 +163,23 @@ describe("invite expiry", () => {
   });
 });
 
-describe("useRevokeInviteMutation", () => {
+describe("revokeInvite", () => {
   beforeEach(() => {
     requestMock.mockReset();
   });
+
+  function spiedQueryClient() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    return { qc, invalidate: vi.spyOn(qc, "invalidateQueries") };
+  }
 
   it("revokes by invite id and refetches that workspace's invite list", async () => {
     requestMock.mockResolvedValue({
       revokeInvite: { id: "inv-1", state: "REVOKED", revokedAt: "2026-10-19T12:00:00Z" },
     });
-    const { invalidate, wrapper: spied } = spiedClient();
-    const { result } = renderHook(() => useRevokeInviteMutation(), { wrapper: spied });
+    const { qc, invalidate } = spiedQueryClient();
 
-    await act(async () => {
-      await result.current.mutateAsync({ serverId: "ws-1", inviteId: "inv-1" });
-    });
+    await revokeInvite(qc, { serverId: "ws-1", inviteId: "inv-1" });
 
     expect(String(requestMock.mock.calls[0][0])).toContain("mutation RevokeInvite");
     expect(requestMock.mock.calls[0][1]).toEqual({ inviteId: "inv-1" });
@@ -186,14 +188,11 @@ describe("useRevokeInviteMutation", () => {
 
   it("leaves the list alone when the server refuses", async () => {
     requestMock.mockRejectedValue(new Error("FORBIDDEN"));
-    const { invalidate, wrapper: spied } = spiedClient();
-    const { result } = renderHook(() => useRevokeInviteMutation(), { wrapper: spied });
+    const { qc, invalidate } = spiedQueryClient();
 
-    await act(async () => {
-      await expect(
-        result.current.mutateAsync({ serverId: "ws-1", inviteId: "inv-1" }),
-      ).rejects.toThrow("FORBIDDEN");
-    });
+    await expect(revokeInvite(qc, { serverId: "ws-1", inviteId: "inv-1" })).rejects.toThrow(
+      "FORBIDDEN",
+    );
 
     expect(invalidate).not.toHaveBeenCalled();
   });

@@ -32,6 +32,10 @@ vi.mock("../../../shared/toast/useToastStore", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), dismiss: vi.fn() },
   useToastStore: vi.fn(),
 }));
+vi.mock("../../plugins/api/usePluginCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/api/usePluginCommands")>()),
+  usePluginCommands: () => [],
+}));
 vi.mock("../hooks/useTypingIndicator", () => ({
   useTypingIndicator: () => ({ handleKeystroke: () => {}, markSent: () => {} }),
 }));

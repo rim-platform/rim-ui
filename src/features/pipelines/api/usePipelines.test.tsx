@@ -21,9 +21,12 @@ import {
   useCreatePipelineMutation,
   useUpdatePipelineMutation,
   useDeletePipelineMutation,
-  useTogglePipelineMutation,
+  togglePipeline,
 } from "./usePipelines";
 import type { Pipeline } from "./usePipelines";
+import { queryClient as globalQueryClient } from "../../../core/query/queryClient";
+import { fakeServerInfo } from "../../../test/serverInfo";
+import { PIPELINE_POST_AS_BOT } from "../../updater/api/serverCapabilities";
 
 let qc: QueryClient;
 
@@ -73,8 +76,21 @@ describe("pipeline api hooks", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([pipeline]);
-    expect(requestMock.mock.calls[0][0]).toContain("query Pipelines");
-    expect(requestMock.mock.calls[0][1]).toEqual({ serverId: "ws-1" });
+    expect(requestMock.mock.lastCall?.[0]).toContain("query Pipelines(");
+    expect(requestMock.mock.lastCall?.[1]).toEqual({ serverId: "ws-1" });
+  });
+
+  it("asks for postAsBot only on a host that lists pipeline_post_as_bot", async () => {
+    globalQueryClient.setQueryData(
+      queryKeys.serverInfo,
+      fakeServerInfo({}, { capabilities: [PIPELINE_POST_AS_BOT] }),
+    );
+    requestMock.mockResolvedValue({ pipelines: [pipeline] });
+    const { result } = renderHook(() => usePipelines("ws-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requestMock.mock.lastCall?.[0]).toContain("query PipelinesWithPostAsBot(");
+    globalQueryClient.removeQueries({ queryKey: queryKeys.serverInfo });
   });
 
   it("creates with the input as-is and invalidates that workspace's list", async () => {
@@ -121,18 +137,13 @@ describe("pipeline api hooks", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pipelines("ws-1") });
   });
 
-  it("toggles with the target state and invalidates the workspace list", async () => {
+  it("toggles with the target state", async () => {
     requestMock.mockResolvedValue({ togglePipeline: { ...pipeline, enabled: false } });
-    const invalidate = vi.spyOn(qc, "invalidateQueries");
-    const { result } = renderHook(() => useTogglePipelineMutation(), { wrapper });
 
-    await act(() =>
-      result.current.mutateAsync({ pipelineId: "p-1", enabled: false, serverId: "ws-1" }),
-    );
+    await togglePipeline({ pipelineId: "p-1", enabled: false });
 
     expect(requestMock.mock.calls[0][0]).toContain("mutation TogglePipeline");
     expect(requestMock.mock.calls[0][1]).toEqual({ pipelineId: "p-1", enabled: false });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pipelines("ws-1") });
   });
 
   it("does not invalidate when a mutation fails", async () => {

@@ -5,9 +5,28 @@ import { offeredInSituation, type PaletteSituation } from "./paletteAvailability
 import { releasePaletteFocus } from "./paletteFocus";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
 
-const NORMAL: PaletteSituation = { inDirectSpace: false, panelOpen: true, hasDirectOrigin: true };
+const NORMAL: PaletteSituation = {
+  inDirectSpace: false,
+  panelOpen: true,
+  hasDirectOrigin: true,
+  unreadsOpen: false,
+};
 
 describe("offeredInSituation", () => {
+  it("offers the Unreads page's commands only on that page, and the way there everywhere", () => {
+    for (const id of [
+      "workspace.unreads_next",
+      "workspace.unreads_previous",
+      "workspace.unreads_mark_group",
+      "workspace.unreads_open",
+      "workspace.unreads_undo",
+    ]) {
+      expect(offeredInSituation(id, NORMAL), id).toBe(false);
+      expect(offeredInSituation(id, { ...NORMAL, unreadsOpen: true }), id).toBe(true);
+    }
+    expect(offeredInSituation("workspace.open_unreads", NORMAL)).toBe(true);
+  });
+
   it("hides the four commands the direct space refuses", () => {
     const direct = { ...NORMAL, inDirectSpace: true };
     for (const id of [

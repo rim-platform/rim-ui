@@ -1,0 +1,380 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ servers: [{ id: "w1", name: "Acme" }] }));
+vi.mock("../../workspaces/api/useMyServers", () => ({
+  useMyServers: () => ({ data: mocks.servers }),
+}));
+vi.mock("../../plugins/api/usePluginList", () => ({
+  useInstalledPlugins: () => ({
+    data: [{ plugin_id: "dev.example.pods", display_name: "Po\u202Eds" }],
+  }),
+}));
+// Its clear button runs `agents.clear_record`, which only the desktop app has.
+vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../core/runtime/runtime")>()),
+  detectPlatform: () => "desktop",
+}));
+
+import { queryKeys } from "../../../core/query/keys";
+import { CLEARED_TOOL, useAgentRecordStore, type RecordEntry } from "../state/useAgentRecordStore";
+import { useAgentsSettingsRequestStore } from "../state/useAgentsSettingsRequestStore";
+import type { ConnectedAgent } from "../state/useConnectedAgentsStore";
+import { AgentRecordDialog } from "./AgentRecordDialog";
+
+const AGENT: ConnectedAgent = {
+  id: "agent-1",
+  name: "Claude Code",
+  tokenHash: "hash",
+  pairedAt: "2026-11-06T10:00:00.000Z",
+  grants: {},
+  pluginApprovals: {},
+};
+
+const AT = "2026-11-06T10:00:00.000Z";
+const TIME = new Date(AT).toLocaleString();
+
+function entry(fields: Partial<RecordEntry> = {}): RecordEntry {
+  return {
+    at: AT,
+    agentId: "agent-1",
+    agentName: "Claude Code",
+    tool: "rim_read_messages",
+    workspaceId: "w1",
+    channelId: "c1",
+    query: false,
+    messageIds: ["m1", "m2"],
+    refused: false,
+    ...fields,
+  };
+}
+
+function show() {
+  const client = new QueryClient();
+  client.setQueryData(queryKeys.conversation("w1", "c1"), { id: "c1", title: "general" });
+  const onClose = vi.fn();
+  render(
+    <QueryClientProvider client={client}>
+      <AgentRecordDialog agent={AGENT} onClose={onClose} />
+    </QueryClientProvider>,
+  );
+  return onClose;
+}
+
+/** The dialog as the Clear the Agents Record command opens it: its confirmation alone. */
+function showClear() {
+  const onClose = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AgentRecordDialog agent={null} startWithClear onClose={onClose} />
+    </QueryClientProvider>,
+  );
+  return onClose;
+}
+
+function lines() {
+  return screen.queryAllByRole("listitem").map((item) => item.textContent);
+}
+
+describe("AgentRecordDialog", () => {
+  it("shows every agent's entries by name, with no agent given", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({ messageIds: ["a"] }),
+        entry({ agentId: "gone", agentName: "Old Tool", messageIds: ["b"] }),
+      ],
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AgentRecordDialog agent={null} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByText("What agents were given and what they asked to do"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^Old Tool · /)).toBeInTheDocument();
+  });
+
+  beforeEach(() => {
+    useAgentRecordStore.setState({ entries: [] });
+    useAgentsSettingsRequestStore.setState({ request: null });
+  });
+
+  it("says what the record is", () => {
+    show();
+    expect(
+      screen.getByRole("dialog", { name: "What Claude Code was given and what it asked to do" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "What RIM handed to this agent and what it asked to do. RIM can't see what it did with it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says when there is nothing, and offers nothing to clear", () => {
+    show();
+    expect(screen.getByText("Nothing yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear the whole record" })).toBeNull();
+  });
+
+  it("lists this agent's entries, newest first, by channel name or id", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({ messageIds: ["m1"] }),
+        entry({ channelId: "unseen", messageIds: [] }),
+        entry({ tool: "rim_search_messages", query: true, messageIds: ["m1", "m2", "m3"] }),
+      ],
+    });
+    show();
+    expect(lines()).toEqual([
+      `${TIME} · Searched · general · 3 messages`,
+      `${TIME} · Read · unseen · 0 messages`,
+      `${TIME} · Read · general · 1 message`,
+    ]);
+  });
+
+  it.each([
+    ["asked", "Asked to send"],
+    ["sent", "Sent"],
+    ["discarded", "You discarded it"],
+    ["expired", "Expired"],
+    ["busy", "You were busy"],
+    ["refused", "Refused"],
+  ] as const)("words a change that %s", (change, words) => {
+    useAgentRecordStore.setState({
+      entries: [entry({ tool: "rim_send_message", change, messageIds: [] })],
+    });
+    show();
+    expect(lines()).toEqual([`${TIME} · ${words} · #general`]);
+  });
+
+  it("words a refused request that named no channel", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({
+          tool: "rim_send_message",
+          channelId: null,
+          change: "refused",
+          refused: true,
+          messageIds: [],
+        }),
+      ],
+    });
+    show();
+    expect(lines()).toEqual([`${TIME} · Refused · an unknown channel`]);
+  });
+
+  it("shows the refused line", () => {
+    useAgentRecordStore.setState({ entries: [entry({ refused: true, messageIds: [] })] });
+    show();
+    expect(lines()).toEqual([`${TIME} · Read · general · refused`]);
+  });
+
+  it("names the workspace for a search across it, and the lists for what they are", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        entry({ tool: "rim_list_workspaces", workspaceId: "", channelId: null, messageIds: [] }),
+        entry({ tool: "rim_list_channels", channelId: null, messageIds: [] }),
+        entry({ tool: "rim_search_messages", channelId: null, query: true, messageIds: ["m1"] }),
+        entry({ channelId: null, workspaceId: "", refused: true, messageIds: [] }),
+      ],
+    });
+    show();
+    expect(lines()).toEqual([
+      `${TIME} · Read · an unknown channel · refused`,
+      `${TIME} · Searched · Acme · 1 message`,
+      `${TIME} · Read · channel names in Acme`,
+      `${TIME} · Read · workspace names`,
+    ]);
+  });
+
+  it("does not list another agent's entries", () => {
+    useAgentRecordStore.setState({ entries: [entry({ agentId: "agent-2" })] });
+    show();
+    expect(lines()).toEqual([]);
+    expect(screen.getByText("Nothing yet.")).toBeInTheDocument();
+  });
+
+  it("shows at most the newest 200", () => {
+    useAgentRecordStore.setState({
+      entries: Array.from({ length: 205 }, () => entry()),
+    });
+    show();
+    expect(lines()).toHaveLength(200);
+  });
+
+  it("holds no message text or ids in what it shows", () => {
+    useAgentRecordStore.setState({ entries: [entry({ messageIds: ["m-secret"] })] });
+    show();
+    expect(document.body.textContent).not.toContain("m-secret");
+  });
+
+  it("runs agents.clear_record from its button, whose confirmation takes its place", async () => {
+    const user = userEvent.setup();
+    useAgentRecordStore.setState({ entries: [entry(), entry({ agentId: "agent-2" })] });
+    const onClose = show();
+    await user.click(screen.getByRole("button", { name: "Clear the whole record" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(useAgentsSettingsRequestStore.getState().request).toEqual({ kind: "clearRecord" });
+    expect(useAgentRecordStore.getState().entries).toHaveLength(2);
+  });
+
+  it("clears the whole record after asking, and leaves one line", async () => {
+    const user = userEvent.setup();
+    useAgentRecordStore.setState({
+      entries: [entry(), entry({ agentId: "agent-2" })],
+    });
+    const onClose = showClear();
+    expect(
+      screen.getByText(
+        "This clears the record for every agent. It leaves one line saying you did.",
+      ),
+    ).toBeInTheDocument();
+    expect(useAgentRecordStore.getState().entries).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    const { entries } = useAgentRecordStore.getState();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].tool).toBe(CLEARED_TOOL);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("clears nothing when the question is cancelled", async () => {
+    const user = userEvent.setup();
+    useAgentRecordStore.setState({ entries: [entry()] });
+    const onClose = showClear();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useAgentRecordStore.getState().entries).toHaveLength(1);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  describe("RIM commands", () => {
+    it.each([
+      ["done", "Ran"],
+      ["asked", "Asked to run"],
+      ["proposed", "Suggested"],
+      ["refused", "Refused"],
+    ] as const)("words %s as %s with the command's id", (change, label) => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_command",
+            change,
+            channelId: null,
+            command: "chat.set_topic",
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · ${label} · chat.set_topic`]);
+    });
+
+    it("names the channel, and words a call with no usable id", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({ tool: "rim_run_command", change: "done", command: "chat.pin", messageIds: [] }),
+          entry({ tool: "rim_run_command", refused: true, channelId: null, messageIds: [] }),
+        ],
+      });
+      show();
+      expect(lines()[1]).toMatch(/Ran · chat\.pin · #/);
+      expect(lines()[0]).toBe(`${TIME} · Refused · an unknown command`);
+    });
+
+    it("words the list for what it is", () => {
+      useAgentRecordStore.setState({
+        entries: [entry({ tool: "rim_list_commands", channelId: null, messageIds: [] })],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Read · the RIM commands it can ask for`]);
+    });
+  });
+
+  describe("plugin commands", () => {
+    const POD = { pluginId: "dev.example.pods", commandId: "list" };
+
+    it.each([
+      ["done", "Ran"],
+      ["asked", "Asked to run"],
+      ["proposed", "Suggested"],
+      ["discarded", "You discarded it"],
+      ["expired", "Expired"],
+      ["busy", "You were busy"],
+      ["refused", "Refused"],
+    ] as const)("words %s as %s, with the plugin's name shown safely", (change, label) => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            change,
+            channelId: null,
+            plugin: POD,
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · ${label} · Po⟦U+202E⟧ds list`]);
+    });
+
+    it("names the channel a command ran in", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({ tool: "rim_run_plugin_command", change: "done", plugin: POD, messageIds: [] }),
+        ],
+      });
+      show();
+      expect(lines()[0]).toMatch(/Ran · Po⟦U\+202E⟧ds list · #/);
+    });
+
+    it("words a refused run with no change, and falls back on ids", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            refused: true,
+            channelId: null,
+            plugin: { pluginId: "dev.example.gone", commandId: "list" },
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Refused · dev.example.gone list`]);
+    });
+
+    it("words a call that gave no usable plugin id", () => {
+      useAgentRecordStore.setState({
+        entries: [
+          entry({
+            tool: "rim_run_plugin_command",
+            refused: true,
+            channelId: null,
+            plugin: { pluginId: "", commandId: "" },
+            messageIds: [],
+          }),
+        ],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Refused · an unknown plugin`]);
+    });
+
+    it("words the list for what it is", () => {
+      useAgentRecordStore.setState({
+        entries: [entry({ tool: "rim_list_plugin_commands", channelId: null, messageIds: [] })],
+      });
+      show();
+      expect(lines()).toEqual([`${TIME} · Read · the plugin commands approved for it`]);
+    });
+  });
+
+  it("offers to clear even when only another agent has entries", () => {
+    useAgentRecordStore.setState({ entries: [entry({ agentId: "agent-2" })] });
+    show();
+    expect(screen.getByRole("button", { name: "Clear the whole record" })).toBeInTheDocument();
+  });
+});

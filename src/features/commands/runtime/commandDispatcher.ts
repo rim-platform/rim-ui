@@ -1,10 +1,29 @@
-import type { CommandDefinition, CommandResult } from "../types";
+import type {
+  CommandArgumentInfo,
+  CommandContextInput,
+  CommandDefinition,
+  CommandResult,
+} from "../types";
+import {
+  argumentGiven,
+  argumentTypesOf,
+  camelCaseName,
+  contextOnlyArgumentMessage,
+  contextSuppliesArgument,
+  formAsksFor,
+} from "./commandArguments";
+import { useCommandArgumentsStore } from "../state/useCommandArgumentsStore";
 import { logger } from "../../../core/logger";
 import { toast } from "../../../shared/toast";
 import { useCommandStore, type TargetPickerKind } from "../state/useCommandStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 import { useSearchOverlayStore } from "../../messages/state/useSearchOverlayStore";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
+import { useMembersPanelStore } from "../../conversations/state/useMembersPanelStore";
+import { useConversationDialogStore } from "../../conversations/state/useConversationDialogStore";
+import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
+import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
+import { isDirectSpace } from "../../relay/state/useRelayStore";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { withWebHealth } from "../../plugins/api/usePluginList";
@@ -17,28 +36,74 @@ import { panelSlot, type PluginCommandResult, type PluginInfo } from "../../plug
 import { WebCommandError, webPluginHost } from "../../plugins/web/webPluginHost";
 import { safeInvoke, type SafeInvokeResult } from "../../../core/tauri/safeInvoke";
 import { useUnreadStore } from "../../conversations/state/useUnreadStore";
+import {
+  useUnreadsPageStore,
+  type UnreadsPageControls,
+} from "../../unreads/state/useUnreadsPageStore";
+import { undoDeferredMark } from "../../conversations/api/deferredMark";
 import { useLensStore } from "../../lenses/state/useLensStore";
 import { markWorkspaceRead } from "../../conversations/api/useMarkAsRead";
+import { markAsUnread, spaceMarksUnread } from "../../conversations/api/useMarkAsUnread";
 import { queryClient } from "../../../core/query/queryClient";
 import { queryKeys } from "../../../core/query/keys";
 import { reloadCommands } from "../api/useCommands";
 import { navigatePanel } from "../../../shell/navigation/spatialNavigation";
+import { goBack, goForward } from "../../../shell/navigation/history";
 import { useLayoutPresetStore } from "../../../shell/state/useLayoutPresetStore";
 import { closeTopPanel } from "../../../shell/state/closeTopPanel";
 import { useKeybindProfileStore } from "../state/useKeybindProfileStore";
 import { returnFromDirect } from "../../conversations/state/directOrigin";
 import { selectDirectConversation } from "../../conversations/state/directSelection";
+import { directSpaceOf } from "../../conversations/state/openDirect";
+import {
+  sendsEmptyText,
+  takenArguments,
+  takingArgument,
+  withTakenArguments,
+} from "./argumentPickers";
+import { fieldProblem, givenFieldValues, toFieldValue, type FieldValue } from "./argumentValues";
 import { cycleRecentActivity } from "./cycleRecentActivity";
+import { EDIT_HOME_COMMAND_ID, editHome } from "../../home/editHome";
 import { confirmConversationCommand } from "./conversationActionGate";
-import { openWorkspaceAction } from "../../workspaces/workspaceActions";
+import { openWorkspaceAction, workspaceCommandOffered } from "../../workspaces/workspaceActions";
 import { refuseBlockedConversation } from "../../relay/inbox/blockedCreators";
 import { QUIT_COMMAND_ID } from "../../desktop-shell/availability";
 import { requestQuit } from "../../desktop-shell/state/useQuitConfirmStore";
+import { copyToClipboard } from "../../../shared/ui/contextMenu/menuActions";
+import { findCachedConversation } from "../../conversations/api/useConversation";
+import {
+  isShownConversation,
+  showConversation,
+} from "../../conversations/hooks/useOpenConversation";
+import {
+  CommandArgumentType,
+  ConversationTypeEnum,
+} from "../../../core/graphql/generated/schema-types";
+import {
+  OPEN_A_CONVERSATION,
+  SELECT_A_MESSAGE,
+  selectedMessageInList,
+  selectedMessageOf,
+} from "./appCommands/messageContext";
+import { CONVERSATION_HANDLERS } from "./appCommands/conversation";
+import { GENERAL_ARGUMENT_PROMPTS, GENERAL_HANDLERS } from "./appCommands/general";
+import { AGENT_ARGUMENT_PROMPTS, AGENT_HANDLERS } from "./appCommands/agents";
+import { AGENT_MANAGEMENT_COMMAND_IDS } from "./appCommands/agentCommandIds";
+import { MANAGE_HANDLERS } from "./appCommands/manage";
+import { withClientLabel } from "./localCommands";
+import { targetWorkspaceOf } from "./appCommands/targetWorkspace";
+import { tomorrowMorning } from "../../notifications/rules";
+import { accountMacrosOn } from "../../macros/api/useAccountMacros";
+import { isMacroId } from "../../macros/runtime/macroCommands";
+import { runMacro } from "../../macros/runtime/runMacro";
 import {
   runWithHumanConfirmation,
   type ConfirmationProof,
+  type ConfirmationSubject,
   type HumanConfirmationOutcome,
 } from "./humanConfirmation";
+import { withCommandEffect } from "./commandEffects";
+import { relativeBanRefusal } from "./relativeBanGuard";
 
 interface ConversationItem {
   id: string;
@@ -107,6 +172,37 @@ function spaceOf(args: Record<string, unknown>): string | null {
   return argString(args, "serverId", "server_id") ?? useWorkspaceStore.getState().workspaceId;
 }
 
+/** What opening a DM says when none of the person's conversations is the one named. */
+const DM_NOT_FOUND = "That direct message isn't among your conversations";
+
+/** Opens the DM or group `conversationId` of `spaceId`, unless the app hides it as blocked. */
+function openDirectConversation(spaceId: string | null, conversationId: string): void {
+  if (refuseBlockedConversation(spaceId, conversationId)) return;
+  if (spaceId) selectDirectConversation(spaceId, conversationId);
+  else useShellStore.getState().setSelectedConversationId(conversationId);
+}
+
+/**
+ * Opens a DM or group named only by its id, as a saved keybind or macro step names it: in the
+ * direct space that holds it, else in the open workspace when it holds it.
+ *
+ * @returns An error result when no space of the person's holds it.
+ */
+async function openFoundDirectConversation(conversationId: string): Promise<CommandResult | void> {
+  const direct = await directSpaceOf(conversationId);
+  if (direct) return openDirectConversation(direct, conversationId);
+  const open = useWorkspaceStore.getState().workspaceId;
+  if (open && !findCachedConversation(queryClient, open, conversationId)) {
+    return resultError(DM_NOT_FOUND);
+  }
+  openDirectConversation(open, conversationId);
+}
+
+/** The result of a local command that could not do what it was asked. */
+function resultError(message: string): CommandResult {
+  return { status: "ERROR", message, payload: null, followUpCommands: [] };
+}
+
 /**
  * The first non-blank string among `args[names]`: a command's argument under either of its
  * spellings, the camelCase of the client's own callers and the snake_case the server declares.
@@ -122,10 +218,44 @@ export function argString(
   return undefined;
 }
 
-const localHandlers: Record<
-  string,
-  (args: Record<string, unknown> | undefined) => void | CommandResult
-> = {
+/** Runs one of the Unreads page's commands while the page is open; `false` when it is not. */
+function onUnreadsPage(run: (controls: UnreadsPageControls) => void): boolean {
+  const controls = useUnreadsPageStore.getState().controls;
+  if (!controls) return false;
+  run(controls);
+  return true;
+}
+
+function openUnreads(): void {
+  useShellStore.getState().setMainSurface({ kind: "unreads" });
+}
+
+/** The answer of the Unreads page's commands that act on the page's selection elsewhere. */
+function onlyOnUnreadsPage(): void {
+  toast.info("This works on the Unreads page");
+}
+
+/** Focuses the element `selector` names, or says that a conversation must be open first. */
+function focusInConversation(selector: string): void {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) element.focus();
+  else toast.info(OPEN_A_CONVERSATION);
+}
+
+/**
+ * A command this app runs itself: called with the command's arguments and the context it runs
+ * in, it acts and returns nothing, or a result that says what happened. One that works on after
+ * it returns, such as a back-up, returns a promise that settles when it is done; it says how it
+ * went itself.
+ */
+export type LocalHandler = (
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+) => void | CommandResult | Promise<void | CommandResult>;
+
+const localHandlers: Record<string, LocalHandler> = {
+  ...CONVERSATION_HANDLERS,
+  ...MANAGE_HANDLERS,
   "workspace.open_command_palette": () => {
     useCommandStore.getState().toggleCommandPalette();
   },
@@ -133,7 +263,11 @@ const localHandlers: Record<
     useShellStore.getState().setMainSurface({ kind: "settings" });
   },
   "workspace.open_search": () => {
-    useSearchOverlayStore.getState().openWithScope({ kind: "all" });
+    // From Home and Unreads the search box starts with every workspace.
+    const kind = useShellStore.getState().mainSurface.kind;
+    useCommandStore
+      .getState()
+      .openSearchBox(kind === "home" || kind === "unreads" ? "everything" : "workspace");
   },
   "workspace.search_in_channel": () => {
     const convId = useShellStore.getState().selectedConversationId;
@@ -146,17 +280,107 @@ const localHandlers: Record<
     }
   },
   "workspace.open_marketplace": () => {
-    useShellStore.getState().setMainSurface({ kind: "marketplace" });
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "plugins" });
+  },
+  "workspace.open_agents": () => {
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "agents" });
   },
   "workspace.toggle_sidebar": () => {
-    useShellStore.getState().toggleSidebar();
+    const shell = useShellStore.getState();
+    // A narrow window has no sidebar to collapse: the command opens or closes the drawer.
+    if (shell.shellWidth === "narrow") shell.toggleNavDrawer();
+    else shell.toggleSidebar();
   },
-  "workspace.focus_composer": () => {
-    document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
+  "workspace.open_home": () => {
+    useShellStore.getState().setMainSurface({ kind: "home" });
   },
-  "workspace.focus_message_list": () => {
-    document.querySelector<HTMLDivElement>("[data-message-list]")?.focus();
+  [EDIT_HOME_COMMAND_ID]: () => editHome(),
+  "workspace.open_unreads": openUnreads,
+  // Off the Unreads page, moving and opening open the page; marking and undoing say where they
+  // work.
+  "workspace.unreads_next": () => {
+    if (!onUnreadsPage((c) => c.next())) openUnreads();
   },
+  "workspace.unreads_previous": () => {
+    if (!onUnreadsPage((c) => c.previous())) openUnreads();
+  },
+  "workspace.unreads_mark_group": () => {
+    if (!onUnreadsPage((c) => c.markGroup())) onlyOnUnreadsPage();
+  },
+  "workspace.unreads_open": () => {
+    if (!onUnreadsPage((c) => c.open())) openUnreads();
+  },
+  // A mark's own Undo names it; without one, the newest mark still waiting is taken back.
+  "workspace.unreads_undo": (args) => {
+    const markId = args?.mark_id ?? args?.markId;
+    if (typeof markId === "number") {
+      undoDeferredMark(markId);
+      return;
+    }
+    if (!onUnreadsPage((c) => c.undo())) onlyOnUnreadsPage();
+  },
+  "workspace.open_audit_log": () => {
+    useShellStore.getState().setMainSurface({ kind: "audit-log" });
+  },
+  "workspace.open_message_requests": () => {
+    const workspaceId = useWorkspaceStore.getState().workspaceId;
+    useNotificationsPanelStore.getState().setOpen(false);
+    useShellStore.getState().setMainSurface({
+      kind: "dm-requests",
+      workspaceId: isDirectSpace(workspaceId) ? null : workspaceId,
+    });
+  },
+  "workspace.toggle_pinned_messages": () => {
+    const shell = useShellStore.getState();
+    if (!shell.selectedConversationId) {
+      toast.info("Open a conversation to see its pinned messages");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setPinnedPanelOpen(!shell.pinnedPanelOpen);
+  },
+  "workspace.toggle_channel_bots": () => {
+    const shell = useShellStore.getState();
+    if (!shell.selectedConversationId) {
+      toast.info("Open a channel to see its bots");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setBotsPanelOpen(!shell.botsPanelOpen);
+  },
+  "workspace.toggle_notifications": () => {
+    useNotificationsPanelStore.getState().toggle();
+  },
+  "workspace.toggle_conversation_members": (_args, commandContext) => {
+    const shell = useShellStore.getState();
+    const conversationId =
+      contextString(commandContext, "conversationId") ?? shell.selectedConversationId;
+    if (!conversationId) {
+      toast.info("Open a conversation to see its members");
+      return;
+    }
+    // Another conversation than the one shown, as a sidebar row's menu names, opens with them.
+    const workspaceId = contextString(commandContext, "workspaceId");
+    const shown = workspaceId
+      ? isShownConversation(workspaceId, conversationId)
+      : shell.selectedConversationId === conversationId;
+    if (!shown) showConversation(conversationId, workspaceId);
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setActivePanel("inbox");
+    useNotificationsPanelStore.getState().setOpen(false);
+    if (shown) useMembersPanelStore.getState().toggle();
+    else useMembersPanelStore.getState().setOpen(true);
+  },
+  "workspace.toggle_member_directory": () => {
+    const shell = useShellStore.getState();
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setActivePanel("inbox");
+    useNotificationsPanelStore.getState().setOpen(false);
+    useMembersPanelStore.getState().setOpen(false);
+    useMemberDirectoryStore.getState().toggle();
+  },
+  "workspace.focus_composer": () => focusInConversation("[data-composer-input]"),
+  "workspace.focus_message_list": () => focusInConversation("[data-message-list]"),
   "workspace.navigate_to_channel": (args) => {
     const conversationId = argString(args, "conversationId", "conversation_id");
     if (!args || !conversationId) return;
@@ -166,10 +390,12 @@ const localHandlers: Record<
   "workspace.navigate_to_dm": (args) => {
     const conversationId = argString(args, "conversationId", "conversation_id");
     if (!args || !conversationId) return;
-    const spaceId = spaceOf(args);
-    if (refuseBlockedConversation(spaceId, conversationId)) return;
-    if (spaceId) selectDirectConversation(spaceId, conversationId);
-    else useShellStore.getState().setSelectedConversationId(conversationId);
+    const named = argString(args, "serverId", "server_id");
+    if (named) {
+      openDirectConversation(named, conversationId);
+      return;
+    }
+    return openFoundDirectConversation(conversationId);
   },
   "workspace.switch_workspace": (args) => {
     const workspaceId = argString(args, "workspaceId", "workspace_id");
@@ -178,8 +404,17 @@ const localHandlers: Record<
   "workspace.back_to_workspace": () => {
     returnFromDirect();
   },
-  "workspace.leave": () => openWorkspaceAction("leave"),
-  "workspace.rename": () => openWorkspaceAction("rename"),
+  "workspace.open_bots": () => {
+    if (!workspaceCommandOffered("workspace.open_bots")) {
+      toast.info("Bots are managed by this workspace's owners and moderators.");
+      return;
+    }
+    useShellStore.getState().setMainSurface({ kind: "settings", tab: "bots" });
+  },
+  "workspace.leave": (args, commandContext) =>
+    openWorkspaceAction("leave", targetWorkspaceOf(args, commandContext)),
+  "workspace.rename": (args, commandContext) =>
+    openWorkspaceAction("rename", targetWorkspaceOf(args, commandContext)),
   "workspace.previous_channel": () => {
     const ids = getCachedConversationIds();
     if (ids.length === 0) return;
@@ -222,6 +457,12 @@ const localHandlers: Record<
     const before = [...unread].reverse().find((id) => allIds.indexOf(id) < currentIdx);
     useShellStore.getState().setSelectedConversationId(before ?? unread[unread.length - 1]);
   },
+  "workspace.go_back": () => {
+    if (!goBack()) toast.info("Nothing to go back to");
+  },
+  "workspace.go_forward": () => {
+    if (!goForward()) toast.info("Nothing to go forward to");
+  },
   "workspace.navigate_panel_left": () => {
     navigatePanel("left");
   },
@@ -255,7 +496,13 @@ const localHandlers: Record<
   "workspace.cycle_recent_activity": () => {
     cycleRecentActivity();
   },
-  "chat.create_channel": () => {
+  "chat.create_channel": (args, commandContext) => {
+    // Another workspace's channel dialog opens without opening that workspace.
+    const workspaceId = targetWorkspaceOf(args, commandContext);
+    if (workspaceId && workspaceId !== useWorkspaceStore.getState().workspaceId) {
+      useConversationDialogStore.getState().openCreateChannel(workspaceId);
+      return;
+    }
     // Switch to the conversation surface, then open the channel dialog
     useShellStore.getState().setMainSurface({ kind: "conversation" });
     useShellStore.getState().setShowNewChannelDialog(true);
@@ -271,31 +518,98 @@ const localHandlers: Record<
   "chat.scroll_to_top": () => {
     document.querySelector("[data-message-list]")?.scrollTo({ top: 0, behavior: "smooth" });
   },
-  "chat.copy_message_text": () => {
-    logger.debug("[RIM] copy_message_text: handled at context menu level");
+  "chat.copy_message_text": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (!selected) return;
+    const text = selected.actions.textOf(selected.messageId);
+    if (text === null) toast.info(SELECT_A_MESSAGE);
+    else copyToClipboard(text);
   },
-  "chat.open_thread": (args) => {
-    // The context menu opens threads itself; the agent passes the root message id.
-    if (typeof args?.rootMessageId === "string") {
-      useShellStore.getState().openThreadForMessage(args.rootMessageId);
-    } else {
-      logger.debug("[RIM] open_thread: handled at context menu level");
+  "chat.open_thread": (args, commandContext) => {
+    // The agent names the root message; a person's surfaces act on the selected message.
+    const rootMessageId =
+      argString(args, "rootMessageId", "root_message_id") ?? selectedMessageOf(commandContext);
+    if (rootMessageId) useShellStore.getState().openThreadForMessage(rootMessageId);
+    else toast.info(SELECT_A_MESSAGE);
+  },
+  "chat.reply_to_selected_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.reply(selected.messageId)) {
+      toast.info("You can't reply in this conversation");
     }
   },
-  "chat.mark_all_as_read": () => {
-    const workspaceId = useWorkspaceStore.getState().workspaceId;
+  "chat.edit_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.edit(selected.messageId)) {
+      toast.info("Only your own messages can be edited");
+    }
+  },
+  "chat.report_message": (_args, commandContext) => {
+    const selected = selectedMessageInList(commandContext);
+    if (selected && !selected.actions.report(selected.messageId)) {
+      toast.info("Your own messages can't be reported");
+    }
+  },
+  "chat.mark_all_as_read": (args, commandContext) => {
+    const workspaceId = targetWorkspaceOf(args, commandContext);
     if (!workspaceId) return;
     markWorkspaceRead(workspaceId);
-    return resultText("All conversations marked as read");
+  },
+  "chat.mark_as_unread": (args, commandContext) => {
+    // The arguments' workspace and conversation, else the context's, else the open ones.
+    const workspaceId =
+      argString(args, "serverId", "server_id") ??
+      argString(commandContext, "workspaceId") ??
+      useWorkspaceStore.getState().workspaceId;
+    const conversationId =
+      argString(args, "conversationId", "conversation_id") ??
+      argString(commandContext, "conversationId") ??
+      useShellStore.getState().selectedConversationId;
+    const messageId =
+      argString(args, "messageId", "message_id") ?? selectedMessageOf(commandContext);
+    if (!workspaceId || !conversationId || !messageId) {
+      toast.info("Select a message to mark unread from");
+      return;
+    }
+    if (!spaceMarksUnread(workspaceId)) {
+      toast.error("This workspace's server does not support marking unread yet");
+      return;
+    }
+    void markAsUnread({ workspaceId, conversationId, messageId });
   },
   "workspace.reload_commands": () => {
     reloadCommands();
     return resultText("Commands reloaded");
   },
-  "admin.invite_member": () => {
-    useShellStore.getState().setShowInviteDialog(true);
+  "admin.invite_member": (args, commandContext) => {
+    // The open conversation's header shows the open workspace's invite dialog; any other
+    // workspace's, or one asked for away from a conversation, opens without switching.
+    const workspaceId = targetWorkspaceOf(args, commandContext);
+    const shell = useShellStore.getState();
+    const inHeader =
+      workspaceId === useWorkspaceStore.getState().workspaceId &&
+      shell.mainSurface.kind === "conversation" &&
+      shell.selectedConversationId !== null;
+    if (inHeader) shell.setShowInviteDialog(true);
+    else if (workspaceId) useConversationDialogStore.getState().openInvite(workspaceId);
   },
   "workspace.toggle_lens_picker": () => {
+    const shell = useShellStore.getState();
+    const conversationId = shell.selectedConversationId;
+    if (!conversationId) {
+      toast.info(OPEN_A_CONVERSATION);
+      return;
+    }
+    const conversation = findCachedConversation(
+      queryClient,
+      useWorkspaceStore.getState().workspaceId ?? undefined,
+      conversationId,
+    );
+    if (conversation && conversation.conversationType !== ConversationTypeEnum.CHANNEL) {
+      toast.info("Lenses are offered in channels");
+      return;
+    }
+    shell.setMainSurface({ kind: "conversation" });
     const store = useLensStore.getState();
     store.setLensPickerOpen(!store.lensPickerOpen);
   },
@@ -319,6 +633,8 @@ const localHandlers: Record<
   [QUIT_COMMAND_ID]: () => {
     void requestQuit();
   },
+  ...GENERAL_HANDLERS,
+  ...AGENT_HANDLERS,
 };
 
 /**
@@ -355,6 +671,8 @@ const argumentPrompts: Record<
     alias: "conversationId",
     picker: "joinableChannel",
   },
+  ...GENERAL_ARGUMENT_PROMPTS,
+  ...AGENT_ARGUMENT_PROMPTS,
 };
 
 /** The kind of target the palette asks for before it runs `commandId`, if it asks. */
@@ -401,15 +719,80 @@ function openArgumentPrompt(
 /**
  * Runs the local handler of a `DESKTOP_LOCAL` command for the AI agent. The server refuses
  * to execute desktop-local commands, so agent tool calls for them land here instead of
- * `executeCommand`. Returns `false` when no local handler exists. Only meant for
+ * `executeCommand`. Returns `false` when no local handler exists, and for the commands that
+ * answer and manage agents, which run only from the person's own surfaces. Only meant for
  * `DESKTOP_LOCAL` commands: several backend commands also have local handlers that open a
- * dialog for a human, which is not what an agent call should do.
+ * dialog for a human, which is not what an agent call should do. The handler gets no selected
+ * message: a command on one acts only on the message its arguments name.
  */
 export function runDesktopLocalCommand(commandId: string, args?: Record<string, unknown>): boolean {
+  // Answering and managing agents is the person's own act, never run for an agent.
+  if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return false;
   const handler = localHandlers[commandId];
   if (!handler) return false;
-  handler(args);
+  handler(args, {});
   return true;
+}
+
+/**
+ * Runs the local handler of a command for a caller that is not the person, such as a
+ * plugin the person granted it, with `args` and the `commandContext` the caller acts in. It
+ * never runs a command that answers or manages agents, and opens no argument picker.
+ *
+ * @returns `null` when the command has no local handler (or is an agent command), else
+ *   whether it succeeded and what its result says.
+ */
+export async function runLocalCommandForCaller(
+  commandId: string,
+  args: Record<string, unknown>,
+  commandContext: Record<string, unknown>,
+): Promise<{ ok: boolean; message: string } | null> {
+  if (AGENT_MANAGEMENT_COMMAND_IDS.has(commandId)) return null;
+  if (!Object.prototype.hasOwnProperty.call(localHandlers, commandId)) return null;
+  const result = await localHandlers[commandId](args, commandContext);
+  if (!result) return { ok: true, message: "" };
+  return { ok: result.status !== "ERROR", message: result.message };
+}
+
+/**
+ * Backend commands whose local handler acts on the arguments typed in the message box itself,
+ * rather than leaving them to the server.
+ */
+const HANDLERS_TAKING_TYPED_ARGUMENTS: ReadonlySet<string> = new Set(["chat.mark_as_unread"]);
+
+/**
+ * Whether a run with `typedArgs` goes to the server instead of the local handler of `command`: a
+ * backend command whose local handler opens a dialog or acts on the selected message, run with
+ * arguments typed for the server.
+ */
+export function typedArgumentsGoToServer(
+  command: Pick<CommandDefinition, "id" | "executionTarget">,
+  typedArgs: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    command.executionTarget === "BACKEND" &&
+    hasLocalHandler(command.id) &&
+    !HANDLERS_TAKING_TYPED_ARGUMENTS.has(command.id) &&
+    typedArgs !== undefined &&
+    Object.keys(typedArgs).length > 0
+  );
+}
+
+const MUTE_CONVERSATION_COMMAND_ID = "notifications.mute_conversation";
+
+/**
+ * Turns a person's "mute until tomorrow" into an explicit end at 09:00 on this device's clock,
+ * because the server does not know the person's timezone. Other commands and durations are
+ * returned unchanged.
+ */
+export function withLocalTomorrowMorning(
+  commandId: string,
+  args: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (commandId !== MUTE_CONVERSATION_COMMAND_ID || args?.duration !== "until_tomorrow") {
+    return args;
+  }
+  return { ...args, duration: "until", until: tomorrowMorning().toISOString() };
 }
 
 export async function dispatchCommand(
@@ -423,8 +806,50 @@ export async function dispatchCommand(
     isPipe?: boolean;
     /** Set when a plugin panel asks to run a command; the host then refuses other plugins' commands. */
     callerPluginId?: string;
+    /**
+     * Set when `args` were typed in the message box or saved with a keybind, a quick action or a
+     * macro step: a backend command then runs on the server with them, even when this app has a
+     * handler that would run it without them. Without arguments, that handler still runs.
+     */
+    typedArgs?: boolean;
+    /**
+     * Set by the surfaces a person runs commands from (the palette, keybinds, quick boxes): a
+     * backend command lacking required arguments opens the argument form instead of failing,
+     * and runs with what is filled in there.
+     */
+    askForArguments?: boolean;
+    /**
+     * Set by the message box along with `askForArguments`: the form also opens for a typed value
+     * its field cannot take, and shows the typed arguments it has fields for with what was typed,
+     * so they can be changed there.
+     */
+    showTypedArguments?: boolean;
+    /** Called with the arguments a command runs with once the argument form has added to them. */
+    onArguments?: (args: Record<string, unknown>) => void;
+    /**
+     * Set by a control whose own dialog was the person's confirmation: a held backend command
+     * runs without the confirmation dialog, except a `RESTRICTED` one, and leaving or archiving
+     * a conversation is not asked about again.
+     */
+    confirmedByCaller?: boolean;
+    /** What the confirmation dialog shows in place of the command's own title and description. */
+    confirmationSubject?: Partial<ConfirmationSubject>;
   },
 ): Promise<CommandResult | null> {
+  // One of the person's macros runs here, step by step; a plugin never runs it.
+  if (isMacroId(command.id) && accountMacrosOn()) {
+    if (context?.callerPluginId) {
+      return {
+        status: "ERROR",
+        message: "A plugin can't run your macros",
+        payload: null,
+        followUpCommands: [],
+      };
+    }
+    await runMacro(command.id, context?.commandContext as CommandContextInput | undefined);
+    return { status: "SUCCESS", message: "", payload: LOCAL_ACTION_PAYLOAD, followUpCommands: [] };
+  }
+
   // A command that lacks the argument a surface asks for opens that surface instead.
   if (openArgumentPrompt(command.id, context?.args, context?.isPipe)) {
     return {
@@ -435,12 +860,14 @@ export async function dispatchCommand(
     };
   }
 
-  // Local handlers always take precedence — even if the backend marks a
-  // command as "Backend", the frontend may have a local handler that opens
-  // a dialog or performs a client-side action instead.
+  // A local handler takes precedence, even over a backend target: it opens a dialog or acts as
+  // the app does, unless arguments typed for the server were given.
   const localHandler = localHandlers[command.id];
-  if (localHandler) {
-    const result = localHandler(context?.args);
+  if (localHandler && !(context?.typedArgs && typedArgumentsGoToServer(command, context.args))) {
+    // A handler that works on settles its promise when done, so the run ends with it; any other
+    // has acted by the time it returns.
+    const returned = localHandler(context?.args, context?.commandContext);
+    const result = returned instanceof Promise ? await returned : returned;
     if (result) return result;
     return {
       status: "SUCCESS",
@@ -491,9 +918,65 @@ export async function dispatchCommand(
     };
   }
 
+  // A command on the selected message never reaches the server without one.
   if (
     !context?.isPipe &&
-    !(await confirmConversationCommand(command.id, context?.args, context?.commandContext))
+    command.requiredContext.includes("selected_message") &&
+    !selectedMessageOf(context?.commandContext ?? {}) &&
+    !argString(context?.args, "message_id", "messageId")
+  ) {
+    return { status: "ERROR", message: SELECT_A_MESSAGE, payload: null, followUpCommands: [] };
+  }
+
+  // A person's surface asks for the arguments it lacks, then runs the command with them.
+  if (context?.askForArguments && !context.isPipe && !context.callerPluginId) {
+    const asked = await askForMissingArguments(
+      command,
+      context.args,
+      context.commandContext,
+      context.showTypedArguments === true,
+    );
+    if (asked.kind === "refused") {
+      return { status: "ERROR", message: asked.message, payload: null, followUpCommands: [] };
+    }
+    if (asked.kind === "cancelled") {
+      return {
+        status: "ERROR",
+        message: "Cancelled",
+        payload: CANCELLED_PAYLOAD,
+        followUpCommands: [],
+      };
+    }
+    if (asked.kind === "filled") {
+      context.onArguments?.(asked.args);
+      return dispatchCommand(command, executeBackend, {
+        ...context,
+        args: asked.args,
+        askForArguments: false,
+        showTypedArguments: false,
+      });
+    }
+  }
+  // Every run the person starts, saved or typed, ends "until tomorrow" at their own 09:00.
+  const args =
+    !context?.isPipe && !context?.callerPluginId
+      ? withLocalTomorrowMorning(command.id, context?.args)
+      : context?.args;
+
+  // A server that can't end a ban after a set time would ban for good: nothing is sent to it.
+  const banRefusal = await relativeBanRefusal(
+    command.id,
+    args,
+    contextString(context?.commandContext, "workspaceId"),
+  );
+  if (banRefusal) {
+    return { status: "ERROR", message: banRefusal, payload: null, followUpCommands: [] };
+  }
+
+  if (
+    !context?.isPipe &&
+    !context?.confirmedByCaller &&
+    !(await confirmConversationCommand(command.id, args, context?.commandContext))
   ) {
     return {
       status: "ERROR",
@@ -503,28 +986,210 @@ export async function dispatchCommand(
     };
   }
 
-  // Backend command: a dangerous one is held until the user confirms it in the dialog.
-  const outcome = await runWithHumanConfirmation(
-    async (confirmation) => {
-      const result = await executeBackend({
-        commandId: command.id,
-        args: context?.args,
-        commandContext: context?.commandContext,
-        isPipe: context?.isPipe,
-        ...(confirmation && { confirmation }),
-      });
-      return result.executeCommand;
-    },
-    {
-      commandId: command.id,
-      title: command.title || command.id,
-      description: command.description || undefined,
-      args: context?.args,
-      sensitivity: command.sensitivity,
-      dangerous: command.dangerous,
+  // Backend command: a dangerous one is held until the user confirms it in the dialog, and the
+  // app shows its effect around the run whichever surface started it.
+  return withCommandEffect(
+    { commandId: command.id, args, commandContext: context?.commandContext },
+    async () => {
+      const outcome = await runWithHumanConfirmation(
+        async (confirmation) => {
+          const result = await executeBackend({
+            commandId: command.id,
+            args,
+            commandContext: context?.commandContext,
+            isPipe: context?.isPipe,
+            ...(confirmation && { confirmation }),
+          });
+          return result.executeCommand;
+        },
+        {
+          commandId: command.id,
+          title: withClientLabel(command).title || command.id,
+          description: withClientLabel(command).description || undefined,
+          args,
+          argumentTypes: argumentTypesOf(command.arguments),
+          sensitivity: command.sensitivity,
+          dangerous: command.dangerous,
+          ...context?.confirmationSubject,
+        },
+        { preConfirmed: context?.confirmedByCaller },
+      );
+      return commandResultOf(outcome);
     },
   );
-  return commandResultOf(outcome);
+}
+
+/** How asking for a command's missing arguments ended. */
+type AskedArguments =
+  | { kind: "complete" }
+  | { kind: "filled"; args: Record<string, unknown> }
+  | { kind: "cancelled" }
+  | { kind: "refused"; message: string };
+
+function contextString(context: Record<string, unknown> | undefined, key: string) {
+  const value = context?.[key];
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** A typed argument the argument form shows: its field's value and the problem it has, if any. */
+interface TypedField {
+  argument: CommandArgumentInfo;
+  value: FieldValue;
+  problem: string | null;
+}
+
+/**
+ * The arguments of `command` typed in `args` that the argument form has a field for, each with
+ * what was typed as its field's value and why that field cannot take it, if it cannot. The
+ * workspace, the prompted argument and those another field sets are left out.
+ */
+function typedFields(
+  command: CommandDefinition,
+  args: Record<string, unknown> | undefined,
+): TypedField[] {
+  const declared = command.arguments ?? [];
+  const prompted = argumentPromptName(command.id);
+  return declared.flatMap((argument): TypedField[] => {
+    if (
+      argument.name === prompted ||
+      argument.argumentType === CommandArgumentType.WORKSPACE_ID ||
+      !formAsksFor(argument) ||
+      takingArgument(command.id, argument.name, declared) !== undefined ||
+      !argumentGiven(args, argument.name)
+    ) {
+      return [];
+    }
+    const value = typedFieldValue(command.id, argument, args);
+    const problem = fieldProblem(argument, value, argument.required, command.id);
+    return [{ argument, value, problem }];
+  });
+}
+
+/**
+ * What the field of `argument` starts with for the value typed for it in `args`: the value as
+ * its field shows it, else as it was typed.
+ */
+function typedFieldValue(
+  commandId: string,
+  argument: CommandArgumentInfo,
+  args: Record<string, unknown> | undefined,
+): FieldValue {
+  const typed = args?.[argument.name] ?? args?.[camelCaseName(argument.name)];
+  return (
+    toFieldValue(argument, typed, commandId) ?? (typeof typed === "boolean" ? typed : String(typed))
+  );
+}
+
+/** `args` without the arguments `names` name, under either spelling. */
+function withoutArguments(
+  args: Record<string, unknown> | undefined,
+  names: readonly string[],
+): Record<string, unknown> {
+  const dropped = new Set(names.flatMap((name) => [name, camelCaseName(name)]));
+  return Object.fromEntries(Object.entries(args ?? {}).filter(([name]) => !dropped.has(name)));
+}
+
+/**
+ * Asks for the required arguments of `command` that neither `args`, `commandContext` nor an
+ * argument prompt supplies, with the optional ones not given under "More options". One that only
+ * the context can supply (a message, a thread, selected text) is never asked for: the command is
+ * refused with what to select first. Nothing is asked when nothing required is missing.
+ *
+ * With `showTyped`, a value in `args` that its field cannot take is asked for too, and the form
+ * shows each argument in `args` it has a field for, starting with that value; what the form
+ * gives replaces them.
+ *
+ * @returns `complete` when nothing is missing, `filled` with `args` and the submitted values,
+ *   `cancelled` when the person dismissed the form, or `refused` with the reason.
+ */
+async function askForMissingArguments(
+  command: CommandDefinition,
+  args: Record<string, unknown> | undefined,
+  commandContext: Record<string, unknown> | undefined,
+  showTyped: boolean,
+): Promise<AskedArguments> {
+  const argumentContext = {
+    workspaceId: contextString(commandContext, "workspaceId"),
+    conversationId: contextString(commandContext, "conversationId"),
+    selectedMessageId: contextString(commandContext, "selectedMessageId"),
+  };
+  const prompted = argumentPromptName(command.id);
+  const declared = command.arguments ?? [];
+  const missing = declared.filter(
+    (argument) =>
+      argument.required &&
+      argument.name !== prompted &&
+      !argumentGiven(args, argument.name) &&
+      !(sendsEmptyText(command.id, argument.name) && args?.[argument.name] === "") &&
+      !contextSuppliesArgument(argument, argumentContext),
+  );
+  const typed = showTyped ? typedFields(command, args) : [];
+  const invalid = typed.filter((field) => field.problem !== null);
+  if (missing.length === 0 && invalid.length === 0) return { kind: "complete" };
+  const contextOnly = missing.find((argument) => !formAsksFor(argument));
+  if (contextOnly) {
+    return { kind: "refused", message: contextOnlyArgumentMessage(contextOnly.argumentType) };
+  }
+  const shownNames = new Set(
+    [...missing, ...typed.map((field) => field.argument)].map((a) => a.name),
+  );
+  const asked = withTakenArguments(
+    command.id,
+    declared.filter((argument) => shownNames.has(argument.name)),
+    declared,
+  );
+  const askedNames = new Set(asked.map((argument) => argument.name));
+  // The optional arguments the form can show, each with those its field sets, unless one of
+  // them is given already.
+  const more = withTakenArguments(
+    command.id,
+    declared.filter(
+      (argument) =>
+        !argument.required &&
+        !askedNames.has(argument.name) &&
+        argument.name !== prompted &&
+        argument.argumentType !== CommandArgumentType.WORKSPACE_ID &&
+        formAsksFor(argument) &&
+        takingArgument(command.id, argument.name, declared) === undefined &&
+        ![argument.name, ...takenArguments(command.id, argument.name)].some((name) =>
+          argumentGiven(args, name),
+        ) &&
+        !contextSuppliesArgument(argument, argumentContext),
+    ),
+    declared,
+  );
+  // The members and conversations offered are those of the workspace the command runs in.
+  const givenWorkspace = (command.arguments ?? [])
+    .filter((argument) => argument.argumentType === CommandArgumentType.WORKSPACE_ID)
+    .map((argument) => argString(args, argument.name, camelCaseName(argument.name)))
+    .find((value) => value !== undefined);
+  const values = await useCommandArgumentsStore.getState().ask({
+    title: withClientLabel(command).title || command.id,
+    arguments: asked,
+    ...(more.length > 0 ? { moreArguments: more } : {}),
+    workspaceId: givenWorkspace ?? argumentContext.workspaceId,
+    commandId: command.id,
+    conversationId:
+      argString(args, "conversation_id", "conversationId") ?? argumentContext.conversationId,
+    ...(args ? { givenValues: givenFieldValues(args) } : {}),
+    ...(typed.length > 0
+      ? {
+          // Each shown field starts with what was typed, those another field sets included.
+          startValues: Object.fromEntries(
+            asked
+              .filter((argument) => argumentGiven(args, argument.name))
+              .map((argument) => [argument.name, typedFieldValue(command.id, argument, args)]),
+          ),
+          problems: Object.fromEntries(
+            invalid.map((field) => [field.argument.name, field.problem as string]),
+          ),
+        }
+      : {}),
+  });
+  if (values === null) return { kind: "cancelled" };
+  // Typed arguments the form showed are replaced by what it gives, a cleared one dropped.
+  const kept = showTyped ? withoutArguments(args, [...askedNames]) : args;
+  return { kind: "filled", args: { ...kept, ...values } };
 }
 
 /** Opens the plugin panel an open-panel command names, when its plugin is running. */

@@ -441,6 +441,7 @@ mod tests {
             arguments: vec![],
             ai_callable: false,
             output_schema: None,
+            read_only: false,
         }
     }
 
@@ -461,6 +462,7 @@ mod tests {
             context_actions: vec![],
             panels: vec![],
             settings_schema: vec![],
+            runs_commands: vec![],
         }
     }
 
@@ -472,7 +474,7 @@ mod tests {
         let mut store = PluginStateStore::default();
         lifecycle::install(&mut store, &manifest).unwrap();
         PluginHostState {
-            store: Mutex::new(store),
+            store: std::sync::Arc::new(Mutex::new(store)),
             manifests: std::sync::Arc::new(Mutex::new(manifests(vec![manifest]))),
             state_path: std::path::PathBuf::from("/nonexistent/plugins.json"),
             plugin_dirs: Mutex::new(HashMap::new()),

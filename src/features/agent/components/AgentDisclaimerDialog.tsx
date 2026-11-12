@@ -44,7 +44,7 @@ export function AgentDisclaimerDialog({ open, onAccept, onCancel }: AgentDisclai
           <button
             type="button"
             onClick={onAccept}
-            className="rounded bg-rim-accent px-4 py-2 text-xs font-medium text-rim-void transition hover:bg-rim-accent/90"
+            className="rounded bg-rim-text px-4 py-2 text-xs font-medium text-rim-panel transition hover:bg-rim-text/90"
           >
             I understand
           </button>

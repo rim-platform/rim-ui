@@ -368,4 +368,33 @@ describe("DropdownMenu item kinds", () => {
     screen.getByRole("menuitem", { name: "Item 0" }).dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
   });
+
+  describe("with scroll", () => {
+    it("caps the menu at the viewport's height and scrolls the focused row into view", () => {
+      const scrolled: string[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this.textContent ?? "");
+      };
+      try {
+        render(
+          <DropdownMenu items={makeItems(3)} position={{ x: 0, y: 0 }} onClose={vi.fn()} scroll />,
+        );
+        const menu = screen.getByRole("menu");
+        expect(menu).toHaveClass("overflow-y-auto");
+
+        fireEvent.keyDown(menu, { key: "ArrowDown" });
+        fireEvent.keyDown(menu, { key: "ArrowDown" });
+
+        expect(scrolled.at(-1)).toBe("Item 2");
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
+    it("leaves a menu without it uncapped", () => {
+      render(<DropdownMenu items={makeItems(3)} position={{ x: 0, y: 0 }} onClose={vi.fn()} />);
+      expect(screen.getByRole("menu")).not.toHaveClass("overflow-y-auto");
+    });
+  });
 });
