@@ -125,6 +125,8 @@ rusqlite = { version = "0.42", features = ["bundled-sqlcipher-vendored-openssl"]
 
 [dev-dependencies]
 tempfile = "3"
+# A mock runtime, to check the app's command access list (src/acl_tests.rs).
+tauri = { version = "2", features = ["tray-icon", "test"] }
 # Validates frames against protocol/plugin-protocol-v1.schema.json in the conformance tests.
 jsonschema = { version = "0.61", default-features = false }
 # A small blocking HTTP server: the fake Google Drive and Dropbox the archive's cloud providers

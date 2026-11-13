@@ -243,6 +243,10 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 ```
 
+The desktop window reaches only the app's own Tauri commands listed in
+`src-tauri/permissions/main-window.toml`: a new command the page calls is added there, and
+`src/test/tauriAcl.test.ts` checks the list against the registered commands and the page.
+
 `npm run codegen` regenerates the GraphQL types from `schema.graphql`, which is exported from a
 running server. `npm run build:wasm` rebuilds the web app's MLS module after a change to the
 Rust MLS crates, and `npm run skew:check` lists the operations an older server would refuse

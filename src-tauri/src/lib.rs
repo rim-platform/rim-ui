@@ -1,4 +1,6 @@
 mod account_lock;
+#[cfg(test)]
+mod acl_tests;
 mod agent_bridge;
 mod agent_installer;
 mod agent_proxy;
