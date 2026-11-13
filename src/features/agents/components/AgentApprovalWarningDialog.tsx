@@ -149,7 +149,7 @@ function RequestWarning({
   onCancel: () => void;
 }) {
   const outside = request.outsideAgent;
-  const name = outside ? showInvisibleCharacters(outside.name) : "the AI agent";
+  const name = outside ? showInvisibleCharacters(outside.name) : "the assistant";
   const summary =
     request.description ??
     (request.dangerous ? "This is a dangerous command." : request.nlDescription);
@@ -163,7 +163,7 @@ function RequestWarning({
       onCancel={onCancel}
     >
       <p className="break-words text-sm text-rim-text">
-        {outside ? `${name} asks to:` : "The AI agent asks to:"}{" "}
+        {outside ? `${name} asks to:` : "The assistant asks to:"}{" "}
         <span className="font-mono text-rim-warm">{showInvisibleCharacters(request.toolName)}</span>
       </p>
       {summary && <p className="break-words text-sm text-rim-text-muted">{summary}</p>}

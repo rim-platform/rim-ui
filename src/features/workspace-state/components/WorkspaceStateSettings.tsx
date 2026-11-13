@@ -485,8 +485,9 @@ export function WorkspaceStateSettings({ serverId }: WorkspaceStateSettingsProps
       <div>
         <h2 className="text-base font-semibold text-rim-text">Workspace State</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Key-value store for workspace configuration, feature flags, and runtime state. Keys are
-          scoped to the workspace or to one user. Values are JSON with optional TTL.
+          Named values this workspace keeps, such as a release freeze switch or a counter. Macros,
+          pipelines and plugins can read and change them. An entry belongs to the workspace or only
+          to you, and can expire.
         </p>
       </div>
 

@@ -95,6 +95,7 @@ describe("Build with AI", () => {
     expect(
       screen.getByText("This sends what you wrote and the sample to Anthropic."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Uses the assistant's AI provider key.")).toBeInTheDocument();
     expect(requests).toEqual([]);
     fireEvent.click(button);
     await waitFor(() => expect(onDraft).toHaveBeenCalled());
@@ -151,7 +152,9 @@ describe("Build with AI", () => {
     platform = "web";
     build();
     expect(screen.queryByRole("button", { name: "Build with AI" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add a key in Settings" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add your AI provider key in Settings > Assistant" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(/The prompt holds the sample, which goes wherever you paste it\./),
     ).toBeInTheDocument();
@@ -166,7 +169,9 @@ describe("Build with AI", () => {
     keySet = false;
     build();
     expect(
-      await screen.findByRole("button", { name: "Add a key in Settings" }),
+      await screen.findByRole("button", {
+        name: "Add your AI provider key in Settings > Assistant",
+      }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy prompt" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Build with AI" })).not.toBeInTheDocument();

@@ -29,7 +29,7 @@ import { PreviewOutcome } from "./PreviewOutcome";
 /** The name a provider goes by in the notice before anything is sent. */
 const PROVIDER_NAMES: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI" };
 
-/** Opens Settings > AI agent. */
+/** Opens Settings > Assistant. */
 function openAgentSettings() {
   useShellStore.getState().setMainSurface({ kind: "settings", tab: "agent" });
 }
@@ -203,6 +203,7 @@ export function BuildWithAi({ serverId, sample, hasRules, onDraft }: BuildWithAi
           >
             Build with AI
           </Button>
+          <p className="text-xs text-rim-text-faint">Uses the assistant&apos;s AI provider key.</p>
         </>
       ) : (
         <>
@@ -222,7 +223,7 @@ export function BuildWithAi({ serverId, sample, hasRules, onDraft }: BuildWithAi
             </Button>
             {platform === "desktop" && hasKey === false && (
               <Button type="button" size="sm" variant="ghost" onClick={openAgentSettings}>
-                Add a key in Settings
+                Add your AI provider key in Settings &gt; Assistant
               </Button>
             )}
           </div>

@@ -41,7 +41,7 @@ import {
   useHomeAppKeybinds,
 } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
-import { compareCommandCategories } from "../runtime/commandCategories";
+import { commandCategoryLabel, compareCommandCategories } from "../runtime/commandCategories";
 import {
   BUILT_IN_COMMAND_TITLES,
   isLocalCommand,
@@ -676,6 +676,14 @@ export function KeybindSettings() {
 
   return (
     <div className="p-3">
+      <div className="mb-3">
+        <h2 className="text-base font-semibold text-rim-text">Keybinds</h2>
+        <p className="mt-1 text-sm text-rim-text-muted">
+          Keys you give to commands and macros. Yours win over the shortcuts of the profile chosen
+          in Keyboard.
+        </p>
+      </div>
+
       {/* Search */}
       <div className="relative mb-3">
         <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-rim-text-muted" />
@@ -812,7 +820,7 @@ export function KeybindSettings() {
                   !isCollapsed && "rotate-90",
                 )}
               />
-              <span>{category}</span>
+              <span>{commandCategoryLabel(category)}</span>
               <span className="text-rim-text-faint">({items.length + unboundItems.length})</span>
             </button>
 

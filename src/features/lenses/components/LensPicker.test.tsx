@@ -69,7 +69,7 @@ function renderPicker() {
 
 function openPicker() {
   renderPicker();
-  fireEvent.click(screen.getByLabelText("Channel lenses"));
+  fireEvent.click(screen.getByLabelText("Lenses: filtered views of this channel"));
 }
 
 describe("LensPicker", () => {
@@ -78,7 +78,7 @@ describe("LensPicker", () => {
     expect(screen.queryByText("Create lens")).not.toBeInTheDocument();
     expect(requestMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText("Channel lenses"));
+    fireEvent.click(screen.getByLabelText("Lenses: filtered views of this channel"));
     expect(screen.getByText("Create lens")).toBeInTheDocument();
     expect(useLensStore.getState().lensPickerOpen).toBe(true);
   });
@@ -94,6 +94,13 @@ describe("LensPicker", () => {
     lensesResponse = () => Promise.resolve({ channelLenses: [] });
     openPicker();
     expect(await screen.findByText("No lenses yet")).toBeInTheDocument();
+  });
+
+  it("explains what a lens is above the list", async () => {
+    lensesResponse = () => Promise.resolve({ channelLenses: [] });
+    openPicker();
+    expect(screen.getByText(/A lens shows only the messages of this channel/)).toBeInTheDocument();
+    await screen.findByText("No lenses yet");
   });
 
   it("shows an error when lenses fail to load", async () => {
@@ -138,7 +145,7 @@ describe("LensPicker", () => {
     fireEvent.keyDown(menu, { key: "Enter" });
     expect(useLensStore.getState().activeLenses["conv-1"]).toBe("lens-2");
 
-    fireEvent.click(screen.getByLabelText("Channel lenses"));
+    fireEvent.click(screen.getByLabelText("Lenses: filtered views of this channel"));
     await screen.findByText("Links");
     const reopened = screen.getByText("Create lens").closest("[tabindex='-1']") as HTMLElement;
     fireEvent.keyDown(reopened, { key: "Escape" });

@@ -73,6 +73,14 @@ vi.mock("../providers/registry", () => ({
   getProvider: () => undefined,
 }));
 
+const { runCommandFromClick } = vi.hoisted(() => ({ runCommandFromClick: vi.fn() }));
+
+vi.mock("../../commands/runtime/runFromClick", () => ({ runCommandFromClick }));
+
+vi.mock("../../plugins/components/PluginAiConsentPanel", () => ({
+  PluginAiConsentPanel: () => <div data-testid="plugin-ai-consent">Plugin approvals</div>,
+}));
+
 // useAgentStore is called both as a hook (selector pattern) and imperatively
 // via `useAgentStore.getState()`. vi.hoisted makes the mock object
 // available both inside the vi.mock factory (hoisted) and in test body resets.
@@ -103,8 +111,10 @@ import { ServerFeatureState } from "../../../core/graphql/generated/schema-types
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
-function setup(features: FakeFeatures = {}) {
-  return render(<AgentSettingsPanel />, { wrapper: withServerInfo(features) });
+function setup(features: FakeFeatures = {}, showPluginCommands = false) {
+  return render(<AgentSettingsPanel showPluginCommands={showPluginCommands} />, {
+    wrapper: withServerInfo(features),
+  });
 }
 
 type IpcAnswer = unknown | ((args: Record<string, unknown>) => Promise<unknown>);
@@ -177,20 +187,71 @@ describe("AgentSettingsPanel", () => {
 
   it("renders heading and subhead", async () => {
     setup();
-    expect(screen.getByRole("heading", { name: "AI Agent" })).toBeInTheDocument();
-    expect(screen.getByText(/Keys are stored in your secret vault/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assistant" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/The assistant built into RIM: a panel \(Ctrl\+Shift\+A\)/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The key stays in your secret vault on this device/),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the Agents tab from its intro", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+    expect(runCommandFromClick).toHaveBeenCalledWith("settings.open.agents");
+  });
+
+  it("lists the plugin commands the assistant may run below the provider settings", () => {
+    setup();
+    const section = screen.getByRole("region", { name: "Plugin commands it may run" });
+    expect(section).toHaveTextContent(
+      "Which plugin commands the assistant may run for you without asking each time.",
+    );
+    expect(screen.getByTestId("plugin-ai-consent")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox").compareDocumentPosition(section) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("scrolls to the plugin commands when opened on them", () => {
+    const scrolled: Element[] = [];
+    const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (
+      this: Element,
+    ) {
+      scrolled.push(this);
+    });
+    try {
+      setup({}, true);
+      expect(scrolled).toEqual([
+        screen.getByRole("region", { name: "Plugin commands it may run" }),
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("stays at the top when opened on the tab", () => {
+    const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      setup();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("says the AI command surface is switched off while the server has it off", () => {
     setup({ ai_commands: ServerFeatureState.DISABLED });
     expect(
-      screen.getByText("The AI command surface is switched off on this server."),
+      screen.getByText("This server has switched off the assistant's commands."),
     ).toBeInTheDocument();
   });
 
   it("shows no switched-off notice while the server runs AI commands", () => {
     setup();
-    expect(screen.queryByText(/AI command surface is switched off/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/switched off the assistant's commands/)).not.toBeInTheDocument();
   });
 
   it("renders the data-leakage security banner", async () => {

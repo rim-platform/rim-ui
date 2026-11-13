@@ -111,11 +111,11 @@ describe("PluginAiConsentPanel", () => {
     expect(screen.getByText("0 / 2 AI commands approved")).toBeInTheDocument();
   });
 
-  it("shows AI consent required badge when consent is required and no approvals", () => {
+  it("shows the needs-your-approval badge when consent is required and no approvals", () => {
     mockPlugins = [makePlugin({ ai_consent_required: true })];
     render(<PluginAiConsentPanel />, { wrapper });
 
-    expect(screen.getByText("AI consent required")).toBeInTheDocument();
+    expect(screen.getByText("Needs your approval")).toBeInTheDocument();
   });
 
   it("does not show badge when commands are already approved", () => {
@@ -127,14 +127,32 @@ describe("PluginAiConsentPanel", () => {
     ];
     render(<PluginAiConsentPanel />, { wrapper });
 
-    expect(screen.queryByText("AI consent required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Needs your approval")).not.toBeInTheDocument();
   });
 
   it("shows empty state when no AI-enabled plugins", () => {
     mockPlugins = [makePlugin({ ai_callable_commands: [], ai_consent_required: false })];
     render(<PluginAiConsentPanel />, { wrapper });
 
-    expect(screen.getByText("No plugins with AI-callable commands installed.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No installed plugin has commands the assistant can run."),
+    ).toBeInTheDocument();
+  });
+
+  it("says when a plugin that needs approval has no command the assistant can run", () => {
+    mockPlugins = [makePlugin({ ai_callable_commands: [], ai_consent_required: true })];
+    render(<PluginAiConsentPanel />, { wrapper });
+
+    expect(
+      screen.getByText("None of its commands can be run by the assistant"),
+    ).toBeInTheDocument();
+  });
+
+  it("has no heading of its own, as the Assistant tab heads it", () => {
+    render(<PluginAiConsentPanel />, { wrapper });
+
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plugin AI Access")).not.toBeInTheDocument();
   });
 
   it("expands command list on chevron click and shows checkboxes", async () => {
@@ -166,7 +184,7 @@ describe("PluginAiConsentPanel", () => {
     // Confirmation modal should appear
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(screen.getByText("Grant AI Access?")).toBeInTheDocument();
+      expect(screen.getByText("Let the assistant run these commands?")).toBeInTheDocument();
     });
   });
 
@@ -180,7 +198,7 @@ describe("PluginAiConsentPanel", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]);
 
-    await waitFor(() => screen.getByText("Grant AI Access?"));
+    await waitFor(() => screen.getByText("Let the assistant run these commands?"));
 
     fireEvent.click(screen.getByRole("button", { name: "Grant Access" }));
 
@@ -203,7 +221,7 @@ describe("PluginAiConsentPanel", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]);
 
-    await waitFor(() => screen.getByText("Grant AI Access?"));
+    await waitFor(() => screen.getByText("Let the assistant run these commands?"));
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -260,7 +278,7 @@ describe("PluginAiConsentPanel", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(screen.getByText("Grant AI Access?")).toBeInTheDocument();
+      expect(screen.getByText("Let the assistant run these commands?")).toBeInTheDocument();
     });
   });
 
@@ -337,7 +355,7 @@ describe("PluginAiConsentPanel", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(screen.getByText("Revoke all AI grants?")).toBeInTheDocument();
+      expect(screen.getByText("Revoke all the assistant's plugin approvals?")).toBeInTheDocument();
     });
   });
 

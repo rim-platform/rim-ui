@@ -97,7 +97,7 @@ function SessionList() {
                 <>
                   <p className="text-xs text-rim-text-muted">{ADD_PROGRAM_FIRST}</p>
                   <Button type="button" size="sm" variant="secondary" onClick={openAgentsSettings}>
-                    Open Settings → Agents
+                    Open Settings &gt; Agents
                   </Button>
                 </>
               )}

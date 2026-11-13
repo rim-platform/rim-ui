@@ -39,6 +39,12 @@ describe("WorkspaceStateSettings scopes", () => {
     expect(await screen.findByText("No workspace-scoped entries yet.")).toBeInTheDocument();
   });
 
+  it("explains what workspace state is", async () => {
+    render(<WorkspaceStateSettings serverId="ws-1" />);
+    expect(screen.getByText(/Named values this workspace keeps/)).toBeInTheDocument();
+    await screen.findByText("No workspace-scoped entries yet.");
+  });
+
   it("keeps the GraphQL scope values behind the labels", async () => {
     render(<WorkspaceStateSettings serverId="ws-1" />);
     await waitFor(() => expect(listedScopes()).toEqual([WorkspaceStateScopeGql.SERVER]));

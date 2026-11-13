@@ -39,8 +39,8 @@ async function runMacroNamed(name: string): Promise<void> {
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     command: "/agent",
-    label: "Ask AI Agent",
-    description: "Ask the AI agent a question about your workspace",
+    label: "Ask the assistant",
+    description: "Ask the assistant a question about your workspace",
     placeholder: "What would you like to know?",
     handler: (args: string) => useAgentStore.getState().open(args),
   },

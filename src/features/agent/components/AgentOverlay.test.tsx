@@ -35,7 +35,7 @@ describe("AgentOverlay and the ai_commands switch", () => {
 
   it("opens the agent while the server runs AI commands", () => {
     render(<AgentOverlay />, { wrapper: withServerInfo() });
-    expect(screen.getByPlaceholderText("Ask the agent...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask the assistant...")).toBeInTheDocument();
     expect(loadAgentTools).toHaveBeenCalled();
   });
 
@@ -45,9 +45,9 @@ describe("AgentOverlay and the ai_commands switch", () => {
     });
 
     expect(
-      screen.getByText("The AI command surface is switched off on this server."),
+      screen.getByText("This server has switched off the assistant's commands."),
     ).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Ask the agent...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Ask the assistant...")).not.toBeInTheDocument();
     expect(loadAgentTools).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -142,7 +142,7 @@ describe("AgentOverlay on the web", () => {
   it("says the agent is in the desktop app and loads no tools", () => {
     render(<AgentOverlay />, { wrapper: withServerInfo() });
 
-    expect(screen.getByText("The AI agent is available in the desktop app.")).toBeInTheDocument();
+    expect(screen.getByText("The assistant is available in the desktop app.")).toBeInTheDocument();
     expect(screen.queryByText(/Ask anything about your workspace/)).not.toBeInTheDocument();
     expect(loadAgentTools).not.toHaveBeenCalled();
   });

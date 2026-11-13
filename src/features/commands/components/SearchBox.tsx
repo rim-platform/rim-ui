@@ -30,6 +30,7 @@ import type { ConversationSummary } from "../../conversations/types";
 import type { PaletteMatch } from "../runtime/paletteSearch";
 import type { CommandDefinition } from "../types";
 import { useCommandStore, type SearchBoxScope } from "../state/useCommandStore";
+import { commandCategoryLabel } from "../runtime/commandCategories";
 import {
   useChannelTargets,
   useDirectTargets,
@@ -531,7 +532,7 @@ function RowContent({ row, nameOf }: { row: Row; nameOf: (id: string) => string 
       <span className="min-w-0 flex-1 truncate">
         <Highlight text={item.title} ranges={titleRanges} />
       </span>
-      <span className="shrink-0 text-[10px] uppercase">{item.category}</span>
+      <span className="shrink-0 text-[10px] uppercase">{commandCategoryLabel(item.category)}</span>
     </>
   );
 }

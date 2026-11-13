@@ -38,21 +38,21 @@ export function PrincipalBlocksSection({ blocks, draft }: PrincipalBlocksSection
 
   return (
     <div className={PANEL}>
-      <h3 className="text-sm font-medium text-rim-text">Blocked principals</h3>
+      <h3 className="text-sm font-medium text-rim-text">Blocked accounts</h3>
       <p className="mt-1 text-xs text-rim-text-muted">
-        A blocked principal cannot sign up, sign in or deliver here. Newest first.
+        A blocked account cannot sign up, sign in or deliver here. Newest first.
       </p>
       {isPending && <p className="mt-2 text-sm text-rim-text-muted">Loading blocks…</p>}
       {isError && (
         <p role="alert" className={`mt-2 ${ERROR_BOX}`}>
-          {graphqlErrorMessage(error, "Failed to load blocked principals.")}
+          {graphqlErrorMessage(error, "Failed to load blocked accounts.")}
         </p>
       )}
       {data && data.length === 0 && (
-        <p className="mt-2 text-sm text-rim-text-muted">No blocked principals.</p>
+        <p className="mt-2 text-sm text-rim-text-muted">No blocked accounts.</p>
       )}
       {data && data.length > 0 && (
-        <ul className="mt-2 divide-y divide-rim-line" aria-label="Blocked principals">
+        <ul className="mt-2 divide-y divide-rim-line" aria-label="Blocked accounts">
           {data.map((block) => {
             const name = blockName(block);
             return (
@@ -132,15 +132,15 @@ function BlockPrincipalForm({
   return (
     <form
       onSubmit={handleSubmit}
-      aria-label="Block a principal"
+      aria-label="Block an account"
       className="mt-4 space-y-3 border-t border-rim-line pt-4"
     >
       <h4 className="text-xs font-medium uppercase tracking-wide text-rim-text-faint">
-        Block a principal
+        Block an account
       </h4>
       <div>
         <label htmlFor={`${formId}-principal`} className={FIELD_LABEL}>
-          Principal id
+          Account id
         </label>
         <input
           id={`${formId}-principal`}
@@ -177,7 +177,7 @@ function BlockPrincipalForm({
       </label>
       {block.isError && (
         <p role="alert" className={ERROR_BOX}>
-          {graphqlErrorMessage(block.error, "Could not block the principal")}
+          {graphqlErrorMessage(block.error, "Could not block the account")}
         </p>
       )}
       <Button
@@ -187,7 +187,7 @@ function BlockPrincipalForm({
         disabled={!canSubmit}
         isLoading={block.isPending}
       >
-        Block principal
+        Block account
       </Button>
       {block.data && <BlockOutcomes outcomes={block.data} />}
     </form>

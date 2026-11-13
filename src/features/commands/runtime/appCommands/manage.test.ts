@@ -114,7 +114,7 @@ describe("management commands", () => {
       title: "New Webhook…",
       category: "Bots & Webhooks",
     });
-    expect(row("plugins.revoke_ai_access")?.title).toBe("Revoke a Plugin's AI Access…");
+    expect(row("plugins.revoke_ai_access")?.title).toBe("Revoke a Plugin's Assistant Access…");
     expect(row("people.report_request")).toMatchObject({
       title: "Report Message Request…",
       category: "People",

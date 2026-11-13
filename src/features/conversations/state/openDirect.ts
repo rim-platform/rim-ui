@@ -186,7 +186,8 @@ async function openDirect(target: DirectDraft): Promise<string | null> {
     const blocked = await blockedPrincipalIds().catch(() => new Set<string>());
     if (blocked.has(target.member.principalId)) {
       toast.info(asSentence(`You blocked ${target.member.name}`), {
-        description: "Unblock them in Settings → Direct messages to message them.",
+        description:
+          "Unblock them in Settings > Direct messages, under Blocked people, to message them.",
       });
       return null;
     }

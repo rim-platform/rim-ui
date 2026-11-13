@@ -14,7 +14,6 @@ import {
   agentBridgeStatus,
   type AgentBridgeStatus,
 } from "../api/agentBridge";
-import { agentAvailable } from "../../agent/agentAvailability";
 import { cn } from "../../../shared/ui/cn";
 import { showInvisibleCharacters } from "../runtime/invisibleCharacters";
 import { plural } from "../runtime/runs";
@@ -121,13 +120,24 @@ export function AgentsSettings() {
 
   return (
     <div ref={rootRef} className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-rim-text">Agents</h2>
+        <p className="mt-1 text-sm text-rim-text-muted">
+          Programs on this computer, such as Claude Code or Codex, that RIM connects to or starts.
+          Optional: RIM works the same without them. The assistant built into RIM is set up in{" "}
+          <button
+            type="button"
+            onClick={() => void runCommandFromClick(settingsTabCommandId("agent"))}
+            className="text-rim-accent underline-offset-2 hover:underline"
+          >
+            Assistant
+          </button>
+          .
+        </p>
+      </div>
+
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-rim-text">Agents on this computer</h2>
-          <p className="mt-1 text-sm text-rim-text-muted">
-            Optional. RIM works the same without them.
-          </p>
-        </div>
+        <h3 className="text-base font-semibold text-rim-text">Agents that connect to RIM</h3>
         <Button
           type="button"
           variant="secondary"
@@ -217,22 +227,6 @@ export function AgentsSettings() {
 
       <AgentProgramsSection />
 
-      {agentAvailable() && (
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-rim-text-muted">
-            The agent built into this app has its own tab.
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => void runCommandFromClick(settingsTabCommandId("agent"))}
-          >
-            Open AI Agent
-          </Button>
-        </div>
-      )}
-
       {selected && <AgentDetail agent={selected} />}
 
       {hasRecord && (
@@ -281,7 +275,7 @@ export function AgentsSettings() {
           title={`Disconnect ${showInvisibleCharacters(disconnecting.name)}?`}
           description={
             profiles.some((profile) => profile.agentId === disconnecting.id)
-              ? "It will not be able to reach RIM any more, and RIM removes it from Agents RIM can start. It keeps nothing RIM can take back: what it has already read stays with it."
+              ? "It will not be able to reach RIM any more, and RIM removes it from Agents RIM starts. It keeps nothing RIM can take back: what it has already read stays with it."
               : "It will not be able to reach RIM any more. It keeps nothing RIM can take back: what it has already read stays with it."
           }
           confirmLabel="Disconnect"

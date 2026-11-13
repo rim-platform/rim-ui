@@ -32,7 +32,7 @@ function reportReporter(report: InstanceAbuseReport): string {
 }
 
 /**
- * Abuse reports filed with this server, oldest first, with Resolve, Block principal, Clear
+ * Abuse reports filed with this server, oldest first, with Resolve, Block account, Clear
  * profile and Load more for the next page.
  */
 export function ReportsSection({
@@ -163,9 +163,9 @@ function ReportRow({
                 variant="ghost"
                 size="sm"
                 onClick={() => onBlockPrincipal(principalId)}
-                aria-label={`Block principal ${subject}`}
+                aria-label={`Block account ${subject}`}
               >
-                Block principal
+                Block account
               </Button>
               <Button
                 type="button"

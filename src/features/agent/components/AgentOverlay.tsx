@@ -206,9 +206,7 @@ export function AgentOverlay() {
         provider: settings.providerId,
       });
       if (!hasKey) {
-        useAgentStore
-          .getState()
-          .appendText("Please configure your API key in Settings → AI Agent.");
+        useAgentStore.getState().appendText("Add your AI provider key in Settings > Assistant.");
         useAgentStore.getState().setStatus("error");
         return;
       }
@@ -327,7 +325,7 @@ export function AgentOverlay() {
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-rim-line px-4 py-3">
           <Bot className="h-4 w-4 shrink-0 text-rim-accent" />
-          <span className="shrink-0 text-sm font-medium text-rim-text">RIM Agent</span>
+          <span className="shrink-0 text-sm font-medium text-rim-text">Assistant</span>
           <AgentModelPicker
             label={modelLabel}
             disabled={isStreaming}
@@ -347,7 +345,7 @@ export function AgentOverlay() {
             type="button"
             onClick={close}
             className="ml-auto rounded p-0.5 text-rim-text-faint transition hover:text-rim-text"
-            aria-label="Close agent"
+            aria-label="Close assistant"
           >
             <X className="h-4 w-4" />
           </button>
@@ -381,7 +379,7 @@ export function AgentOverlay() {
             <Sparkles className="mb-2 h-6 w-6 text-rim-accent/40" />
             <p className="text-sm text-rim-text-muted">Ask anything about your workspace</p>
             <p className="mt-1 text-xs text-rim-text-faint">
-              Messages, channels, members — the agent can search and summarize for you.
+              Messages, channels, members: the assistant can search and summarize them for you.
             </p>
           </div>
         )}
@@ -402,7 +400,7 @@ export function AgentOverlay() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask the agent..."
+              placeholder="Ask the assistant..."
               disabled={isStreaming}
               className={cn(
                 "flex-1 bg-transparent text-sm text-rim-text outline-none placeholder:text-rim-text-muted",
@@ -444,7 +442,7 @@ export function AgentOverlay() {
 /** The agent's place while the server has the AI command surface switched off. */
 function AgentOff({ view, onClose }: { view: ServerFeatureView; onClose: () => void }) {
   return (
-    <Dialog open onClose={onClose} title="RIM Agent">
+    <Dialog open onClose={onClose} title="Assistant">
       <FeatureOffNotice feature="ai_commands" view={view} message={AI_COMMANDS_OFF_MESSAGE} />
     </Dialog>
   );
@@ -453,7 +451,7 @@ function AgentOff({ view, onClose }: { view: ServerFeatureView; onClose: () => v
 /** The agent's place in an app without the agent: says where it runs, with no error. */
 function AgentDesktopOnly({ onClose }: { onClose: () => void }) {
   return (
-    <Dialog open onClose={onClose} title="RIM Agent">
+    <Dialog open onClose={onClose} title="Assistant">
       <p role="status" className="text-sm text-rim-text-muted">
         {AGENT_DESKTOP_ONLY_MESSAGE}
       </p>

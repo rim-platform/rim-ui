@@ -110,8 +110,8 @@ describe("AgentApprovalWarningHost", () => {
       render(<AgentApprovalWarningHost />);
       ask(inAppRequest());
       runCommand("agents.approve_request");
-      const dialog = screen.getByRole("dialog", { name: "Approve the AI agent?" });
-      expect(dialog).toHaveTextContent("The AI agent asks to: chat.archive_conversation");
+      const dialog = screen.getByRole("dialog", { name: "Approve the assistant?" });
+      expect(dialog).toHaveTextContent("The assistant asks to: chat.archive_conversation");
       expect(dialog).toHaveTextContent("Archive the conversation for everyone");
     });
 

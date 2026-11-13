@@ -231,7 +231,9 @@ describe("Bots in this channel", () => {
 
     role.moderates = true;
     renderPanel();
-    await user.click(screen.getByRole("button", { name: "Manage bots in Settings > Bots" }));
+    await user.click(
+      screen.getByRole("button", { name: "Manage bots in Settings > Bots & webhooks" }),
+    );
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "bots" });
   });
 

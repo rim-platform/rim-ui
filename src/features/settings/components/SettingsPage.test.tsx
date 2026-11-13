@@ -40,7 +40,12 @@ vi.mock("../../plugins/components/PluginAiConsentPanel", () => ({
 }));
 
 vi.mock("../../agent/settings/AgentSettingsPanel", () => ({
-  AgentSettingsPanel: () => <div data-testid="agent-settings">Agent Panel</div>,
+  AgentSettingsPanel: ({ showPluginCommands }: { showPluginCommands?: boolean }) => (
+    <div data-testid="agent-settings">
+      Assistant Panel
+      {showPluginCommands && <p>Scrolled to Plugin commands it may run</p>}
+    </div>
+  ),
 }));
 
 vi.mock("../../agents/components/AgentsSettings", () => ({
@@ -211,7 +216,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Commands")).toBeInTheDocument();
     expect(screen.getByText("Plugins")).toBeInTheDocument();
     expect(screen.queryByText("Plugin AI")).not.toBeInTheDocument();
-    expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assistant")).not.toBeInTheDocument();
     expect(screen.queryByText("AI Keys")).not.toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "About" })).toBeInTheDocument();
@@ -220,7 +225,7 @@ describe("SettingsPage", () => {
   it("groups the tabs under section labels and drops a group with nothing visible", () => {
     renderSettings({ custom_emoji: ServerFeatureState.DISABLED });
     expect(screen.getAllByRole("group")).toEqual(
-      ["You", "Messaging", "Programmable", "Extensions", "About"].map((name) =>
+      ["You", "Messaging", "Shortcuts & automation", "Tools & AI", "About"].map((name) =>
         screen.getByRole("group", { name }),
       ),
     );
@@ -230,12 +235,18 @@ describe("SettingsPage", () => {
         .getAllByRole("button")
         .map((button) => button.textContent),
     ).toEqual(["Messages", "Direct messages", "Notifications", "History"]);
-    const extensions = screen.getByRole("group", { name: "Extensions" });
+    const automation = screen.getByRole("group", { name: "Shortcuts & automation" });
     expect(
-      within(extensions)
+      within(automation)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["Plugins", "State"]);
+    ).toEqual(["Keyboard", "Keybinds", "Commands", "Macros", "Pipelines", "State"]);
+    const tools = screen.getByRole("group", { name: "Tools & AI" });
+    expect(
+      within(tools)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Plugins"]);
   });
 
   it("reaches every tab and the close button by keyboard and opens Keyboard with Enter", async () => {
@@ -294,30 +305,31 @@ describe("SettingsPage", () => {
     expect(await screen.findByTestId("plugin-settings")).toBeInTheDocument();
   });
 
-  it("switches to AI Agent tab", async () => {
+  it("switches to Assistant tab", async () => {
     inDesktopApp(true);
     try {
       const user = userEvent.setup();
       renderSettings();
 
-      await user.click(screen.getByText("AI Agent"));
+      await user.click(screen.getByRole("button", { name: "Assistant" }));
       expect(await screen.findByTestId("agent-settings")).toBeInTheDocument();
+      expect(screen.queryByText(/Scrolled to Plugin commands/)).not.toBeInTheDocument();
     } finally {
       inDesktopApp(false);
     }
   });
 
-  it("switches to the Agents tab, listed right before AI Agent", async () => {
+  it("switches to the Agents tab, listed in Tools & AI after Plugins and Assistant", async () => {
     inDesktopApp(true);
     try {
       const user = userEvent.setup();
       renderSettings();
 
-      const extensions = screen.getByRole("group", { name: "Extensions" });
-      const names = within(extensions)
+      const tools = screen.getByRole("group", { name: "Tools & AI" });
+      const names = within(tools)
         .getAllByRole("button")
         .map((button) => button.textContent);
-      expect(names.indexOf("AI Agent")).toBe(names.indexOf("Agents") + 1);
+      expect(names).toEqual(["Plugins", "Assistant", "Agents"]);
       await user.click(screen.getByRole("button", { name: "Agents" }));
       expect(await screen.findByTestId("agents-settings")).toBeInTheDocument();
     } finally {
@@ -338,16 +350,39 @@ describe("SettingsPage", () => {
     }
   });
 
-  it("lists AI Agent and Plugin AI only in the desktop app", () => {
+  it("lists Assistant only in the desktop app, and Plugin AI nowhere", () => {
     const web = renderSettings();
-    expect(screen.queryByText("AI Agent")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assistant" })).not.toBeInTheDocument();
     expect(screen.queryByText("Plugin AI")).not.toBeInTheDocument();
     web.unmount();
     inDesktopApp(true);
     try {
       renderSettings();
-      expect(screen.getByText("AI Agent")).toBeInTheDocument();
-      expect(screen.getByText("Plugin AI")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Assistant" })).toBeInTheDocument();
+      expect(screen.queryByText("Plugin AI")).not.toBeInTheDocument();
+    } finally {
+      inDesktopApp(false);
+    }
+  });
+
+  it("opens the Assistant tab at its plugin commands for a link to plugin-ai", async () => {
+    inDesktopApp(true);
+    try {
+      mockShellState.mainSurface = { kind: "settings", tab: "plugin-ai" };
+      const user = userEvent.setup();
+      renderSettings();
+      expect(await screen.findByTestId("agent-settings")).toHaveTextContent(
+        "Scrolled to Plugin commands it may run",
+      );
+      expect(screen.getByRole("button", { name: "Assistant" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      await user.click(screen.getByRole("button", { name: "Agents" }));
+      await user.click(screen.getByRole("button", { name: "Assistant" }));
+      expect(await screen.findByTestId("agent-settings")).not.toHaveTextContent(
+        "Scrolled to Plugin commands",
+      );
     } finally {
       inDesktopApp(false);
     }
@@ -371,6 +406,21 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByText("Account"));
     expect(screen.getByTestId("account-settings")).toBeInTheDocument();
+  });
+
+  it("says on About what each part of RIM is for, in plain words", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.getByText("What's in RIM")).toBeInTheDocument();
+    expect(
+      screen.getByText("Commands: everything you can click, also from Ctrl+K or a key"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Assistant: an AI panel with your own key (desktop)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Core Capabilities")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tauri 2|capability-based/)).not.toBeInTheDocument();
   });
 
   it("shows the server's instance notice at the top of About, and none without one", async () => {
@@ -616,14 +666,14 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       renderSettings();
       const workspace = screen.getByRole("group", { name: "Workspace" });
-      await user.click(within(workspace).getByRole("button", { name: "Bots" }));
+      await user.click(within(workspace).getByRole("button", { name: "Bots & webhooks" }));
       expect(await screen.findByTestId("bots-settings")).toBeInTheDocument();
     });
 
     it("is hidden from a member, even when deep-linked", () => {
       mockShellState.mainSurface = { kind: "settings", tab: "bots" };
       renderSettings();
-      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Bots & webhooks" })).not.toBeInTheDocument();
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
 
@@ -631,7 +681,7 @@ describe("SettingsPage", () => {
       mockGate.canModerate = true;
       mockShellState.mainSurface = { kind: "settings", tab: "bots" };
       renderSettings({ bots: ServerFeatureState.DISABLED });
-      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Bots & webhooks" })).not.toBeInTheDocument();
       expect(screen.getByTestId("profile-settings")).toBeInTheDocument();
     });
 
@@ -640,7 +690,7 @@ describe("SettingsPage", () => {
       mockWorkspace.workspaceId = DIRECT_SPACE_ID;
       mockGate.canModerate = true;
       renderSettings();
-      expect(screen.queryByRole("button", { name: "Bots" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Bots & webhooks" })).not.toBeInTheDocument();
     });
   });
 

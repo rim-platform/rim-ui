@@ -89,8 +89,8 @@ export function WorkspacePluginSettings({ serverId }: { serverId: string | null 
       <LimitNote limit={limit} />
       {items.length === 0 ? (
         <p className="text-xs text-rim-text-muted">
-          No plugins yet. Publish one from Settings &gt; Plugins on a desktop that holds your
-          identity key, or add a signature file someone sent you.
+          No plugins yet. Publish one with Sign and publish… on a plugin in Settings &gt; Plugins
+          (desktop app), or add a signature file someone sent you.
         </p>
       ) : (
         <ul className="space-y-2">

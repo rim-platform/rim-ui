@@ -242,8 +242,8 @@ device, and only when the person allowed it.
   with its own consent line, and the plugin's Activity in Settings counts the encrypted
   messages it read per day. A plugin never sees franking keys, attachment secrets, MLS state or
   ciphertext, nor placeholders or messages that could not be verified.
-- **The agent** is off in every encrypted conversation until the person turns it on from the
-  conversation's menu ("Agent: off in this conversation"), after the warning that the text of
+- **The assistant** is off in every encrypted conversation until the person turns it on from the
+  conversation's menu ("Assistant: off in this conversation"), after the warning that the text of
   the conversation goes to the model provider; the switch is per conversation and kept on this
   device (`useAgentEncryptedStore`). When it is on, `chat.get_recent_messages` and
   `chat.search_messages` read the cache instead of the server, and `chat.post_message` sends

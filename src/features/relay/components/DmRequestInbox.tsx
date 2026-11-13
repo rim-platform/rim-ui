@@ -31,6 +31,10 @@ export function DmRequestInbox({ workspaceId }: DmRequestInboxProps) {
       <h3 className="border-b border-rim-line px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-rim-text-faint">
         Message requests ({requests.length})
       </h3>
+      <p className="border-b border-rim-line px-3 py-2 text-xs text-rim-text-muted">
+        People you haven&apos;t talked with who want to message you. Read first lets you look, but
+        you can&apos;t reply until you accept.
+      </p>
       <ul className="divide-y divide-rim-line">
         {requests.map((request) => (
           <DmRequestRow key={request.id} request={request} />

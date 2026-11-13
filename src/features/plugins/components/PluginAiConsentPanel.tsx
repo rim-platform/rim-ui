@@ -63,14 +63,19 @@ function GrantConfirmModal({
   if (!plugin) return null;
 
   return (
-    <Dialog open={open} onClose={onCancel} title="Grant AI Access?" maxWidth="max-w-md">
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="Let the assistant run these commands?"
+      maxWidth="max-w-md"
+    >
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
           <p className="text-xs text-rim-warm">
-            You are granting the AI agent permission to invoke commands in{" "}
-            <strong>{showInvisibleCharacters(plugin.display_name)}</strong> on your behalf. The
-            agent can call these commands automatically without asking each time.
+            You are letting the assistant run commands in{" "}
+            <strong>{showInvisibleCharacters(plugin.display_name)}</strong> for you. It can run
+            these commands without asking each time.
           </p>
         </div>
 
@@ -196,14 +201,14 @@ export function PluginConsentRow({ plugin }: PluginConsentRowProps) {
               {showConsentRequiredBadge && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-rim-warm/15 px-2 py-0.5 text-[10px] font-medium text-rim-warm">
                   <AlertTriangle className="h-2.5 w-2.5" />
-                  AI consent required
+                  Needs your approval
                 </span>
               )}
             </div>
             <p className="text-xs text-rim-text-muted mt-0.5">
               {hasAiCommands
                 ? `${plugin.approved_ai_commands.length} / ${plugin.ai_callable_commands.length} AI commands approved`
-                : "No AI-callable commands"}
+                : "None of its commands can be run by the assistant"}
             </p>
           </div>
 
@@ -310,17 +315,21 @@ function RevokeAllConfirmDialog({
   isPending,
 }: RevokeAllConfirmDialogProps) {
   return (
-    <Dialog open={open} onClose={onCancel} title="Revoke all AI grants?" maxWidth="max-w-md">
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      title="Revoke all the assistant's plugin approvals?"
+      maxWidth="max-w-md"
+    >
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-lg border border-rim-danger/30 bg-rim-danger/5 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rim-danger" />
           <p className="text-xs text-rim-text-muted">
-            Revoke AI consent for{" "}
+            Take back the assistant&apos;s approval for{" "}
             <strong className="text-rim-text">
               {totalGrants} approved command{totalGrants !== 1 ? "s" : ""}
             </strong>{" "}
-            across all plugins? The AI agent will immediately lose access to these commands for the
-            current session.
+            across all plugins? The assistant can no longer run these commands, starting now.
           </p>
         </div>
 
@@ -380,7 +389,7 @@ export function PluginAiConsentPanel() {
   if (!capabilities.pluginHost || !capabilities.agent) {
     return (
       <p className="text-sm text-rim-text-muted">
-        Plugin AI consent is only available in the desktop app.
+        Plugin commands for the assistant are only available in the desktop app.
       </p>
     );
   }
@@ -398,7 +407,7 @@ export function PluginAiConsentPanel() {
       <div className="flex flex-col items-center gap-3 py-10 text-center">
         <Bot className="h-8 w-8 text-rim-text-muted" />
         <p className="text-sm text-rim-text-muted">
-          No plugins with AI-callable commands installed.
+          No installed plugin has commands the assistant can run.
         </p>
       </div>
     );
@@ -433,15 +442,8 @@ export function PluginAiConsentPanel() {
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-medium text-rim-text">Plugin AI Access</h2>
-            <p className="mt-1 text-xs text-rim-text-muted">
-              Control which plugin commands the AI agent can invoke on your behalf. Approval means
-              the agent can call these commands automatically during a session.
-            </p>
-          </div>
-          {totalApprovedGrants > 0 && (
+        {totalApprovedGrants > 0 && (
+          <div className="flex justify-end">
             <Button
               variant="danger"
               size="sm"
@@ -451,8 +453,8 @@ export function PluginAiConsentPanel() {
             >
               Revoke all grants
             </Button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="space-y-2">
           {aiEnabledPlugins.map((plugin) => (

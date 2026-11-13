@@ -41,6 +41,7 @@ import { useCanHavePublicLink } from "../../workspaces/hooks/useCanHavePublicLin
 import { desktopShellAvailable } from "../../desktop-shell/availability";
 import { DesktopSettings } from "../../desktop-shell/components/DesktopSettings";
 import {
+  listedSettingsTab,
   SETTINGS_GROUPS,
   SETTINGS_TABS,
   visibleSettingsTabs,
@@ -54,11 +55,6 @@ export type { SettingsTab, SettingsTabAccess } from "../settingsTabs";
 const PluginSettingsPage = lazyWithRetry(() =>
   import("../../plugins/components/PluginSettingsPage").then((m) => ({
     default: m.PluginSettingsPage,
-  })),
-);
-const PluginAiConsentPanel = lazyWithRetry(() =>
-  import("../../plugins/components/PluginAiConsentPanel").then((m) => ({
-    default: m.PluginAiConsentPanel,
   })),
 );
 const AgentSettingsPanel = lazyWithRetry(() =>
@@ -151,6 +147,17 @@ function SettingsLoadingSpinner() {
   );
 }
 
+/** What each part of RIM is for, one line each, as About lists them. */
+const WHATS_IN_RIM: readonly string[] = [
+  "Commands: everything you can click, also from Ctrl+K or a key",
+  "Macros: your own actions, made of commands",
+  "Pipelines: do something when something happens in a workspace",
+  "Lenses: filtered views of a channel",
+  "Plugins: tools beside the conversation, with only the permissions you grant",
+  "Assistant: an AI panel with your own key (desktop)",
+  "Agents: programs on your computer, such as Claude Code, with the access you grant (desktop)",
+];
+
 function AboutRim() {
   return (
     <div className="space-y-6">
@@ -188,10 +195,6 @@ function AboutRim() {
 
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="rounded-md bg-rim-void px-3 py-2">
-            <span className="text-rim-text-faint">Runtime</span>
-            <p className="font-medium text-rim-text">Tauri 2 + React 19</p>
-          </div>
-          <div className="rounded-md bg-rim-void px-3 py-2">
             <span className="text-rim-text-faint">Backend</span>
             <p className="font-medium text-rim-text">Rust + Actix + GraphQL</p>
           </div>
@@ -211,32 +214,14 @@ function AboutRim() {
       <AboutNotices />
 
       <div className="rounded-lg border border-rim-line bg-rim-panel p-5 space-y-3">
-        <p className="text-sm font-medium text-rim-text">Core Capabilities</p>
+        <p className="text-sm font-medium text-rim-text">What&apos;s in RIM</p>
         <ul className="space-y-1.5 text-sm text-rim-text-muted">
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Command palette with 19+ keybinds and slash commands
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Macro builder with AI-assisted step generation
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Reactive pipelines &mdash; event-driven automation
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Plugin system with capability-based security
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            AI agent with tool-calling and multi-provider support
-          </li>
-          <li className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-rim-accent" />
-            Channel lenses &mdash; filtered message views
-          </li>
+          {WHATS_IN_RIM.map((line) => (
+            <li key={line} className="flex items-center gap-2">
+              <span className="h-1 w-1 shrink-0 rounded-full bg-rim-accent" />
+              {line}
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -256,16 +241,30 @@ export function SettingsPage() {
 
   // Resolve the requested tab from the surface, defaulting to "profile".
   // The requested tab must exist in the tab list, so a
-  // stale or typo'd value doesn't silently show an empty panel.
+  // stale or typo'd value doesn't silently show an empty panel. A section with a tab key of its
+  // own opens the tab it is part of.
   const resolveTab = (surface: typeof mainSurface): SettingsTab => {
     if (surface.kind === "settings" && surface.tab) {
-      const found = SETTINGS_TABS.find((t) => t.key === surface.tab);
+      const listed = listedSettingsTab(surface.tab as SettingsTab);
+      const found = SETTINGS_TABS.find((t) => t.key === listed);
       if (found) return found.key;
     }
     return "profile";
   };
+  // The section the surface asked for, when it named one by its own tab key.
+  const resolveSection = (surface: typeof mainSurface): SettingsTab | null =>
+    surface.kind === "settings" &&
+    surface.tab &&
+    listedSettingsTab(surface.tab as SettingsTab) !== surface.tab
+      ? (surface.tab as SettingsTab)
+      : null;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => resolveTab(mainSurface));
+  const [section, setSection] = useState<SettingsTab | null>(() => resolveSection(mainSurface));
+  const openTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSection(null);
+  };
 
   // Workspace holds the Owner/Moderator settings and stays hidden until the role is known.
   // A requested tab that is hidden falls back to Profile without forgetting the request, so a
@@ -315,6 +314,7 @@ export function SettingsPage() {
   useEffect(() => {
     if (mainSurface.kind === "settings") {
       setActiveTab(resolveTab(mainSurface));
+      setSection(resolveSection(mainSurface));
       // Tab starts on the page, not wherever focus was before the tab was opened.
       const panel = rootRef.current?.closest<HTMLElement>('[data-panel="mainSurface"]');
       if (panel && !panel.contains(document.activeElement)) panel.focus();
@@ -352,7 +352,7 @@ export function SettingsPage() {
             <select
               aria-label="Settings sections"
               value={shownTab}
-              onChange={(event) => setActiveTab(event.target.value as SettingsTab)}
+              onChange={(event) => openTab(event.target.value as SettingsTab)}
               className="w-full rounded-md border border-rim-line bg-rim-panel px-2 py-1.5 text-sm text-rim-text"
             >
               {visibleGroups.map(({ group, items }) => (
@@ -376,7 +376,8 @@ export function SettingsPage() {
             className="w-52 shrink-0 overflow-y-auto border-r border-rim-line bg-rim-void px-2 pb-4"
           >
             {visibleGroups.map(({ group, items }) => {
-              const labelId = `${groupIdPrefix}-${group}`;
+              // An id holds no spaces, which would make aria-labelledby name several ids.
+              const labelId = `${groupIdPrefix}-${group.replace(/[^A-Za-z0-9]+/g, "-")}`;
               return (
                 <div key={group} role="group" aria-labelledby={labelId}>
                   <p
@@ -389,7 +390,7 @@ export function SettingsPage() {
                     <button
                       key={tab.key}
                       type="button"
-                      onClick={() => setActiveTab(tab.key)}
+                      onClick={() => openTab(tab.key)}
                       aria-current={shownTab === tab.key ? "page" : undefined}
                       className={cn(
                         "block w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors",
@@ -431,13 +432,14 @@ export function SettingsPage() {
                   (accountMacros ? <MacroSettings /> : <WorkspaceMacroSettings />)}
                 {shownTab === "pipelines" && <PipelineSettings />}
                 {shownTab === "plugins" && <PluginSettingsPage />}
-                {shownTab === "plugin-ai" && <PluginAiConsentPanel />}
                 {shownTab === "emoji" && <EmojiManagement serverId={workspaceId} />}
                 {shownTab === "state" && (
                   <WorkspaceStateSettings serverId={workspaceId ?? undefined} />
                 )}
                 {shownTab === "agents" && <AgentsSettings />}
-                {shownTab === "agent" && <AgentSettingsPanel />}
+                {shownTab === "agent" && (
+                  <AgentSettingsPanel showPluginCommands={section === "plugin-ai"} />
+                )}
                 {shownTab === "messages" && <MessageDisplaySettings />}
                 {shownTab === "direct-messages" && <DmSettings />}
                 {shownTab === "notifications" && <NotificationSettings />}
@@ -448,7 +450,7 @@ export function SettingsPage() {
                     <WorkspaceInvites serverId={workspaceId} />
                     <PublicLinkSettings
                       serverId={workspaceId}
-                      onOpenRequests={() => setActiveTab("workspace-moderation")}
+                      onOpenRequests={() => openTab("workspace-moderation")}
                     />
                     <WorkspaceDmPolicySettings serverId={workspaceId} />
                     <WorkspacePluginSettings serverId={workspaceId} />
@@ -466,14 +468,14 @@ export function SettingsPage() {
                   <InstanceModerationSettings
                     onNavigateToWorkspaceModeration={
                       canModerate && !inDirectSpace
-                        ? () => setActiveTab("workspace-moderation")
+                        ? () => openTab("workspace-moderation")
                         : undefined
                     }
                   />
                 )}
 
                 {shownTab === "account" && (
-                  <AccountSettings onNavigateToWorkspace={() => setActiveTab("workspace")} />
+                  <AccountSettings onNavigateToWorkspace={() => openTab("workspace")} />
                 )}
                 {shownTab === "about" && <AboutRim />}
               </Suspense>

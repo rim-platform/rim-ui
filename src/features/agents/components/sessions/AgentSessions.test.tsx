@@ -163,7 +163,7 @@ describe("agent session screens", () => {
       render(<Shell />);
       expect(screen.getByText("No agent sessions yet.")).toBeInTheDocument();
       expect(screen.getByText(ADD_PROGRAM_FIRST)).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Open Settings → Agents" }));
+      await user.click(screen.getByRole("button", { name: "Open Settings > Agents" }));
       expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
     });
 
@@ -664,15 +664,15 @@ describe("agent session screens", () => {
         expect(screen.queryByText(agentCannotSentence("Fake Agent"))).toBeNull();
       });
 
-      it("says they are off, with a way to Settings → Agents", async () => {
+      it("says they are off, with a way to Settings > Agents", async () => {
         bridge({ ...BRIDGE_ON, enabled: false, listening: false });
         const user = userEvent.setup();
         await startFromDialog(user);
         expect(screen.getByText(bridgeOffSentence("Fake Agent"))).toBeInTheDocument();
         expect(bridgeOffSentence("Fake Agent")).toBe(
-          "RIM's tools are off. Turn on Let agents on this computer connect in Settings → Agents to let Fake Agent read and post in RIM.",
+          "RIM's tools are off. Turn on Let agents on this computer connect in Settings > Agents to let Fake Agent read and post in RIM.",
         );
-        await user.click(screen.getByRole("button", { name: "Open Settings → Agents" }));
+        await user.click(screen.getByRole("button", { name: "Open Settings > Agents" }));
         expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
       });
 

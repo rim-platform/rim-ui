@@ -1,28 +1,36 @@
-# The AI agent
+# The assistant
 
-The AI agent is a chat window in the desktop app that operates RIM for you: ask it a question or
-give it a task, and it reads and acts through the same commands you run from the palette. This
-page is for the person using it. [Commands and automation](commands-and-automation.md) explains
+The assistant is a panel in the desktop app that operates RIM for you: ask it a question or give
+it a task, and it reads and acts through the same commands you run from the palette. This page is
+for the person using it. [Commands and automation](commands-and-automation.md) explains
 commands and their sensitivity, and rim-server's
 [command model](../../rim-server/docs/command_model.md) is the contract behind both.
+
+## Which one do I need?
+
+- The **Assistant** is built into RIM, uses your own AI provider key and answers in a panel
+  (<kbd>Ctrl+Shift+A</kbd>). This page is about it.
+- **Agents** are programs on your computer, such as Claude Code or Codex, that you connect to RIM
+  or that RIM starts, and they see only what you grant ([Connect an AI agent](agents.md)).
+- Both are in the desktop app only, and RIM works the same without either.
 
 ## What it is and is not
 
 - **It runs commands, nothing else.** Every read and every change is a command that the server
-  checks against your role in the workspace, as if you ran it. The agent cannot do more than you.
-- **It is in the desktop app only.** The web app has no agent; its Settings → AI Agent says "Key
-  storage is only available in the desktop app." It does not offer the agent's command, its
-  keybind, the `/agent` suggestion or **Build with AI**, and shows "The AI agent is available in
-  the desktop app." if the agent is opened another way.
+  checks against your role in the workspace, as if you ran it. The assistant cannot do more than
+  you.
+- **It is in the desktop app only.** The web app has no assistant; <kbd>Ctrl+Shift+A</kbd> there
+  says "The assistant is available in the desktop app." It has no Assistant tab in Settings, and
+  does not offer the assistant's command, the `/agent` suggestion or **Build with AI**.
 - **You bring the model and the key.** It talks to Anthropic or OpenAI with your own API key, and
   the provider bills you for what it uses. RIM ships neither a model nor a key.
 - **It never acts on its own.** It runs only when you send it a prompt, and stops when it has
-  answered. A change waits for you in a confirmation dialog the agent cannot answer, and it cannot
+  answered. A change waits for you in a confirmation dialog the assistant cannot answer, and it cannot
   run a macro you did not let it run, or a plugin command you did not approve.
 
 ## Setting it up
 
-Settings → AI Agent, under Extensions. A notice at the top says that workspace data (messages,
+Settings > Assistant, under Tools & AI. A notice near the top says that workspace data (messages,
 channel names, member usernames) is sent to the provider you choose.
 
 1. **Provider.** Anthropic (Claude) or OpenAI (GPT). Each provider keeps its own key, and
@@ -38,28 +46,30 @@ channel names, member usernames) is sent to the provider you choose.
    "\<n\> models loaded from API" under it, and the refresh button fetches it again. When the
    chosen model is no longer offered, the newest is selected. When the list cannot be fetched, the
    error shows under it and a short built-in list stands in.
-4. **Custom System Prompt (optional).** Your own instructions, added after the agent's built-in
+4. **Custom System Prompt (optional).** Your own instructions, added after the assistant's built-in
    ones, never in their place.
 
 **Where the key lives.** The key goes into the [secret vault](secret-vault.md), the encrypted file
 that holds the desktop app's secrets. The app's Rust side reads it from there for every request
 and calls the provider itself, so once saved the key is not held by the web view that draws the
 app, by plugins or by the developer tools. The provider, model and prompt are kept in the app's
-local storage on this device. The same key serves **Build with AI** in Settings → Macros.
+local storage on this device. The same key serves **Build with AI** in Settings > Macros and in a
+webhook's format, which says "Uses the assistant's AI provider key."
 
 **A server with AI commands off.** A server's operator can switch off its AI command surface.
-Settings → AI Agent then says "The AI command surface is switched off on this server." and
-opening the agent shows only that notice. The server refuses agent runs either way.
+Settings > Assistant then says "The AI command surface is switched off on this server." and
+opening the assistant shows only that notice. The server refuses its runs either way.
 
 ## Using it
 
-**Opening it.** <kbd>Ctrl+Shift+A</kbd>, or **Open AI Agent** in the palette, opens "RIM Agent"
-over the app. Sending `/agent` with some text from the composer opens it too; the text is not
-passed on, so ask in the agent itself. The first time, "AI Agent — Data Sharing Notice" says what
-goes to the provider: **I understand** goes on, **Cancel** closes the agent.
+**Opening it.** <kbd>Ctrl+Shift+A</kbd>, or **Open Assistant** in the palette, opens "Assistant"
+over the app. Sending `/agent` ("Ask the assistant") with some text from the composer opens it
+too; the text is not passed on, so ask in the assistant itself. The first time, "Assistant: what
+it shares" says what goes to the provider: **I understand** goes on, **Cancel** closes the
+assistant.
 
 **A conversation.** The header shows the model, **+** for a new conversation, and the close
-button. Type in "Ask the agent..." and press <kbd>Enter</kbd>. The answer streams
+button. Type in "Ask the assistant..." and press <kbd>Enter</kbd>. The answer streams
 in as Markdown. While it runs, the stop button or <kbd>Esc</kbd> stops it; otherwise
 <kbd>Esc</kbd> closes the window. After an answer the footer shows the tokens it used, as
 "\<n\> in / \<n\> out tokens". Further prompts continue the conversation while the window stays
@@ -67,8 +77,8 @@ open; opening it again after an answer starts a new one.
 
 **Switching models.** The model's name in the header opens the models you can use now: those of
 each provider with a key set, from its live list when it has been fetched, else the built-in
-one, grouped by provider, with **Model settings…** last to open Settings → AI Agent. Choosing one
-sets the model Settings → AI Agent shows, and the next prompt goes to it; the conversation
+one, grouped by provider, with **Model settings…** last to open Settings > Assistant. Choosing one
+sets the model Settings > Assistant shows, and the next prompt goes to it; the conversation
 carries on, also with another provider, since only its text is sent. "Switched to \<model\>"
 marks the place in the conversation. The model cannot be switched while an answer is coming.
 
@@ -91,7 +101,7 @@ channel you are not in stays out of its reach, as it does out of yours.
 
 ## What it may do
 
-The agent is offered only the commands marked callable by an AI that your role in the open
+The assistant is offered only the commands marked callable by an AI that your role in the open
 workspace may run:
 
 - **Built-in commands**, a reviewed set the server lists per workspace, marked AI-callable in the
@@ -101,49 +111,52 @@ workspace may run:
   mode and reports; notification level, do not disturb and marking read; workspace state; and
   moving around the app, such as switching conversation or workspace and opening a thread, search
   or Settings.
-- **Plugin commands** a turned-on plugin marks callable and you approved in Settings → Plugin AI
-  ("Plugin AI Access"). Each plugin's row shows "\<n\> / \<m\> AI commands approved"; its
-  checkboxes, **Approve all** and **Revoke all** change that, and the first approval asks in
-  **Grant AI Access?** (**Grant Access**). **Revoke all grants** takes back every plugin's
-  approvals. The agent calls an approved command without asking each time, except a dangerous
-  one, which it can only propose: it tells you, and you run it yourself in RIM.
+- **Plugin commands** a turned-on plugin marks callable and you approved in Settings > Assistant,
+  under "Plugin commands it may run". Each plugin's row shows "\<n\> / \<m\> AI commands
+  approved", or "Needs your approval" before the first; its checkboxes, **Approve all** and
+  **Revoke all** change that, and the first approval asks in **Let the assistant run these
+  commands?** (**Grant Access**). **Revoke all grants** takes back every plugin's approvals, after
+  **Revoke all the assistant's plugin approvals?**. The assistant calls an approved command
+  without asking each time, except a dangerous one, which it can only propose: it tells you, and
+  you run it yourself in RIM. The command **Settings: Assistant's Plugin Commands** opens this
+  section.
   [Using a plugin](plugins.md#using-a-plugin) has the rest.
 
-It never sees any command not marked callable. Your own macros it sees only when you tick **The AI
-agent can run this** on one in Settings → Macros, which takes a macro whose steps are all commands
-the AI agent may run, run on RIM's server, with every argument fixed. It runs such a macro as one
+It never sees any command not marked callable. Your own macros it sees only when you tick **The
+assistant and agents can run this** on one in Settings > Macros, which takes a macro whose steps
+are all commands the assistant and agents may run, run on RIM's server, with every argument fixed. It runs such a macro as one
 command, in the workspaces of your home server, and its confirmation lists the macro's steps.
 Kept off the AI surface on purpose: editing and deleting messages, kicking, banning, changing
 roles, removing members and inviting to the workspace.
 
-**Limits of a run.** A run is one prompt and everything the agent does to answer it.
+**Limits of a run.** A run is one prompt and everything the assistant does to answer it.
 
-- At most three changes: calls of Mutating or Restricted commands, counted when the agent makes
-  them, whether you confirm or not. A fourth is skipped, and the agent is told to ask you to start
+- At most three changes: calls of Mutating or Restricted commands, counted when the assistant
+  makes them, whether you confirm or not. A fourth is skipped, and the assistant is told to ask you to start
   a new run. Reads, moving around the app and plugin commands do not count.
-- At most three tool calls at once; the rest go back to the agent to issue again.
+- At most three tool calls at once; the rest go back to the assistant to issue again.
 - At most ten rounds of tool calls, after which it says "(Reached maximum tool call limit)".
 - At most ten runs a minute: "Rate limit exceeded: maximum 10 runs per minute. Please wait a
   moment."
 
 ## Confirmations
 
-The server decides which calls wait for you. For the agent that is every Mutating and Restricted
+The server decides which calls wait for you. For the assistant that is every Mutating and Restricted
 command; Safe and Sensitive ones run at once
 ([Sensitivity](commands-and-automation.md#what-a-command-is)). A call that waits opens this
 dialog:
 
 - **Header**: the **RIM** badge ("Verified RIM system dialog") and "Confirm command".
-- **Title**: "Agent wants to:" and the command's id, with the command's description under it.
-- **Chip**: **AGENT** when the agent proposed it.
+- **Title**: "Assistant wants to:" and the command's id, with the command's description under it.
+- **Chip**: **AGENT** when the assistant proposed it.
 - **Destination**: when the command names another conversation than the open one, "Destination
   differs from active conversation" with "Will post in conversation" and the first eight
   characters of its id.
-- **Warning**: when the agent proposed the command after a tool call of the same run returned
+- **Warning**: when the assistant proposed the command after a tool call of the same run returned
   something, "This action was suggested while the agent was reading external content. **Verify it
   matches your intent.**" Anything a tool returns counts: messages, search results, a plugin's
   output, a cancellation or a skipped call, since any of it can carry instructions someone planted
-  for the agent. A call the agent makes straight from your prompt, before any tool returned,
+  for the assistant. A call the assistant makes straight from your prompt, before any tool returned,
   shows no warning, and each new prompt starts afresh.
 - **Arguments**: up to ten, values cut at 200 characters, then "+\<n\> more arguments". A value
   that looks like a secret, or sits under a name such as password, token, key or secret, shows as
@@ -157,26 +170,27 @@ dialog:
 - **Expiry**: the server's confirmation is valid for 60 seconds. When it runs out, the dialog
   closes and counts as cancelled. If it lapses as you confirm, the dialog opens once more.
 
-A cancelled call reaches the agent as "Action cancelled by user." The agent never confirms
+A cancelled call reaches the assistant as "Action cancelled by user." The assistant never confirms
 anything itself: it has no tool for the dialog, and the server runs a held command only with the
 single-use proof the dialog sends after your click, bound to you, the command and the exact
 arguments shown.
 
 ## Encrypted conversations
 
-The agent is off in every end-to-end encrypted DM and group until you turn it on for that one.
-**Conversation menu** in the header has "Agent: off in this conversation"; choosing it asks "Let
-the agent use this encrypted conversation?": "The text of this conversation goes to the model
-provider. It leaves this device and is no longer end-to-end encrypted once the agent reads it."
-**Turn on** allows it, and the entry becomes "Agent: on in this conversation", which turns it off
+The assistant is off in every end-to-end encrypted DM and group until you turn it on for that one.
+**Conversation menu** in the header has "Assistant: off in this conversation"; choosing it asks
+"Let the assistant use this encrypted conversation?": "The text of this conversation goes to the
+model provider. It leaves this device and is no longer end-to-end encrypted once the assistant
+reads it." **Turn on** allows it, and the entry becomes "Assistant: on in this conversation",
+which turns it off
 again without asking. The switch is per conversation and kept on this device.
 
-While it is on, the agent reads recent messages and searches in the local message cache, and a
+While it is on, the assistant reads recent messages and searches in the local message cache, and a
 search across the workspace adds this device's hits from the encrypted conversations it is on in.
-Every post asks first, in the dialog above: "Agent wants to: chat.post_message" with "Send this
+Every post asks first, in the dialog above: "Assistant wants to: chat.post_message" with "Send this
 message, encrypted, in an end-to-end encrypted conversation." and **Run anyway**, valid for five
-minutes. A group the agent creates starts as a plaintext group, which this desktop upgrades once
-every member is ready. Where the agent is off, it is told so, and that you can turn it on from
+minutes. A group the assistant creates starts as a plaintext group, which this desktop upgrades once
+every member is ready. Where the assistant is off, it is told so, and that you can turn it on from
 the conversation's menu. [Encrypted DMs and groups](e2ee-desktop.md) has the details.
 
 ## Privacy
@@ -184,29 +198,29 @@ the conversation's menu. [Encrypted DMs and groups](e2ee-desktop.md) has the det
 Requests go from this desktop straight to the provider, not through the RIM server. They carry:
 
 - your prompts, and the earlier prompts and answers of the conversation;
-- the agent's built-in instructions, your custom prompt, and the ids of the open workspace and
+- the assistant's built-in instructions, your custom prompt, and the ids of the open workspace and
   conversation;
 - the commands it may call, with their descriptions and arguments;
 - every call's arguments and result: the messages it reads, channel and member names, workspace
-  state values, plugin results and error text, and in an encrypted conversation the agent is on
+  state values, plugin results and error text, and in an encrypted conversation the assistant is on
   in, its text.
 
 On this device stay the key, in the secret vault; the five most recent conversations, as text
 without their tool results, in the app's local storage; the settings; and the encrypted switches.
 
-The RIM server runs the agent's built-in commands as it runs yours and records each in its audit
+The RIM server runs the assistant's built-in commands as it runs yours and records each in its audit
 log with the initiator `agent`. Arguments that look secret are stored as `[REDACTED]`, by the same
 rules as the dialog. The **Audit log** at the foot of the workspace rail shows your own entries, and a workspace's
 Owners and Moderators see all of the workspace's. Each entry names who ran it and, for an action
 on a member, that member. Masking keeps values out of the dialog and the log, not out of the
 provider: the model wrote those arguments. Plugin commands run on this device;
-`rim.log` records each one the agent calls by plugin and command id, and the saving, removal or
+`rim.log` records each one the assistant calls by plugin and command id, and the saving, removal or
 absence of a provider key, never the key itself.
 
 ## Troubleshooting
 
-- **"Please configure your API key in Settings → AI Agent."** The chosen provider has no key.
-  Keys are per provider, so check the provider shown in the agent's header.
+- **"Add your AI provider key in Settings > Assistant."** The chosen provider has no key.
+  Keys are per provider, so check the provider shown in the assistant's header.
 - **"Error: provider returned error \<status\>: …"** The provider refused the request and the rest
   is its own message. A 401 means it no longer accepts the key; a 404 that names the model means
   the model is gone: refresh the list under Model and pick another.
@@ -216,18 +230,18 @@ absence of a provider key, never the key itself.
 - **"secret storage error: …" under the key field, or "No key configured" for a key you saved.**
   The secret vault did not open, for example with the Linux keyring locked
   ([When the vault does not open](secret-vault.md#when-the-vault-does-not-open)).
-- **The agent says it has no way to act.** The server's command list did not load, and the agent
+- **The assistant says it has no way to act.** The server's command list did not load, and it
   has only `get_current_context` until you switch workspace or restart the app.
 
-The desktop app writes `rim.log`, and Settings → About has **Open log folder**
-([Logs](install.md#logs)). It holds the agent's errors and the key events above, never message
+The desktop app writes `rim.log`, and Settings > About has **Open log folder**
+([Logs](install.md#logs)). It holds the assistant's errors and the key events above, never message
 text or keys.
 
-## Agents on this computer
+## Agents that connect to RIM
 
-Apart from the agent above, a program that runs on your computer with its own model provider, such
+Apart from the assistant, a program that runs on your computer with its own model provider, such
 as Claude Code, can ask to connect to the desktop app. [Connect an AI agent](agents.md) walks
-through it step by step; this section has every detail. **Settings → Agents** holds the switch,
+through it step by step; this section has every detail. **Settings > Agents** holds the switch,
 which is off by default. It is optional, and RIM works the same without it. The web app does not have it.
 
 - **The switch.** **Let agents on this computer connect** makes the app listen on a port that only
@@ -294,7 +308,7 @@ confirming that one change, unless a plugin says a command you approved only rea
   goes out under your name, and the others in the channel are not told a program wrote it. The audit
   log records that an agent started it, which an Owner or Moderator can read. The server's AI
   command switch applies: on a server that has it off, sending is refused before you're asked.
-- **RIM commands.** Nothing is approved to start with, and what you approved for the agent above
+- **RIM commands.** Nothing is approved to start with, and what you approved for the assistant
   doesn't carry over. The **RIM commands** section of **Choose its commands** lists, by category,
   the commands the server lists for agents in the workspaces the program has a grant in, that the
   server runs and that are not `SAFE`. Sending a message (it has its own tool), plugin commands and
@@ -310,7 +324,7 @@ confirming that one change, unless a plugin says a command you approved only rea
   confirm; the app then answers the server's own confirmation for you. The server's AI command
   switch applies, discards, expiries and the 10 seconds after them work as they do for sending, and
   what a command returns goes to the program marked untrusted, up to 512 KiB.
-- **Plugin commands.** Nothing is approved to start with, and what you approved for the agent above
+- **Plugin commands.** Nothing is approved to start with, and what you approved for the assistant
   doesn't carry over. **Choose its commands** on a program's row lists, for each turned-on
   plugin, the commands it offers to agents, and you tick them one by one. A command the plugin
   marks `read_only` runs without asking. That is the plugin's claim: RIM can't check it, and the
@@ -380,8 +394,8 @@ checkout, are in [Connect an AI agent](agents.md#connect-claude-code) and the
 - [Commands and automation](commands-and-automation.md): sensitivity, the palette, macros and
   pipelines.
 - [Plugins](plugins.md): installing and trusting plugins, and approving their commands for the
-  agent.
-- [Encrypted DMs and groups](e2ee-desktop.md): how the agent, plugins and pipelines treat
+  assistant.
+- [Encrypted DMs and groups](e2ee-desktop.md): how the assistant, plugins and pipelines treat
   encrypted conversations.
 - [Secret vault](secret-vault.md): where the provider keys are kept.
 - [Command model](../../rim-server/docs/command_model.md): rim-server's contract for commands,

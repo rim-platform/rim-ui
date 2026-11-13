@@ -65,7 +65,7 @@ async function openPicker() {
 }
 
 async function sendPrompt(text: string) {
-  const input = screen.getByPlaceholderText("Ask the agent...");
+  const input = screen.getByPlaceholderText("Ask the assistant...");
   fireEvent.change(input, { target: { value: text } });
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(runAgent).toHaveBeenCalled());

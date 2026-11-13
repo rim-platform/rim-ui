@@ -44,6 +44,7 @@ import { useRunnableHere } from "../../plugins/runtime/pluginContext";
 import { commandOfferedHere } from "../../agent/agentAvailability";
 import { BotBadge } from "../../../shared/ui/BotBadge";
 import type { CommandDefinition } from "../../commands/types";
+import { commandCategoryLabel } from "../../commands/runtime/commandCategories";
 
 /** A member the mention list offers. */
 interface MentionSuggestion {
@@ -675,7 +676,7 @@ export function ComposerInput({
                         {item.value.title}
                       </span>
                       <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">
-                        {item.value.category}
+                        {commandCategoryLabel(item.value.category)}
                       </span>
                       {item.value.keybind && (
                         <span className="ml-auto font-mono text-[10px] text-rim-text-faint">

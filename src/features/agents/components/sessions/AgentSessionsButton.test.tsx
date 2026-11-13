@@ -99,9 +99,7 @@ describe("Agent sessions button", () => {
       b: running("Goose", "waiting"),
       c: running("Codex", "waiting"),
     });
-    expect(
-      screen.getByRole("button", { name: "Agent sessions, 2 waiting for you" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agent sessions, 2 need you" })).toBeInTheDocument();
     expect(screen.getByTestId("agent-sessions-count")).toHaveTextContent("2");
     expect(screen.queryByTestId("agent-sessions-working")).toBeNull();
   });
@@ -111,7 +109,7 @@ describe("Agent sessions button", () => {
     setSessions({ a: running("Goose", "waiting") }, { b: true });
     const user = userEvent.setup();
     render(<AgentSessionsButton />);
-    const button = screen.getByRole("button", { name: "Agent sessions, 1 waiting for you" });
+    const button = screen.getByRole("button", { name: "Agent sessions, 1 needs you" });
     await user.click(button);
     expect(button).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("region", { name: "Agent sessions" });
@@ -120,7 +118,7 @@ describe("Agent sessions button", () => {
         .getAllByRole("button")
         .map((row) => row.getAttribute("aria-label")),
     ).toEqual(["Open Goose: Session a", "Open Claude: Session b, new"]);
-    expect(within(menu).getByText("Waiting for you")).toBeInTheDocument();
+    expect(within(menu).getByText("Needs you")).toBeInTheDocument();
 
     await user.click(within(menu).getByRole("button", { name: "Open Claude: Session b, new" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "agent-session", key: "b" });

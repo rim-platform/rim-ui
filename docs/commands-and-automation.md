@@ -1,7 +1,7 @@
 # Commands and automation
 
 Everything RIM does runs as a command: the command palette, keybinds, macros, pipelines,
-plugins and the AI agent all run them. This page is for the person using the app and
+plugins and the assistant all run them. This page is for the person using the app and
 goes deeper than [Getting started](getting-started.md). The contract behind it is rim-server's
 [command model](../../rim-server/docs/command_model.md).
 
@@ -23,7 +23,7 @@ three places:
 piece of text. Context is where you are when it runs: the open workspace, the open conversation,
 a selected message. A command whose workspace or conversation argument is empty takes it from the
 context; one given in its arguments, such as a keybind's preset arguments, wins. The palette,
-keybinds, the composer's `/` list, a macro run and the AI agent send the open workspace, the open
+keybinds, the composer's `/` list, a macro run and the assistant send the open workspace, the open
 conversation and the thread open beside it; a message's context menu sends the message's
 conversation, its thread and the message instead. A server command that needs a conversation,
 such as marking it read or setting its notification level, therefore acts on the open one, and
@@ -189,7 +189,7 @@ new device:
 | <kbd>Ctrl+F</kbd> | Search in this conversation |
 | <kbd>Ctrl+Shift+F</kbd> | Search the workspace |
 | <kbd>Ctrl+Shift+X</kbd> | Browse plugins: Settings > Plugins |
-| <kbd>Ctrl+Shift+A</kbd> | Open the AI agent (desktop app) |
+| <kbd>Ctrl+Shift+A</kbd> | Open the assistant (desktop app) |
 | <kbd>Ctrl+Shift+C</kbd> | Create a channel |
 | <kbd>Ctrl+Shift+G</kbd> | New message |
 | <kbd>Ctrl+Shift+M</kbd> | Mark everything as read, with an Undo for 6 seconds before the server is told |
@@ -338,12 +338,13 @@ thread you are in when it starts:
 - **Plugins never run your macros.** A plugin step whose plugin is not installed on this device
   fails with "its plugin isn't installed on this device".
 
-**The AI agent.** Tick **The AI agent can run this** to let the agent run a macro as one
-command, in the workspaces of your home server. It can be ticked only when every step is a
-command the AI agent may run, which RIM's server runs, with every argument fixed; otherwise the
-form says "Only commands the AI agent may run, run on RIM's server, with every argument fixed".
-When the agent asks to run it, the confirmation lists the macro's steps with their arguments
-([The AI agent](#the-ai-agent)).
+**The assistant and agents.** Tick **The assistant and agents can run this** to let the
+assistant, and agents you approve it for, run a macro as one command, in the workspaces of your
+home server. It can be ticked only when every step is a command the assistant and agents may run,
+which RIM's server runs, with every argument fixed; otherwise the form says "Only commands the
+assistant and agents may run, run on RIM's server, with every argument fixed". When the assistant
+asks to run it, the confirmation lists the macro's steps with their arguments
+([The assistant](#the-assistant)).
 
 **Limits.** You keep at most 100 macros, each with at most 20 steps and a title of at most 128
 characters. A macro saved before steps could name other commands keeps any step that runs
@@ -369,6 +370,10 @@ Two macros, as examples:
   it** on its pause: each run asks how long to pause your notifications.
 
 ## Pipelines
+
+A pipeline does something when something happens in this workspace. When a new message matches
+a filter, someone joins or a state entry changes, it runs commands that need no confirmation, or
+posts a welcome as a bot. A cooldown keeps it from running too often.
 
 A pipeline runs commands on the server when something happens in the workspace: a trigger, up
 to five filters that must all match, and up to ten actions, each a command with arguments. It
@@ -423,7 +428,7 @@ the server's own cap when it sets one.
 
 **Post as bot.** With the Member Joined trigger, an Owner or Moderator on a server that has it
 sees **Post as bot** beside **Add action**: a bot (active bots only), a channel (only that bot's;
-"This bot is in no channels yet. Add it to one in Settings > Bots." otherwise) and a text. It says
+"This bot is in no channels yet. Add it to one in Settings > Bots & webhooks." otherwise) and a text. It says
 plainly above them: "Posted by the bot, without asking anyone, each time someone joins." The text
 takes `{username}`, the person's username, at their home server if they're from another one, and
 `{name}`, their display name, or their username without one. What the server refuses, such as a
@@ -445,9 +450,24 @@ with `{"query": "FAILED"}` (the Query field). Each failure posted to #deploys sh
 firing, at most once in five minutes. The action's result is not shown anywhere, and an action
 such as `chat.post_message` would be skipped.
 
+## Lenses
+
+A lens shows only the messages of a channel that match its filters, such as those with links or
+from one person. The lens button in the channel's header opens the picker: it lists the channel's
+lenses, with **Clear lens** while one is applied, and **Create lens** opens the editor, with a
+**Name**, a **Match** setting, conditions (Has Links, Has Attachments, Is Pinned, Author, Text
+Contains) and **Share with channel members**. A shared lens is listed for every member of the
+channel; only its creator edits or deletes it. In the command palette, **Apply Lens…** chooses a
+lens for the open channel, **Clear Lens** removes it and **Toggle Channel Lenses** shows or hides
+the picker.
+
 ## Workspace state
 
-Workspace state is a key-value store the server keeps for each workspace. Commands, macros and
+Workspace state is named values this workspace keeps, such as a release freeze switch or a
+counter. Macros, pipelines and plugins can read and change them. An entry belongs to the
+workspace or only to you, and can expire.
+
+It is a key-value store the server keeps for each workspace. Commands, macros and
 the agent use it through `state.get`, `state.list`, `state.set`, `state.incr` and `state.delete`,
 and a pipeline can react when it changes. Plugins have no access to it. An entry belongs to one
 of two scopes: the workspace's, which every member reads and writes, or your own, which only you
@@ -466,25 +486,27 @@ can be edited and deleted, and shows when it expires.
   `state.delete`. `state.set` shows the key's value now under its value field.
 - A value has at most 64 KB and lives at most 30 days when it has a TTL. The workspace's scope
   holds 10,000 entries and yours 1,000.
-- Anything that reads a scope sees its values, the AI agent and its model provider included. Do
+- Anything that reads a scope sees its values, the assistant and its model provider included. Do
   not keep secrets there.
 
-## The AI agent
+## The assistant
 
-On the desktop, the AI agent (<kbd>Ctrl+Shift+A</kbd>, or `/agent` in the composer) works
+On the desktop, the assistant (<kbd>Ctrl+Shift+A</kbd>, or `/agent` in the composer) works
 through the same commands and the same gates as you do. It sees only commands marked callable by
-an AI: a reviewed set of built-ins, the plugin commands you approved in Settings → Plugin AI,
-and your macros with **The AI agent can run this** ticked, each run as one command. A call that
-changes anything waits for you in the confirmation dialog, headed "Agent wants to:", which lists
-a macro's steps with their arguments, and the agent runs at most three such actions per run. Settings → AI Agent sets its provider and key, and
-[Using a plugin](plugins.md#using-a-plugin) covers approving a plugin's commands for it. A
+an AI: a reviewed set of built-ins, the plugin commands you approved in Settings > Assistant,
+under "Plugin commands it may run", and your macros with **The assistant and agents can run this**
+ticked, each run as one command. A call that changes anything waits for you in the confirmation
+dialog, headed "Assistant wants to:", which lists a macro's steps with their arguments, and the
+assistant runs at most three such actions per run. Settings > Assistant sets its provider and key,
+and [Using a plugin](plugins.md#using-a-plugin) covers approving a plugin's commands for it. A
 server's operator can turn its access off. In the web app it is not offered: the palette, the
 keybind, the `/agent` suggestion and **Build with AI** are left out, and `/agent` typed in full
-shows "The AI agent is available in the desktop app."
+shows "The assistant is available in the desktop app." Programs on your computer, such as Claude
+Code, are agents, not the assistant: [Connect an AI agent](agents.md).
 
 ## Next
 
 - [Keyboard](keyboard.md): how a key is resolved, the profile file and the Vim layer in full.
 - [Plugins](plugins.md): installing, trusting and using plugins and their commands.
 - [Command model](../../rim-server/docs/command_model.md): rim-server's contract for commands,
-  sensitivity, confirmations, macros and what the agent may call.
+  sensitivity, confirmations, macros and what the assistant may call.

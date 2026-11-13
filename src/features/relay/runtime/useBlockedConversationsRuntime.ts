@@ -76,7 +76,7 @@ function closeHidden(spaceId: string, conversationId: string, principalId: strin
   if (onScreen && !blockedHereJustNow(principalId)) {
     toast.info("Conversation hidden", {
       id: `blocked-conversation:${conversationId}`,
-      description: `You blocked ${blockedPersonName(spaceId, principalId)}. It comes back when you unblock them in Settings → Direct messages.`,
+      description: `You blocked ${blockedPersonName(spaceId, principalId)}. It comes back when you unblock them in Settings > Direct messages, under Blocked people.`,
     });
   }
 }

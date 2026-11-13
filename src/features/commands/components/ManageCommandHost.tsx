@@ -324,11 +324,11 @@ function UnblockPrincipalPicker({ onClose }: { onClose: () => void }) {
   }
   return (
     <ListPickerDialog
-      title="Unblock a principal"
+      title="Unblock an account"
       items={items}
       loading={blocks.isPending}
-      error={errorText(blocks.error, "Failed to load blocked principals.")}
-      emptyText="No blocked principals."
+      error={errorText(blocks.error, "Failed to load blocked accounts.")}
+      emptyText="No blocked accounts."
       onPick={pick}
       onClose={onClose}
     />
@@ -379,10 +379,10 @@ function PrincipalPicker({
   if (chosen) return <ClearProfileDialog principalId={chosen} onClose={onClose} />;
   return (
     <ListPickerDialog
-      title={purpose === "block" ? "Block a principal" : "Clear a profile"}
+      title={purpose === "block" ? "Block an account" : "Clear a profile"}
       items={items}
       loading={reports.isPending}
-      emptyText="Type a principal id."
+      emptyText="Type an account id."
       custom={(query) => ({ id: query, label: `Use ${query}` })}
       onPick={(item) => {
         if (purpose === "block") {
