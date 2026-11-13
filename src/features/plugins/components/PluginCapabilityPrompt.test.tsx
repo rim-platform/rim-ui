@@ -47,6 +47,9 @@ vi.mock("../api/usePluginActions", () => ({
   usePluginEnable: vi.fn(() => ({ mutate: enable, isPending: false })),
 }));
 
+const toastSuccess = vi.hoisted(() => vi.fn());
+vi.mock("../../../shared/toast", () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
+
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import type { PluginInfo } from "../types";
 
@@ -140,14 +143,42 @@ describe("PluginCapabilityPrompt chat lines", () => {
     expect(screen.getAllByRole("checkbox")).toHaveLength(4);
   });
 
+  it("starts the encrypted pair unticked and approves only the plain pair by default", () => {
+    approve.mockClear();
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={chat} />);
+    const [read, readEncrypted, write, writeEncrypted] = screen.getAllByRole("checkbox");
+    expect(read).toBeChecked();
+    expect(write).toBeChecked();
+    expect(readEncrypted).not.toBeChecked();
+    expect(writeEncrypted).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(new Set(approve.mock.calls[0][0].capabilities)).toEqual(
+      new Set(["chat.read", "chat.write"]),
+    );
+  });
+
+  it("keeps an encrypted grant ticked when it was approved before", () => {
+    render(
+      <PluginCapabilityPrompt
+        open
+        onClose={() => {}}
+        plugin={{ ...chat, approved_capabilities: ["chat.read", "chat.read.encrypted"] }}
+      />,
+    );
+    expect(screen.getAllByRole("checkbox")[1]).toBeChecked();
+  });
+
   it("keeps an encrypted grant with its plain one", () => {
     approve.mockClear();
     render(<PluginCapabilityPrompt open onClose={() => {}} plugin={chat} />);
     const [read, readEncrypted, write, writeEncrypted] = screen.getAllByRole("checkbox");
-    // Unchecking the plain read unchecks the encrypted read with it.
+    // Ticking the encrypted read keeps the plain read; unticking the plain read clears both.
+    fireEvent.click(readEncrypted);
+    expect(readEncrypted).toBeChecked();
     fireEvent.click(read);
+    expect(read).not.toBeChecked();
     expect(readEncrypted).not.toBeChecked();
-    // Checking the encrypted write after unchecking both brings the plain write back.
+    // Ticking the encrypted write after unticking the plain one brings the plain write back.
     fireEvent.click(write);
     expect(writeEncrypted).not.toBeChecked();
     fireEvent.click(writeEncrypted);
@@ -177,6 +208,28 @@ describe("PluginCapabilityPrompt after an install", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
     expect(enable).toHaveBeenCalledWith("chat.rim.github-prs", expect.anything());
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("says where the panel is when a plugin with a panel turns on", () => {
+    approve.mockReset().mockImplementation(succeed);
+    enable.mockReset().mockImplementation(succeed);
+    toastSuccess.mockClear();
+    const withPanel = plugin({
+      display_name: "Poll",
+      panels: [{ id: "poll", title: "Poll", entry: "panel.html" }] as never,
+    });
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={withPanel} startOnApprove />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
+    expect(toastSuccess).toHaveBeenCalledWith("Poll is on. Open it from Plugins in the top bar.");
+  });
+
+  it("shows no panel toast for a plugin without a panel", () => {
+    approve.mockReset().mockImplementation(succeed);
+    enable.mockReset().mockImplementation(succeed);
+    toastSuccess.mockClear();
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={plugin({})} startOnApprove />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 
   it("keeps the dialog open with the reason when the plugin does not start", () => {

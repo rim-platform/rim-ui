@@ -46,10 +46,12 @@ README lists the plugin's commands and the ways to install it.
 
 | Plugin | What it does | Kind | Permissions it asks for | Repository |
 |---|---|---|---|---|
-| Poll | Runs a quick poll in the open conversation; the poll and every vote are messages | Sandboxed | `ui.panel`, `chat.read`, `chat.write`; optionally `chat.read.encrypted` and `chat.write.encrypted` | [plugin-poll](https://github.com/rim-platform/plugin-poll) |
-| GitHub Pull Requests | Lists the open pull requests of up to 10 GitHub repositories; public repositories without a token | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com` and `avatars.githubusercontent.com` | [plugin-github-prs](https://github.com/rim-platform/plugin-github-prs) |
-| Kubernetes Pods | Lists a namespace's pods, shows and follows a container's logs, restarts a pod after you confirm | Runs on this computer | `ui.panel`, `ui.notify` | [plugin-k8s-pods](https://github.com/rim-platform/plugin-k8s-pods) |
-| Releases | Watches GitHub releases and posts one into an unencrypted conversation when asked | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com`, `chat.write` | [plugin-releases](https://github.com/rim-platform/plugin-releases) |
+| Poll | Runs a quick poll in the open conversation; the poll and every vote are messages | Sandboxed | `ui.panel`, `chat.read`, `chat.write`; optionally `chat.read.encrypted` and `chat.write.encrypted` | [plugin-poll](https://github.com/rim-platform/plugin-poll), [latest release](https://github.com/rim-platform/plugin-poll/releases/latest) |
+| GitHub Pull Requests | Lists the open pull requests of up to 10 GitHub repositories; public repositories without a token | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com` and `avatars.githubusercontent.com` | [plugin-github-prs](https://github.com/rim-platform/plugin-github-prs), [latest release](https://github.com/rim-platform/plugin-github-prs/releases/latest) |
+| Kubernetes Pods | Lists a namespace's pods, shows and follows a container's logs, restarts a pod after you confirm | Runs on this computer | `ui.panel`, `ui.notify` | [plugin-k8s-pods](https://github.com/rim-platform/plugin-k8s-pods), [latest release](https://github.com/rim-platform/plugin-k8s-pods/releases/latest) |
+| Releases | Watches GitHub releases and posts one into an unencrypted conversation when asked | Sandboxed | `ui.panel`, `network.fetch` for `api.github.com`, `chat.write` | [plugin-releases](https://github.com/rim-platform/plugin-releases), [latest release](https://github.com/rim-platform/plugin-releases/releases/latest) |
+
+The web app installs one from the link in that release's notes, under Install from link.
 
 - **Poll** needs the two encrypted permissions to work in encrypted DMs and groups; without them
   it works in plaintext channels only. On the web it reads messages only in a browser set up as

@@ -43,6 +43,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- The plugin permission prompt starts with the encrypted chat permissions unticked, unless they
+  were approved before. After **Approve and turn on**, a plugin with a panel says where to open
+  it. On the web, the empty Plugins page points to a plugin's release page and the RIM guide, and
+  pasting a plugin's GitHub repository link into Install from link says to copy the link from its
+  latest release instead.
 - The AI agent built into the desktop app is now called the **Assistant**: its Settings tab, its
   panel (<kbd>Ctrl+Shift+A</kbd>, **Open Assistant**), the conversation menu's "Assistant: on in
   this conversation", `/agent` ("Ask the assistant") and the palette's **Assistant & Agents**

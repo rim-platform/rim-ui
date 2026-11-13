@@ -2,6 +2,7 @@ import { showInvisibleCharacters } from "../../agents/runtime/invisibleCharacter
 import { useState } from "react";
 import { Shield } from "lucide-react";
 
+import { toast } from "../../../shared/toast";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { usePluginEnable } from "../api/usePluginActions";
@@ -33,6 +34,11 @@ const capabilityDescriptions: Record<PluginCapability, string> = {
   "network.fetch": "Send and receive data from the sites the plugin lists",
 };
 
+const ENCRYPTED_CHAT_CAPABILITIES: readonly PluginCapability[] = [
+  "chat.read.encrypted",
+  "chat.write.encrypted",
+];
+
 /** How much of a plugin's description the permission prompt shows. */
 const MAX_DESCRIPTION_LENGTH = 600;
 
@@ -55,8 +61,17 @@ export function PluginCapabilityPrompt({
   startOnApprove = false,
 }: PluginCapabilityPromptProps) {
   const parsedCapabilities = parsePluginCapabilities(plugin.capabilities);
+  // The manifest has no optional-permission field, so the encrypted chat pair, the most
+  // sensitive grants, starts unticked unless it was approved before.
   const [selected, setSelected] = useState<Set<PluginCapability>>(
-    () => new Set(parsedCapabilities),
+    () =>
+      new Set(
+        parsedCapabilities.filter(
+          (cap) =>
+            !ENCRYPTED_CHAT_CAPABILITIES.includes(cap) ||
+            plugin.approved_capabilities.includes(cap),
+        ),
+      ),
   );
   const approve = useApproveCapabilities();
   const grantCommands = useGrantCommands();
@@ -106,7 +121,12 @@ export function PluginCapabilityPrompt({
       return;
     }
     enable.mutate(plugin.plugin_id, {
-      onSuccess: onClose,
+      onSuccess: () => {
+        if ((plugin.panels ?? []).length > 0) {
+          toast.success(`${plugin.display_name} is on. Open it from Plugins in the top bar.`);
+        }
+        onClose();
+      },
       onError: (err) =>
         setStartError(
           `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings > Plugins.`,

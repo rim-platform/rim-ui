@@ -22,6 +22,7 @@ import {
   usePluginUpdate,
 } from "../api/usePluginActions";
 import { InstallFromLink } from "./InstallFromLink";
+import { ExternalLink } from "../../auth/components/ExternalLink";
 import { PluginCapabilityPrompt } from "./PluginCapabilityPrompt";
 import { PluginRow, type RowNote } from "./PluginRow";
 import { PluginSettingsDialog } from "./PluginSettingsDialog";
@@ -599,6 +600,9 @@ function linkNote(plugin: PluginInfo): RowNote | undefined {
  * Points the user to the install affordances above; on the desktop the copy
  * also says a marketplace is coming soon.
  */
+const OFFICIAL_PLUGINS_URL =
+  "https://rim-platform.org/docs/client/plugins.html#the-official-plugins";
+
 function PluginEmptyState({ desktop }: { desktop: boolean }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
@@ -607,7 +611,18 @@ function PluginEmptyState({ desktop }: { desktop: boolean }) {
       <p className="max-w-xs text-xs text-rim-text-muted">
         {desktop
           ? "Install from a local folder or git URL to get started, or from a link or your workspace's registry."
-          : "Install a web plugin from a link to get started. Plugins that run programs on your computer need the desktop app."}
+          : "Install a web plugin from its link. Each plugin's release page lists one under Install from link. The official plugins are listed in "}
+        {!desktop && (
+          <>
+            <ExternalLink
+              href={OFFICIAL_PLUGINS_URL}
+              className="text-rim-accent underline underline-offset-2"
+            >
+              the RIM guide
+            </ExternalLink>
+            .
+          </>
+        )}
       </p>
     </div>
   );
