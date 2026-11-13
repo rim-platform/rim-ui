@@ -245,13 +245,13 @@ describe("AgentSettingsPanel", () => {
   it("says the AI command surface is switched off while the server has it off", () => {
     setup({ ai_commands: ServerFeatureState.DISABLED });
     expect(
-      screen.getByText("The AI command surface is switched off on this server."),
+      screen.getByText("This server has switched off the assistant's commands."),
     ).toBeInTheDocument();
   });
 
   it("shows no switched-off notice while the server runs AI commands", () => {
     setup();
-    expect(screen.queryByText(/AI command surface is switched off/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/switched off the assistant's commands/)).not.toBeInTheDocument();
   });
 
   it("renders the data-leakage security banner", async () => {

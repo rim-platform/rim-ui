@@ -45,7 +45,7 @@ describe("AgentOverlay and the ai_commands switch", () => {
     });
 
     expect(
-      screen.getByText("The AI command surface is switched off on this server."),
+      screen.getByText("This server has switched off the assistant's commands."),
     ).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Ask the assistant...")).not.toBeInTheDocument();
     expect(loadAgentTools).not.toHaveBeenCalled();
