@@ -109,7 +109,7 @@ export function PluginCapabilityPrompt({
       onSuccess: onClose,
       onError: (err) =>
         setStartError(
-          `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings → Plugins.`,
+          `The permissions are saved, but the plugin did not start: ${err.message}. Turn it on in Settings > Plugins.`,
         ),
     });
   }
