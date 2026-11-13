@@ -58,6 +58,12 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   filtered views of this channel". "Block Principal…" is now "Block Account…", moderation says
   "accounts" for blocked principals, and pointers to Settings pages read "Settings > X".
 
+### Fixed
+
+- A word in angle brackets in a message, such as "reply /vote <number>", now shows as typed
+  instead of disappearing. Any HTML in a message shows as the text that was written, never as
+  markup.
+
 ## [0.0.12] - 2026-11-12
 
 ### Added
