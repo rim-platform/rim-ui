@@ -53,20 +53,7 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    # X-XSS-Protection "1; mode=block" is deprecated — set to "0" and rely on
-    # CSP for XSS defense-in-depth instead.
-    add_header X-XSS-Protection "0" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    # Content-Security-Policy: XSS defense-in-depth for the web build.
-    # connect-src is pinned to the API origin derived from VITE_GRAPHQL_ENDPOINT
-    # at docker build time — no wildcard localhost allowed in production.
-    # style-src includes 'unsafe-inline' because Tailwind CSS v4 injects inline
-    # styles at build time. 'wasm-unsafe-eval' lets the page compile the encrypted
-    # conversations' MLS module (WebAssembly), nothing else.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
+    include /etc/nginx/rim-security-headers.conf;
 
     # Gzip compression
     gzip on;
@@ -87,6 +74,7 @@ server {
     # Cache hashed assets aggressively (Vite adds content hash)
     location /assets/ {
         expires 1y;
+        include /etc/nginx/rim-security-headers.conf;
         add_header Cache-Control "public, immutable";
     }
 
@@ -98,6 +86,7 @@ server {
     # origin null and load shell.js as a CORS request, so any origin may read it.
     location /plugin-frame/ {
         add_header Access-Control-Allow-Origin "*" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "no-referrer" always;
         add_header Content-Security-Policy "default-src 'none'; script-src 'self' rim-plugin://shell blob: 'wasm-unsafe-eval'; style-src 'self' blob: 'unsafe-inline'; img-src 'self' blob: data: https:; font-src 'self' blob: data:; media-src blob: data:; connect-src https: wss:; worker-src blob:; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'" always;
@@ -116,6 +105,31 @@ server {
     }
 }
 NGINX
+
+# The headers every app location shares, written apart because a location with its own
+# add_header directives does not inherit the server block's.
+RUN API_ORIGIN=$(echo "$VITE_GRAPHQL_ENDPOINT" | sed -n 's|^\(https\?://[^/]*\).*|\1|p') && \
+    WS_ORIGIN=$(echo "$API_ORIGIN" | sed 's|^http|ws|') && \
+    cat > /etc/nginx/rim-security-headers.conf <<HEADERS
+# Security headers for the app. A location that sets its own add_header inherits none of
+# these, so every such location includes this file.
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+# X-XSS-Protection "1; mode=block" is deprecated — set to "0" and rely on
+# CSP for XSS defense-in-depth instead.
+add_header X-XSS-Protection "0" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+# HSTS has no effect on a plain-HTTP answer; it applies once a TLS proxy fronts this server.
+add_header Strict-Transport-Security "max-age=31536000" always;
+# Content-Security-Policy: XSS defense-in-depth for the web build.
+# connect-src is pinned to the API origin derived from VITE_GRAPHQL_ENDPOINT
+# at docker build time — no wildcard localhost allowed in production.
+# style-src includes 'unsafe-inline' because Tailwind CSS v4 injects inline
+# styles at build time. 'wasm-unsafe-eval' lets the page compile the encrypted
+# conversations' MLS module (WebAssembly), nothing else.
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' $API_ORIGIN $WS_ORIGIN; frame-ancestors 'none'" always;
+HEADERS
 
 # Copy built SPA from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
