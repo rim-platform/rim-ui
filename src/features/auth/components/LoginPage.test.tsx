@@ -133,7 +133,7 @@ describe("LoginPage", () => {
     keyOptions.value = true;
     renderPage();
     expect(screen.getByRole("heading", { name: "RIM" })).toBeInTheDocument();
-    expect(screen.getByText("Sign in to your workspace")).toBeInTheDocument();
+    expect(screen.getByText("Welcome to RIM")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Device key sign-in" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("password")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
@@ -323,6 +323,7 @@ describe("LoginPage", () => {
     try {
       renderPage();
       expect(screen.getByRole("heading", { name: "Not this account?" })).toBeInTheDocument();
+      expect(screen.getByText("Sign in to your workspace")).toBeInTheDocument();
     } finally {
       accountsOnDevice.value = [];
     }

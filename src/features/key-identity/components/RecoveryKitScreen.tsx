@@ -84,6 +84,10 @@ export function RecoveryKitScreen({ kit, onClose }: { kit: RecoveryKitText; onCl
           Later
         </Button>
       </div>
+      <p className="text-xs text-rim-text-faint">
+        Later keeps the kit only in this browser until you save it. If the browser clears its data
+        first, the account can&apos;t be recovered.
+      </p>
       <SecondDeviceNudge onOpenSettings={close} />
     </div>
   );
