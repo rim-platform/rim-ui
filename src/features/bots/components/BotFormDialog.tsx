@@ -14,6 +14,10 @@ export const STATEMENT_MAX = 200;
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 text-sm text-rim-text outline-none transition placeholder:text-rim-text-faint focus:border-rim-accent/40";
+/** The statements a bot that only posts what its webhooks send starts with. */
+export const WEBHOOK_RUN_BY = "Nobody runs a program for it: it only posts what its webhooks send.";
+export const WEBHOOK_READS_GO_TO = "Nowhere: it reads nothing.";
+
 const LABEL_CLASS = "mb-1 block text-xs font-medium uppercase tracking-wider text-rim-text-faint";
 
 interface BotFormDialogProps {
@@ -25,6 +29,8 @@ interface BotFormDialogProps {
   onClose: () => void;
   /** Called after an edit is saved, before the dialog closes. */
   onSaved?: () => void;
+  /** On create, starts both statements as those of a bot that only posts from webhooks. */
+  forWebhooks?: boolean;
 }
 
 function Counter({ id, length }: { id: string; length: number }) {
@@ -41,10 +47,19 @@ function Counter({ id, length }: { id: string; length: number }) {
  * added the bot says. On a host with bot events, also whether it can see people join, sent only
  * when that is what changes, so only turning it on or off goes on record.
  */
-export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: BotFormDialogProps) {
+export function BotFormDialog({
+  serverId,
+  bot,
+  onCreated,
+  onSaved,
+  onClose,
+  forWebhooks,
+}: BotFormDialogProps) {
   const [name, setName] = useState(bot?.name ?? "");
-  const [runBy, setRunBy] = useState(bot?.runBy ?? "");
-  const [readsGoTo, setReadsGoTo] = useState(bot?.readsGoTo ?? "");
+  const [runBy, setRunBy] = useState(bot?.runBy ?? (forWebhooks ? WEBHOOK_RUN_BY : ""));
+  const [readsGoTo, setReadsGoTo] = useState(
+    bot?.readsGoTo ?? (forWebhooks ? WEBHOOK_READS_GO_TO : ""),
+  );
   const [seesJoins, setSeesJoins] = useState(Boolean(bot?.seesMemberJoins));
   const offersJoins = useSpaceHasCapability(serverId, BOT_EVENTS);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +125,19 @@ export function BotFormDialog({ serverId, bot, onCreated, onSaved, onClose }: Bo
             className={FIELD_CLASS}
           />
         </label>
+        {!bot && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setRunBy(WEBHOOK_RUN_BY);
+              setReadsGoTo(WEBHOOK_READS_GO_TO);
+            }}
+          >
+            Only posts from webhooks
+          </Button>
+        )}
         <div>
           <label>
             <span className={LABEL_CLASS}>Who runs it</span>

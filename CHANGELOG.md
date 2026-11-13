@@ -43,6 +43,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Making a bot for webhooks is shorter: **New bot for webhooks** (under Incoming webhooks, and in
+  the form as **Only posts from webhooks**) fills the two required statements, which stay
+  editable. The token dialog says webhooks don't need the token, and the new webhook form says
+  to create a missing channel first.
 - The plugin permission prompt starts with the encrypted chat permissions unticked, unless they
   were approved before. After **Approve and turn on**, a plugin with a panel says where to open
   it. On the web, the empty Plugins page points to a plugin's release page and the RIM guide, and

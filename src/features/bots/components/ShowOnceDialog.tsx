@@ -10,6 +10,8 @@ interface ShowOnceDialogProps {
   label: string;
   /** The secret. Held only by whoever renders this, never in a store or the query cache. */
   value: string;
+  /** A muted line under the value, for what the value is and is not needed for. */
+  note?: string;
   /** Extra guidance below the warning. */
   children?: ReactNode;
   onClose: () => void;
@@ -20,7 +22,14 @@ interface ShowOnceDialogProps {
  * field with a Copy button. It closes only through its Done button, never by a press on the
  * backdrop or Escape, so it cannot vanish before the value was copied.
  */
-export function ShowOnceDialog({ title, label, value, children, onClose }: ShowOnceDialogProps) {
+export function ShowOnceDialog({
+  title,
+  label,
+  value,
+  note,
+  children,
+  onClose,
+}: ShowOnceDialogProps) {
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
@@ -45,6 +54,7 @@ export function ShowOnceDialog({ title, label, value, children, onClose }: ShowO
             className="w-full resize-none break-all rounded-lg border border-rim-line bg-rim-void px-3 py-2.5 font-mono text-xs text-rim-text outline-none focus:border-rim-accent/40"
           />
         </label>
+        {note && <p className="text-xs text-rim-text-muted">{note}</p>}
         <p className="text-sm text-rim-warm">
           RIM won&apos;t show this again. Anyone holding it can act as this bot, so keep it like a
           password.

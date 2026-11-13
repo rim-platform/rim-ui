@@ -43,6 +43,7 @@ vi.mock("../../commands/runtime/appCommands/manageAvailability", async (importOr
 }));
 
 import { BotsSettings } from "./BotsSettings";
+import { STATEMENT_MAX, WEBHOOK_READS_GO_TO, WEBHOOK_RUN_BY } from "./BotFormDialog";
 
 const SECRET = "rimbot_SECRETSECRETSECRETSECRETSECRETSECRETSECRE";
 
@@ -322,6 +323,31 @@ describe("BotsSettings", () => {
       expect(await screen.findByRole("alert")).toHaveTextContent("A name like that is taken");
     });
 
+    it("fills both statements from Only posts from webhooks, and they stay editable", async () => {
+      serve([]);
+      renderSettings();
+      await openNewBot();
+      expect(screen.getByLabelText("Who runs it")).toHaveValue("");
+      fireEvent.click(screen.getByRole("button", { name: "Only posts from webhooks" }));
+      expect(screen.getByLabelText("Who runs it")).toHaveValue(WEBHOOK_RUN_BY);
+      expect(screen.getByLabelText("Where what it reads goes")).toHaveValue(WEBHOOK_READS_GO_TO);
+      expect(WEBHOOK_RUN_BY.length).toBeLessThanOrEqual(STATEMENT_MAX);
+      expect(WEBHOOK_READS_GO_TO.length).toBeLessThanOrEqual(STATEMENT_MAX);
+      fireEvent.change(screen.getByLabelText("Who runs it"), { target: { value: "Us" } });
+      expect(screen.getByLabelText("Who runs it")).toHaveValue("Us");
+    });
+
+    it("tells that webhooks don't need the token", async () => {
+      serve([], { "mutation CreateBot": () => ({ createBot: { bot: bot(1), token: SECRET } }) });
+      renderSettings();
+      await openNewBot();
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Bot 1" } });
+      fireEvent.click(screen.getByRole("button", { name: "Only posts from webhooks" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add bot" }));
+      await screen.findByDisplayValue(SECRET);
+      expect(screen.getByText(/Incoming webhooks don't: you can close this/)).toBeInTheDocument();
+    });
+
     it("shows the token once, closes only on Done, and keeps it out of the caches", async () => {
       serve([], {
         "mutation CreateBot": () => ({ createBot: { bot: bot(1), token: SECRET } }),
@@ -592,6 +618,25 @@ describe("BotsSettings", () => {
         ],
         pageInfo: { hasNext: false },
       },
+    });
+
+    it("offers New bot for webhooks when there is no bot, with the statements filled", async () => {
+      serve([], { "query BotChannels": channelsHandler });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      fireEvent.click(await screen.findByRole("button", { name: "New bot for webhooks" }));
+      await screen.findByRole("button", { name: "Add bot" });
+      expect(screen.getByLabelText("Who runs it")).toHaveValue(WEBHOOK_RUN_BY);
+      expect(screen.getByLabelText("Where what it reads goes")).toHaveValue(WEBHOOK_READS_GO_TO);
+    });
+
+    it("says to create a missing channel first in the new webhook form", async () => {
+      serve([bot(1)], {
+        "query IncomingWebhooks": () => ({ incomingWebhooks: [] }),
+        "query BotChannels": channelsHandler,
+      });
+      renderSettings({ capabilities: [INCOMING_WEBHOOKS] });
+      fireEvent.click(await enabledButton("New webhook"));
+      expect(await screen.findByText(/Need a new channel\? Create it first/)).toBeInTheDocument();
     });
 
     it("is not shown, and not asked for, on a server without incoming_webhooks", async () => {
