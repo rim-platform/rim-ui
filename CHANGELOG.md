@@ -60,6 +60,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- New messages in the last conversation you opened count as unread while Home, Unreads or Settings
+  is in front of it. They were taken as read, so Home and the rail showed too few.
 - A word in angle brackets in a message, such as "reply /vote <number>", now shows as typed
   instead of disappearing. Any HTML in a message shows as the text that was written, never as
   markup.
