@@ -76,8 +76,8 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
   localCommand(
     "moderation.block_principal",
     "Moderation",
-    "Block Principal…",
-    "Block a principal from this server",
+    "Block Account…",
+    "Block an account from this server",
   ),
   localCommand(
     "moderation.unblock_principal",
@@ -224,7 +224,7 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
     "people.report_request",
     "People",
     "Report Message Request…",
-    "Report the open message request to your relay's operators",
+    "Report the open message request to the operators of the server your account is on",
     true,
     {
       arguments: [

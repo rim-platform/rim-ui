@@ -167,6 +167,15 @@ describe("PipelineSettings list states", () => {
     expect(screen.getByText("Loading pipelines...")).toBeInTheDocument();
   });
 
+  it("explains what a pipeline is", async () => {
+    handlers.Pipelines = () => ({ pipelines: [] });
+    render(<PipelineSettings />);
+    expect(
+      screen.getByText(/A pipeline does something when something happens in this workspace/),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/No pipelines yet/)).toBeInTheDocument();
+  });
+
   it("shows the empty state when the workspace has no pipelines", async () => {
     handlers.Pipelines = () => ({ pipelines: [] });
     render(<PipelineSettings />);

@@ -189,7 +189,8 @@ describe("this app's own commands", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("c-carol");
     expect(toast.info).toHaveBeenCalledTimes(2);
     expect(vi.mocked(toast.info).mock.calls[0][1]).toEqual({
-      description: "Unblock them in Settings → Direct messages to message them.",
+      description:
+        "Unblock them in Settings > Direct messages, under Blocked people to message them.",
     });
     useBlockedConversations.getState().reset();
   });

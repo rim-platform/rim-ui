@@ -189,7 +189,7 @@ const STATUS_LABEL: Record<MessageReportStatus, string> = {
  * and the verified content of reported encrypted messages. Titled `title`.
  *
  * With `onBlockPrincipal` the list is an instance operator's view of the direct space: it asks
- * for each author's principal id, shows it with a Block principal action that calls
+ * for each author's principal id, shows it with a Block account action that calls
  * `onBlockPrincipal` and, with `onClearProfile`, a Clear profile action that calls it, and offers
  * Delete on a reported unencrypted message.
  */
@@ -341,9 +341,9 @@ function ReportRow({
               variant="ghost"
               size="sm"
               onClick={() => onBlockPrincipal(principalId)}
-              aria-label={`Block principal ${principalId}`}
+              aria-label={`Block account ${principalId}`}
             >
-              Block principal
+              Block account
             </Button>
           )}
           {onBlockPrincipal && onClearProfile && (

@@ -28,13 +28,17 @@ export function LensPicker({ serverId, conversationId }: LensPickerProps) {
   return (
     <>
       <HoverTooltip
-        content={<span className="text-xs text-rim-text whitespace-nowrap">Channel lenses</span>}
+        content={
+          <span className="text-xs text-rim-text whitespace-nowrap">
+            Lenses: filtered views of this channel
+          </span>
+        }
       >
         <button
           ref={triggerRef}
           type="button"
           onClick={() => setPickerOpen(!pickerOpen)}
-          aria-label="Channel lenses"
+          aria-label="Lenses: filtered views of this channel"
           className={cn(
             "rounded-lg p-1.5 transition",
             activeLensId
@@ -202,6 +206,11 @@ function LensPickerDropdown({
         className="fixed min-w-[260px] max-w-[320px] rounded-lg border border-rim-line bg-rim-panel py-1 shadow-xl outline-none"
         style={{ top: position.top, left: position.left, zIndex: Z.DROPDOWN }}
       >
+        <p className="px-3 py-2 text-xs text-rim-text-muted">
+          A lens shows only the messages of this channel that match its filters, such as those with
+          links or from one person.
+        </p>
+
         {/* Clear active lens */}
         {activeLensId && (
           <button

@@ -113,6 +113,21 @@ describe("KeybindSettings", () => {
     expect(screen.getByText(/loading keybinds/i)).toBeInTheDocument();
   });
 
+  it("explains what keybinds are under its heading", () => {
+    vi.mocked(useResolvedKeybinds).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useResolvedKeybinds>);
+    vi.mocked(useCommands).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCommands>);
+
+    render(<KeybindSettings />);
+    expect(screen.getByRole("heading", { name: "Keybinds" })).toBeInTheDocument();
+    expect(screen.getByText(/Keys you give to commands and macros/)).toBeInTheDocument();
+  });
+
   /**
    * Regression guard: the title map must be built from the KEYBIND_PICKER
    * surface so that commands excluded from PALETTE (like

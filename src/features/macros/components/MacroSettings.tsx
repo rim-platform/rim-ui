@@ -145,8 +145,8 @@ export function MacroSettings() {
 
       <p className="text-sm text-rim-text-muted">
         A macro is your own command, made of commands that run one after another. It works in every
-        workspace: run it from the command palette, a key, a Home quick box or by typing / in the
-        message box.
+        workspace: run it from the command palette, a key, a Quick actions box on Home or by typing
+        / in the message box.
       </p>
 
       <LimitNote limit={limit} />

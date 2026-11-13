@@ -121,7 +121,8 @@ describe("openDirectWithMember", () => {
     expect(useShellStore.getState().selectedConversationId).toBe("c-design");
     expect(useWorkspaceStore.getState().workspaceId).toBe("ws-1");
     expect(toastInfo).toHaveBeenCalledWith("You blocked Bob.", {
-      description: "Unblock them in Settings → Direct messages to message them.",
+      description:
+        "Unblock them in Settings > Direct messages, under Blocked people to message them.",
     });
   });
 

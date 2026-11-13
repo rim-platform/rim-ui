@@ -283,7 +283,7 @@ export const CLIENT_COMMAND_LABELS: Readonly<
   },
   "workspace.open_marketplace": {
     title: "Browse Plugins",
-    description: "Find, install and manage plugins",
+    description: "Install plugins from a folder, a git URL or a link, and manage them",
   },
   "workspace.next_unread_channel": {
     title: "Next Unread Conversation",
