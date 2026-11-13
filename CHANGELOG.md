@@ -120,6 +120,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - The record of what agents were given keeps separate limits per agent for reads, requests to
   change something, refusals and calls that hand over nothing, so an agent can't push what it
   read or changed out of the record with many cheap calls.
+- The agents guide explains the risk of the agent port on a computer other accounts sign in to,
+  and what to do when the port is held by another program.
 
 ## [0.0.12] - 2026-11-12
 

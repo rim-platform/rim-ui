@@ -31,6 +31,24 @@ the tab says so.
 While the switch is off, nothing listens. Agents you connected earlier stay in the list, but they
 can't reach RIM until you turn it on again.
 
+**On a computer other people sign in to.** The port, 47821, is the same for everyone, and every
+account on the computer can reach it. Nothing proves to an agent that RIM is the program
+answering there: an agent sends its token to whatever holds the port. If another account's
+program takes the port first, RIM's tab says the port is in use, and an agent you set up with a
+token (the setups below, or Claude Code's plugin) would send its token to that program and
+take its answers as RIM's. That program could later use the token against RIM. On such a
+computer:
+
+- When the tab says the port is in use, don't start agents set up for RIM. Find out what holds
+  the port before you do.
+- If an agent may have run while the port was in use, disconnect it in RIM and connect it again,
+  so its old token stops working.
+- Agents RIM starts itself ([Agents RIM starts](#agents-rim-starts)) get their token only while
+  RIM is listening, so they never send it elsewhere.
+
+On a computer only you use, this doesn't apply: a program running as you can already do what you
+can.
+
 ## Connect Claude Code
 
 RIM ships a plugin for Claude Code. Claude Code fetches it from GitHub itself, so there is nothing
