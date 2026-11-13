@@ -61,8 +61,8 @@ export function PluginCapabilityPrompt({
   startOnApprove = false,
 }: PluginCapabilityPromptProps) {
   const parsedCapabilities = parsePluginCapabilities(plugin.capabilities);
-  // The manifest has no optional-permission field, so the encrypted chat pair, the most
-  // sensitive grants, starts unticked unless it was approved before.
+  // The encrypted chat pair starts unticked unless it was approved before: they are the most
+  // sensitive grants, which a person turns on deliberately.
   const [selected, setSelected] = useState<Set<PluginCapability>>(
     () =>
       new Set(

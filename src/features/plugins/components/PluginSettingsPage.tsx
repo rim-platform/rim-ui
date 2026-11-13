@@ -620,7 +620,7 @@ function PluginEmptyState({ desktop }: { desktop: boolean }) {
             >
               the RIM guide
             </ExternalLink>
-            .
+            . Plugins that run programs on your computer need the desktop app.
           </>
         )}
       </p>
