@@ -896,12 +896,32 @@ describe("ConfirmCommandModal — a program outside RIM", () => {
       expect(screen.getByTestId("outside-agent-args-size")).toHaveTextContent(/\d+ characters$/);
     });
 
-    it("masks an argument that looks like a secret", () => {
-      openPluginCommand({ api_key: "the-secret-value", other: "ghp_abcdef" });
+    it("shows an argument that looks like a secret whole, with a note saying so", () => {
+      openPluginCommand({ api_key: "the-secret-value", other: "ghp_abcdef", plain: "words" });
       const box = screen.getByTestId("outside-agent-args");
-      expect(box.textContent).not.toContain("the-secret-value");
-      expect(box.textContent).not.toContain("ghp_abcdef");
-      expect(box).toHaveTextContent("[REDACTED]");
+      expect(box.textContent).toContain("the-secret-value");
+      expect(box.textContent).toContain("ghp_abcdef");
+      expect(box.textContent).not.toContain("[REDACTED]");
+      const notes = screen.getAllByTestId("outside-agent-arg-secret-note");
+      expect(notes).toHaveLength(2);
+      expect(notes[0]).toHaveTextContent("Looks like a secret: approving passes it on as shown.");
+      expect(screen.getByText("words").parentElement).not.toHaveTextContent("Looks like a secret");
+    });
+
+    it("hides nothing an agent can shape to look like a secret", () => {
+      const blob = "QWxsIHlvdXIgYmFzZSBhcmUgYmVsb25nIHRvIHVzIDEyMzQ1Njc4OTA";
+      openPluginCommand({
+        key: "home.layout",
+        value: "files.attacker.example",
+        description: blob,
+        nested: { token: "inner" },
+      });
+      const box = screen.getByTestId("outside-agent-args");
+      expect(box.textContent).not.toContain("[REDACTED]");
+      for (const shown of ["home.layout", "files.attacker.example", blob, '{"token":"inner"}']) {
+        expect(box.textContent).toContain(shown);
+      }
+      expect(screen.getAllByTestId("outside-agent-arg-secret-note")).toHaveLength(4);
     });
 
     it("says when there are no arguments", () => {

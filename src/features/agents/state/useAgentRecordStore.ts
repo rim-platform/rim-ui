@@ -5,10 +5,16 @@ import { registerSealedStore, sealedStateStorage } from "../../../core/accountVa
 
 /** How long an entry is kept. */
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-/** Most entries kept for one agent, so one agent's calls cannot push out another's. */
-const MAX_PER_AGENT = 2000;
-/** Most refused entries kept for one agent, so refused calls cannot push out what it was given. */
-const MAX_REFUSED_PER_AGENT = 500;
+/**
+ * Most entries kept for one agent of each kind, so one agent's calls cannot push out another's,
+ * and calls of one kind cannot push out an agent's entries of another.
+ */
+const MAX_PER_AGENT: Record<EntryKind, number> = {
+  given: 2000,
+  change: 1000,
+  refused: 500,
+  nothing: 200,
+};
 
 /** The `tool` of the entry clearing the record leaves. */
 export const CLEARED_TOOL = "cleared";
@@ -48,23 +54,36 @@ interface AgentRecordState {
   clear: () => void;
 }
 
-/** @returns The entries younger than the age limit, within the limits for each agent. */
+/**
+ * What an entry records: a call a check refused; a request to change something that was asked,
+ * run or answered; a call that handed over messages; or a call that handed over and changed
+ * nothing, such as listing workspaces, a suggestion, or a request made while the person was busy.
+ */
+type EntryKind = "refused" | "change" | "given" | "nothing";
+
+/** Outcomes of a request to change something that neither asked the person nor ran anything. */
+const NO_CHANGE: ReadonlySet<RecordEntry["change"]> = new Set(["proposed", "busy"]);
+
+/** @returns The kind of `entry`, which decides the limit it is counted under. */
+function kindOf(entry: RecordEntry): EntryKind {
+  if (entry.refused) return "refused";
+  if (entry.change !== undefined && !NO_CHANGE.has(entry.change)) return "change";
+  return entry.messageIds.length > 0 ? "given" : "nothing";
+}
+
+/** @returns The entries younger than the age limit, within the limits for each agent and kind. */
 function kept(entries: RecordEntry[]): RecordEntry[] {
   const oldest = Date.now() - MAX_AGE_MS;
-  const refused = new Map<string, number>();
   const counted = new Map<string, number>();
   const result: RecordEntry[] = [];
   for (let index = entries.length - 1; index >= 0; index--) {
     const entry = entries[index];
     if (Date.parse(entry.at) < oldest) continue;
-    if (entry.refused) {
-      const count = (refused.get(entry.agentId) ?? 0) + 1;
-      refused.set(entry.agentId, count);
-      if (count > MAX_REFUSED_PER_AGENT) continue;
-    }
-    const count = (counted.get(entry.agentId) ?? 0) + 1;
-    counted.set(entry.agentId, count);
-    if (count > MAX_PER_AGENT) continue;
+    const kind = kindOf(entry);
+    const key = `${kind}\u0000${entry.agentId}`;
+    const count = (counted.get(key) ?? 0) + 1;
+    counted.set(key, count);
+    if (count > MAX_PER_AGENT[kind]) continue;
     result.push(entry);
   }
   return result.reverse();

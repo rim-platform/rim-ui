@@ -31,6 +31,24 @@ the tab says so.
 While the switch is off, nothing listens. Agents you connected earlier stay in the list, but they
 can't reach RIM until you turn it on again.
 
+**On a computer other people sign in to.** The port, 47821, is the same for everyone, and every
+account on the computer can reach it. Nothing proves to an agent that RIM is the program
+answering there: an agent sends its token to whatever holds the port. If another account's
+program takes the port first, RIM's tab says the port is in use, and an agent you set up with a
+token (the setups below, or Claude Code's plugin) would send its token to that program and
+take its answers as RIM's. That program could later use the token against RIM. On such a
+computer:
+
+- When the tab says the port is in use, don't start agents set up for RIM. Find out what holds
+  the port before you do.
+- If an agent may have run while the port was in use, disconnect it in RIM and connect it again,
+  so its old token stops working.
+- Agents RIM starts itself ([Agents RIM starts](#agents-rim-starts)) get their token only while
+  RIM is listening, so they never send it elsewhere.
+
+On a computer only you use, this doesn't apply: a program running as you can already do what you
+can.
+
 ## Connect Claude Code
 
 RIM ships a plugin for Claude Code. Claude Code fetches it from GitHub itself, so there is nothing
@@ -452,9 +470,10 @@ too, under Macro, in the workspaces of your home server, each run as one command
 
 - **Every call asks you first**, with an approval card like the one for posting: the agent's
   name, the command, the workspace, the channel when it names one, and every argument in full.
-  Values that look like secrets are hidden. For a macro the card also lists its steps, each with
-  the arguments fixed for it. A command the server marks as restricted also asks you to type its
-  word.
+  Nothing is hidden, since the agent chose the values: one that looks like a secret, such as a
+  token, shows in full with the note "Looks like a secret". For a macro the card also lists its
+  steps, each with the arguments fixed for it. A command the server marks as restricted also asks
+  you to type its word.
 - **A command marked "Only proposed"** is dangerous. It never runs from an agent: the agent can only
   suggest it, and you run it yourself.
 - **It acts only where you let the agent read.** The agent names the workspace and every
@@ -474,7 +493,7 @@ doesn't count here.
 - **A command its plugin marks as read-only** runs without asking. That mark is the plugin's own
   claim, and RIM can't check it.
 - **Any other command** you ticked shows an approval card first, like the one for posting, with
-  every argument in full. Values that look like secrets are hidden.
+  every argument in full, including any that looks like a secret, which carries a note saying so.
 - **A dangerous command** never runs from an agent. The agent can only suggest it, and you run it
   yourself.
 

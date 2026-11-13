@@ -109,6 +109,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   when you approve, in the web app and on the desktop.
 - The install text for a sandboxed plugin says that what it is shown can still be sent out in
   small amounts, for example by the plugin navigating its frame, even without network access.
+- Link previews the desktop app fetches for an encrypted message come only from the public
+  internet: a link to this computer, the local network or a cloud metadata address, or one that
+  redirects there, gets no preview. At most three redirects are followed, each checked, and the
+  fetch no longer goes through a system proxy.
+- The approval card for a program outside RIM shows every argument of the command it asks to
+  run in full. One that looks like a secret carries a note saying so instead of showing as
+  `[REDACTED]`, so a program can't hide what it asks you to approve. The audit log still masks
+  such values.
+- The record of what agents were given keeps separate limits per agent for reads, requests to
+  change something, refusals and calls that hand over nothing, so an agent can't push what it
+  read or changed out of the record with many cheap calls.
+- The agents guide explains the risk of the agent port on a computer other accounts sign in to,
+  and what to do when the port is held by another program.
 
 ## [0.0.12] - 2026-11-12
 

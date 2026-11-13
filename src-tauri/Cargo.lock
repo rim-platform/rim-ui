@@ -5114,6 +5114,7 @@ dependencies = [
  "tiny_http",
  "tokio",
  "tokio-tungstenite",
+ "url",
  "uuid",
  "zbus 5.19.0",
  "zeroize",

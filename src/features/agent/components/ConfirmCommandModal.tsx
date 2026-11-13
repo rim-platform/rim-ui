@@ -14,6 +14,7 @@ import {
 } from "../state/confirmationModalStore";
 import {
   formatArgValue,
+  looksLikeSecret,
   maskForDisplay,
   REDACTED_PLACEHOLDER,
 } from "./ConfirmCommandModal/argsMasker";
@@ -556,15 +557,20 @@ function textSize(text: string): string {
 }
 
 /**
- * The arguments a program outside RIM asks to run a command with, each one whole and with secrets
- * masked, in a box that scrolls.
+ * The arguments a program outside RIM asks to run a command with, each one whole, in a box that
+ * scrolls. The program chose them, so nothing is hidden: one that looks like a secret is shown
+ * with a note saying so.
  */
 function OutsideAgentArgs({ args }: { args: Record<string, unknown> }) {
   const shown = useMemo(
     () =>
-      Object.entries(maskForDisplay(args)).map(
+      Object.entries(args).map(
         ([name, value]) =>
-          [showInvisibleCharacters(name), showInvisibleCharacters(formatArgValue(value))] as const,
+          [
+            showInvisibleCharacters(name),
+            showInvisibleCharacters(formatArgValue(value)),
+            looksLikeSecret(name, value),
+          ] as const,
       ),
     [args],
   );
@@ -587,10 +593,15 @@ function OutsideAgentArgs({ args }: { args: Record<string, unknown> }) {
         className="max-h-64 space-y-1 overflow-y-auto rounded border border-rim-line bg-rim-void px-3 py-2 text-sm text-rim-text"
         data-testid="outside-agent-args"
       >
-        {shown.map(([name, value]) => (
+        {shown.map(([name, value, secret]) => (
           <div key={name}>
             <dt className="break-words font-mono text-xs text-rim-text-muted">{name}</dt>
             <dd className="whitespace-pre-wrap break-words">{value}</dd>
+            {secret && (
+              <dd className="text-xs text-rim-warm" data-testid="outside-agent-arg-secret-note">
+                Looks like a secret: approving passes it on as shown.
+              </dd>
+            )}
           </div>
         ))}
       </dl>
