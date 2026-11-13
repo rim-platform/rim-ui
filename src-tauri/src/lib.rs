@@ -13,6 +13,7 @@ mod keybind_profile;
 mod logging;
 mod message_cache;
 mod offline_session;
+mod outbound;
 mod plugin_host;
 mod relay;
 mod secret_store;

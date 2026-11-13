@@ -87,7 +87,12 @@ store. Without an answer from the server the cached copy shows.
 1. Catch up (the loop above for this conversation). No group yet: create it. Pending removals:
    commit them first.
 2. Encrypt files on the Tauri side (`e2ee_attachment_encrypt`: the secret stays there until the
-   message is encrypted) and fetch link previews (`e2ee_link_preview`).
+   message is encrypted) and fetch link previews (`e2ee_link_preview`). A preview is fetched only
+   from the public internet, under the server's outbound address policy (`src-tauri/src/outbound.rs`):
+   each hop's host is resolved and every address checked before connecting, the connection goes
+   to the checked addresses, at most 3 redirects are followed, each checked the same way, and no
+   proxy is used. A link to this computer, the local network, a link-local or metadata address, or
+   one that redirects there gets no preview. The whole fetch takes at most 5 seconds.
 3. `e2ee_encrypt_message`: the content (client-chosen UUID v7, `<@principalId>` mentions,
    `replyTo`, `threadRootId`, `forwardedFrom`, attachments, previews) is encrypted and its
    plaintext row stored as `outgoing` in the same transaction.

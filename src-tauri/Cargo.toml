@@ -49,6 +49,8 @@ reqwest = { version = "0.13", default-features = false, features = [
     "query",
 ] }
 futures-util = "0.3"
+# The hosts of links the app fetches itself (src/e2ee/link_preview.rs).
+url = "2"
 # Direct connections to another server (src/relay/direct.rs): a WebSocket carrying that
 # server's session cookie, which the webview's own socket cannot.
 tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
