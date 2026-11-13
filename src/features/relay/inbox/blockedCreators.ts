@@ -168,7 +168,7 @@ export function refuseBlockedConversation(
   if (!principalId) return false;
   toast.info(asSentence(`You blocked ${blockedPersonName(spaceId ?? null, principalId)}`), {
     description:
-      "Unblock them in Settings > Direct messages, under Blocked people to message them.",
+      "Unblock them in Settings > Direct messages, under Blocked people, to message them.",
   });
   return true;
 }

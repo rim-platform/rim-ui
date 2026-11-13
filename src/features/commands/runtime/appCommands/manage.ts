@@ -82,8 +82,8 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
   localCommand(
     "moderation.unblock_principal",
     "Moderation",
-    "Unblock Principal…",
-    "Lift the server's block on a principal",
+    "Unblock Account…",
+    "Lift the server's block on an account",
   ),
   localCommand(
     "moderation.unblock_ip",
