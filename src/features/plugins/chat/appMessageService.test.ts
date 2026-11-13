@@ -17,9 +17,65 @@ vi.mock("../../e2ee/runtime/members", () => ({
   ],
 }));
 vi.mock("../../../core/graphql/client", () => ({ graphqlClient: { request } }));
+const sync = vi.hoisted(() => ({
+  trackConversation: vi.fn(async () => {}),
+  syncNow: vi.fn(async () => true),
+  requestCacheSync: vi.fn(),
+}));
+vi.mock("../../messages/api/messageCache", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  trackConversation: sync.trackConversation,
+}));
+vi.mock("../../messages/runtime/messageCacheSync", () => ({
+  syncNow: sync.syncNow,
+  requestCacheSync: sync.requestCacheSync,
+}));
 
 import { useAuthStore } from "../../auth/state/useAuthStore";
-import { postAsUser } from "./appMessageService";
+import type { WebAccount } from "../../e2ee/web/webAccount";
+import { FOLLOW_WAIT_MS, postAsUser, webChatCache } from "./appMessageService";
+
+const webAccount: WebAccount = {
+  endpoint: "e",
+  userId: "u-me",
+  principalId: "rimp1_me",
+  deviceId: "d",
+  web: true,
+};
+
+describe("following a conversation a plugin reads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("tracks it and waits for its sync to finish", async () => {
+    let finish: (synced: boolean) => void = () => {};
+    sync.syncNow.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    let followed = false;
+    const following = webChatCache(webAccount)
+      .follow("ws", "c")
+      .then(() => (followed = true));
+    await vi.waitFor(() => expect(sync.syncNow).toHaveBeenCalledWith("ws", ["c"]));
+    expect(sync.trackConversation).toHaveBeenCalledWith(webAccount, "ws", "c");
+    expect(followed).toBe(false);
+    finish(true);
+    await following;
+    expect(sync.requestCacheSync).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting after a while and leaves a failed sync to the scheduler", async () => {
+    vi.useFakeTimers();
+    sync.syncNow.mockImplementationOnce(() => new Promise(() => {}));
+    const slow = webChatCache(webAccount).follow("ws", "c");
+    await vi.advanceTimersByTimeAsync(FOLLOW_WAIT_MS);
+    await slow;
+
+    sync.syncNow.mockRejectedValueOnce(new Error("offline"));
+    await webChatCache(webAccount).follow("ws", "c");
+    expect(sync.requestCacheSync).toHaveBeenCalledWith("ws", ["c"]);
+  });
+});
 
 const post = {
   workspaceId: "ws",

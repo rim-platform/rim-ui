@@ -16,9 +16,13 @@ import { sendEncrypted } from "../../e2ee/runtime/send";
 import { e2eeSession } from "../../e2ee/runtime/session";
 import type * as PluginViewModule from "../../e2ee/web/pluginView";
 import { webStoreAccount, type WebAccount } from "../../e2ee/web/webAccount";
-import { currentCacheAccount, trackConversation } from "../../messages/api/messageCache";
+import {
+  currentCacheAccount,
+  trackConversation,
+  type CacheAccount,
+} from "../../messages/api/messageCache";
 import { SEND_MESSAGE_MUTATION } from "../../messages/api/useMessages";
-import { requestCacheSync } from "../../messages/runtime/messageCacheSync";
+import { requestCacheSync, syncNow } from "../../messages/runtime/messageCacheSync";
 import { REPLY_TO_MESSAGE_MUTATION } from "../../threads/api/useReplyToMessage";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { browserPluginStore } from "../web/browserPluginStore";
@@ -39,6 +43,35 @@ async function invokeOrThrow<T>(command: string, args: Record<string, unknown>):
   const result = await safeInvoke<T>(command, args);
   if (!result.ok) throw result.error;
   return result.value;
+}
+
+/** How long a plugin's read waits for a conversation's first sync before answering notCached. */
+export const FOLLOW_WAIT_MS = 5_000;
+
+/**
+ * Follow a conversation and sync it now, waiting at most {@link FOLLOW_WAIT_MS}: a short history
+ * is stored by the time the read is tried again, and a longer one goes on syncing. A sync that
+ * fails is left to the scheduler.
+ */
+async function followAndSync(
+  account: CacheAccount,
+  workspaceId: string,
+  conversationId: string,
+): Promise<void> {
+  await trackConversation(account, workspaceId, conversationId);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const waited = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, FOLLOW_WAIT_MS);
+  });
+  const synced = syncNow(workspaceId, [conversationId]).then(
+    () => {},
+    () => requestCacheSync(workspaceId, [conversationId]),
+  );
+  try {
+    await Promise.race([synced, waited]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function account() {
@@ -78,10 +111,8 @@ export const desktopChatCache: ChatCache = {
       limit,
       scope,
     }),
-  async follow(workspaceId, conversationId) {
-    await trackConversation(account(), workspaceId, conversationId);
-    requestCacheSync(workspaceId, [conversationId]);
-  },
+  follow: async (workspaceId, conversationId) =>
+    followAndSync(account(), workspaceId, conversationId),
 };
 
 /**
@@ -109,10 +140,7 @@ export function webChatCache(account: WebAccount): ChatCache {
       read((db, view) =>
         view.pluginSearch(db, account, workspaceId, query, conversationId, limit, scope),
       ),
-    async follow(workspaceId, conversationId) {
-      await trackConversation(account, workspaceId, conversationId);
-      requestCacheSync(workspaceId, [conversationId]);
-    },
+    follow: (workspaceId, conversationId) => followAndSync(account, workspaceId, conversationId),
   };
 }
 

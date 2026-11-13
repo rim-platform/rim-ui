@@ -162,6 +162,29 @@ describe("the client message service: reads", () => {
     expect(store.follow).toHaveBeenCalledWith(WS, PLAIN);
   });
 
+  it("follows an uncached conversation and answers from the cache once it is stored", async () => {
+    const order: string[] = [];
+    let stored = false;
+    const { service, store } = setup(
+      {},
+      {
+        list: vi.fn(async () => {
+          order.push("list");
+          return stored ? { messages: [plainMessage()], hasOlder: false } : null;
+        }),
+        follow: vi.fn(async () => {
+          order.push("follow");
+          stored = true;
+        }),
+      },
+    );
+    expect(
+      await service.call("p", "rim.chat.list_messages", { conversationId: PLAIN }, READ),
+    ).toEqual({ messages: [plainMessage()], hasOlder: false });
+    expect(order).toEqual(["list", "follow", "list"]);
+    expect(store.follow).toHaveBeenCalledWith(WS, PLAIN);
+  });
+
   it("answers reads with noCache where the app keeps no cache", async () => {
     const { service } = setup({ cache: () => null });
     const error = await rejection(
