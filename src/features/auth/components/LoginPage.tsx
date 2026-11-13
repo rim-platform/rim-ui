@@ -117,7 +117,9 @@ export function LoginPage() {
 
         <header className="flex flex-col items-center gap-2.5 text-center">
           <BrandHeading />
-          <h2 className="text-[22px] font-semibold text-rim-text">Sign in to your workspace</h2>
+          <h2 className="text-[22px] font-semibold text-rim-text">
+            {hasAccounts ? "Sign in to your workspace" : "Welcome to RIM"}
+          </h2>
           <HealthIndicator />
         </header>
 

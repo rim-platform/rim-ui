@@ -20,6 +20,14 @@ interface InstallFromLinkProps {
   onInstalled: (pluginId: string) => void;
 }
 
+const REPOSITORY_LINK_MESSAGE =
+  "That's the plugin's repository. Open its latest release and copy the link under Install from link.";
+
+/** Whether `link` is a GitHub repository page (`https://github.com/<owner>/<repo>`), not a release asset. */
+export function isGithubRepositoryLink(link: string): boolean {
+  return /^https:\/\/github\.com\/[^/?#\s]+\/[^/?#\s]+?(\.git)?\/?$/i.test(link.trim());
+}
+
 /** What a bundle replacing an installed plugin changes, shown before it is installed. */
 function changesOf(fetched: FetchedLinkBundle, current: PluginInfo) {
   const next = fetched.bundle.manifest;
@@ -79,6 +87,10 @@ export function InstallFromLink({ installed, disabled, onInstalled }: InstallFro
     const trimmed = link.trim();
     if (!trimmed) return;
     setError(null);
+    if (isGithubRepositoryLink(trimmed)) {
+      setError(REPOSITORY_LINK_MESSAGE);
+      return;
+    }
     setFetching(true);
     try {
       const fetched = await fetchLinkBundle(trimmed, platform);
