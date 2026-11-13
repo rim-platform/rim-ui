@@ -601,7 +601,7 @@ function linkNote(plugin: PluginInfo): RowNote | undefined {
  * also says a marketplace is coming soon.
  */
 const OFFICIAL_PLUGINS_URL =
-  "https://rim-platform.org/docs/client/plugins.html#the-official-plugins";
+  "https://rim-platform.org/plugins/#the-official-plugins";
 
 function PluginEmptyState({ desktop }: { desktop: boolean }) {
   return (
