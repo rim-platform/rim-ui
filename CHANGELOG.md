@@ -124,6 +124,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   and what to do when the port is held by another program.
 - The desktop window is granted only the app's own commands it calls; any other command is
   refused to the page.
+- On Windows, the sandboxed plugin frames of the desktop app no longer receive the app's IPC
+  key and send function.
 
 ## [0.0.12] - 2026-11-12
 

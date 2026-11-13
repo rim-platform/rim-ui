@@ -10,3 +10,4 @@ src/features/auth/opaque/wasm
 package-lock.json
 schema.graphql
 *.md
+src-tauri/vendor
