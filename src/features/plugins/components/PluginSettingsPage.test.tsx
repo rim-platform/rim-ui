@@ -174,7 +174,11 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     expect(screen.getByRole("button", { name: /install from link/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /install from local folder/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /install from git url/i })).toBeNull();
-    expect(screen.getByText(/install a web plugin from a link/i)).toBeInTheDocument();
+    expect(screen.getByText(/install a web plugin from its link/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "the RIM guide" })).toHaveAttribute(
+      "href",
+      "https://rim-platform.org/docs/client/plugins.html#the-official-plugins",
+    );
   });
 
   it("lists web plugins with their source, and local-process ones as needing the desktop app", () => {
