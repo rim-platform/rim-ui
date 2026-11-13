@@ -24,6 +24,7 @@ import { useConversationDialogStore } from "../../conversations/state/useConvers
 import { useNotificationsPanelStore } from "../../notifications/state/useNotificationsPanelStore";
 import { useMemberDirectoryStore } from "../../workspaces/state/useMemberDirectoryStore";
 import { isDirectSpace } from "../../relay/state/useRelayStore";
+import { AGENT_DESKTOP_ONLY_MESSAGE, agentAvailable } from "../../agent/agentAvailability";
 import { useAgentStore } from "../../agent/state/useAgentStore";
 import { parsePluginCommandId } from "../../plugins/api/usePluginCommands";
 import { withWebHealth } from "../../plugins/api/usePluginList";
@@ -484,6 +485,10 @@ const localHandlers: Record<string, LocalHandler> = {
     toast.info(on ? "Vim mode on" : "Vim mode off", { duration: 1500 });
   },
   "workspace.open_agent": () => {
+    if (!agentAvailable()) {
+      toast.info(AGENT_DESKTOP_ONLY_MESSAGE);
+      return;
+    }
     useAgentStore.getState().open();
   },
   "workspace.close_panel": () =>

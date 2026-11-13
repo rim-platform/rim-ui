@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 import { getWebBaseUrl } from "../../../core/graphql/config";
-import { graphqlErrorMessage, isSchemaRefusal } from "../../../core/graphql/errors";
+import {
+  graphqlErrorCode,
+  graphqlErrorMessage,
+  isSchemaRefusal,
+  VALIDATION,
+} from "../../../core/graphql/errors";
 import {
   PublicJoinLinkMode,
   ServerMemberRoleGql,
@@ -31,6 +36,18 @@ interface PublicLinkSettingsProps {
 
 const ERROR_BOX =
   "rounded-lg border border-rim-danger/20 bg-rim-danger/10 px-3 py-2 text-sm text-rim-danger";
+
+/** What the Owner reads where the server says its default workspace has no public link. */
+export const DEFAULT_WORKSPACE_NOTE =
+  "Everyone who signs up on this server joins this workspace, so it needs no public link.";
+
+/** Whether `err` is the server's refusal to give its default workspace a public link. */
+function isDefaultWorkspaceRefusal(err: unknown): boolean {
+  return (
+    graphqlErrorCode(err) === VALIDATION &&
+    graphqlErrorMessage(err, "").toLowerCase().includes("default workspace")
+  );
+}
 
 /** What the Owner reads before the link admits anyone for the first time. */
 export const PUBLIC_LINK_WARNING =
@@ -139,7 +156,10 @@ function PublicLinkSection({
       </div>
       <div className="space-y-5 rounded-lg border border-rim-line bg-rim-panel p-4">
         {isPending && <p className="text-sm text-rim-text-muted">Loading the public link…</p>}
-        {isError && (
+        {isError && isDefaultWorkspaceRefusal(error) && (
+          <p className="text-sm text-rim-text-muted">{DEFAULT_WORKSPACE_NOTE}</p>
+        )}
+        {isError && !isDefaultWorkspaceRefusal(error) && (
           <p role="alert" className={ERROR_BOX}>
             {graphqlErrorMessage(error, "Failed to load the public link.")}
           </p>

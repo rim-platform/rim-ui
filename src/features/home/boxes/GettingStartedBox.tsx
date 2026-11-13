@@ -3,6 +3,7 @@ import { sidebarChannels } from "../../conversations/utils";
 import { useWorkspaceStore } from "../../workspaces/state/useWorkspaceStore";
 import { agentAvailable } from "../../agent/agentAvailability";
 import { useCanManageBots } from "../../bots/availability";
+import { useKeybindLabel } from "../../commands/hooks/useKeybindLabel";
 import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { settingsTabCommandId } from "../../settings/settingsTabs";
@@ -13,12 +14,16 @@ interface StartRow {
   id: string;
   title: string;
   hint: string;
+  /** A keystroke shown after the hint in parentheses, hidden at phone width. */
+  keystroke?: string;
   commandId: string;
   args?: Record<string, unknown>;
 }
 
-/** The command that opens the command palette. */
-const OPEN_PALETTE_COMMAND_ID = "workspace.open_command_palette";
+/** The command that opens the search box, which also runs commands. */
+const OPEN_SEARCH_COMMAND_ID = "workspace.open_search";
+/** The keystroke search has when the person has not changed it. */
+const DEFAULT_SEARCH_KEYSTROKE = "Ctrl+Shift+F";
 /** The command that opens the Unreads page. */
 const OPEN_UNREADS_COMMAND_ID = "workspace.open_unreads";
 /** The command that opens a channel, taking its `conversationId`. */
@@ -30,11 +35,13 @@ const OPEN_CHANNEL_COMMAND_ID = "workspace.navigate_to_channel";
  * @param firstChannelId - The first channel under Channels in the workspace in view, if any.
  * @param canManageBots - Whether the person is an Owner or Moderator who is offered Bots.
  * @param desktop - Whether this is the desktop app, which has the Assistant and Agents.
+ * @param searchKeystroke - The keystroke bound to search, shown on the search row.
  */
 function startRows(
   firstChannelId: string | null,
   canManageBots: boolean,
   desktop: boolean,
+  searchKeystroke: string,
 ): StartRow[] {
   const rows: StartRow[] = [];
   if (firstChannelId) {
@@ -48,10 +55,11 @@ function startRows(
   }
   rows.push(
     {
-      id: "palette",
-      title: "Run anything with Ctrl+K",
-      hint: "Search, jump and run commands from one box",
-      commandId: OPEN_PALETTE_COMMAND_ID,
+      id: "search",
+      title: "Search and run anything",
+      hint: "One box for messages, channels and commands",
+      keystroke: searchKeystroke,
+      commandId: OPEN_SEARCH_COMMAND_ID,
     },
     {
       id: "unreads",
@@ -111,7 +119,8 @@ export function GettingStartedBody({ onDone }: { onDone?: () => void }) {
   const { data } = useJoinedChannels(workspaceId ?? undefined);
   const canManageBots = useCanManageBots(workspaceId);
   const firstChannelId = direct ? null : (sidebarChannels(data?.items ?? [])[0]?.id ?? null);
-  const rows = startRows(firstChannelId, canManageBots, agentAvailable());
+  const searchKeystroke = useKeybindLabel(OPEN_SEARCH_COMMAND_ID) ?? DEFAULT_SEARCH_KEYSTROKE;
+  const rows = startRows(firstChannelId, canManageBots, agentAvailable(), searchKeystroke);
 
   return (
     <div className="space-y-3">
@@ -124,7 +133,10 @@ export function GettingStartedBody({ onDone }: { onDone?: () => void }) {
               className="flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rim-accent"
             >
               <span className="text-sm text-rim-text">{row.title}</span>
-              <span className="text-xs text-rim-text-muted">{row.hint}</span>
+              <span className="text-xs text-rim-text-muted">
+                {row.hint}
+                {row.keystroke && <span className="max-[399px]:hidden"> ({row.keystroke})</span>}
+              </span>
             </button>
           </li>
         ))}

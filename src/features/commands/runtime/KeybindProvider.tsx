@@ -70,7 +70,7 @@ export function KeybindProvider({ children }: KeybindProviderProps) {
   const { capabilities } = useRuntime();
   const focusedSurface = useShellStore((s) => s.focusedSurface);
 
-  const resolvedKeybinds = useEffectiveKeybinds();
+  const resolvedKeybinds = useEffectiveKeybinds(true);
   const { data: keybindCommands } = useCommandsWithMacros("KEYBIND_PICKER");
   const { data: paletteCommands } = useCommands("PALETTE");
   const executeCommandMutation = useExecuteCommandMutation();

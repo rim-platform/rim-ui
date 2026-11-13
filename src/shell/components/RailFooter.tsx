@@ -12,11 +12,11 @@ import { HoverTooltip } from "../../shared/ui/HoverTooltip";
 import { useShellStore } from "../state/useShellStore";
 
 /**
- * The foot of the workspace rail: the audit log while a workspace is open, Settings, and the
+ * The foot of the workspace rail: the audit log for a workspace's Owners and Moderators, Settings, and the
  * account menu.
  *
- * @param auditLog - Whether a workspace other than the direct space is open, so its audit log
- *   button shows.
+ * @param auditLog - Whether a workspace other than the direct space is open and the person
+ *   moderates it, so its audit log button shows.
  */
 export function RailFooter({ auditLog }: { auditLog: boolean }) {
   return (

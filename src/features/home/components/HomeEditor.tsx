@@ -607,8 +607,11 @@ function AddBoxList({
   onShowHere: (box: HomeBox) => void;
 }) {
   const full = draft.boxes.length >= MAX_BOXES;
+  // A kind this device can't run isn't offered; a saved layout that holds one still shows it.
   const kinds = BOX_KINDS.filter(
-    (kind) => kind.multiple || !draft.boxes.some((box) => box.kind === kind.kind),
+    (kind) =>
+      kind.unavailableReason() === null &&
+      (kind.multiple || !draft.boxes.some((box) => box.kind === kind.kind)),
   );
   return (
     <div className="space-y-5">
@@ -620,7 +623,6 @@ function AddBoxList({
         {full && <p className="text-xs text-rim-text-muted">Home holds at most 30 boxes.</p>}
         <ul className="space-y-2">
           {kinds.map((kind) => {
-            const reason = kind.unavailableReason();
             return (
               <li
                 key={kind.kind}
@@ -628,9 +630,7 @@ function AddBoxList({
               >
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-rim-text">{kind.name}</span>
-                  <span className="block text-xs text-rim-text-muted">
-                    {reason ?? kind.description}
-                  </span>
+                  <span className="block text-xs text-rim-text-muted">{kind.description}</span>
                 </span>
                 <Button
                   type="button"

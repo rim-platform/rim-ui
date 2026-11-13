@@ -57,6 +57,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   notifications panel each say in a line what they are for; the lens button reads "Lenses:
   filtered views of this channel". "Block Principal…" is now "Block Account…", moderation says
   "accounts" for blocked principals, and pointers to Settings pages read "Settings > X".
+- Getting started's search row is now "Search and run anything" and opens the search box
+  (Ctrl+Shift+F), not the command palette; its shortcut is hidden at phone width. In the command
+  palette, the Focus commands and Cycle Recent Activity now list last under Navigation.
+- Home's Add a box no longer offers the agent boxes in the web app, where they can't run.
+- The Audit log button on the workspace rail shows only to a workspace's Owners and Moderators.
+- Link previews in the web app show no image, so the browser makes no request to other sites.
+
+### Fixed
+
+- Ctrl+Shift+A in the web app now says the assistant is in the desktop app instead of doing
+  nothing.
+- Workspace settings > Public link on a server's default workspace says everyone who signs up
+  joins it, instead of showing the server's refusal as an error.
 
 ## [0.0.12] - 2026-11-12
 

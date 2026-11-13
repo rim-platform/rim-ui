@@ -30,6 +30,18 @@ const PALETTE_LOCALE = "en";
 const MID_WORD_CONTAINS_SCORE = 2;
 
 /**
+ * Whether a command only moves keyboard focus or cycles recent activity ("Focus Composer",
+ * "Focus the Pane to the Left", "Cycle Recent Activity"). In an empty search these rank last
+ * within Navigation, after the commands that take a person somewhere.
+ */
+function isFocusPlumbing(cmd: Searchable): boolean {
+  return (
+    cmd.category === "Navigation" &&
+    (cmd.title.startsWith("Focus ") || cmd.title === "Cycle Recent Activity")
+  );
+}
+
+/**
  * `ranges` sorted by start with overlapping or touching ranges merged, as `<Highlight>` needs.
  * microfuzz can return the same span twice when a query word matches the field in two ways.
  */
@@ -74,7 +86,7 @@ function compareMatches<T extends Searchable>(a: PaletteMatch<T>, b: PaletteMatc
  * any few letters turn up somewhere in a sentence. Commands stay grouped by category, the groups
  * in the order of their best match. An empty query lists everything grouped by category, the
  * built-in categories in their fixed order and the others after them alphabetically, and
- * alphabetically by title inside a group.
+ * alphabetically by title inside a group, keyboard focus plumbing last in Navigation.
  */
 export function createPaletteSearch<T extends Searchable>(
   list: T[],
@@ -94,6 +106,7 @@ export function createPaletteSearch<T extends Searchable>(
         .sort(
           (a, b) =>
             compareCommandCategories(a.category, b.category) ||
+            Number(isFocusPlumbing(a)) - Number(isFocusPlumbing(b)) ||
             a.title.localeCompare(b.title, PALETTE_LOCALE),
         )
         .map((item) => ({

@@ -233,9 +233,11 @@ describe("useEffectiveKeybinds", () => {
     delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
-  it("leaves the agent's keybind out on the web", () => {
+  it("keeps the agent's keybind for key presses on the web, not in lists", () => {
     const { result } = renderHook(() => useEffectiveKeybinds());
     expect(result.current.some((kb) => kb.commandId === "workspace.open_agent")).toBe(false);
+    const { result: pressed } = renderHook(() => useEffectiveKeybinds(true));
+    expect(commandFor(pressed.current, "Ctrl+Shift+A")).toBe("workspace.open_agent");
     expect(commandFor(result.current, "Ctrl+K")).toBe("workspace.open_command_palette");
 
     (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};

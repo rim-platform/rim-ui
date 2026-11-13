@@ -179,6 +179,24 @@ describe("PublicLinkSettings", () => {
     });
   });
 
+  it("says a default workspace needs no link, as a note rather than an error", async () => {
+    serve(link(), ServerMemberRoleGql.OWNER, {
+      "query PublicJoinLink": () => {
+        throw graphqlError(
+          "VALIDATION",
+          "the server's default workspace has no public link: every account joins it",
+        );
+      },
+    });
+    renderSettings();
+    expect(
+      await screen.findByText(
+        "Everyone who signs up on this server joins this workspace, so it needs no public link.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("warns before the first switch-on and turns the link on only after the confirmation", async () => {
     serve(link());
     const user = userEvent.setup();

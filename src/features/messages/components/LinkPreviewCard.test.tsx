@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -10,6 +10,21 @@ import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettin
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 describe("LinkPreviewCard", () => {
+  const withDesktop = () => {
+    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+  };
+  beforeEach(withDesktop);
+  afterEach(() => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it("shows no image on the web, so the browser requests none", () => {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText("Example Article")).toBeInTheDocument();
+  });
+
   const fullPreview: LinkPreview = {
     id: "lp-1",
     url: "https://example.com/article",

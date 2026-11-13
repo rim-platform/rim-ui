@@ -87,6 +87,26 @@ describe("createPaletteSearch", () => {
     ]);
   });
 
+  it("ranks focus plumbing last within Navigation for an empty query", () => {
+    const search = createPaletteSearch([
+      item("Cycle Recent Activity", "Step through recent activity", "Navigation"),
+      item("Focus Composer", "Move focus to the composer", "Navigation"),
+      item("Next Channel", "Go to the next channel", "Navigation"),
+      item("Focus the Pane to the Left", "Move focus left", "Navigation"),
+      item("Go Back", "Open the place you were before", "Navigation"),
+      item("Focus Notes", "Not navigation", "Messages"),
+    ]);
+
+    expect(titles(search(""))).toEqual([
+      "Go Back",
+      "Next Channel",
+      "Cycle Recent Activity",
+      "Focus Composer",
+      "Focus the Pane to the Left",
+      "Focus Notes",
+    ]);
+  });
+
   it("groups by the built-in category order, then other categories alphabetically, for an empty query", () => {
     const search = createPaletteSearch([
       item("Search Messages", "Search workspace messages", "Chat"),

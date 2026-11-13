@@ -78,8 +78,13 @@ import { AppCommandDialogs } from "../../features/commands/components/AppCommand
 import { useAppDialogStore } from "../../features/commands/state/useAppDialogStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 
-function renderWithQuery(ui: React.ReactElement) {
+/** Renders with the viewer's role in ws-1 already known; an Owner unless `role` says otherwise. */
+function renderWithQuery(
+  ui: React.ReactElement,
+  role: ServerMemberRoleGql | undefined = ServerMemberRoleGql.OWNER,
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(queryKeys.server("ws-1"), { id: "ws-1", name: "Alpha", viewerRole: role });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
@@ -316,6 +321,22 @@ describe("WorkspaceRail — audit log, Settings and the account", () => {
     expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
     act(() => useShellStore.getState().setMainSurface({ kind: "settings" }));
     expect(footer()).toEqual(["Audit log", "Settings", "User menu"]);
+  });
+
+  it("shows the audit log to an Owner and a Moderator, with its tooltip name", () => {
+    for (const role of [ServerMemberRoleGql.OWNER, ServerMemberRoleGql.MODERATOR]) {
+      const { unmount } = renderWithQuery(<WorkspaceRail />, role);
+      expect(screen.getByRole("button", { name: "Audit log" })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("leaves the audit log out for a Member and a Guest", () => {
+    for (const role of [ServerMemberRoleGql.MEMBER, ServerMemberRoleGql.GUEST]) {
+      const { unmount } = renderWithQuery(<WorkspaceRail />, role);
+      expect(footer()).toEqual(["Settings", "User menu"]);
+      unmount();
+    }
   });
 
   it("leaves the audit log out on Home, on Unreads and in the direct space", () => {

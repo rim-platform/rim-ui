@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 
+import { detectPlatform } from "../../../core/runtime/runtime";
 import { isHttpUrl } from "../../../shared/ui/markdown/safeUrl";
 import { IsolatedMenu } from "../../../shared/ui/contextMenu/IsolatedMenu";
 import { linkMenuItems, openExternalUrl } from "../../../shared/ui/contextMenu/menuActions";
@@ -20,8 +21,9 @@ interface LinkPreviewCardProps {
 }
 
 /**
- * A link the server previewed: title, description, site and, when inline media is on, the
- * page's image. Only http(s) URLs open or load; the image loads without a referrer. Its
+ * A link the server previewed: title, description, site and, when inline media is on and this
+ * is not the web app, the page's image. The web app's content policy blocks other sites' images,
+ * so it never asks for one. Only http(s) URLs open or load; the image loads without a referrer. Its
  * context menu opens the link or copies its address.
  */
 export function LinkPreviewCard({ preview }: LinkPreviewCardProps) {
@@ -29,7 +31,11 @@ export function LinkPreviewCard({ preview }: LinkPreviewCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const canOpen = isHttpUrl(preview.url);
   const imageUrl =
-    showInlineMedia && !imageFailed && preview.imageUrl && isHttpUrl(preview.imageUrl)
+    showInlineMedia &&
+    detectPlatform() !== "web" &&
+    !imageFailed &&
+    preview.imageUrl &&
+    isHttpUrl(preview.imageUrl)
       ? preview.imageUrl
       : null;
 
