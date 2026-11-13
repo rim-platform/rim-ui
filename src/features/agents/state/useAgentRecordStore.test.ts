@@ -79,6 +79,42 @@ describe("useAgentRecordStore", () => {
     expect(entries.filter((e) => e.agentId !== "other")).toHaveLength(2000);
   });
 
+  it("does not let calls that hand over nothing push out what an agent read or changed", () => {
+    const nothing = { ...entry(NOW), tool: "rim_list_workspaces", channelId: null, messageIds: [] };
+    useAgentRecordStore.setState({
+      entries: [
+        { ...entry(NOW), tool: "rim_run_command", messageIds: [], change: "done" },
+        { ...entry(NOW), messageIds: ["read"] },
+        ...Array.from({ length: 2000 }, () => nothing),
+        ...Array.from({ length: 300 }, () => ({
+          ...nothing,
+          tool: "rim_run_command",
+          change: "busy" as const,
+        })),
+      ],
+    });
+    useAgentRecordStore.getState().add(nothing);
+    const { entries } = useAgentRecordStore.getState();
+    const tools = entries.map((e) => e.tool);
+    expect(tools).toContain("rim_run_command");
+    expect(entries.some((e) => e.change === "done")).toBe(true);
+    expect(entries.some((e) => e.messageIds.includes("read"))).toBe(true);
+    expect(entries).toHaveLength(202);
+  });
+
+  it("does not let reads push out what an agent changed", () => {
+    useAgentRecordStore.setState({
+      entries: [
+        { ...entry(NOW), tool: "rim_run_command", messageIds: [], change: "done" },
+        ...Array.from({ length: 2100 }, (_, i) => entry(NOW, `m${i}`)),
+      ],
+    });
+    useAgentRecordStore.getState().add(entry(NOW, "newest"));
+    const { entries } = useAgentRecordStore.getState();
+    expect(entries.filter((e) => e.change === "done")).toHaveLength(1);
+    expect(entries.filter((e) => e.messageIds.length > 0)).toHaveLength(2000);
+  });
+
   it("leaves one entry saying it was cleared, and nothing else", () => {
     const { add, clear } = useAgentRecordStore.getState();
     add(entry(NOW));

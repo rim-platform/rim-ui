@@ -117,6 +117,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   run in full. One that looks like a secret carries a note saying so instead of showing as
   `[REDACTED]`, so a program can't hide what it asks you to approve. The audit log still masks
   such values.
+- The record of what agents were given keeps separate limits per agent for reads, requests to
+  change something, refusals and calls that hand over nothing, so an agent can't push what it
+  read or changed out of the record with many cheap calls.
 
 ## [0.0.12] - 2026-11-12
 

@@ -347,9 +347,11 @@ confirming that one change, unless a plugin says a command you approved only rea
   request to send ended, with the message's id if it went out, and which RIM or plugin command was run,
   asked for or suggested. It never holds a command's arguments or what it returned. **What agents were given** lists it
   for every program, including those since disconnected. It holds no message text and no search
-  text. It stays on this device for 30 days, up to 2,000 entries for each program, of which at most
-  500 refusals, so a program can't push out what another was given, or bury what it was given in
-  refused calls. **Clear the whole record** clears it for every program and leaves one line saying
+  text. It stays on this device for 30 days. Each program has its own limits for each kind of
+  entry: 2,000 that handed over messages, 1,000 requests that were asked, ran or were answered, 500
+  refusals, and 200 calls that handed over and changed nothing, such as listing workspaces, a
+  suggestion, or a request made while you were busy. So a program can't push out what another was
+  given, and can't bury what it was given or changed under refused or empty calls. **Clear the whole record** clears it for every program and leaves one line saying
   you did. It is a record of what RIM handed over, not of what
   the program did with it.
 - **Opening it.** The command **Open Agents** opens this screen from the palette or a key you bind it to. No program gets a tool that opens it.
