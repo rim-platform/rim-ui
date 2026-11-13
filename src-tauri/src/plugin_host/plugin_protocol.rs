@@ -158,14 +158,10 @@ pub fn is_safe_segment(segment: &str) -> bool {
     }
     // Percent-encoded traversal — case-insensitive scan
     let lower = segment.to_lowercase();
-    if lower.contains("%2e")
+    !(lower.contains("%2e")
         || lower.contains("%2f")
         || lower.contains("%5c")
-        || lower.contains("%00")
-    {
-        return false;
-    }
-    true
+        || lower.contains("%00"))
 }
 
 /// Resolves a `rim-plugin://` URI to a filesystem path.
