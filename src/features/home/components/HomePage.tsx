@@ -119,9 +119,10 @@ export function HomePage() {
     labelOf,
     onOpenRun: (run) => setOpenRun(runKey(run)),
     onAllRuns: () => void runCommandFromClick("workspace.open_agents"),
-    onRemoveBox: view.editable
-      ? (id) => void saveHomeLayout(removeBox(view.layout, id), new Date().toISOString())
-      : undefined,
+    onRemoveBox:
+      view.editable && view.loaded
+        ? (id) => void saveHomeLayout(removeBox(view.layout, id), new Date().toISOString())
+        : undefined,
   };
 
   return (

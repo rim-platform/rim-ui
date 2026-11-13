@@ -16,6 +16,11 @@ export interface HomeLayoutView {
   layout: HomeLayoutDoc;
   /** The server keeps Home layouts, so Home can be edited. */
   editable: boolean;
+  /**
+   * The account's layout is known: this device holds a copy or an edit, or the server has
+   * answered. Until then `layout` may be the default standing in for one not yet read.
+   */
+  loaded: boolean;
   /** The home server cannot be reached right now. */
   unreachable: boolean;
   /** The layout changed on another device and the person has not read the notice yet. */
@@ -59,6 +64,7 @@ export function useHomeLayout(agents: boolean, agentSessions = false): HomeLayou
   return {
     layout: stored?.layout ?? defaultLayout(agents, agentSessions),
     editable,
+    loaded: stored !== null || fetched !== undefined,
     unreachable: offline || disconnected || (query.isError && isServerUnreachable(query.error)),
     changedElsewhere: editable && changedElsewhere,
     dismissChangedElsewhere: () => useHomeLayoutStore.getState().setChangedElsewhere(false),

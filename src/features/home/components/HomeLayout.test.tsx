@@ -78,6 +78,8 @@ interface Stored {
 const state = vi.hoisted(() => ({
   stored: null as Stored | null,
   save: null as ((vars: Record<string, unknown>) => unknown) | null,
+  /** While set, the server's answer to the layout query waits for it. */
+  hold: null as Promise<void> | null,
 }));
 
 function serve() {
@@ -90,7 +92,10 @@ function serve() {
     "query Server": (vars) => ({
       server: { id: vars.serverId, name: "x", viewerRole: ServerMemberRoleGql.MEMBER },
     }),
-    "query HomeLayout": () => ({ homeLayout: state.stored }),
+    "query HomeLayout": () =>
+      state.hold
+        ? state.hold.then(() => ({ homeLayout: state.stored }))
+        : { homeLayout: state.stored },
     "mutation SaveHomeLayout": (vars) => {
       if (state.save) return state.save(vars);
       state.stored = { layout: vars.layout, editedAt: vars.editedAt as string };
@@ -196,6 +201,7 @@ describe("Home made of boxes", () => {
     requestMock.mockReset();
     state.stored = null;
     state.save = null;
+    state.hold = null;
     server.capabilities = ["home_layout"];
     available.agent = false;
     useShellStore.getState().reset();
@@ -662,5 +668,18 @@ describe("Home made of boxes", () => {
     ]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
+  });
+
+  it("offers I'm done with this only once the account's layout is known", async () => {
+    let answer = () => {};
+    state.hold = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    serve();
+    renderHome();
+    expect(await screen.findByText("Getting started")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I'm done with this" })).not.toBeInTheDocument();
+    answer();
+    expect(await screen.findByRole("button", { name: "I'm done with this" })).toBeInTheDocument();
   });
 });
