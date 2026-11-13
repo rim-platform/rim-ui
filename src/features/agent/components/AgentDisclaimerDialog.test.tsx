@@ -7,7 +7,7 @@ describe("AgentDisclaimerDialog", () => {
   it("renders the dialog title and content when open", () => {
     render(<AgentDisclaimerDialog open={true} onAccept={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByText("AI Agent — Data Sharing Notice")).toBeInTheDocument();
+    expect(screen.getByText("Assistant: what it shares")).toBeInTheDocument();
     expect(screen.getByText(/workspace data/)).toBeInTheDocument();
     expect(screen.getByText("I understand")).toBeInTheDocument();
     expect(screen.getByText("Cancel")).toBeInTheDocument();

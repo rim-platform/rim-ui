@@ -317,7 +317,9 @@ describe("Post as bot in the editor", () => {
     await within(botSelect).findByRole("option", { name: "Greeter" });
     fireEvent.change(botSelect, { target: { value: BOT_ID } });
     expect(
-      await screen.findByText("This bot is in no channels yet. Add it to one in Settings > Bots."),
+      await screen.findByText(
+        "This bot is in no channels yet. Add it to one in Settings > Bots & webhooks.",
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Channel of action 1" })).toBeNull();
   });

@@ -131,7 +131,7 @@ describe("the general app commands", () => {
   });
 
   it("has one command per Settings tab, workspace tabs in Workspace", () => {
-    expect(SETTINGS_TABS).toHaveLength(25);
+    expect(SETTINGS_TABS).toHaveLength(24);
     for (const tab of SETTINGS_TABS) {
       const id = settingsTabCommandId(tab.key);
       expect(id).toMatch(/^settings\.open\.[a-z0-9_]+$/);
@@ -142,6 +142,21 @@ describe("the general app commands", () => {
     }
     expect(settingsTabCommandId("workspace-moderation")).toBe("settings.open.workspace_moderation");
     expect(settingsTabCommandId("plugin-ai")).toBe("settings.open.plugin_ai");
+  });
+
+  it("keeps the command for the assistant's plugin commands, which are a section of Assistant", () => {
+    expect(SETTINGS_TABS.map((tab) => tab.key)).not.toContain("plugin-ai");
+    expect(GENERAL_COMMANDS.find((c) => c.id === "settings.open.plugin_ai")).toMatchObject({
+      title: "Settings: Assistant's Plugin Commands",
+      category: "App",
+    });
+    expect(GENERAL_COMMANDS.find((c) => c.id === "settings.open.agent")).toMatchObject({
+      title: "Settings: Assistant",
+    });
+    expect(GENERAL_COMMANDS.find((c) => c.id === "settings.open.bots")).toMatchObject({
+      title: "Settings: Bots & webhooks",
+      category: "Workspace",
+    });
   });
 });
 
@@ -169,6 +184,14 @@ describe("Settings tab commands", () => {
     expect(workspaceCommandOffered("settings.open.workspace_moderation")).toBe(true);
     useWorkspaceStore.setState({ workspaceId: null });
     expect(workspaceCommandOffered("settings.open.workspace")).toBe(false);
+  });
+
+  it("opens Settings on the assistant's plugin commands where the assistant runs", () => {
+    expect(workspaceCommandOffered("settings.open.plugin_ai")).toBe(false);
+    mocks.platform = "desktop";
+    expect(workspaceCommandOffered("settings.open.plugin_ai")).toBe(true);
+    run("settings.open.plugin_ai");
+    expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "plugin-ai" });
   });
 
   it("refuses a tab that is hidden, as the page would not show it", () => {

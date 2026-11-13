@@ -29,14 +29,14 @@ each in a few words:
 A plugin contributes some of these:
 
 - commands, listed in the command palette under the plugin's name, bindable to keys and, when
-  the plugin marks them so and the user agrees, callable by the AI agent;
+  the plugin marks them so and the user agrees, callable by the assistant and by agents;
 - panels, shown as a narrow column at the left of the page or in its place;
 - context actions in a message's context menu;
 - keybind suggestions the user can assign.
 
 Without the matching permission the app does not show a plugin's panel, read or post messages
 for it, or show its notifications, and a sandboxed plugin cannot exchange data with any site. A
-command the plugin marks dangerous runs only after the user confirms that run: the AI agent can
+command the plugin marks dangerous runs only after the user confirms that run: the assistant can
 never confirm one, and a plugin's panel cannot confirm one for its own plugin.
 
 ## The official plugins
@@ -61,8 +61,9 @@ README lists the plugin's commands and the ways to install it.
   Releases, use a public-only token: posting a release shares its details with everyone in the
   conversation. Each plugin’s README explains the token permissions.
 - **Kubernetes Pods** needs the desktop app, Node.js 22 or newer and `kubectl`, which it runs
-  with your own kubeconfig. Four of its commands can be called by the AI agent once approved in
-  Settings → Plugin AI; **Pods: Restart pod** is dangerous, so the agent can only propose it.
+  with your own kubeconfig. Four of its commands can be called by the assistant once approved in
+  Settings > Assistant, under "Plugin commands it may run"; **Pods: Restart pod** is dangerous, so
+  the assistant can only propose it.
   Run it manually from the plugin and confirm that run. It suggests <kbd>Ctrl+Alt+P</kbd> for
   **Pods: Refresh**.
 
@@ -141,9 +142,9 @@ web app, as **Install from link** does. An instance can switch the registry off.
 On workspace open, and whenever the registry changes, each plugin installed from it is compared
 with its entry. A new version installs on its own, with the notice "Updated \<name\> to
 \<version\>", when it keeps the kind and the publisher, asks for no new permission, adds no
-new command the AI agent can run and, with `network.fetch` approved, lists the same sites; the
+new command the assistant and agents can run and, with `network.fetch` approved, lists the same sites; the
 approvals carry over. Anything else waits behind **Update \<name\>?**, which lists what is new:
-another publisher, another kind, new permissions, new commands the AI agent can run, other
+another publisher, another kind, new permissions, new commands the assistant and agents can run, other
 sites, or install steps. **Review update** opens the install dialog; **Later** keeps the
 installed version running. A failed update keeps the old copy.
 
@@ -165,8 +166,9 @@ Plugins names.
   Approvals carry over for the permissions the new version still asks for and are dropped for
   those it no longer does, and `network.fetch` is dropped too when the new version lists other
   sites; a new permission, or `network.fetch` for other sites, opens the **Plugin Permissions**
-  dialog, and the plugin cannot use it until it is approved. A plugin with commands the AI
-  agent can run asks for that consent again in Settings → Plugin AI.
+  dialog, and the plugin cannot use it until it is approved. A plugin with commands the
+  assistant can run asks for that consent again in Settings > Assistant, under "Plugin commands it
+  may run".
 - **From a link.** A link names one bundle by its hash, so it cannot change, and the row says
   "Installed from a link pinned to one bundle: install the new version's link to update it."
   Installing that link opens **Replace \<name\>?**, described under [Installing](#installing).
@@ -238,11 +240,14 @@ Plugins names.
   that are not bound yet under **Plugin Suggestions**; **Assign** binds one. A plugin command
   marked keybind-capable can also be bound like any other command. Bindings to plugin commands
   stay on this device, marked **This device**; [Keyboard](keyboard.md) explains the layers.
-- **The AI agent.** On the desktop, Settings → Plugin AI lists the plugins with commands the
-  agent can call. The first approval for a plugin, of one command or with **Approve all**,
-  asks in **Grant AI Access?**; the agent then calls an approved command without asking each
-  time. **Revoke all** on a plugin and **Revoke all grants** for every plugin take the approvals
-  back.
+- **The assistant and agents.** On the desktop, Settings > Assistant lists, under "Plugin
+  commands it may run", the plugins with commands the assistant can run; a plugin that needs it
+  says "Needs your approval". The first approval for a plugin, of one command or with **Approve
+  all**, asks in **Let the assistant run these commands?**; the assistant then runs an approved
+  command without asking each time. **Revoke all** on a plugin and **Revoke all grants** for
+  every plugin take the approvals back. A plugin's row in Settings > Plugins has the same under
+  "What the assistant and agents can do with it". Programs connected from outside are approved per
+  agent, in Settings > Agents ([Connect an AI agent](agents.md)).
 
 ## Trust and permissions
 

@@ -4,9 +4,16 @@ An outside agent is a program on your computer that works with its own AI model,
 Code. You can connect it to the RIM desktop app, choose which channels it may read, and approve
 each message before it posts. This page shows how. It is for the person using RIM.
 
-RIM also has an agent of its own, built into the desktop app, that runs with your API key. That
-one is [The AI agent](ai-agent.md). The two are separate: what you allow one doesn't carry over to
-the other.
+## Which one do I need?
+
+- The **Assistant** is built into RIM, uses your own AI provider key and answers in a panel
+  (<kbd>Ctrl+Shift+A</kbd>). It is set up in Settings > Assistant ([The assistant](ai-agent.md)).
+- **Agents** are programs on your computer, such as Claude Code or Codex, that you connect to RIM
+  or that RIM starts, and they see only what you grant. This page is about them.
+- Both are in the desktop app only, and RIM works the same without either.
+
+The two are separate: what you allow one doesn't carry over to the other. Settings > Agents
+starts with a line saying what agents are for, with a link to Assistant.
 
 ## Before you start
 
@@ -165,10 +172,10 @@ seconds:
 Store the token where only the person can read it, and never print it or put it in a model's
 context.
 
-## Agents RIM can start
+## Agents RIM starts
 
 The desktop app can also keep a list of agent programs it may start itself, under **Settings >
-Agents**, **Agents RIM can start**. The web app can't: it says "Starting agents needs the desktop
+Agents**, **Agents RIM starts**. The web app can't: it says "Starting agents needs the desktop
 app". Each one is a program that speaks the Agent Client Protocol, and RIM starts it as you, with
 access to your files.
 
@@ -309,8 +316,8 @@ that session, the same words show as a notice in the app with **Open** instead, 
 the session itself nothing shows. They follow your notification settings, and the open
 workspace's pause and quiet hours. Choosing one opens the session.
 
-**Running and recent.** **Agent sessions** lists the sessions running now, as Working, Waiting
-for you, Ready or Failed, and up to 20 recent ones, with the agent, the title, the folder and when
+**Running and recent.** **Agent sessions** lists the sessions running now, as Working, Needs
+you, Ready or Failed, and up to 20 recent ones, with the agent, the title, the folder and when
 it last did something. The title is the one the agent gives the session, or the start of your
 first prompt. A dot marks a session that finished or started waiting since you last had it open.
 The **Agent sessions** box on Home shows the same, up to six, with **New session** and **All
@@ -434,12 +441,12 @@ On a server whose operator switched off AI commands, posting is refused before y
 An agent can ask to run RIM's own commands, such as pinning a message or setting a channel's
 topic, but only the ones you tick. Pick the agent, then **Choose its commands**: the **RIM
 commands** section lists, by category, the commands RIM offers agents in the workspaces it can
-read. Nothing is ticked at first, and what you approved for the built-in agent doesn't count here.
+read. Nothing is ticked at first, and what you approved for the assistant doesn't count here.
 
 RIM offers a command only when the server lets agents call it, the server runs it, and it changes
 something. Commands that only move around the app or read are left out: the agent reads through its
 read tools. Sending a message has its own request, above. Commands that connect, answer or manage
-agents are never offered. Your own macros with **The AI agent can run this** ticked are offered
+agents are never offered. Your own macros with **The assistant and agents can run this** ticked are offered
 too, under Macro, in the workspaces of your home server, each run as one command
 ([Macros](commands-and-automation.md#macros)).
 
@@ -461,7 +468,7 @@ operator switched off AI commands, RIM commands are refused before you're asked.
 ## Plugin commands
 
 An agent can also run commands of your plugins, but only the ones you tick. Pick the agent, then
-**Choose its commands**. Nothing is ticked at first, and what you approved for the built-in agent
+**Choose its commands**. Nothing is ticked at first, and what you approved for the assistant
 doesn't count here.
 
 - **A command its plugin marks as read-only** runs without asking. That mark is the plugin's own
@@ -520,11 +527,11 @@ older entry keeps working. **Disconnect** in RIM is what ends it.
 
 The rules RIM follows are written down in rim-server's
 [agent data flow contract](../../rim-server/docs/specs/agent-data-flow-v1.md). The
-[agents section of The AI agent](ai-agent.md#agents-on-this-computer) has every detail of the
+[agents section of The assistant](ai-agent.md#agents-that-connect-to-rim) has every detail of the
 screens.
 
 ## Next
 
-- [The AI agent](ai-agent.md): the agent built into the desktop app.
+- [The assistant](ai-agent.md): the assistant built into the desktop app.
 - [Plugins](plugins.md): installing and trusting plugins.
 - [Post alerts from other services](webhooks.md): webhooks, for services that post on their own.

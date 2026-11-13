@@ -5,7 +5,7 @@ import { registerSealedStore, sealedStateStorage } from "../../../core/accountVa
 
 /** The warning shown before the agent may read an encrypted conversation. */
 export const AGENT_ENCRYPTED_WARNING =
-  "The text of this conversation goes to the model provider. It leaves this device and is no longer end-to-end encrypted once the agent reads it.";
+  "The text of this conversation goes to the model provider. It leaves this device and is no longer end-to-end encrypted once the assistant reads it.";
 
 interface AgentEncryptedState {
   /** Encrypted conversations the person let the agent read, with when they did. */
@@ -48,7 +48,7 @@ export function useAgentAllowedIn(conversationId: string): boolean {
   return useAgentEncryptedStore((s) => conversationId in s.allowed);
 }
 
-/** The menu label of the per-conversation agent switch. */
+/** The menu label of the per-conversation assistant switch. */
 export function agentSwitchLabel(allowed: boolean): string {
-  return allowed ? "Agent: on in this conversation" : "Agent: off in this conversation";
+  return allowed ? "Assistant: on in this conversation" : "Assistant: off in this conversation";
 }

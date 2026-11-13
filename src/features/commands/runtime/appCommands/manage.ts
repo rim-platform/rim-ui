@@ -175,8 +175,8 @@ export const MANAGE_COMMANDS: CommandDefinition[] = [
   localCommand(
     "plugins.revoke_ai_access",
     "Plugins",
-    "Revoke a Plugin's AI Access…",
-    "Choose a plugin and take back what its AI-callable commands may do",
+    "Revoke a Plugin's Assistant Access…",
+    "Choose a plugin and take back the commands the assistant may run",
   ),
   localCommand(
     "people.add_contact",

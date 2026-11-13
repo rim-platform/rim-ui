@@ -71,7 +71,7 @@ export function ChannelBotsPanel({ workspaceId, conversationId, onClose }: Chann
             onClick={() => open("bots")}
             className="text-xs text-rim-accent hover:underline"
           >
-            Manage bots in Settings &gt; Bots
+            Manage bots in Settings &gt; Bots &amp; webhooks
           </button>
         )}
         {agents.length > 0 && (

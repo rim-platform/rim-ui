@@ -252,7 +252,7 @@ export function MacroEditor({ initial, prefill, macros, choices, onDone }: Macro
               disabled={blocker !== null}
               onChange={(e) => setAiCallable(e.target.checked)}
             />
-            The AI agent can run this
+            The assistant and agents can run this
           </label>
           {blocker !== null ? (
             <p className="text-xs text-rim-text-muted" data-testid="agent-option-blocker">

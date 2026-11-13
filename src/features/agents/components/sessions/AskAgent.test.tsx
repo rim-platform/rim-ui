@@ -209,7 +209,7 @@ describe("Ask agent", () => {
       act(() => askAgent(CHANNEL));
       const choice = screen.getByRole("button", { name: /Fake Agent/u });
       expect(choice).toHaveTextContent(
-        "Fake Agent can't read RIM in this session: RIM's tools are off in Settings → Agents.",
+        "Fake Agent can't read RIM in this session: RIM's tools are off in Settings > Agents.",
       );
       expect(choice).toBeEnabled();
     });

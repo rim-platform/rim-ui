@@ -28,6 +28,22 @@ export const COMMAND_CATEGORIES = [
 /** One of {@link COMMAND_CATEGORIES}. */
 export type CommandCategory = (typeof COMMAND_CATEGORIES)[number];
 
+/** Names shown for categories whose name in the command list is not the one people read. */
+const CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  Agents: "Assistant & Agents",
+};
+
+/**
+ * The name shown for a command category: "Assistant & Agents" for "Agents", which holds the
+ * assistant's commands as well as those of agents, else the category's own name.
+ *
+ * @param category - The category as a command carries it.
+ * @returns The name to show.
+ */
+export function commandCategoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
+}
+
 const CATEGORY_RANK: ReadonlyMap<string, number> = new Map(
   COMMAND_CATEGORIES.map((category, index) => [category, index]),
 );

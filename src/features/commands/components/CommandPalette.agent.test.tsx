@@ -9,7 +9,7 @@ const OPEN_AGENT: CommandDefinition = {
   id: "workspace.open_agent",
   title: "Open AI Agent",
   description: "Open the AI agent.",
-  category: "Agent",
+  category: "Agents",
   sourceKind: "BUILT_IN",
   executionTarget: "DESKTOP_LOCAL",
   requiredContext: [],
@@ -59,7 +59,7 @@ function searchPalette(query: string): string {
   return container.ownerDocument.body.textContent ?? "";
 }
 
-describe("CommandPalette and the AI agent", () => {
+describe("CommandPalette and the assistant", () => {
   beforeEach(() => {
     useWorkspaceStore.getState().setWorkspaceId("ws-1");
   });
@@ -70,13 +70,17 @@ describe("CommandPalette and the AI agent", () => {
     delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
-  it("does not list Open AI Agent on the web", () => {
-    expect(searchPalette("agent")).not.toContain("Open AI Agent");
+  it("does not list Open Assistant on the web", () => {
+    expect(searchPalette("assistant")).not.toContain("Open Assistant");
   });
 
-  it("lists Open AI Agent in the desktop app", () => {
+  it("lists Open Assistant in the desktop app, under Assistant & Agents", () => {
     (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    expect(searchPalette("agent")).toContain("Open AI Agent");
+    const shown = searchPalette("assistant");
+    expect(shown).toContain("Open Assistant");
+    expect(shown).toContain("Open the assistant panel");
+    expect(shown).toContain("Assistant & Agents");
+    expect(shown).not.toContain("Open AI Agent");
   });
 
   it("does not list Quit RIM on the web", () => {

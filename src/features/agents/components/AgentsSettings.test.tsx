@@ -31,7 +31,7 @@ vi.mock("./AgentPluginsDialog", () => ({
 
 // Its own tests cover it; here it would ask the installer and the runner too.
 vi.mock("./AgentProgramsSection", () => ({
-  AgentProgramsSection: () => <h2>Agents RIM can start</h2>,
+  AgentProgramsSection: () => <h3>Agents RIM starts</h3>,
 }));
 
 vi.mock("./AgentRunsDialog", () => ({
@@ -133,8 +133,7 @@ describe("AgentsSettings", () => {
 
   it("says what the tab is and what connecting means", async () => {
     await renderedSwitch();
-    expect(screen.getByRole("heading", { name: "Agents on this computer" })).toBeInTheDocument();
-    expect(screen.getByText("Optional. RIM works the same without them.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agents that connect to RIM" })).toBeInTheDocument();
     expect(
       screen.getByText(
         "An agent runs on your computer with its own model provider. What it reads goes to that provider, and RIM can't see or limit where it goes after that. Nothing can read your conversations until you connect it and choose what it may read.",
@@ -343,7 +342,7 @@ describe("AgentsSettings", () => {
     await renderedSwitch();
     await user.click(screen.getByRole("button", { name: "Disconnect Claude Code" }));
     const dialog = screen.getByRole("dialog", { name: "Disconnect Claude Code?" });
-    expect(dialog).toHaveTextContent("RIM removes it from Agents RIM can start.");
+    expect(dialog).toHaveTextContent("RIM removes it from Agents RIM starts.");
     await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));
     expect(useConnectedAgentsStore.getState().agents).toEqual([]);
     expect(useAgentProgramsStore.getState().profiles).toEqual([]);
@@ -582,11 +581,27 @@ describe("AgentsSettings", () => {
     open.mockRestore();
   });
 
-  it("opens the AI Agent tab from the line under the list", async () => {
+  it("starts by saying what agents are for, and links to the Assistant tab", async () => {
+    await renderedSwitch();
+    const headings = screen.getAllByRole("heading");
+    expect(headings[0]).toHaveTextContent("Agents");
+    expect(headings[0]!.nextElementSibling).toHaveTextContent(
+      "Programs on this computer, such as Claude Code or Codex, that RIM connects to or starts. Optional: RIM works the same without them. The assistant built into RIM is set up in Assistant.",
+    );
+    expect(
+      within(headings[0]!.nextElementSibling as HTMLElement).getByRole("button", {
+        name: "Assistant",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/has its own tab/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open AI Agent" })).not.toBeInTheDocument();
+  });
+
+  it("opens the Assistant tab from the intro", async () => {
     useShellStore.setState({ mainSurface: { kind: "settings", tab: "agents" } });
     const user = userEvent.setup();
     await renderedSwitch();
-    await user.click(screen.getByRole("button", { name: "Open AI Agent" }));
+    await user.click(screen.getByRole("button", { name: "Assistant" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agent" });
   });
 

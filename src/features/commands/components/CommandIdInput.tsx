@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from "react";
 
+import { commandCategoryLabel } from "../runtime/commandCategories";
 import { cn } from "../../../shared/ui/cn";
 import { withClientLabel } from "../runtime/localCommands";
 import type { CommandDefinition } from "../types";
@@ -92,7 +93,7 @@ export function CommandIdInput({
             >
               <span className="flex-1 truncate font-medium">{withClientLabel(cmd).title}</span>
               <span className="rounded bg-rim-void px-1.5 py-0.5 text-[10px] text-rim-text-faint">
-                {cmd.category}
+                {commandCategoryLabel(cmd.category)}
               </span>
               <span className="font-mono text-[10px] text-rim-text-faint">{cmd.id}</span>
             </button>

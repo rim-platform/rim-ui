@@ -409,12 +409,17 @@ export function PluginRow({
           )}
 
           {aiConsent && (
-            <section aria-label="What your agents can do with it" className="space-y-2">
-              <h4 className="font-medium text-rim-text">What your agents can do with it</h4>
+            <section
+              aria-label="What the assistant and agents can do with it"
+              className="space-y-2"
+            >
+              <h4 className="font-medium text-rim-text">
+                What the assistant and agents can do with it
+              </h4>
               {plugin.ai_callable_commands.length > 0 || plugin.ai_consent_required ? (
                 <PluginConsentRow plugin={plugin} />
               ) : (
-                <p className="text-rim-text-muted">It has no commands the AI agent can call.</p>
+                <p className="text-rim-text-muted">It has no commands the assistant can run.</p>
               )}
               {onOpenAgents && (
                 <>

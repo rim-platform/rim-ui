@@ -38,6 +38,7 @@ describe("titles shown before the command list loads", () => {
       );
     }
     expect(BUILT_IN_COMMAND_TITLES["chat.create_group"]).toBe("New Message");
+    expect(BUILT_IN_COMMAND_TITLES["workspace.open_agent"]).toBe("Open Assistant");
     expect(BUILT_IN_COMMAND_TITLES["workspace.toggle_lens_picker"]).toBe("Toggle Channel Lenses");
   });
 });

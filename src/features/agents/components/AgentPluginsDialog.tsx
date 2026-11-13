@@ -245,8 +245,8 @@ export function AgentPluginsDialog({
   return (
     <Dialog open title={`What ${agent.name} can run`} maxWidth="max-w-lg" onClose={onClose}>
       <p className="text-sm text-rim-text-muted">
-        Approve only what you want this program to ask for. Approvals for RIM&apos;s own agent
-        don&apos;t carry over.
+        Approve only what you want this program to ask for. Approvals for the assistant don&apos;t
+        carry over.
       </p>
       <div className="mt-3 max-h-[50vh] space-y-4 overflow-y-auto">
         <section aria-labelledby="agent-commands-rim">

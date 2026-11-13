@@ -19,7 +19,7 @@ function agentSessionsButtonLabel({
   waiting,
   working,
 }: Pick<AgentSessionRows, "waiting" | "working">): string {
-  if (waiting > 0) return `Agent sessions, ${waiting} waiting for you`;
+  if (waiting > 0) return `Agent sessions, ${waiting} ${waiting === 1 ? "needs" : "need"} you`;
   if (working > 0) return `Agent sessions, ${working} working`;
   return "Agent sessions";
 }

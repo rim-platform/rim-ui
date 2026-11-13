@@ -398,7 +398,7 @@ function ToolsBanner({
           {bridgeOffSentence(agentName)}
         </p>
         <Button type="button" size="sm" variant="secondary" onClick={openAgentsSettings}>
-          Open Settings → Agents
+          Open Settings &gt; Agents
         </Button>
       </div>
     );

@@ -13,9 +13,9 @@ const MACRO_PREFIX = "user.";
 /** The longest key a macro made from its title gets, before any `-2` that keeps it unique. */
 const MAX_KEY_LENGTH = 64;
 
-/** Why "The AI agent can run this" cannot be turned on for a macro whose steps do not allow it. */
+/** Why "The assistant and agents can run this" cannot be turned on for a macro whose steps do not allow it. */
 export const AGENT_OPTION_BLOCKER =
-  "Only commands the AI agent may run, run on RIM's server, with every argument fixed";
+  "Only commands the assistant and agents may run, run on RIM's server, with every argument fixed";
 
 /** Whether `commandId` names one of the person's macros (`user.<key>`). */
 export function isMacroId(commandId: string): boolean {

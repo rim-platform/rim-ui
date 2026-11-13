@@ -41,7 +41,7 @@ import {
   useHomeAppKeybinds,
 } from "../runtime/effectiveKeybinds";
 import { KEYSTROKE_RECORDER_ATTRIBUTE, parseKeystroke } from "../runtime/keybindEngine";
-import { compareCommandCategories } from "../runtime/commandCategories";
+import { commandCategoryLabel, compareCommandCategories } from "../runtime/commandCategories";
 import {
   BUILT_IN_COMMAND_TITLES,
   isLocalCommand,
@@ -820,7 +820,7 @@ export function KeybindSettings() {
                   !isCollapsed && "rotate-90",
                 )}
               />
-              <span>{category}</span>
+              <span>{commandCategoryLabel(category)}</span>
               <span className="text-rim-text-faint">({items.length + unboundItems.length})</span>
             </button>
 

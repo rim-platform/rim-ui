@@ -29,7 +29,7 @@ import { AgentPluginsDialog } from "./AgentPluginsDialog";
 
 const PLUGIN = "dev.example.pods";
 const INTRO =
-  "Approve only what you want this program to ask for. Approvals for RIM's own agent don't carry over.";
+  "Approve only what you want this program to ask for. Approvals for the assistant don't carry over.";
 const NO_GRANT =
   "Choose what it can read first: RIM commands work only in a workspace it has a grant in.";
 const CHANGED = "This plugin changed since you approved it. Choose again.";

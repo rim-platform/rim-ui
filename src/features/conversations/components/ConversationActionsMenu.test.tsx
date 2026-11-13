@@ -778,8 +778,8 @@ describe("ConversationActionsMenu — the agent in an encrypted conversation", (
     serve(ServerMemberRoleGql.MEMBER);
     const conversation = encrypted();
     await openMenu(conversation, ServerMemberRoleGql.MEMBER);
-    expect(menuLabels()).toContain("Agent: off in this conversation");
-    fireEvent.click(screen.getByRole("menuitem", { name: /Agent: off/ }));
+    expect(menuLabels()).toContain("Assistant: off in this conversation");
+    fireEvent.click(screen.getByRole("menuitem", { name: /Assistant: off/ }));
     expect(
       screen.getByText(/^The text of this conversation goes to the model provider\./),
     ).toBeInTheDocument();
@@ -793,7 +793,7 @@ describe("ConversationActionsMenu — the agent in an encrypted conversation", (
     const conversation = encrypted();
     useAgentEncryptedStore.getState().setAllowed(conversation.id, true);
     await openMenu(conversation, ServerMemberRoleGql.MEMBER);
-    fireEvent.click(screen.getByRole("menuitem", { name: /Agent: on/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Assistant: on/ }));
     expect(useAgentEncryptedStore.getState().allowed).toEqual({});
   });
 

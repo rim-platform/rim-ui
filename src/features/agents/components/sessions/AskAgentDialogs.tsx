@@ -112,7 +112,7 @@ function GrantOfferDialog({ offer }: { offer: GrantOffer }) {
       <p className="text-sm text-rim-text">Let it read {channel}?</p>
       <p className="mt-2 text-xs text-rim-text-muted">
         Only this channel. Reads in it don&apos;t prompt after this, and you can change this at any
-        time in Settings → Agents.
+        time in Settings &gt; Agents.
       </p>
       <p className="mt-1 text-xs text-rim-text-muted">{GRANT_PROVIDER_NOTE}</p>
       <div className="mt-4 flex flex-wrap justify-end gap-2">

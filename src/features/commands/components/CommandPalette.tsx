@@ -47,6 +47,7 @@ import { hasPanelToClose } from "../../../shell/state/closeTopPanel";
 import { useApplicableDirectOrigin } from "../../conversations/state/directOrigin";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { offeredLocalCommands } from "../runtime/offeredLocalCommands";
+import { commandCategoryLabel } from "../runtime/commandCategories";
 import type {
   CommandContextInput,
   CommandDefinition,
@@ -191,7 +192,7 @@ function CommandPaletteDialog() {
     for (let i = 0; i < sortedResults.length; i++) {
       if (sortedResults[i].item.category !== lastCategory) {
         lastCategory = sortedResults[i].item.category;
-        headers.set(i, lastCategory);
+        headers.set(i, commandCategoryLabel(lastCategory));
       }
     }
     return headers;
@@ -641,7 +642,7 @@ function CommandPaletteDialog() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[10px] text-rim-text-muted uppercase">
-                            {cmd.category}
+                            {commandCategoryLabel(cmd.category)}
                           </span>
                           {keybindMap.has(cmd.id) && (
                             <kbd className="rounded border border-rim-line bg-rim-void px-1.5 py-0.5 text-[11px] font-mono text-rim-text-muted">

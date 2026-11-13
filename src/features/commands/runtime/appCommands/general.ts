@@ -23,6 +23,7 @@ import { useAuthStore } from "../../../auth/state/useAuthStore";
 import { togglePipeline } from "../../../pipelines/api/usePipelines";
 import { useRelayStore } from "../../../relay/state/useRelayStore";
 import {
+  SETTINGS_SECTION_TABS,
   SETTINGS_TABS,
   settingsTabCommandId,
   type SettingsTab,
@@ -238,7 +239,7 @@ function settingsTabOpened(key: SettingsTab): SettingsTab {
 }
 
 const settingsTabHandlers: Record<string, Handler> = Object.fromEntries(
-  SETTINGS_TABS.map((tab) => [
+  [...SETTINGS_TABS, ...SETTINGS_SECTION_TABS].map((tab) => [
     settingsTabCommandId(tab.key),
     () => {
       const opened = settingsTabOpened(tab.key);

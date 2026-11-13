@@ -240,9 +240,11 @@ describe("MacroSettings form", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Ask for Topic when I run it" }));
     expect(screen.getByTestId("agent-option-blocker")).toHaveTextContent(
-      "Only commands the AI agent may run, run on RIM's server, with every argument fixed",
+      "Only commands the assistant and agents may run, run on RIM's server, with every argument fixed",
     );
-    expect(screen.getByRole("checkbox", { name: "The AI agent can run this" })).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "The assistant and agents can run this" }),
+    ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -296,7 +298,7 @@ describe("MacroSettings form", () => {
     pickStep(1, "Set Topic");
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "Launch day" } });
 
-    const option = screen.getByRole("checkbox", { name: "The AI agent can run this" });
+    const option = screen.getByRole("checkbox", { name: "The assistant and agents can run this" });
     expect(option).toBeEnabled();
     fireEvent.click(option);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -364,7 +366,7 @@ describe("MacroSettings form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit Standup" }));
 
     expect(
-      screen.queryByRole("checkbox", { name: "The AI agent can run this" }),
+      screen.queryByRole("checkbox", { name: "The assistant and agents can run this" }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

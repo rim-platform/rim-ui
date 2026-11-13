@@ -41,7 +41,7 @@ bot that was deactivated has left it.
   the conversation or over it in a smaller window (Escape closes it there); opening one closes the
   other. Each bot shows its name, the Bot badge, **Who runs it**, **Where what it reads goes**,
   **Added by** and "This is what the person who added it says. RIM can't check it." An Owner or
-  Moderator also gets **Manage bots in Settings > Bots**. `workspace.toggle_channel_bots` opens and
+  Moderator also gets **Manage bots in Settings > Bots & webhooks**. `workspace.toggle_channel_bots` opens and
   closes it from the palette or a keybind. An encrypted channel has no bots, so it has no count.
 - **Your agents.** When a program connected on this device (Settings > Agents) has a read grant that
   covers the channel, the header also says "your agent can read this", and the panel's **Your
@@ -72,7 +72,7 @@ the switch nor the action is offered.
 
 ## Managing bots
 
-Settings > Bots is for Owners and Moderators. It is listed under Workspace when the server lists the
+Settings > Bots & webhooks is for Owners and Moderators. It is listed under Workspace when the server lists the
 `bots` feature as enabled, and not in the direct space. "Open Bots" in the command palette opens it
 for the same people.
 
