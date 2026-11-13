@@ -79,6 +79,7 @@ describe("RecoveryKitBanner", () => {
     renderBanner();
 
     await user.click(await screen.findByRole("button", { name: "Show recovery kit" }));
+    expect(screen.getByText(/Later keeps the kit only in this browser/)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Later" }));
 
     expect(screen.queryByLabelText("Recovery phrase")).toBeNull();

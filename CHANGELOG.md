@@ -57,6 +57,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   notifications panel each say in a line what they are for; the lens button reads "Lenses:
   filtered views of this channel". "Block Principal…" is now "Block Account…", moderation says
   "accounts" for blocked principals, and pointers to Settings pages read "Settings > X".
+- Sign-up and first run read more plainly. The browser-storage warning now says why it appears,
+  moves into view and takes focus, and its button reads **Continue**; the recovery kit screen
+  says what **Later** means; the password hint says "recovery kit"; and the sign-in page opens
+  with "Welcome to RIM" when this device holds no account yet.
 
 ## [0.0.12] - 2026-11-12
 

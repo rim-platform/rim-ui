@@ -15,7 +15,7 @@ const labelClass = "block text-[13px] font-medium text-rim-text";
 
 /** What the person reads before choosing a password. */
 export const PASSWORD_EXPLANATION =
-  "You'll enter this every time you sign in. If you forget it, your recovery phrase resets it.";
+  "You'll enter this every time you sign in. If you forget it, your recovery kit resets it.";
 
 /**
  * One password field: the account's current password, typed once. It takes a PIN or a passphrase
