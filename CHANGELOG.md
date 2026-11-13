@@ -22,6 +22,18 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Added
+
+- Plugin SDK 0.3.0: `host.commands.execute(commandId, args)` with the types `Commands` and
+  `CommandRunResult`, which asks the app to run one of its own commands the person granted and
+  resolves with how the run ended, never the command's output; in the generated
+  protocol `Method.runCommand`, `RunCommandParams`, `RunCommandRequest`, `RunCommandResult` and
+  `RunCommandResponse`; in the manifest `read_only` on a command and the top-level
+  `runs_commands`, with the constants `MAX_RUNS_COMMANDS`, `MAX_COMMAND_ID_BYTES` and
+  `AGENT_MANAGEMENT_COMMAND_IDS` and the functions `isCommandId` and `unrunnableByPlugins`.
+  `checkInstall` refuses a command that is both `read_only` and `dangerous`, and checks the
+  `runs_commands` rules.
+
 ## [0.0.12] - 2026-11-12
 
 ### Added
