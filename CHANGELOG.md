@@ -63,6 +63,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - A word in angle brackets in a message, such as "reply /vote <number>", now shows as typed
   instead of disappearing. Any HTML in a message shows as the text that was written, never as
   markup.
+- In the web app, a plugin with only "Read your conversations" can read a plaintext channel
+  once the browser has stored it, instead of being refused as if the channel were encrypted.
 
 ## [0.0.12] - 2026-11-12
 

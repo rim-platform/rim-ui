@@ -162,7 +162,7 @@ export async function pin(
  * Whether `state` is a group's: held, being created, or waited for. The feed saves an empty state
  * for every conversation it follows, plaintext ones a plugin reads included.
  */
-function holdsGroup(state: GroupState): boolean {
+export function holdsGroup(state: GroupState): boolean {
   return state.incarnation > 0 || state.nextIncarnation !== null || state.readdRequestedAt !== null;
 }
 
