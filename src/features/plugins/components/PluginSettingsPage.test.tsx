@@ -177,7 +177,7 @@ describe("PluginSettingsPage — web build (webPlugins only)", () => {
     expect(screen.getByText(/install a web plugin from its link/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "the RIM guide" })).toHaveAttribute(
       "href",
-      "https://rim-platform.org/docs/client/plugins.html#the-official-plugins",
+      "https://rim-platform.org/plugins/#the-official-plugins",
     );
   });
 
