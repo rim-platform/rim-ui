@@ -20,7 +20,7 @@ import { useSettingsIntentStore } from "../../commands/state/useSettingsIntentSt
 
 /**
  * Settings → Instance → Moderation: the server's abuse reports, the reports of messages in its
- * DMs and groups (its direct space, which has no moderators), blocked principals and the IP
+ * DMs and groups (its direct space, which has no moderators), blocked accounts and the IP
  * deny list, for instance operators. Anyone else, and an operator the server refuses with
  * `FORBIDDEN`, sees that the page is for operators only.
  */
@@ -97,7 +97,7 @@ function ModerationQueue({
           Instance moderation
         </h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Abuse reports, reported messages in direct messages and groups, blocked principals and
+          Abuse reports, reported messages in direct messages and groups, blocked accounts and
           blocked addresses for this whole server. Every action here is recorded in the
           server&apos;s audit log.
         </p>

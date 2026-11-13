@@ -46,6 +46,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   link to Assistant. About lists what each part of RIM is for. Keybinds to Settings tabs keep
   working, "Settings: Plugin AI" included, which opens that section as "Settings: Assistant's
   Plugin Commands".
+- The Keybinds, Pipelines and State tabs, the lens picker and message requests in the
+  notifications panel each say in a line what they are for; the lens button reads "Lenses:
+  filtered views of this channel". "Block Principal…" is now "Block Account…", moderation says
+  "accounts" for blocked principals, and pointers to Settings pages read "Settings > X".
 
 ## [0.0.12] - 2026-11-12
 

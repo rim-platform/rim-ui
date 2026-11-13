@@ -371,6 +371,10 @@ Two macros, as examples:
 
 ## Pipelines
 
+A pipeline does something when something happens in this workspace. When a new message matches
+a filter, someone joins or a state entry changes, it runs commands that need no confirmation, or
+posts a welcome as a bot. A cooldown keeps it from running too often.
+
 A pipeline runs commands on the server when something happens in the workspace: a trigger, up
 to five filters that must all match, and up to ten actions, each a command with arguments. It
 runs them as the person who created it.
@@ -446,9 +450,24 @@ with `{"query": "FAILED"}` (the Query field). Each failure posted to #deploys sh
 firing, at most once in five minutes. The action's result is not shown anywhere, and an action
 such as `chat.post_message` would be skipped.
 
+## Lenses
+
+A lens shows only the messages of a channel that match its filters, such as those with links or
+from one person. The lens button in the channel's header opens the picker: it lists the channel's
+lenses, with **Clear lens** while one is applied, and **Create lens** opens the editor, with a
+**Name**, a **Match** setting, conditions (Has Links, Has Attachments, Is Pinned, Author, Text
+Contains) and **Share with channel members**. A shared lens is listed for every member of the
+channel; only its creator edits or deletes it. In the command palette, **Apply Lens…** chooses a
+lens for the open channel, **Clear Lens** removes it and **Toggle Channel Lenses** shows or hides
+the picker.
+
 ## Workspace state
 
-Workspace state is a key-value store the server keeps for each workspace. Commands, macros and
+Workspace state is named values this workspace keeps, such as a release freeze switch or a
+counter. Macros, pipelines and plugins can read and change them. An entry belongs to the
+workspace or only to you, and can expire.
+
+It is a key-value store the server keeps for each workspace. Commands, macros and
 the agent use it through `state.get`, `state.list`, `state.set`, `state.incr` and `state.delete`,
 and a pipeline can react when it changes. Plugins have no access to it. An entry belongs to one
 of two scopes: the workspace's, which every member reads and writes, or your own, which only you

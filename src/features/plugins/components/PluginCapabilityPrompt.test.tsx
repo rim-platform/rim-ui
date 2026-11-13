@@ -191,7 +191,7 @@ describe("PluginCapabilityPrompt after an install", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Approve and turn on" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "The permissions are saved, but the plugin did not start: the plugin exited. Turn it on in Settings → Plugins.",
+      "The permissions are saved, but the plugin did not start: the plugin exited. Turn it on in Settings > Plugins.",
     );
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Approve and turn on" })).toBeNull();

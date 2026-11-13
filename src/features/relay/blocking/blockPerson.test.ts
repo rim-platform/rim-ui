@@ -117,7 +117,7 @@ describe("blockPerson", () => {
     expect(useUnreadStore.getState().counts).toEqual({});
     expect(toastSuccess).toHaveBeenCalledWith("Blocked Alice.", {
       description:
-        "Your DMs with them and the groups they started stay hidden until you unblock them in Settings → Direct messages.",
+        "Your DMs with them and the groups they started stay hidden until you unblock them in Settings > Direct messages, under Blocked people.",
     });
     const keys = invalidate.mock.calls.map(([f]) => (f as { queryKey: unknown[] }).queryKey);
     expect(keys).toContainEqual(queryKeys.myBlockedPrincipals);

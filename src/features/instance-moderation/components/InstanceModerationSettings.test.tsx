@@ -145,7 +145,7 @@ describe("InstanceModerationSettings", () => {
     const r2 = screen.getByTestId("instance-report-r2");
     expect(r2).toHaveTextContent("rims1_badserver");
     expect(r2).toHaveTextContent("reported by the abuse address");
-    expect(within(r2).queryByRole("button", { name: /Block principal/ })).not.toBeInTheDocument();
+    expect(within(r2).queryByRole("button", { name: /Block account/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId("instance-report-r3")).not.toBeInTheDocument();
   });
 
@@ -245,9 +245,9 @@ describe("InstanceModerationSettings", () => {
       expect(row).not.toHaveTextContent("u-mallor");
       expect(row).not.toHaveTextContent("message not visible to you");
 
-      fireEvent.click(within(row).getByRole("button", { name: `Block principal ${MALLORY}` }));
-      const form = screen.getByRole("form", { name: "Block a principal" });
-      expect(within(form).getByLabelText("Principal id")).toHaveValue(MALLORY);
+      fireEvent.click(within(row).getByRole("button", { name: `Block account ${MALLORY}` }));
+      const form = screen.getByRole("form", { name: "Block an account" });
+      expect(within(form).getByLabelText("Account id")).toHaveValue(MALLORY);
       expect(within(form).getByLabelText("Reason")).toHaveFocus();
 
       fireEvent.click(within(row).getByRole("button", { name: "Delete message" }));
@@ -264,7 +264,7 @@ describe("InstanceModerationSettings", () => {
     }
   });
 
-  it("offers Clear profile next to Block principal on a reported DM's author", async () => {
+  it("offers Clear profile next to Block account on a reported DM's author", async () => {
     useRelayStore.setState({
       info: { serverId: "rims1_relay", roles: ["relay"], directSpaceId: "direct-1" },
     });
@@ -300,7 +300,7 @@ describe("InstanceModerationSettings", () => {
       renderPage();
       const row = await screen.findByTestId("report-row-dm-r3");
       expect(
-        within(row).getByRole("button", { name: `Block principal ${MALLORY}` }),
+        within(row).getByRole("button", { name: `Block account ${MALLORY}` }),
       ).toBeInTheDocument();
       fireEvent.click(within(row).getByRole("button", { name: `Clear profile ${MALLORY}` }));
       const dialog = screen.getByRole("dialog", { name: "Clear this profile?" });
@@ -403,14 +403,14 @@ describe("InstanceModerationSettings", () => {
     serve();
     renderPage();
     const r1 = await screen.findByTestId("instance-report-r1");
-    fireEvent.click(within(r1).getByRole("button", { name: "Block principal @mallory" }));
+    fireEvent.click(within(r1).getByRole("button", { name: "Block account @mallory" }));
 
-    const form = screen.getByRole("form", { name: "Block a principal" });
-    expect(within(form).getByLabelText("Principal id")).toHaveValue(MALLORY);
+    const form = screen.getByRole("form", { name: "Block an account" });
+    expect(within(form).getByLabelText("Account id")).toHaveValue(MALLORY);
     expect(within(form).getByLabelText("Reason")).toHaveFocus();
     typeInto("Reason", "harassment", form);
     fireEvent.click(within(form).getByLabelText(/Also block the accounts its invites created/));
-    fireEvent.click(within(form).getByRole("button", { name: "Block principal" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Block account" }));
 
     await waitFor(() =>
       expect(callsTo(requestMock, "mutation InstanceBlockPrincipal")).toEqual([
@@ -437,10 +437,10 @@ describe("InstanceModerationSettings", () => {
       },
     });
     renderPage();
-    const form = await screen.findByRole("form", { name: "Block a principal" });
-    typeInto("Principal id", "nonsense", form);
+    const form = await screen.findByRole("form", { name: "Block an account" });
+    typeInto("Account id", "nonsense", form);
     typeInto("Reason", "spam", form);
-    fireEvent.click(within(form).getByRole("button", { name: "Block principal" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Block account" }));
     expect(await within(form).findByRole("alert")).toHaveTextContent(
       "principal id must start with rimp1_",
     );
@@ -536,13 +536,11 @@ describe("InstanceModerationSettings", () => {
     expect(toast.success).toHaveBeenCalledWith("Unblocked 198.51.100.0/24");
   });
 
-  it("offers Clear profile next to Block principal on an abuse report with a principal", async () => {
+  it("offers Clear profile next to Block account on an abuse report with a principal", async () => {
     serve();
     renderPage();
     const r1 = await screen.findByTestId("instance-report-r1");
-    expect(
-      within(r1).getByRole("button", { name: "Block principal @mallory" }),
-    ).toBeInTheDocument();
+    expect(within(r1).getByRole("button", { name: "Block account @mallory" })).toBeInTheDocument();
     expect(within(r1).getByRole("button", { name: "Clear profile @mallory" })).toBeInTheDocument();
     const r2 = screen.getByTestId("instance-report-r2");
     expect(within(r2).queryByRole("button", { name: /Clear profile/ })).not.toBeInTheDocument();

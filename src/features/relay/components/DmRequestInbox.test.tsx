@@ -84,6 +84,11 @@ describe("DmRequestInbox", () => {
     );
   });
 
+  it("explains what message requests are", async () => {
+    renderWithProviders(<DmRequestInbox />);
+    expect(await screen.findByText(/People you haven't talked with/)).toBeInTheDocument();
+  });
+
   it("does not show a name the sender's log does not vouch for", async () => {
     crypto.verifyCard.mockRejectedValue(new Error("signature does not verify"));
     renderWithProviders(<DmRequestInbox />);

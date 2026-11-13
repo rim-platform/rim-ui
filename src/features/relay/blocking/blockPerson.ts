@@ -145,7 +145,7 @@ export async function blockPerson(qc: QueryClient, target: BlockTarget): Promise
   }
   toast.success(asSentence(`Blocked ${target.name}`), {
     description:
-      "Your DMs with them and the groups they started stay hidden until you unblock them in Settings → Direct messages.",
+      "Your DMs with them and the groups they started stay hidden until you unblock them in Settings > Direct messages, under Blocked people.",
   });
   return true;
 }

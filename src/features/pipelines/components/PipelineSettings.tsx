@@ -814,6 +814,13 @@ export function PipelineSettings() {
         </button>
       </div>
 
+      <p className="text-sm text-rim-text-muted">
+        A pipeline does something when something happens in this workspace. When a new message
+        matches a filter, someone joins or a state entry changes, it runs commands that need no
+        confirmation, or posts a welcome as a bot. A cooldown keeps it from running too often. Any
+        member can create a pipeline, and it runs as the person who created it.
+      </p>
+
       <LimitNote limit={pipelineLimit} />
 
       {isLoading && <p className="text-sm text-rim-text-muted">Loading pipelines...</p>}
