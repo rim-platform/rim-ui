@@ -43,6 +43,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Making a bot for webhooks is shorter: **New bot for webhooks** (under Incoming webhooks, and in
+  the form as **Only posts from webhooks**) fills the two required statements, which stay
+  editable. The token dialog says webhooks don't need the token, and the new webhook form says
+  to create a missing channel first.
 - The AI agent built into the desktop app is now called the **Assistant**: its Settings tab, its
   panel (<kbd>Ctrl+Shift+A</kbd>, **Open Assistant**), the conversation menu's "Assistant: on in
   this conversation", `/agent` ("Ask the assistant") and the palette's **Assistant & Agents**

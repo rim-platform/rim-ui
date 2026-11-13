@@ -162,6 +162,10 @@ export function NewWebhookDialog({
                 ))}
               </select>
             </label>
+            <p className="-mt-2 text-xs text-rim-text-muted">
+              Need a new channel? Create it first, then pick it here. A channel&apos;s menu also has
+              New webhook…
+            </p>
             {channelsCut && <ChannelsCutNotice />}
           </>
         )}

@@ -35,7 +35,16 @@ function formatLabel(webhook: IncomingWebhook): string {
  * A workspace's incoming webhooks: one URL per channel that posts as a bot. Shown only for a
  * server with incoming webhooks.
  */
-export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bot[] }) {
+export function WebhooksSection({
+  serverId,
+  bots,
+  onNewBot,
+}: {
+  serverId: string;
+  bots: Bot[];
+  /** Opens the new bot form for a bot that only posts from webhooks. */
+  onNewBot: () => void;
+}) {
   const webhooks = useIncomingWebhooks(serverId, true);
   const channels = useAllChannels(serverId);
   const revoke = useRevokeIncomingWebhook(serverId);
@@ -69,11 +78,14 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
   useEffect(() => {
     if (intent?.kind !== "webhook-create" || !loaded) return;
     clearIntent();
-    if (noBot) toast.info("Add a bot first.");
+    if (noBot)
+      toast.info("Add a bot first.", {
+        action: { label: "New bot for webhooks", onClick: onNewBot },
+      });
     else if (noChannel) toast.info("Every channel you can add one to already has a webhook.");
     // Opens the form after this effect, as an answer to the command rather than to a render.
     else queueMicrotask(() => setCreating(true));
-  }, [intent, loaded, noBot, noChannel, clearIntent]);
+  }, [intent, loaded, noBot, noChannel, clearIntent, onNewBot]);
 
   useEffect(() => {
     if (!refocus || webhooks.isFetching) return;
@@ -112,7 +124,14 @@ export function WebhooksSection({ serverId, bots }: { serverId: string; bots: Bo
         One URL per channel. Anyone with the URL can post to that channel as the bot, so keep it
         like a password.
       </p>
-      {activeBots.length === 0 && <p className="text-xs text-rim-text-faint">Add a bot first.</p>}
+      {activeBots.length === 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-rim-text-faint">Add a bot first.</p>
+          <Button size="sm" variant="secondary" onClick={onNewBot}>
+            New bot for webhooks
+          </Button>
+        </div>
+      )}
       {webhooks.isPending && <p className="text-sm text-rim-text-muted">Loading webhooks...</p>}
       {webhooks.isError && (
         <div className="space-y-2">

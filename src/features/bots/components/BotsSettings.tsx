@@ -21,8 +21,11 @@ import { WebhooksSection } from "./WebhooksSection";
 /** How many active bots a workspace holds at most. */
 export const MAX_ACTIVE_BOTS = 25;
 
+const BOT_TOKEN_NOTE =
+  "Only a program that acts as this bot needs the token. Incoming webhooks don't: you can close this.";
+
 type Dialog =
-  | { kind: "create" }
+  | { kind: "create"; forWebhooks?: boolean }
   | { kind: "edit"; bot: Bot }
   | { kind: "tokens"; bot: Bot }
   | { kind: "channels"; bot: Bot }
@@ -94,6 +97,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
     title: string;
     label: string;
     value: string;
+    note?: string;
     /** The bot whose Edit takes focus when the dialog is closed. */
     editOf?: string;
   } | null>(null);
@@ -203,12 +207,17 @@ export function BotsSettings({ serverId }: { serverId: string }) {
       </section>
 
       {webhooksAvailable(info) && bots.data && (
-        <WebhooksSection serverId={serverId} bots={bots.data} />
+        <WebhooksSection
+          serverId={serverId}
+          bots={bots.data}
+          onNewBot={() => setDialog({ kind: "create", forWebhooks: true })}
+        />
       )}
 
       {!secret && dialog?.kind === "create" && (
         <BotFormDialog
           serverId={serverId}
+          forWebhooks={dialog.forWebhooks}
           onClose={() => setDialog(null)}
           onCreated={(bot, token) => {
             setDialog(null);
@@ -216,6 +225,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
               title: `Token of ${bot.name}`,
               label: "Token",
               value: token,
+              note: BOT_TOKEN_NOTE,
               editOf: bot.userId,
             });
           }}
@@ -266,6 +276,7 @@ export function BotsSettings({ serverId }: { serverId: string }) {
           title={secret.title}
           label={secret.label}
           value={secret.value}
+          note={secret.note}
           onClose={() => {
             if (secret.editOf) setRefocus({ editOf: secret.editOf });
             setSecret(null);
