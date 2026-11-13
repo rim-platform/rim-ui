@@ -266,7 +266,8 @@ plugin author:", which is the author's claim, not the app's; and what the kind o
   it only if you trust its author."
 
 Each permission has a checkbox, checked at first. Unchecking one denies it, and **Approve**
-grants the rest; right after an install the button is **Approve and turn on**, which also starts
+grants the rest and takes back an approved one that was unchecked (which stops the plugin, as
+revoking it from its details does, and it starts again if it was running); right after an install the button is **Approve and turn on**, which also starts
 the plugin. The prompt names them like this:
 
 | Capability | What the prompt says |

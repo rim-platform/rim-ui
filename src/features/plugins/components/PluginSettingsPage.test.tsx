@@ -35,6 +35,7 @@ vi.mock("../api/usePluginActions", () => ({
 vi.mock("../api/usePluginCapabilities", () => ({
   useApproveCapabilities: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useGrantCommands: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useRevokeCapability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 vi.mock("../../commands/api/useCommands", () => ({
   useCommands: vi.fn(() => ({ data: [] })),
