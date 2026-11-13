@@ -1,11 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
-import { detectPlatform } from "../../../core/runtime/runtime";
 import { isHttpUrl } from "../../../shared/ui/markdown/safeUrl";
 import { IsolatedMenu } from "../../../shared/ui/contextMenu/IsolatedMenu";
 import { linkMenuItems, openExternalUrl } from "../../../shared/ui/contextMenu/menuActions";
 import { useContextMenu } from "../../../shared/ui/contextMenu/useContextMenu";
-import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettingsStore";
 
 export interface LinkPreview {
   id: string;
@@ -21,23 +19,13 @@ interface LinkPreviewCardProps {
 }
 
 /**
- * A link the server previewed: title, description, site and, when inline media is on and this
- * is not the web app, the page's image. The web app's content policy blocks other sites' images,
- * so it never asks for one. Only http(s) URLs open or load; the image loads without a referrer. Its
- * context menu opens the link or copies its address.
+ * A link the server previewed: title, description and site, with no image. The page's image
+ * would come from another site, which the app's content policy blocks and which would tell that
+ * site who is reading. Only an http(s) URL opens. Its context menu opens the link or copies its
+ * address.
  */
 export function LinkPreviewCard({ preview }: LinkPreviewCardProps) {
-  const showInlineMedia = useMessageDisplaySettingsStore((s) => s.showInlineMedia);
-  const [imageFailed, setImageFailed] = useState(false);
   const canOpen = isHttpUrl(preview.url);
-  const imageUrl =
-    showInlineMedia &&
-    detectPlatform() !== "web" &&
-    !imageFailed &&
-    preview.imageUrl &&
-    isHttpUrl(preview.imageUrl)
-      ? preview.imageUrl
-      : null;
 
   const contextMenu = useContextMenu();
 
@@ -46,7 +34,7 @@ export function LinkPreviewCard({ preview }: LinkPreviewCardProps) {
   }, [canOpen, preview.url]);
 
   // Don't render if there's nothing meaningful to show
-  if (!preview.title && !preview.description && !imageUrl) {
+  if (!preview.title && !preview.description) {
     return null;
   }
 
@@ -59,17 +47,6 @@ export function LinkPreviewCard({ preview }: LinkPreviewCardProps) {
         disabled={!canOpen}
         className="mt-2 flex w-full max-w-md items-start gap-3 overflow-hidden rounded-lg border border-rim-line bg-rim-panel-soft p-3 text-left transition hover:brightness-110"
       >
-        {imageUrl && (
-          <img
-            src={imageUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            onError={() => setImageFailed(true)}
-            className="h-20 w-20 shrink-0 rounded object-cover"
-          />
-        )}
         <div className="min-w-0 flex-1">
           {preview.title && (
             <p className="truncate text-sm font-medium text-rim-text">{preview.title}</p>

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -6,25 +6,9 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 import { LinkPreviewCard, type LinkPreview } from "./LinkPreviewCard";
-import { useMessageDisplaySettingsStore } from "../state/useMessageDisplaySettingsStore";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 describe("LinkPreviewCard", () => {
-  const withDesktop = () => {
-    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-  };
-  beforeEach(withDesktop);
-  afterEach(() => {
-    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-  });
-
-  it("shows no image on the web, so the browser requests none", () => {
-    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
-    expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByText("Example Article")).toBeInTheDocument();
-  });
-
   const fullPreview: LinkPreview = {
     id: "lp-1",
     url: "https://example.com/article",
@@ -34,7 +18,21 @@ describe("LinkPreviewCard", () => {
     siteName: "Example.com",
   };
 
-  it("renders nothing when no title, description, or image", () => {
+  it.each([
+    ["the web", false],
+    ["the desktop", true],
+  ])("shows no image on %s, so no other site is asked for one", (_where, desktop) => {
+    if (desktop) (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    try {
+      const { container } = render(<LinkPreviewCard preview={fullPreview} />);
+      expect(container.querySelector("img")).toBeNull();
+      expect(screen.getByText("Example Article")).toBeInTheDocument();
+    } finally {
+      delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
+  });
+
+  it("renders nothing when no title or description", () => {
     const emptyPreview: LinkPreview = {
       id: "lp-2",
       url: "https://example.com",
@@ -61,13 +59,6 @@ describe("LinkPreviewCard", () => {
   it("renders site name when provided", () => {
     render(<LinkPreviewCard preview={fullPreview} />);
     expect(screen.getByText("Example.com")).toBeInTheDocument();
-  });
-
-  it("renders image when imageUrl is provided", () => {
-    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
-    const img = container.querySelector("img");
-    expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute("src", "https://example.com/image.jpg");
   });
 
   it("does not render image when imageUrl is null", () => {
@@ -105,7 +96,7 @@ describe("LinkPreviewCard", () => {
     expect(screen.getByText("Just a description")).toBeInTheDocument();
   });
 
-  it("renders when only imageUrl is provided", () => {
+  it("renders nothing when only an image is known", () => {
     const imageOnly: LinkPreview = {
       id: "lp-5",
       url: "https://example.com",
@@ -115,47 +106,13 @@ describe("LinkPreviewCard", () => {
       siteName: null,
     };
     const { container } = render(<LinkPreviewCard preview={imageOnly} />);
-    expect(container.querySelector("img")).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("is clickable (renders as button)", () => {
     render(<LinkPreviewCard preview={fullPreview} />);
     const button = screen.getByRole("button");
     expect(button).toBeInTheDocument();
-  });
-
-  it("loads the preview image lazily without a referrer", () => {
-    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
-    const img = container.querySelector("img");
-    expect(img).toHaveAttribute("loading", "lazy");
-    expect(img).toHaveAttribute("referrerpolicy", "no-referrer");
-  });
-
-  it("hides the preview image when inline media is off", () => {
-    useMessageDisplaySettingsStore.setState({ showInlineMedia: false });
-    try {
-      const { container } = render(<LinkPreviewCard preview={fullPreview} />);
-      expect(container.querySelector("img")).toBeNull();
-      expect(screen.getByText("Example Article")).toBeInTheDocument();
-    } finally {
-      useMessageDisplaySettingsStore.setState({ showInlineMedia: true });
-    }
-  });
-
-  it.each([
-    "javascript:alert(1)",
-    "data:text/html,<script>alert(1)</script>",
-    "data:image/png;base64,AAAA",
-    "/relative.png",
-  ])("never loads a preview image from %s", (imageUrl) => {
-    const { container } = render(<LinkPreviewCard preview={{ ...fullPreview, imageUrl }} />);
-    expect(container.querySelector("img")).toBeNull();
-  });
-
-  it("hides an image that fails to load", () => {
-    const { container } = render(<LinkPreviewCard preview={fullPreview} />);
-    fireEvent.error(container.querySelector("img") as HTMLImageElement);
-    expect(container.querySelector("img")).toBeNull();
   });
 
   it("does not open a preview whose URL is not http(s)", () => {

@@ -62,7 +62,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   palette, the Focus commands and Cycle Recent Activity now list last under Navigation.
 - Home's Add a box no longer offers the agent boxes in the web app, where they can't run.
 - The Audit log button on the workspace rail shows only to a workspace's Owners and Moderators.
-- Link previews in the web app show no image, so the browser makes no request to other sites.
+- Link previews show no image, in the web app and the desktop app alike: the image would come from
+  another site, which the content policy blocks, and asking for it would tell that site who is
+  reading.
 
 ### Fixed
 
