@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import {
@@ -119,14 +119,17 @@ describe("Sign and publish", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     });
+    await waitFor(() => expect(uploadPluginBundle).toHaveBeenCalledTimes(1));
     const [, uploaded] = vi.mocked(uploadPluginBundle).mock.calls[0];
     expect(await sha256Hex(uploaded)).toBe(SHA);
-    expect(addWorkspacePlugin).toHaveBeenCalledWith({
-      serverId: SERVER,
-      statement: SIGNED_HELLO_WEB,
-      status: WorkspacePluginStatus.RECOMMENDED,
-      publisherKeyLog: [INCEPTION],
-    });
+    await waitFor(() =>
+      expect(addWorkspacePlugin).toHaveBeenCalledWith({
+        serverId: SERVER,
+        statement: SIGNED_HELLO_WEB,
+        status: WorkspacePluginStatus.RECOMMENDED,
+        publisherKeyLog: [INCEPTION],
+      }),
+    );
   });
 
   it("refuses a statement that does not verify", async () => {
