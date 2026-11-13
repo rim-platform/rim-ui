@@ -69,6 +69,54 @@ describe("renderMarkdown code blocks", () => {
   });
 });
 
+describe("renderMarkdown raw HTML", () => {
+  it("shows a word in angle brackets as typed", () => {
+    const root = dom(renderMarkdown("Vote in the Poll panel, or reply /vote <number>"));
+    expect(root.querySelector("p")?.textContent).toBe(
+      "Vote in the Poll panel, or reply /vote <number>",
+    );
+  });
+
+  it("shows inline tags as text instead of markup", () => {
+    const root = dom(renderMarkdown("<b>bold</b> and <s>old</s>"));
+    expect(root.querySelector("b, s")).toBeNull();
+    expect(root.querySelector("p")?.textContent).toBe("<b>bold</b> and <s>old</s>");
+  });
+
+  it("shows an HTML block as a paragraph of text with its line breaks", () => {
+    const root = dom(renderMarkdown("<div>\nhi\n</div>"));
+    expect(root.querySelector("div")).toBeNull();
+    const p = root.querySelector("p");
+    expect(p?.querySelectorAll("br")).toHaveLength(2);
+    expect(p?.textContent).toBe("<div>hi</div>");
+  });
+
+  it("shows a tag alone on its line and an HTML comment as typed", () => {
+    const root = dom(renderMarkdown("<number>\n\nbefore\n<!-- note -->\nafter"));
+    expect(Array.from(root.querySelectorAll("p"), (p) => p.textContent)).toEqual([
+      "<number>",
+      "before",
+      "<!-- note -->",
+      "after",
+    ]);
+  });
+
+  it("keeps an autolink, a mention, a custom emoji and a code block around raw HTML", () => {
+    const root = dom(
+      renderMarkdown("<https://example.com> <@user-1> :party: <i>x</i>\n\n```\n<b>code</b>\n```", {
+        memberMap: new Map([["user-1", "Ada"]]),
+        customEmojiMap: new Map([["party", "https://other.example/e.png"]]),
+      }),
+    );
+    expect(root.querySelector('a[href="https://example.com"]')).not.toBeNull();
+    expect(root.querySelector(".mention")?.textContent).toBe("@Ada");
+    expect(root.querySelector('img[src="https://other.example/e.png"]')).not.toBeNull();
+    expect(root.querySelector("i")).toBeNull();
+    expect(root.querySelector("p")?.textContent).toContain("<i>x</i>");
+    expect(root.querySelector("pre > code")?.textContent).toBe("<b>code</b>");
+  });
+});
+
 describe("renderMarkdown sanitising", () => {
   it("keeps markup inside a code fence as text", () => {
     const html = renderMarkdown(
@@ -106,11 +154,6 @@ describe("renderMarkdown sanitising", () => {
     ["javascript link", "[click](javascript:alert(1))"],
     ["data html link", "[click](data:text/html,<script>alert(1)</script>)"],
     ["vbscript link", "[click](vbscript:msgbox(1))"],
-    ["raw img with javascript src", '<img src="javascript:alert(1)">'],
-    ["raw img with data html src", '<img src="data:text/html,<script>alert(1)</script>">'],
-    ["raw anchor with data html href", '<a href="data:text/html,<b>x</b>">x</a>'],
-    ["raw anchor with entity-encoded javascript", '<a href="&#106;avascript:alert(1)">x</a>'],
-    ["raw anchor with a tab in the scheme", '<a href="java\tscript:alert(1)">x</a>'],
     ["reference link to javascript", "[x][evil]\n\n[evil]: javascript:alert(1)"],
   ])("removes a dangerous URL: %s", (_name, markdown) => {
     for (const showInlineMedia of [true, false]) {
@@ -121,6 +164,21 @@ describe("renderMarkdown sanitising", () => {
       }
       expect(html.toLowerCase()).not.toContain("javascript:");
       expect(html.toLowerCase()).not.toContain("data:text/html");
+    }
+  });
+
+  it.each([
+    ["raw img with javascript src", '<img src="javascript:alert(1)">'],
+    ["raw img with data html src", '<img src="data:text/html,<script>alert(1)</script>">'],
+    ["raw anchor with data html href", '<a href="data:text/html,<b>x</b>">x</a>'],
+    ["raw anchor with entity-encoded javascript", '<a href="&#106;avascript:alert(1)">x</a>'],
+    ["raw anchor with a tab in the scheme", '<a href="java\tscript:alert(1)">x</a>'],
+  ])("shows a raw tag with a dangerous URL as text: %s", (_name, markdown) => {
+    for (const showInlineMedia of [true, false]) {
+      const root = dom(renderMarkdown(markdown, { showInlineMedia }));
+      expect(root.querySelector("img, a")).toBeNull();
+      expect(urlsOf(root.innerHTML)).toEqual([]);
+      expect(root.textContent).toContain(markdown.slice(0, 4));
     }
   });
 
@@ -137,38 +195,31 @@ describe("renderMarkdown sanitising", () => {
     expect(dom(renderMarkdown('<img src=x alt="a">')).querySelector("[src]")).toBeNull();
   });
 
-  it("strips event handlers from raw HTML before parsing it", () => {
+  it("hands raw HTML to the parser only as escaped text", () => {
     const spy = vi.spyOn(DOMParser.prototype, "parseFromString");
     try {
       renderMarkdown("<img src=x onerror=alert(1)>");
       expect(spy).toHaveBeenCalled();
-      expect(spy.mock.calls.every(([html]) => !/onerror/i.test(String(html)))).toBe(true);
+      expect(spy.mock.calls.every(([html]) => !/<img/i.test(String(html)))).toBe(true);
     } finally {
       spy.mockRestore();
     }
   });
 
-  it("keeps only the renderer's own classes", () => {
+  it("gives raw HTML no element, class or data attribute", () => {
     const html = renderMarkdown(
-      '<span class="fixed inset-0 z-50 hljs-keyword mention">x</span><p class="bg-rim-danger">y</p>',
+      '<span class="fixed inset-0 z-50 mention" data-user-id="u1">x</span><p class="bg-rim-danger">y</p>',
     );
     const root = dom(html);
-    expect(root.querySelector("span")?.className).toBe("hljs-keyword mention");
-    expect(root.querySelector("p")?.hasAttribute("class")).toBe(false);
-  });
-
-  it("drops data attributes other than the mention's user id", () => {
-    const html = renderMarkdown('<span data-code-copy="" data-user-id="u1">x</span>');
-    const span = dom(html).querySelector("span");
-    expect(span?.hasAttribute("data-code-copy")).toBe(false);
-    expect(span?.getAttribute("data-user-id")).toBe("u1");
+    expect(root.querySelector("span, [class], [data-user-id]")).toBeNull();
+    expect(root.querySelectorAll("p")).toHaveLength(1);
   });
 
   it("opens links in a new context without a referrer", () => {
-    const html = renderMarkdown(
-      '[a](https://example.com) <a href="https://b.example" target="_self">b</a>',
-    );
-    for (const a of dom(html).querySelectorAll("a")) {
+    const html = renderMarkdown("[a](https://example.com) <https://b.example>");
+    const links = dom(html).querySelectorAll("a");
+    expect(links).toHaveLength(2);
+    for (const a of links) {
       expect(a.getAttribute("target")).toBe("_blank");
       expect(a.getAttribute("rel")).toBe("noopener noreferrer");
     }
@@ -273,9 +324,8 @@ describe("renderMarkdown line breaks and GFM", () => {
   });
 
   it("renders strikethrough", () => {
-    const root = dom(renderMarkdown("~~gone~~ and <s>old</s>"));
-    expect(root.querySelector("del")?.textContent).toBe("gone");
-    expect(root.querySelector("s")?.textContent).toBe("old");
+    const root = dom(renderMarkdown("~~gone~~ and ~old~"));
+    expect(Array.from(root.querySelectorAll("del"), (d) => d.textContent)).toEqual(["gone", "old"]);
   });
 
   it("renders a table with its header row", () => {
@@ -304,24 +354,14 @@ describe("renderMarkdown line breaks and GFM", () => {
     expect(boxes[1].getAttributeNames().sort()).toEqual(["checked", "disabled", "type"]);
   });
 
-  it("keeps a raw input only as a disabled checkbox", () => {
+  it("shows a raw input as text, never as a control", () => {
     const root = dom(
       renderMarkdown(
         '<input type="text" value="x"><input type="checkbox" name="n" class="mention" onclick="alert(1)">',
       ),
     );
-    expect(root.querySelector("input[type=text]")).toBeNull();
-    const boxes = root.querySelectorAll("input");
-    expect(boxes).toHaveLength(1);
-    expect(boxes[0].getAttributeNames().sort()).toEqual(["disabled", "type"]);
-  });
-
-  it("keeps type, checked and disabled off every other element", () => {
-    const link = dom(
-      renderMarkdown('<a href="https://example.org" type="text/html" disabled>x</a>'),
-    ).querySelector("a");
-    expect(link?.hasAttribute("type")).toBe(false);
-    expect(link?.hasAttribute("disabled")).toBe(false);
+    expect(root.querySelector("input")).toBeNull();
+    expect(root.textContent).toContain('<input type="checkbox"');
   });
 });
 

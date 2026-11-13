@@ -3,6 +3,11 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import vectors from "../../../../protocol/plugin-chat-vectors.json";
 import { loadMlsModule } from "../../../test/e2eeWorld";
+import {
+  ConversationChangesStatus,
+  MessageChangeKind,
+} from "../../../core/graphql/generated/schema-types";
+import type { MessageItem } from "../../../core/types/messages";
 import { useAuthStore } from "../../auth/state/useAuthStore";
 import { webChatCache } from "../../plugins/chat/appMessageService";
 import type { PluginReadScope } from "../../plugins/chat/chatTypes";
@@ -10,7 +15,7 @@ import { createMessageService } from "../../plugins/chat/messageService";
 import { committed, database, readRecord, seal, type StoreName } from "./db";
 import { principalMentions } from "./pluginView";
 import { timestampUs } from "./messageRows";
-import { closeStores } from "./webCommands";
+import { closeStores, webMessageStore } from "./webCommands";
 import type { WebAccount } from "./webAccount";
 import { unlockTestVault } from "../../../test/accountVault";
 
@@ -178,6 +183,52 @@ describe("plugins reading the web app's encrypted store", () => {
     await expect(
       cache.list(WS, plain, null, null, { encryptedAllowed: false, knownEncrypted: [plain] }),
     ).rejects.toMatchObject({ code: -32000 });
+  });
+
+  it("read a plaintext conversation with chat.read once the feed has stored it", async () => {
+    const plain = "0192f000-0000-7000-8000-00000000c0e5";
+    const cache = webChatCache(account);
+    expect(await cache.list(WS, plain, null, null, plainReader)).toBeNull();
+    await webMessageStore.track(account, WS, plain);
+    expect(await webMessageStore.begin(account, WS, [plain])).toMatchObject({
+      conversations: [{ conversationId: plain, after: null }],
+    });
+    const message = {
+      ...vectors.rows[0].payload,
+      id: "0192f000-0000-7000-8000-0000000000f2",
+      conversationId: plain,
+      threadId: null,
+      authorId: vectors.rows[0].authorId,
+      text: "hello there",
+      sentAt: vectors.rows[0].sentAt,
+      isDeleted: false,
+      encryption: null,
+    };
+    await webMessageStore.apply(
+      account,
+      WS,
+      [
+        {
+          conversationId: plain,
+          status: ConversationChangesStatus.OK,
+          cursor: "c1",
+          hasMore: false,
+          changes: [
+            {
+              kind: MessageChangeKind.CREATED,
+              version: "1",
+              editedAt: null,
+              message: message as unknown as MessageItem,
+            },
+          ],
+        },
+      ],
+      [],
+    );
+    const page = await cache.list(WS, plain, null, null, plainReader);
+    expect(page?.messages.map((m) => [m.id, m.text, m.encrypted])).toEqual([
+      [message.id, "hello there", false],
+    ]);
   });
 
   it("page with `before` and wait for a complete history", async () => {

@@ -345,7 +345,8 @@ server from their messages; until then their card shows no handle, only their na
 **The composer.** "Write a message..." takes Markdown. An image from another site shows as a link
 marked "image": the app loads images only from its own server. A single line break shows as one.
 Besides bold, italics, code, lists, quotes and links, a message can hold ~~strikethrough~~, tables,
-horizontal rules (`---`) and task lists (`- [ ]`, `- [x]`), whose boxes are read-only.
+horizontal rules (`---`) and task lists (`- [ ]`, `- [x]`), whose boxes are read-only. HTML
+shows as the text you typed, so `<number>` stays `<number>`.
 <kbd>Enter</kbd> sends and <kbd>Shift+Enter</kbd> starts a new line. `/` at the start lists
 commands, and `:` followed by the start of a name suggests emoji. A workspace's custom emoji
 written as `:name:` show as their images. **Insert emoji** and **Attach file** sit beside the

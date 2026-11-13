@@ -47,7 +47,10 @@ export interface ChatCache {
     limit: number | null,
     scope: PluginReadScope,
   ): Promise<PluginChatMessage[]>;
-  /** Start caching a conversation, so a later list finds it. */
+  /**
+   * Start caching a conversation and wait briefly for its first sync, so a list right after it
+   * finds a short history.
+   */
   follow(workspaceId: string, conversationId: string): Promise<void>;
 }
 
@@ -214,13 +217,16 @@ export function createMessageService(deps: ChatDeps): MessageService {
     const workspaceId = workspace();
     const store = cache();
     const scope = await readable(workspaceId, conversationId, granted);
-    const page = await store
-      .list(workspaceId, conversationId, before, limit, scope)
-      .catch((error: unknown) => {
+    const read = () =>
+      store.list(workspaceId, conversationId, before, limit, scope).catch((error: unknown) => {
         throw cacheError(error);
       });
+    let page = await read();
     if (!page) {
       await store.follow(workspaceId, conversationId).catch(() => {});
+      page = await read();
+    }
+    if (!page) {
       throw new RpcError(
         ErrorCode.INTERNAL_ERROR,
         "this conversation is not stored on this device yet; try again shortly",

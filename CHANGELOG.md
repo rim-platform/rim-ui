@@ -71,6 +71,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   says what **Later** means; the password hint says "recovery kit"; and the sign-in page opens
   with "Welcome to RIM" when this device holds no account yet.
 
+### Fixed
+
+- New messages in the last conversation you opened count as unread while Home, Unreads or Settings
+  is in front of it. They were taken as read, so Home and the rail showed too few.
+- A word in angle brackets in a message, such as "reply /vote <number>", now shows as typed
+  instead of disappearing. Any HTML in a message shows as the text that was written, never as
+  markup.
+- A plugin reading a conversation this device has not stored yet, such as the Poll panel in a
+  channel on the web, gets its messages once a short history is stored, instead of "not fully
+  stored on this device yet": the app now waits up to 5 seconds for it. In the web app, a plugin
+  with only "Read your conversations" can read a plaintext channel once the browser has stored
+  it, instead of being refused as if the channel were encrypted.
+
 ## [0.0.12] - 2026-11-12
 
 ### Added
