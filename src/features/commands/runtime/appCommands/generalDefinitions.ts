@@ -1,7 +1,11 @@
 import type { TargetPickerKind } from "../../state/useCommandStore";
 import type { CommandDefinition } from "../../types";
 import { localCommand, PLUGIN_RUNNABLE } from "./localCommand";
-import { SETTINGS_TABS, settingsTabCommandId } from "../../../settings/settingsTabs";
+import {
+  SETTINGS_SECTION_TABS,
+  SETTINGS_TABS,
+  settingsTabCommandId,
+} from "../../../settings/settingsTabs";
 
 /**
  * The Settings pages a plugin may be granted opening: none about the account's keys and
@@ -31,6 +35,17 @@ const SETTINGS_TAB_COMMANDS: CommandDefinition[] = SETTINGS_TABS.map((tab) =>
     `Open Settings on the ${tab.label} page`,
     true,
     PLUGIN_OPENABLE_SETTINGS_TABS.has(tab.key) ? PLUGIN_RUNNABLE : {},
+  ),
+);
+
+/** The commands that open Settings on a section of a tab, such as the assistant's plugin commands. */
+const SETTINGS_SECTION_COMMANDS: CommandDefinition[] = SETTINGS_SECTION_TABS.map((section) =>
+  localCommand(
+    settingsTabCommandId(section.key),
+    "App",
+    `Settings: ${section.label}`,
+    section.description,
+    true,
   ),
 );
 
@@ -118,6 +133,7 @@ export const GENERAL_COMMANDS: CommandDefinition[] = [
     "Close the RIM window, as its close button does",
   ),
   ...SETTINGS_TAB_COMMANDS,
+  ...SETTINGS_SECTION_COMMANDS,
   localCommand(
     "settings.assign_keybind",
     "App",

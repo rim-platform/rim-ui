@@ -92,7 +92,7 @@ export function StartAgentSessionDialog({ onClose }: { onClose: () => void }) {
                 openAgentsSettings();
               }}
             >
-              Open Settings → Agents
+              Open Settings &gt; Agents
             </Button>
           </div>
         </div>

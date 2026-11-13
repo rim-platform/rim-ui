@@ -104,7 +104,7 @@ describe("Agent sessions box", () => {
       "Open Claude: Session d",
     ]);
     const list = screen.getByRole("list");
-    expect(within(list).getByText("Waiting for you")).toBeInTheDocument();
+    expect(within(list).getByText("Needs you")).toBeInTheDocument();
     expect(within(list).getByText("Ready")).toBeInTheDocument();
     expect(screen.getByTestId("count")).toHaveTextContent("1");
   });

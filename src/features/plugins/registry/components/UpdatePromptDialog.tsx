@@ -36,7 +36,7 @@ export function UpdatePromptDialog({ prompt, onReview, onLater }: UpdatePromptDi
             <li>New permissions: {plan.newCapabilities.join(", ")}</li>
           )}
           {plan.newAiCommands.length > 0 && (
-            <li>New commands the AI agent can run: {plan.newAiCommands.join(", ")}</li>
+            <li>New commands the assistant and agents can run: {plan.newAiCommands.join(", ")}</li>
           )}
           {plan.newCommands.length > 0 && (
             <li>New commands it can run: {plan.newCommands.join(", ")}</li>

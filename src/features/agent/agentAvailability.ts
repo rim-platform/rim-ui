@@ -4,9 +4,9 @@ import { AGENT_MANAGEMENT_COMMAND_IDS } from "../commands/runtime/appCommands/ag
 import { desktopShellAvailable, QUIT_COMMAND_ID } from "../desktop-shell/availability";
 
 /** What the agent's place shows in an app without the agent. */
-export const AGENT_DESKTOP_ONLY_MESSAGE = "The AI agent is available in the desktop app.";
+export const AGENT_DESKTOP_ONLY_MESSAGE = "The assistant is available in the desktop app.";
 
-/** Commands that open the AI agent, or the settings of programs connected to it. */
+/** Commands that open the assistant, or the settings of programs connected to RIM. */
 const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   "workspace.open_agent",
   "workspace.open_agents",
@@ -14,7 +14,7 @@ const AGENT_COMMAND_IDS: ReadonlySet<string> = new Set([
   ...AGENT_MANAGEMENT_COMMAND_IDS,
 ]);
 
-/** Whether this app has the AI agent, which runs in the desktop app only. */
+/** Whether this app has the assistant, which runs in the desktop app only. */
 export function agentAvailable(): boolean {
   return getRuntimeCapabilities(detectPlatform()).agent;
 }

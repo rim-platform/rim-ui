@@ -8,6 +8,8 @@ import { botsOfferedFor } from "../../../bots/availability";
 import { desktopShellAvailable } from "../../../desktop-shell/availability";
 import { isDirectSpace, useRelayStore } from "../../../relay/state/useRelayStore";
 import {
+  listedSettingsTab,
+  SETTINGS_SECTION_TABS,
   SETTINGS_TABS,
   settingsTabCommandId,
   visibleSettingsTabs,
@@ -63,7 +65,10 @@ export function moderatesWorkspace(workspaceId: string | null): boolean {
   );
 }
 
-/** Whether the settings tab `key` shows for the viewer now, read from what is cached. */
+/**
+ * Whether the settings tab `key` shows for the viewer now, read from what is cached. A section
+ * with a tab key of its own shows where the tab it is part of does.
+ */
 export function settingsTabOffered(key: SettingsTab): boolean {
   const workspaceId = useWorkspaceStore.getState().workspaceId;
   const info = queryClient.getQueryData<KnownServerInfo>(queryKeys.serverInfo);
@@ -79,11 +84,15 @@ export function settingsTabOffered(key: SettingsTab): boolean {
     inDirectSpace: isDirectSpace(workspaceId),
     accountMacros: accountMacrosOn(),
   });
-  return tabs.some((tab) => tab.key === key);
+  const listed = listedSettingsTab(key);
+  return tabs.some((tab) => tab.key === listed);
 }
 
 const SETTINGS_TAB_BY_COMMAND = new Map(
-  SETTINGS_TABS.map((tab) => [settingsTabCommandId(tab.key), tab.key]),
+  [...SETTINGS_TABS, ...SETTINGS_SECTION_TABS].map((tab) => [
+    settingsTabCommandId(tab.key),
+    tab.key,
+  ]),
 );
 
 /** The settings tab the command `commandId` opens, if it is one of the Settings tab commands. */

@@ -289,6 +289,10 @@ export const CLIENT_COMMAND_LABELS: Readonly<
     title: "Next Unread Conversation",
     description: "Go to the next conversation with unread messages.",
   },
+  "workspace.open_agent": {
+    title: "Open Assistant",
+    description: "Open the assistant panel",
+  },
 };
 
 /** `cmd` with the title and description this app shows for it, when it has its own. */

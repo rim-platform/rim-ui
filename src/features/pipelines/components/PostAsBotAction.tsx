@@ -157,7 +157,7 @@ export function PostAsBotFields({
             </div>
             {noChannels ? (
               <p className="text-xs text-rim-text-muted">
-                This bot is in no channels yet. Add it to one in Settings &gt; Bots.
+                This bot is in no channels yet. Add it to one in Settings &gt; Bots &amp; webhooks.
               </p>
             ) : (
               <div className="relative">

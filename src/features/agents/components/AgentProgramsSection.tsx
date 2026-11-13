@@ -37,14 +37,14 @@ const STATE_LABELS: Record<Exclude<ProgramState, "unknown">, string> = {
 };
 
 /**
- * Settings > Agents, Agents RIM can start: the supported agents, which RIM can install, and the
+ * Settings > Agents, Agents RIM starts: the supported agents, which RIM can install, and the
  * agent programs RIM may start, with adding more and signing in to them.
  */
 export function AgentProgramsSection() {
   if (detectPlatform() !== "desktop") {
     return (
       <div className="space-y-1">
-        <h2 className="text-base font-semibold text-rim-text">Agents RIM can start</h2>
+        <h3 className="text-base font-semibold text-rim-text">Agents RIM starts</h3>
         <p className="text-sm text-rim-text-muted">{DESKTOP_ONLY_MESSAGE}</p>
       </div>
     );
@@ -118,9 +118,9 @@ function ProgramList() {
     <section aria-labelledby="agent-programs-heading" className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="agent-programs-heading" className="text-base font-semibold text-rim-text">
-            Agents RIM can start
-          </h2>
+          <h3 id="agent-programs-heading" className="text-base font-semibold text-rim-text">
+            Agents RIM starts
+          </h3>
           <p className="mt-1 text-sm text-rim-text-muted">{PROGRAMS_NOTE}</p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -165,7 +165,7 @@ function ProgramList() {
         onSignIn={setSigningIn}
       />
 
-      <h3 className="pt-2 text-sm font-medium text-rim-text">Your agent programs</h3>
+      <h4 className="pt-2 text-sm font-medium text-rim-text">Your agent programs</h4>
       {profiles.length === 0 ? (
         <p className="text-sm text-rim-text-muted">
           None yet. Install one above, or choose Add for one you installed yourself or another

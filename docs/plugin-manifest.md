@@ -95,12 +95,13 @@ connect to once `network.fetch` is approved. The prompt names each host. It fail
 ## `commands`
 
 A list, default `[]`. Each entry joins the shared command registry as `plugin.<plugin_id>.<id>`:
-the palette, keybinds, macros and, when allowed, the AI agent.
+the palette, keybinds, macros and, when allowed, the assistant and agents.
 
 - **`id`**, **`title`**, **`description`** (strings, required): the key in the SDK's `commands`,
   the palette's line and its detail.
 - **`keybind_capable`** (bool, default `false`): offered when binding a key.
-- **`dangerous`** (bool, default `false`): the user confirms every run, the agent only proposes it.
+- **`dangerous`** (bool, default `false`): the user confirms every run, the assistant or an agent
+  only proposes it.
 - **`required_context`** (strings, default `[]`): `"conversation"`, `"message"` or `"workspace"`.
   It runs only there, with `conversation_id` and `thread_id`, `message_id`, `conversation_id` and
   `thread_id`, or `workspace_id` added to `args`; an argument of one of those names fails with
@@ -112,16 +113,17 @@ the palette, keybinds, macros and, when allowed, the AI agent.
   `<key>`, which the manifest's capabilities do not declare``.
 - **`arguments`** (list, default `[]`): by convention objects with `name`, `type`, `required` and
   `description`. The palette and keybinds pass no arguments, so they leave out a command with a
-  `required` one. The agent's tool schema takes `description`, and `type` when it is `string`,
+  `required` one. The assistant's tool schema takes `description`, and `type` when it is `string`,
   `integer`, `number`, `boolean`, `object` or `array`.
-- **`ai_callable`** (bool, default `false`): offers the command to the agent once the user allows
-  it in the plugin's AI access settings. The tool name `plugin__<plugin_id, dots as _>__<id>` must
+- **`ai_callable`** (bool, default `false`): offers the command to the assistant once the user
+  allows it in Settings > Assistant, under "Plugin commands it may run", and to an agent once the
+  user approves it for that agent. The tool name `plugin__<plugin_id, dots as _>__<id>` must
   match `[A-Za-z0-9_-]{1,64}`, or the command is not offered.
 - **`read_only`** (bool, default `false`): the plugin's claim that the command changes nothing. An
   agent outside RIM runs an approved `read_only` command without asking; every other approved
   command waits for a confirmation. RIM cannot verify the claim, and the approval screen says it is
   the plugin's. It cannot be combined with `dangerous`: ``command `<id>` cannot be both read_only
-  and dangerous``. It has no effect on the built-in agent.
+  and dangerous``. It has no effect on the assistant.
 - **`output_schema`** (JSON or `null`, default `null`): the JSON Schema of the payload. An
   `ai_callable` command fails with `REQUIRES_MANUAL_REVIEW`, and does not install, without one or
   when its root is not `"type": "object"`, sets `"additionalProperties": true`, or has neither
@@ -252,7 +254,7 @@ defaults do not change it. `network_origins`, a panel's `slot` and a setting's `
 manifest without them hashes as on a host without those fields; other absent options are `null`.
 
 It gates AI consent. When the hash differs from the recorded one and the manifest declares
-`ai_callable` commands, or the user approved some, the agent runs none of the plugin's commands
+`ai_callable` commands, or the user approved some, the assistant runs none of the plugin's commands
 until the user consents again (`manifest changed — re-consent required for AI commands`). Any
 change counts, since the old command set cannot be read from a hash: adding, removing or changing
 a `settings_schema` entry asks for AI consent again too.

@@ -15,7 +15,7 @@ export const STATUS_LABELS: Record<AgentSessionStatus, string> = {
   starting: "Starting",
   ready: "Ready",
   working: "Working",
-  waiting: "Waiting for you",
+  waiting: "Needs you",
   ended: "Ended",
   failed: "Failed",
 };
@@ -30,7 +30,7 @@ export function folderName(path: string): string {
 export const UNTITLED_SESSION = "New session";
 
 /** What the list says with no agent programs added. */
-export const ADD_PROGRAM_FIRST = "Add an agent program in Settings → Agents first";
+export const ADD_PROGRAM_FIRST = "Add an agent program in Settings > Agents first";
 
 /** Opens one session's page. */
 export function openAgentSession(key: string): void {
@@ -44,7 +44,7 @@ export function openAgentsSettings(): void {
 
 /** What the banner says when agents may not connect to RIM. */
 export function bridgeOffSentence(agentName: string): string {
-  return `RIM's tools are off. Turn on Let agents on this computer connect in Settings → Agents to let ${agentName} read and post in RIM.`;
+  return `RIM's tools are off. Turn on Let agents on this computer connect in Settings > Agents to let ${agentName} read and post in RIM.`;
 }
 
 /** What the banner says when the agent can't reach RIM's tools. */
@@ -63,14 +63,14 @@ export function cannotReadRimSentence(
 ): string {
   const reason =
     state === "bridge_off"
-      ? "RIM's tools are off in Settings → Agents."
+      ? "RIM's tools are off in Settings > Agents."
       : "it can't use RIM's tools.";
   return `${agentName} can't read RIM in this session: ${reason}`;
 }
 
 /** What the session says when the program for it was removed. */
 export const PROFILE_GONE =
-  "The agent program for this session was removed from Settings → Agents.";
+  "The agent program for this session was removed from Settings > Agents.";
 
 /** The most diff lines shown before "Show all". */
 export const DIFF_LINE_LIMIT = 400;

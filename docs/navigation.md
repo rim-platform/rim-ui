@@ -2,7 +2,7 @@
 
 Every place in the app can be reached from a visible control or a command, at every window
 width. Commands run from the palette and from a keybind. The commands this app adds itself, such as the
-ones for the audit log and the panels, are not on the server's list, so macros and the AI agent do
+ones for the audit log and the panels, are not on the server's list, so macros and the assistant do
 not get them.
 
 ## Window widths
@@ -71,14 +71,16 @@ gestures and no bottom bar.
 | The workspace's members | Members button above the conversation list | `workspace.toggle_member_directory` |
 | Command palette | The search field in the top bar, then <kbd>&gt;</kbd> | `workspace.open_command_palette` |
 | The place before or after this one | Back and Forward in the top bar | `workspace.go_back`, `workspace.go_forward` |
+| The assistant's plugin commands | Plugin commands it may run, in Settings > Assistant | `settings.open.plugin_ai` |
 | Agents | Settings > Agents | `workspace.open_agents` |
-| Bots and webhooks | Settings > Bots | `workspace.open_bots` |
+| Bots and webhooks | Settings > Bots & webhooks | `workspace.open_bots` |
 | A channel's incoming webhook | New webhook… in the channel's menu | none |
-| A webhook's format, and what a service sends to it | Edit format on the webhook's row in Settings > Bots, or Custom in New webhook | none |
+| A webhook's format, and what a service sends to it | Edit format on the webhook's row in Settings > Bots & webhooks, or Custom in New webhook | none |
 | The conversation list, or the drawer in a narrow window | Menu button in the top bar of a narrow window | `workspace.toggle_sidebar` |
 
-Settings tabs: Profile, Account, Security, Desktop, Contacts, Messages, Direct messages,
-Notifications, History, Keybinds, Keyboard, Commands, Macros, Pipelines, Plugins, Plugin AI,
-State, Emoji, Agents, AI Agent, Workspace, Moderation, Bots, Instance moderation, About. Some are
+Settings tabs, by group: You (Profile, Account, Security, Desktop, Contacts); Messaging
+(Messages, Direct messages, Notifications, History, Emoji); Shortcuts & automation (Keyboard,
+Keybinds, Commands, Macros, Pipelines, State); Tools & AI (Plugins, Assistant, Agents);
+Workspace (Workspace, Moderation, Bots & webhooks); Instance (Instance moderation); About. Some are
 shown only to a role, a server feature or the desktop app, as the Settings page decides;
 `src/shell/reachable.test.tsx` checks that every tab is listed for someone who may see it.

@@ -103,8 +103,8 @@ export function AiMacroBuilder({
           <div className="flex items-start gap-2.5 rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rim-warm" />
             <p className="text-sm text-rim-warm">
-              No AI provider configured. Go to <strong>Settings &rsaquo; AI Agent</strong> to add
-              your API key.
+              No AI provider configured. Go to <strong>Settings &gt; Assistant</strong> to add your
+              API key.
             </p>
           </div>
         )}

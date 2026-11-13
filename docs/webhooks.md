@@ -23,7 +23,7 @@ plain text.
 
 - You're the workspace's **Owner or a Moderator**.
 - The workspace has a **bot**. Every webhook posts as a bot, so the channel shows who posted. Make
-  one in **Settings > Bots** with **New bot**: give it a name, say **Who runs it** and **Where what
+  one in **Settings > Bots & webhooks** with **New bot**: give it a name, say **Who runs it** and **Where what
   it reads goes**. Everyone in the workspace sees those two lines.
 - The channel is **not encrypted and not archived**. Encrypted channels can't have webhooks.
 - A channel has **one webhook at a time**.
@@ -37,7 +37,7 @@ There are two ways in:
 
 - **From the channel:** open the channel's menu (right-click it in the list, or **…** in its header)
   and choose **New webhook…**. The channel is filled in for you.
-- **From Settings:** **Settings > Bots**, then **New webhook** under **Incoming webhooks**, and
+- **From Settings:** **Settings > Bots & webhooks**, then **New webhook** under **Incoming webhooks**, and
   choose the channel.
 
 Then choose the bot and a **Format**, and press **Create webhook**. The bot joins the channel if it
@@ -74,7 +74,7 @@ they are.
 ## Write your own format
 
 Choose **Custom** and press **Write the format**, or **Edit format** on a webhook's row in
-**Settings > Bots**. Editing keeps the same URL, so nothing changes in the service.
+**Settings > Bots & webhooks**. Editing keeps the same URL, so nothing changes in the service.
 
 A format is a list of **rules**. The first rule that holds decides the post:
 
@@ -118,7 +118,8 @@ it, and closing the editor ends it.
 **Build with AI** drafts the rules for you from a sentence, such as "One line when a backup fails,
 with the host and the reason", and the sample in Try it.
 
-- In the desktop app, with your own AI key set up ([The AI agent](ai-agent.md)), it asks your model
+- In the desktop app, with your own AI provider key set up in Settings > Assistant
+  ([The assistant](ai-agent.md)), it asks your model
   directly. It says what it will send, and to which provider, before anything is sent. RIM runs no
   model of its own.
 - In the web app, or without a key, **Copy prompt** copies the same request for any AI you like.
@@ -131,7 +132,7 @@ The answer is only a draft. RIM checks it against the sample, and nothing is sav
 
 ## Look after your webhooks
 
-**Settings > Bots** lists each webhook with its channel, bot, format and when it was last used. A
+**Settings > Bots & webhooks** lists each webhook with its channel, bot, format and when it was last used. A
 webhook with a ready-made format other than GitHub, or one you edited, shows as Custom.
 
 - **Edit format** changes what it posts. The URL stays the same.
@@ -151,7 +152,7 @@ For a bot that reads, reacts or answers, use the bot API in rim-server's
 
 ## Next
 
-- [Bots in the client](bots.md): how bots are marked, and everything in Settings > Bots.
+- [Bots in the client](bots.md): how bots are marked, and everything in Settings > Bots & webhooks.
 - [Connect an AI agent](agents.md): letting a program on your computer read and post, with your
   approval.
 - [Commands and automation](commands-and-automation.md): pipelines that post as a bot.

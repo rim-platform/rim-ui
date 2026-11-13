@@ -40,7 +40,7 @@ export async function loadProvider(providerId: string): Promise<AiProvider> {
       provider = createOpenAiProvider();
     } else {
       throw new Error(
-        `Provider "${providerId}" is not supported. Configure the AI agent in Settings.`,
+        `Provider "${providerId}" is not supported. Set up the assistant in Settings > Assistant.`,
       );
     }
     registerProvider(provider);

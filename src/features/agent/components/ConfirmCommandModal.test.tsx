@@ -51,6 +51,8 @@ describe("ConfirmCommandModal — render gate", () => {
     });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByTestId("rim-system-badge")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Assistant wants to:");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Initiated by the assistant.");
   });
 
   it("counts as an open host dialog while it shows", () => {
@@ -594,7 +596,7 @@ describe("ConfirmCommandModal — a command the user ran", () => {
     const dialog = screen.getByRole("dialog", { name: "Confirm: Purge Channel" });
     expect(dialog).toHaveTextContent("Delete every message in the channel.");
     expect(dialog).toHaveTextContent("Initiated by you.");
-    expect(dialog).not.toHaveTextContent("Agent wants to:");
+    expect(dialog).not.toHaveTextContent("Assistant wants to:");
     expect(screen.queryByTestId("initiator-chip")).not.toBeInTheDocument();
     expect(screen.getByTestId("args-block")).toHaveTextContent("general");
   });

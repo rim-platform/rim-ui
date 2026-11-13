@@ -166,7 +166,9 @@ describe("PluginSettingsPage layout", () => {
     ]);
     render(<PluginSettingsPage />);
     fireEvent.click(screen.getByRole("button", { name: /Test Plugin/, expanded: false }));
-    const section = screen.getByRole("region", { name: "What your agents can do with it" });
+    const section = screen.getByRole("region", {
+      name: "What the assistant and agents can do with it",
+    });
     expect(section).toHaveTextContent("0 / 1 AI commands approved");
     fireEvent.click(within(section).getByRole("button", { name: "Open Agents settings" }));
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
@@ -181,7 +183,7 @@ describe("PluginSettingsPage layout", () => {
     listPlugins([makePlugin()]);
     render(<PluginSettingsPage />);
     fireEvent.click(screen.getByRole("button", { name: /Test Plugin/, expanded: false }));
-    expect(screen.queryByText("What your agents can do with it")).toBeNull();
+    expect(screen.queryByText("What the assistant and agents can do with it")).toBeNull();
   });
 
   it("shows invisible and bidirectional characters of a name by their code points", () => {

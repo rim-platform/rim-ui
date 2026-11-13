@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../../shared/ui/Button";
+import { runCommandFromClick } from "../../commands/runtime/runFromClick";
+import { PluginAiConsentPanel } from "../../plugins/components/PluginAiConsentPanel";
+import { settingsTabCommandId } from "../../settings/settingsTabs";
 import { toast } from "../../../shared/toast/useToastStore";
 import { useRuntime } from "../../../core/runtime/RuntimeProvider";
 import { useAgentStore } from "../state/useAgentStore";
@@ -167,9 +170,21 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
 // Main panel
 // ──────────────────────────────────────────────────────────────
 
+/** What the Assistant tab's first line says the assistant is, before its link to Agents. */
+const ASSISTANT_INTRO =
+  "The assistant built into RIM: a panel (Ctrl+Shift+A) that searches, summarizes and runs " +
+  "commands for you with your own AI provider key. The key stays in your secret vault on this " +
+  "device. Programs on this computer, such as Claude Code, are set up in";
+
+interface AgentSettingsPanelProps {
+  /** Whether to scroll to the plugin commands the assistant may run when the panel opens. */
+  showPluginCommands?: boolean;
+}
+
 /**
- * The "AI Agent" settings panel: provider, keyring-backed API key saved only
- * after it validates, model and system prompt.
+ * The Assistant settings panel: provider, keyring-backed API key saved only
+ * after it validates, model and system prompt, then the plugin commands the
+ * assistant may run.
  *
  * Layout (top → bottom):
  *   1. Heading + subhead (keyring storage statement)
@@ -180,14 +195,16 @@ function getStaticModelsForProvider(providerId: string): AiModelDef[] {
  *      └─ Inline result line after verify: verified / invalid / network_error
  *   5. Model picker (gated on keyConfigured)
  *   6. Custom system prompt textarea (gated on keyConfigured)
+ *   7. Plugin commands it may run
  *
  * State contract:
  *   - Transient key/verify state is local (never stored in zustand).
  *   - `settings.providerId`, `settings.modelId`, `settings.systemPrompt`
  *     live in `useAgentStore` (zustand, persisted to localStorage).
  */
-export function AgentSettingsPanel() {
+export function AgentSettingsPanel({ showPluginCommands = false }: AgentSettingsPanelProps) {
   const { capabilities } = useRuntime();
+  const pluginCommandsRef = useRef<HTMLElement>(null);
   const settings = useAgentStore((s) => s.settings);
   const updateSettings = useAgentStore((s) => s.updateSettings);
   const aiCommands = useServerFeature("ai_commands");
@@ -231,6 +248,11 @@ export function AgentSettingsPanel() {
       if (request === modelsRequest.current) setFetchingModels(false);
     }
   }, []);
+
+  // ── Opened on the plugin commands: scroll to them ──────────────────────────
+  useEffect(() => {
+    if (showPluginCommands) pluginCommandsRef.current?.scrollIntoView({ block: "start" });
+  }, [showPluginCommands]);
 
   // ── On mount / provider change: check keyring presence ─────────────────────
   useEffect(() => {
@@ -328,10 +350,17 @@ export function AgentSettingsPanel() {
     <div data-testid="agent-settings" className="space-y-6">
       {/* Heading */}
       <div>
-        <h2 className="text-base font-semibold text-rim-text">AI Agent</h2>
+        <h2 className="text-base font-semibold text-rim-text">Assistant</h2>
         <p className="mt-1 text-sm text-rim-text-muted">
-          Configure an AI provider to use the agent. Keys are stored in your secret vault and never
-          leave your device.
+          {ASSISTANT_INTRO}{" "}
+          <button
+            type="button"
+            onClick={() => void runCommandFromClick(settingsTabCommandId("agents"))}
+            className="text-rim-accent underline-offset-2 hover:underline"
+          >
+            Agents
+          </button>
+          .
         </p>
       </div>
 
@@ -346,9 +375,9 @@ export function AgentSettingsPanel() {
       {/* Data-leakage warning — must be first thing after the heading */}
       <div className="rounded-lg border border-rim-warm/30 bg-rim-warm/5 px-4 py-3">
         <p className="text-xs text-rim-warm">
-          When you use the AI Agent, workspace data (messages, channel names, member usernames) is
-          sent to the selected AI provider for processing. Do not use the agent if your workspace
-          contains sensitive data that should not be shared with third parties.
+          When you use the assistant, workspace data (messages, channel names, member usernames) is
+          sent to the selected AI provider for processing. Do not use the assistant if your
+          workspace contains sensitive data that should not be shared with third parties.
         </p>
       </div>
 
@@ -551,6 +580,23 @@ export function AgentSettingsPanel() {
           )}
         </>
       )}
+
+      <section
+        ref={pluginCommandsRef}
+        aria-labelledby="assistant-plugin-commands-heading"
+        className="space-y-3 border-t border-rim-line pt-6"
+      >
+        <div>
+          <h3 id="assistant-plugin-commands-heading" className="text-sm font-medium text-rim-text">
+            Plugin commands it may run
+          </h3>
+          <p className="mt-1 text-xs text-rim-text-muted">
+            Which plugin commands the assistant may run for you without asking each time. Approve
+            only what you&apos;d let it do on its own.
+          </p>
+        </div>
+        <PluginAiConsentPanel />
+      </section>
     </div>
   );
 }

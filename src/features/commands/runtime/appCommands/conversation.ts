@@ -276,8 +276,8 @@ export const CONVERSATION_COMMANDS: CommandDefinition[] = [
   localCommand(
     "agents.allow_in_encrypted_conversation",
     "Agents",
-    "Let the AI Agent Read This Conversation…",
-    "Allow the AI agent to use the open encrypted conversation, after a warning",
+    "Let the Assistant Read This Conversation…",
+    "Allow the assistant to use the open encrypted conversation, after a warning",
     false,
   ),
 ];

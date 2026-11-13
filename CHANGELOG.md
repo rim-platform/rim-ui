@@ -34,6 +34,19 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   `checkInstall` refuses a command that is both `read_only` and `dangerous`, and checks the
   `runs_commands` rules.
 
+### Changed
+
+- The AI agent built into the desktop app is now called the **Assistant**: its Settings tab, its
+  panel (<kbd>Ctrl+Shift+A</kbd>, **Open Assistant**), the conversation menu's "Assistant: on in
+  this conversation", `/agent` ("Ask the assistant") and the palette's **Assistant & Agents**
+  category. Settings has new groups: You, Messaging, Shortcuts & automation, Tools & AI
+  (Plugins, Assistant, Agents), Workspace, Instance and About; Emoji moved to Messaging and State
+  to Shortcuts & automation. Plugin AI is now the section "Plugin commands it may run" of
+  Assistant, Bots is "Bots & webhooks", and Agents starts by saying what agents are for, with a
+  link to Assistant. About lists what each part of RIM is for. Keybinds to Settings tabs keep
+  working, "Settings: Plugin AI" included, which opens that section as "Settings: Assistant's
+  Plugin Commands".
+
 ## [0.0.12] - 2026-11-12
 
 ### Added

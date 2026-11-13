@@ -325,7 +325,11 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
             {/* Title + subtitle */}
             <div>
               <h2 id={titleId} className="break-words text-xl font-medium text-rim-text">
-                {outside ? `${outside.name} wants to:` : byUser ? "Confirm:" : "Agent wants to:"}{" "}
+                {outside
+                  ? `${outside.name} wants to:`
+                  : byUser
+                    ? "Confirm:"
+                    : "Assistant wants to:"}{" "}
                 <span className="font-mono text-rim-warm">{request.toolName}</span>
               </h2>
               {/* `description` is the human-facing consequence line, written
@@ -346,7 +350,7 @@ function ConfirmCommandModalContent({ request, onApprove, onReject }: ContainerP
                 ? "Initiated by a program outside RIM."
                 : byUser
                   ? "Initiated by you."
-                  : "Initiated by AI agent."}
+                  : "Initiated by the assistant."}
               {crossChannel
                 ? ` Destination differs from active conversation; will post in ${
                     fromOutside
