@@ -4,6 +4,7 @@ import { House, MessagesSquare, Plus } from "lucide-react";
 import { runCommandFromClick } from "../../features/commands/runtime/runFromClick";
 import { useWorkspaceStore } from "../../features/workspaces/state/useWorkspaceStore";
 import { useMyServers } from "../../features/workspaces/api/useMyServers";
+import { useCanModerate } from "../../features/workspaces/api/useMyServerRole";
 import { ownerName, workspaceLabels } from "../../features/workspaces/workspaceLabel";
 import { useIsDirectSpace, useRelayStore } from "../../features/relay/state/useRelayStore";
 import { useDirectSpaceIds } from "../../features/relay/api/useDirectInbox";
@@ -71,6 +72,8 @@ export function WorkspaceRail() {
   const labels = workspaceLabels(workspaces);
   const acrossWorkspaces = useShellStore((s) => spansWorkspaces(s.mainSurface.kind));
   const directSpaceOpen = useIsDirectSpace(workspaceId);
+  // The audit log is for the workspace's Owners and Moderators, as the Moderation tab is.
+  const moderates = useCanModerate(workspaceId ?? undefined);
   const inDirectSpace = directSpaceOpen && !acrossWorkspaces;
   const directSpaceIds = useDirectSpaceIds();
   const directUnread = useUnreadStore((s) =>
@@ -159,7 +162,9 @@ export function WorkspaceRail() {
         </button>
 
         <div className="mt-auto pt-2">
-          <RailFooter auditLog={Boolean(workspaceId) && !directSpaceOpen && !acrossWorkspaces} />
+          <RailFooter
+            auditLog={moderates && Boolean(workspaceId) && !directSpaceOpen && !acrossWorkspaces}
+          />
         </div>
       </aside>
     </>

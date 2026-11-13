@@ -14,7 +14,11 @@ vi.mock("../../commands/runtime/runFromClick", () => ({
 const facts = vi.hoisted(() => ({
   desktop: false,
   moderator: false,
+  searchKeystroke: null as string | null,
   channels: [] as { id: string; isArchived: boolean }[],
+}));
+vi.mock("../../commands/hooks/useKeybindLabel", () => ({
+  useKeybindLabel: () => facts.searchKeystroke,
 }));
 vi.mock("../../agent/agentAvailability", () => ({ agentAvailable: () => facts.desktop }));
 vi.mock("../../bots/availability", () => ({ useCanManageBots: () => facts.moderator }));
@@ -31,6 +35,7 @@ describe("the Getting started box", () => {
     run.mockReset();
     facts.desktop = false;
     facts.moderator = false;
+    facts.searchKeystroke = null;
     facts.channels = [
       { id: "c-old", isArchived: true },
       { id: "c-general", isArchived: false },
@@ -51,7 +56,7 @@ describe("the Getting started box", () => {
     render(<GettingStartedBody />);
     expect(titles()).toEqual([
       "Say hello",
-      "Run anything with Ctrl+K",
+      "Search and run anything",
       "Catch up on Unreads",
       "Add a tool beside the conversation",
       "Make Home yours",
@@ -64,7 +69,7 @@ describe("the Getting started box", () => {
     render(<GettingStartedBody />);
     expect(titles()).toEqual([
       "Say hello",
-      "Run anything with Ctrl+K",
+      "Search and run anything",
       "Catch up on Unreads",
       "Add a tool beside the conversation",
       "Bring alerts into a channel",
@@ -74,10 +79,23 @@ describe("the Getting started box", () => {
     ]);
   });
 
+  it("shows the search keystroke in the hint, the default until one is bound", () => {
+    const { unmount } = render(<GettingStartedBody />);
+    expect(screen.getByText(/One box for messages, channels and commands/).textContent).toBe(
+      "One box for messages, channels and commands (Ctrl+Shift+F)",
+    );
+    unmount();
+    facts.searchKeystroke = "Ctrl+J";
+    render(<GettingStartedBody />);
+    expect(screen.getByText(/One box for messages, channels and commands/).textContent).toBe(
+      "One box for messages, channels and commands (Ctrl+J)",
+    );
+  });
+
   it("leaves out Say hello where the workspace has no channel", () => {
     facts.channels = [{ id: "c-old", isArchived: true }];
     render(<GettingStartedBody />);
-    expect(titles()[0]).toBe("Run anything with Ctrl+K");
+    expect(titles()[0]).toBe("Search and run anything");
   });
 
   it("runs each row's command", async () => {
@@ -87,7 +105,7 @@ describe("the Getting started box", () => {
     render(<GettingStartedBody />);
     const expected: [string, string, unknown?][] = [
       ["Say hello", "workspace.navigate_to_channel", { conversationId: "c-general" }],
-      ["Run anything with Ctrl+K", "workspace.open_command_palette"],
+      ["Search and run anything", "workspace.open_search"],
       ["Catch up on Unreads", "workspace.open_unreads"],
       ["Add a tool beside the conversation", "settings.open.plugins"],
       ["Bring alerts into a channel", "settings.open.bots"],

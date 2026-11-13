@@ -387,6 +387,18 @@ describe("Home's new boxes", () => {
     });
   });
 
+  describe("Add a box on the web", () => {
+    it("doesn't offer the two agent boxes", async () => {
+      serve();
+      const user = userEvent.setup();
+      renderHome();
+      await startEditing(user);
+      expect(screen.getByRole("button", { name: "Add Channel" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Add Your agents' runs" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Add Agent sessions" })).toBeNull();
+    });
+  });
+
   describe("settings", () => {
     it("opens a channel's settings before adding it, and Cancel adds nothing", async () => {
       serve();

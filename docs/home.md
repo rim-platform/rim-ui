@@ -39,7 +39,7 @@ Home does:
 | Row | Runs |
 |---|---|
 | Say hello | Opens the first channel under Channels in the workspace in view; shown only where it has a channel |
-| Run anything with Ctrl+K | Opens the command palette |
+| Search and run anything | Opens the search box, which finds messages and channels and runs commands; the hint shows its keystroke, except at phone width |
 | Catch up on Unreads | Opens Unreads |
 | Add a tool beside the conversation | Opens Settings > Plugins |
 | Bring alerts into a channel | Opens Settings > Bots & webhooks; shown to an Owner or Moderator |
@@ -49,6 +49,9 @@ Home does:
 
 **I'm done with this** takes the box off Home and saves the layout, as **Remove** does. **Add a
 box** puts it back. A layout you saved before this box existed is left as it is.
+
+**Add a box** doesn't list a box the device can't run: the web app leaves out Your agents' runs
+and Agent sessions. A saved layout that already holds one still shows it, with its reason.
 
 Channel and Quick actions can be on Home more than once, each with its own settings; the other
 boxes once.

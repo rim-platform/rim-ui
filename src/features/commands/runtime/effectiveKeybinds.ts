@@ -164,8 +164,13 @@ export function useHomeAppKeybinds(workspaceId: string | null): readonly Resolve
   );
 }
 
-/** The keybinds in force on this device right now, leaving out commands this app does not offer. */
-export function useEffectiveKeybinds(): ResolvedKeybind[] {
+/**
+ * The keybinds in force on this device right now, leaving out commands this app does not offer.
+ *
+ * @param forKeyPress - Keep the assistant's keystroke on the web, where pressing it says the
+ *   assistant is in the desktop app instead of doing nothing. Lists of bindings leave it out.
+ */
+export function useEffectiveKeybinds(forKeyPress = false): ResolvedKeybind[] {
   const workspaceId = useWorkspaceStore((s) => s.workspaceId);
   const { data: server } = useResolvedKeybinds(workspaceId ?? undefined);
   const homeApp = useHomeAppKeybinds(workspaceId);
@@ -173,9 +178,11 @@ export function useEffectiveKeybinds(): ResolvedKeybind[] {
   const profile = useActiveKeybindProfile();
   return useMemo(
     () =>
-      resolveEffectiveKeybinds(device, server, profile, homeApp).filter((kb) =>
-        commandOfferedHere(kb.commandId),
+      resolveEffectiveKeybinds(device, server, profile, homeApp).filter(
+        (kb) =>
+          (forKeyPress && kb.commandId === "workspace.open_agent") ||
+          commandOfferedHere(kb.commandId),
       ),
-    [device, server, profile, homeApp],
+    [device, server, profile, homeApp, forKeyPress],
   );
 }

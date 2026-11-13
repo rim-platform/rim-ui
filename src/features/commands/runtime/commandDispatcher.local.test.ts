@@ -68,6 +68,11 @@ describe("this app's own commands", () => {
     }
   });
 
+  it("says the assistant is in the desktop app when it is run on the web", () => {
+    runDesktopLocalCommand("workspace.open_agent");
+    expect(toast.info).toHaveBeenCalledWith("The assistant is available in the desktop app.");
+  });
+
   it("opens the agents settings", () => {
     runDesktopLocalCommand("workspace.open_agents");
     expect(useShellStore.getState().mainSurface).toEqual({ kind: "settings", tab: "agents" });
