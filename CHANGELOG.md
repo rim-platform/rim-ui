@@ -98,6 +98,18 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Workspace settings > Public link on a server's default workspace says everyone who signs up
   joins it, instead of showing the server's refusal as an error.
 
+### Security
+
+- Links in messages and link previews open in a new tab that has no access to the app's tab, so a
+  linked page can no longer redirect the app to another page. The web image also sends a
+  same-origin opener policy.
+- The web image sends HTTPS-only (HSTS) and the other security headers on every path, including
+  the static assets.
+- In the permission prompt, unchecking a permission the plugin already holds now takes it back
+  when you approve, in the web app and on the desktop.
+- The install text for a sandboxed plugin says that what it is shown can still be sent out in
+  small amounts, for example by the plugin navigating its frame, even without network access.
+
 ## [0.0.12] - 2026-11-12
 
 ### Added

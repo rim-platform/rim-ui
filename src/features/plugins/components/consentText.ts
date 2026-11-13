@@ -27,7 +27,7 @@ export function capabilityLabel(capability: string): string {
 /** What kind of plugin this is, in the app's words, above the permissions it asks for. */
 export const KIND_CONSENT_TEXT: Record<PluginRuntimeKind, string> = {
   WebSandboxed:
-    "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it could still leak out in small ways, such as a DNS lookup.",
+    "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it can still be sent out in small amounts, such as by a DNS lookup or by the plugin navigating its frame once, which then stops it. Install a plugin that reads your messages only if you trust its author with them.",
   DesktopLocalProcess:
     "Runs as a program on this computer with your account's access. It is not sandboxed: it can read your files and use the network whatever you approve below. Install it only if you trust its author.",
 };
