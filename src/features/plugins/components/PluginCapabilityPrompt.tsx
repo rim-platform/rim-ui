@@ -6,7 +6,11 @@ import { toast } from "../../../shared/toast";
 import { Dialog } from "../../../shared/ui/Dialog";
 import { Button } from "../../../shared/ui/Button";
 import { usePluginEnable } from "../api/usePluginActions";
-import { useApproveCapabilities, useGrantCommands } from "../api/usePluginCapabilities";
+import {
+  useApproveCapabilities,
+  useGrantCommands,
+  useRevokeCapability,
+} from "../api/usePluginCapabilities";
 import {
   parsePluginCapabilities,
   runtimeKind,
@@ -74,6 +78,7 @@ export function PluginCapabilityPrompt({
       ),
   );
   const approve = useApproveCapabilities();
+  const revoke = useRevokeCapability();
   const grantCommands = useGrantCommands();
   const enable = usePluginEnable();
   const commandRows = useRunsCommandRows(plugin.runs_commands ?? []);
@@ -114,9 +119,12 @@ export function PluginCapabilityPrompt({
     });
   }
 
-  /** Closes the prompt, or turns the plugin on first when it was opened to start it. */
-  function finish() {
-    if (!start) {
+  /**
+   * Closes the prompt, or turns the plugin on first when it was opened to start it or when
+   * taking a permission back stopped it.
+   */
+  function finish(restart = false) {
+    if (!start && !restart) {
       onClose();
       return;
     }
@@ -140,18 +148,50 @@ export function PluginCapabilityPrompt({
     const newCommands = commandRows
       .filter((row) => commandsSelected.has(row.id) && !alreadyGranted.has(row.id))
       .map((row) => row.id);
+    // An approved permission the person unticked is taken back before the rest is granted.
+    const revoked = plugin.approved_capabilities.filter(
+      (cap) =>
+        parsedCapabilities.includes(cap as PluginCapability) &&
+        !selected.has(cap as PluginCapability),
+    );
+    if (revoked.length === 0) {
+      grantSelected(newCommands, false);
+      return;
+    }
+    void takeBack(revoked).then((failure) => {
+      if (failure !== null) {
+        setGrantError(`A permission could not be taken back: ${failure}`);
+        return;
+      }
+      grantSelected(newCommands, revoked.length > 0 && plugin.enabled);
+    });
+  }
+
+  /** Revokes each of `capabilities` in turn; resolves with the first failure's message, if any. */
+  async function takeBack(capabilities: string[]): Promise<string | null> {
+    try {
+      for (const capability of capabilities) {
+        await revoke.mutateAsync({ pluginId: plugin.plugin_id, capability });
+      }
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function grantSelected(newCommands: string[], restart: boolean) {
     approve.mutate(
       { pluginId: plugin.plugin_id, capabilities: Array.from(selected) },
       {
         onSuccess: () => {
           if (newCommands.length === 0) {
-            finish();
+            finish(restart);
             return;
           }
           grantCommands.mutate(
             { pluginId: plugin.plugin_id, commandIds: newCommands },
             {
-              onSuccess: finish,
+              onSuccess: () => finish(restart),
               onError: (err) =>
                 setGrantError(
                   `The permissions are saved, but the commands were not granted: ${err.message}`,
@@ -268,7 +308,9 @@ export function PluginCapabilityPrompt({
           {!startError && !grantError && (
             <Button
               size="sm"
-              isLoading={approve.isPending || grantCommands.isPending || enable.isPending}
+              isLoading={
+                approve.isPending || revoke.isPending || grantCommands.isPending || enable.isPending
+              }
               onClick={handleApprove}
             >
               {start ? "Approve and turn on" : "Approve"}

@@ -3,9 +3,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 const approve = vi.hoisted(() => vi.fn());
 const grant = vi.hoisted(() => vi.fn());
+const revoke = vi.hoisted(() => vi.fn());
 vi.mock("../api/usePluginCapabilities", () => ({
   useApproveCapabilities: vi.fn(() => ({ mutate: approve, isPending: false })),
   useGrantCommands: vi.fn(() => ({ mutate: grant, isPending: false })),
+  useRevokeCapability: vi.fn(() => ({ mutateAsync: revoke, isPending: false })),
 }));
 const serverCommands = vi.hoisted(() => [
   {
@@ -82,7 +84,7 @@ describe("PluginCapabilityPrompt consent text", () => {
     );
     expect(
       screen.getByText(
-        "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it could still leak out in small ways, such as a DNS lookup.",
+        "Runs sandboxed in this app. It cannot read your files, run programs, or use your RIM session. It reaches RIM only through the permissions below. Without network access it cannot exchange data with other sites, but what you show it can still be sent out in small amounts, such as by a DNS lookup or by the plugin navigating its frame once, which then stops it. Install a plugin that reads your messages only if you trust its author with them.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Runs as a program on this computer/)).toBeNull();
@@ -187,6 +189,41 @@ describe("PluginCapabilityPrompt chat lines", () => {
     expect(new Set(approve.mock.calls[0][0].capabilities)).toEqual(
       new Set(["chat.write", "chat.write.encrypted"]),
     );
+  });
+});
+
+describe("PluginCapabilityPrompt taking permissions back", () => {
+  const held = plugin({
+    runtime_kind: "WebSandboxed",
+    capabilities: ["chat.read", "network.fetch"],
+    network_origins: ["https://api.github.com"],
+    approved_capabilities: ["chat.read"],
+  });
+
+  it("revokes an approved permission the person unticked, then approves the rest", async () => {
+    approve.mockReset();
+    revoke.mockReset().mockResolvedValue(undefined);
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={held} />);
+    const [read, fetchBox] = screen.getAllByRole("checkbox");
+    fireEvent.click(read);
+    expect(fetchBox).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await vi.waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+    expect(revoke).toHaveBeenCalledWith({
+      pluginId: "chat.rim.github-prs",
+      capability: "chat.read",
+    });
+    expect(approve.mock.calls[0][0].capabilities).toEqual(["network.fetch"]);
+  });
+
+  it("grants nothing when a revocation fails", async () => {
+    approve.mockReset();
+    revoke.mockReset().mockRejectedValue(new Error("store is locked"));
+    render(<PluginCapabilityPrompt open onClose={() => {}} plugin={held} />);
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText(/store is locked/)).toBeInTheDocument();
+    expect(approve).not.toHaveBeenCalled();
   });
 });
 
