@@ -330,7 +330,8 @@ confirming that one change, unless a plugin says a command you approved only rea
   marks `read_only` runs without asking. That is the plugin's claim: RIM can't check it, and the
   screen says so. Any other approved command opens a dialog like the one for sending, with the
   plugin, the command, what the plugin says about it marked as the plugin's words, and every argument
-  in full, except values that look like secrets, which are masked. Discards, expiries, the 10 seconds
+  in full. Nothing is masked, since the program chose the values: one that looks like a secret
+  shows in full with a note saying so. Discards, expiries, the 10 seconds
   after them and a dialog already being open work as they do for sending, and the 10 seconds cover
   both. A dangerous command is only suggested: the program tells you, and you run it yourself in RIM. "Uses:" lists the capabilities a command needs, and the plugin's heading
   lists all it can use. A plugin holding `chat.read` can read every conversation you can and return it, whatever you chose the program can read, and the screen warns of this. One holding `chat.read.encrypted` can read an encrypted conversation

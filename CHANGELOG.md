@@ -113,6 +113,10 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   internet: a link to this computer, the local network or a cloud metadata address, or one that
   redirects there, gets no preview. At most three redirects are followed, each checked, and the
   fetch no longer goes through a system proxy.
+- The approval card for a program outside RIM shows every argument of the command it asks to
+  run in full. One that looks like a secret carries a note saying so instead of showing as
+  `[REDACTED]`, so a program can't hide what it asks you to approve. The audit log still masks
+  such values.
 
 ## [0.0.12] - 2026-11-12
 

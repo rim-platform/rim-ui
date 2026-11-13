@@ -452,9 +452,10 @@ too, under Macro, in the workspaces of your home server, each run as one command
 
 - **Every call asks you first**, with an approval card like the one for posting: the agent's
   name, the command, the workspace, the channel when it names one, and every argument in full.
-  Values that look like secrets are hidden. For a macro the card also lists its steps, each with
-  the arguments fixed for it. A command the server marks as restricted also asks you to type its
-  word.
+  Nothing is hidden, since the agent chose the values: one that looks like a secret, such as a
+  token, shows in full with the note "Looks like a secret". For a macro the card also lists its
+  steps, each with the arguments fixed for it. A command the server marks as restricted also asks
+  you to type its word.
 - **A command marked "Only proposed"** is dangerous. It never runs from an agent: the agent can only
   suggest it, and you run it yourself.
 - **It acts only where you let the agent read.** The agent names the workspace and every
@@ -474,7 +475,7 @@ doesn't count here.
 - **A command its plugin marks as read-only** runs without asking. That mark is the plugin's own
   claim, and RIM can't check it.
 - **Any other command** you ticked shows an approval card first, like the one for posting, with
-  every argument in full. Values that look like secrets are hidden.
+  every argument in full, including any that looks like a secret, which carries a note saying so.
 - **A dangerous command** never runs from an agent. The agent can only suggest it, and you run it
   yourself.
 

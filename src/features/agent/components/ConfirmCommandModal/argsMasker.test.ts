@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   argNameLooksSensitive,
   formatArgValue,
+  looksLikeSecret,
   maskForDisplay,
   REDACTED_PLACEHOLDER,
   valueLooksSecret,
@@ -187,5 +188,21 @@ describe("formatArgValue", () => {
   it("compact-stringifies objects + arrays", () => {
     expect(formatArgValue({ a: 1, b: "x" })).toBe('{"a":1,"b":"x"}');
     expect(formatArgValue([1, 2, 3])).toBe("[1,2,3]");
+  });
+});
+
+describe("looksLikeSecret", () => {
+  it("says yes where the masker would mask any part of the value", () => {
+    expect(looksLikeSecret("api_key", "plain")).toBe(true);
+    expect(looksLikeSecret("repo", "ghp_notreallyatoken")).toBe(true);
+    expect(looksLikeSecret("options", { nested: { token: 1 } })).toBe(true);
+    expect(looksLikeSecret("list", ["fine", "sk-abc"])).toBe(true);
+  });
+
+  it("says no for plain words, numbers and empty values", () => {
+    expect(looksLikeSecret("text", "plain words stay")).toBe(false);
+    expect(looksLikeSecret("count", 3)).toBe(false);
+    expect(looksLikeSecret("nothing", null)).toBe(false);
+    expect(looksLikeSecret("list", ["a", { b: "c" }])).toBe(false);
   });
 });

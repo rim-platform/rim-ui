@@ -105,6 +105,25 @@ export function maskForDisplay(args: Record<string, unknown>): Record<string, un
 }
 
 /**
+ * Whether an argument looks like it holds a secret: its name, or a name nested in it, reads like
+ * a secret's, or one of its strings has a secret's shape: the test {@link maskForDisplay} masks
+ * by, for showing a value whole with a note instead of hiding it.
+ *
+ * @param name - The argument's name.
+ * @param value - Its value, walked into objects and arrays.
+ * @returns True when {@link maskForDisplay} would mask any part of it.
+ */
+export function looksLikeSecret(name: string, value: unknown): boolean {
+  if (argNameLooksSensitive(name)) return true;
+  if (typeof value === "string") return valueLooksSecret(value);
+  if (Array.isArray(value)) return value.some((item) => looksLikeSecret("", item));
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).some(([k, v]) => looksLikeSecret(k, v));
+  }
+  return false;
+}
+
+/**
  * Render a JSON-ish value as a single-line string for the modal's args
  * grid. Strings come through verbatim (already masked upstream); other
  * primitives use JSON.stringify so booleans/numbers are unambiguous; nested
