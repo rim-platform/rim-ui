@@ -24,16 +24,22 @@ const layout: HomeLayoutDoc = {
 describe("the Home layout", () => {
   it("is today's Home by default, with the agents' runs only where agents are on", () => {
     expect(defaultLayout(false).boxes.map((box) => box.kind)).toEqual([
+      "start",
       "waiting",
       "mentions",
       "unread",
     ]);
     expect(defaultLayout(true).boxes.map((box) => box.kind)).toEqual([
+      "start",
       "waiting",
       "mentions",
       "unread",
       "agentRuns",
     ]);
+  });
+
+  it("starts with the Getting started box at full width", () => {
+    expect(defaultLayout(false).boxes[0]).toEqual({ id: "start", kind: "start", width: "full" });
   });
 
   it("reads a version 1 layout and keeps what it does not know", () => {

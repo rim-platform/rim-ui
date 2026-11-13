@@ -11,6 +11,7 @@ import type { WaitingRow } from "../api/useHomeWaiting";
 import { AgentRunsBody, MentionsBody, UnreadBody, WaitingBody } from "../components/HomeSections";
 import type { HomeBox } from "../layout/homeLayout";
 import { ChannelBoxBody } from "./ChannelBox";
+import { GettingStartedBody } from "./GettingStartedBox";
 import { DirectBoxBody } from "./DirectBox";
 import { QuickBoxBody } from "./QuickBox";
 import {
@@ -40,6 +41,8 @@ export interface HomeBoxData {
   labelOf: (workspaceId: string) => string;
   onOpenRun: (run: AgentRun) => void;
   onAllRuns: () => void;
+  /** Takes the box `id` off the layout and saves it; absent where Home cannot be saved. */
+  onRemoveBox?: (id: string) => void;
 }
 
 /** One kind of box: what it is called, how it is offered, and what it shows. */
@@ -70,6 +73,20 @@ export interface BoxKind {
 
 /** The kinds this app knows, in the order Add a box lists them. */
 export const BOX_KINDS: readonly BoxKind[] = [
+  {
+    kind: "start",
+    name: "Getting started",
+    description: "A few first things to try, each a click away",
+    unavailableReason: () => null,
+    fromServer: false,
+    count: () => null,
+    multiple: false,
+    render: (data, box) => (
+      <GettingStartedBody
+        onDone={data.onRemoveBox ? () => data.onRemoveBox?.(box.id) : undefined}
+      />
+    ),
+  },
   {
     kind: "waiting",
     name: "Waiting for you",

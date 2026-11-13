@@ -91,6 +91,10 @@ After signup the app opens one of these:
   **+ Create workspace**, **Join with an invite code**, and "No invite yet? Ask a workspace's
   Owner for an invite link."
 
+Once a workspace is open with no conversation chosen, a new account opens that workspace's first
+channel, the first one under **Channels**, once. Signing in later, or switching workspace, opens
+nothing for you.
+
 A server can hold a new account back for a while. A bar then says "New account: you can create
 workspaces and message strangers after \<time\>."
 
@@ -99,6 +103,87 @@ workspaces and message strangers after \<time\>."
 holds the DMs and groups that belong to no workspace, with people on this server or, through it,
 on other servers.
 Its badge counts unread messages before you open it. The rail shows once a workspace is open.
+
+## What do you want to do?
+
+Eight things people come to RIM for, each as a few steps. Every step uses the name the app shows;
+the page at the end of each task says more. The **Getting started** box on **Home** has a button
+for several of them.
+
+**Bring GitHub or Grafana alerts into a channel.** You need to be the workspace's Owner or a
+Moderator.
+
+1. Open **Settings > Bots & webhooks** and choose **New bot**. Every webhook posts as a bot.
+2. In the same tab, under **Incoming webhooks**, choose **New webhook**. Pick the **Channel**, the
+   bot and a **Format**: Plain, GitHub, Grafana or Custom.
+3. Choose **Create webhook**, copy the **Webhook URL** and paste it into the service. RIM shows it
+   once.
+
+More: [Webhooks](webhooks.md).
+
+**Ask the assistant about a conversation.** The Assistant is the desktop app's built-in AI panel
+and uses your own provider key.
+
+1. Open **Settings > Assistant**, choose a **Provider**, paste your **API Key** and accept the data
+   sharing notice.
+2. Open the conversation and press <kbd>Ctrl+Shift+A</kbd>.
+3. Ask in "Ask the agent...". It reads the conversation only through commands you can run too.
+
+More: [The Assistant](ai-agent.md). The web app has no Assistant.
+
+**Let Claude Code on your computer read a channel.** This is for the desktop app only.
+
+1. Open **Settings > Agents** and turn on **Let agents on this computer connect**.
+2. In a terminal, install RIM's plugin for Claude Code, then type "connect to RIM" in Claude Code
+   and check that the two codes match.
+3. Select the agent under **Agents on this computer**, choose **Choose what it can read** and pick
+   the channels.
+
+More: [Agents](agents.md).
+
+**Save an action you repeat, as a macro.**
+
+1. Open **Settings > Macros** and choose **New macro**.
+2. Give it a **Title** and add **Steps**, each a command with its arguments.
+3. Run it from the command palette (**Run Macro…**), with `/macro` in the composer, or from a
+   keybind or a Quick actions box on Home.
+
+More: [Macros](commands-and-automation.md#macros).
+
+**Do something when someone joins, with a pipeline.**
+
+1. Make a bot in **Settings > Bots & webhooks** if the workspace has none.
+2. Open **Settings > Pipelines** and choose **New Pipeline**.
+3. Set the **Trigger** to Member Joined and add an action that posts as the bot in a channel, with
+   text such as "Welcome, {name}!". Only commands that need no confirmation run.
+
+More: [Pipelines](commands-and-automation.md#pipelines).
+
+**See everything waiting for you.**
+
+1. Open **Home**, the house at the top of the workspace rail: **Waiting for you**, **Mentions and
+   replies** and **Unread**.
+2. Open **Unreads** in the sidebar or from the palette for every message you haven't read.
+3. Open the bell for **Notifications**.
+
+More: [Home](home.md).
+
+**Add a tool beside the conversation, with a plugin.**
+
+1. Open **Settings > Plugins** and install one, from a git URL or folder in the desktop app or from
+   a link in either app.
+2. Read the **Plugin Permissions** dialog and choose **Approve and turn on**.
+3. Choose **Plugins** in the top bar and pick a panel. It opens next to your chat.
+
+More: [Plugins](plugins.md).
+
+**Catch up after a day away.**
+
+1. Open **Unreads** and read down the list. Looking at the page marks nothing read; **Mark all
+   shown as read** clears it when you are done. Replies in threads are not on it.
+2. Open **Home** and read **Mentions and replies**, which includes thread replies, then **Unread**.
+
+More: [Home](home.md).
 
 ## Join or create a workspace
 

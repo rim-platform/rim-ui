@@ -24,6 +24,13 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Added
 
+- Home starts with a Getting started box: a short list of first things to try, such as opening
+  the first channel, the command palette, Unreads, plugins, webhooks, the Assistant and agents,
+  each a click away. **I'm done with this** takes it off Home, and **Add a box** brings it back.
+  A saved layout is left as it is. The Getting started guide gains a "What do you want to do?"
+  section with eight common tasks in a few steps each.
+- A new account opens its workspace's first channel, once, instead of "Select a conversation".
+  Signing in later or switching workspace opens nothing.
 - Plugin SDK 0.3.0: `host.commands.execute(commandId, args)` with the types `Commands` and
   `CommandRunResult`, which asks the app to run one of its own commands the person granted and
   resolves with how the run ended, never the command's output; in the generated

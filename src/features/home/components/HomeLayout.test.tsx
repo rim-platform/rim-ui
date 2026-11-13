@@ -179,6 +179,18 @@ function layOutBoxesInAColumn() {
   });
 }
 
+/** Today's three boxes saved as the account's layout, so a test of moving boxes starts from them. */
+function storeClassicLayout() {
+  state.stored = {
+    layout: layoutOf(
+      box("waiting", "waiting"),
+      box("mentions", "mentions"),
+      box("unread", "unread"),
+    ),
+    editedAt: "2026-11-07T10:00:00.000Z",
+  };
+}
+
 describe("Home made of boxes", () => {
   beforeEach(() => {
     requestMock.mockReset();
@@ -211,7 +223,7 @@ describe("Home made of boxes", () => {
     serve();
     renderHome();
     await screen.findByText("Nothing waiting.");
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread", "agentSessions"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread", "agentSessions"]);
     await waitFor(() => expect(callsTo(requestMock, "query HomeLayout")).toHaveLength(1));
 
     act(() =>
@@ -229,7 +241,14 @@ describe("Home made of boxes", () => {
       }),
     );
     await waitFor(() =>
-      expect(shownBoxes()).toEqual(["waiting", "mentions", "unread", "agentRuns", "agentSessions"]),
+      expect(shownBoxes()).toEqual([
+        "start",
+        "waiting",
+        "mentions",
+        "unread",
+        "agentRuns",
+        "agentSessions",
+      ]),
     );
     expect(saves()).toHaveLength(0);
   });
@@ -242,7 +261,7 @@ describe("Home made of boxes", () => {
     serve();
     renderHome();
     await screen.findByText("Nothing waiting.");
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread"]);
     expect(screen.queryByRole("button", { name: "Edit Home" })).not.toBeInTheDocument();
     expect(callsTo(requestMock, "query HomeLayout")).toHaveLength(0);
   });
@@ -263,6 +282,7 @@ describe("Home made of boxes", () => {
   });
 
   it("moves, resizes, removes and adds boxes, and Done saves them with the time it was pressed", async () => {
+    storeClassicLayout();
     serve();
     const user = userEvent.setup();
     renderHome();
@@ -300,7 +320,7 @@ describe("Home made of boxes", () => {
     await moveVia(user, "Unread", "up");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await screen.findByRole("heading", { level: 1, name: "Home" });
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread"]);
 
     await startEditing(user);
     await user.keyboard("{Escape}");
@@ -312,11 +332,12 @@ describe("Home made of boxes", () => {
     const dialog = await screen.findByRole("dialog", { name: "Discard your changes?" });
     await user.click(within(dialog).getByRole("button", { name: "Discard" }));
     await screen.findByRole("heading", { level: 1, name: "Home" });
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread"]);
     expect(saves()).toHaveLength(0);
   });
 
   it("moves a box through its More menu, keeping focus on that menu's button", async () => {
+    storeClassicLayout();
     serve();
     const user = userEvent.setup();
     renderHome();
@@ -339,6 +360,7 @@ describe("Home made of boxes", () => {
 
   it("reorders from the keyboard through the handle, saying where the box goes", async () => {
     const rects = layOutBoxesInAColumn();
+    storeClassicLayout();
     serve();
     const user = userEvent.setup();
     renderHome();
@@ -362,6 +384,7 @@ describe("Home made of boxes", () => {
 
   it("reorders by dragging a box's header with the pointer", async () => {
     const rects = layOutBoxesInAColumn();
+    storeClassicLayout();
     serve();
     const user = userEvent.setup();
     renderHome();
@@ -381,6 +404,7 @@ describe("Home made of boxes", () => {
 
   it("cancels only the drag on Escape, leaving the box and the edit as they were", async () => {
     const rects = layOutBoxesInAColumn();
+    storeClassicLayout();
     serve();
     const user = userEvent.setup();
     renderHome();
@@ -500,6 +524,7 @@ describe("Home made of boxes", () => {
   });
 
   it("keeps an edit made without the server and sends it once the server answers", async () => {
+    storeClassicLayout();
     serve();
     state.save = () => {
       throw new TypeError("Failed to fetch");
@@ -546,7 +571,7 @@ describe("Home made of boxes", () => {
     expect(logged).not.toContain("mentions");
     warn.mockRestore();
     expect(useHomeLayoutStore.getState().pending).toBeNull();
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread"]);
   });
 
   it("shows the layout another device saved later, once, when the save loses", async () => {
@@ -607,7 +632,7 @@ describe("Home made of boxes", () => {
     await user.click(within(dialog).getByRole("button", { name: "Reset" }));
     await screen.findByRole("heading", { level: 1, name: "Home" });
     expect(callsTo(requestMock, "mutation ResetHomeLayout")).toHaveLength(1);
-    expect(shownBoxes()).toEqual(["waiting", "mentions", "unread"]);
+    expect(shownBoxes()).toEqual(["start", "waiting", "mentions", "unread"]);
     expect(useHomeLayoutStore.getState().copy).toBeNull();
   });
 

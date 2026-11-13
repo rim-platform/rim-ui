@@ -193,3 +193,10 @@ export function conversationRowIn(container: Element, conversationId: string): H
 export function memberCountLabel(count: number): string {
   return `${count} ${count === 1 ? "member" : "members"}`;
 }
+
+/** The channels the sidebar lists under Channels, in its order: the joined ones that are not archived. */
+export function sidebarChannels<T extends Pick<ConversationSummary, "isArchived">>(
+  joined: readonly T[],
+): T[] {
+  return joined.filter((channel) => !channel.isArchived);
+}

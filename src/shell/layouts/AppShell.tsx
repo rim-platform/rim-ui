@@ -99,6 +99,7 @@ import { useNavigationHistory } from "../navigation/history";
 import { cn } from "../../shared/ui/cn";
 import { useZenModeTransition } from "../hooks/useZenModeTransition";
 import { useAutoFocusComposer } from "../hooks/useAutoFocusComposer";
+import { useOpenFirstChannelOnce } from "../hooks/useOpenFirstChannelOnce";
 import { useGlobalKeyHandlers } from "../hooks/useGlobalKeyHandlers";
 import { useObserveShellWidth, useShellWidth } from "../hooks/useShellWidth";
 import { ConversationSelectionRuntime } from "../../features/conversations/components/ConversationSelectionRuntime";
@@ -336,6 +337,7 @@ function WorkspaceShell() {
   useGlobalKeyHandlers();
   useNavigationHistory();
   useAppKeybindMove();
+  useOpenFirstChannelOnce(workspaceId);
   useMoveWorkspaceMacros();
 
   const showThread = capabilities.dockedThreadPane && isThreadOpen && selectedRootMessageId;

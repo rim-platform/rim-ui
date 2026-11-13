@@ -12,6 +12,7 @@ import { useAgentRecordStore } from "../../agents/state/useAgentRecordStore";
 import { useConnectedAgentsStore } from "../../agents/state/useConnectedAgentsStore";
 import { runCommandFromClick } from "../../commands/runtime/runFromClick";
 import { EmptyWorkspaceState } from "../../workspaces/components/EmptyWorkspaceState";
+import { saveHomeLayout } from "../api/homeLayoutApi";
 import { useHomeLayout } from "../api/useHomeLayout";
 import { useHomeMentions } from "../api/useHomeMentions";
 import { useHomeUnread } from "../api/useHomeUnread";
@@ -19,6 +20,7 @@ import { useHomeWaiting } from "../api/useHomeWaiting";
 import { useHomeWorkspaces } from "../api/useHomeWorkspaces";
 import type { HomeBoxData } from "../boxes/registry";
 import { EDIT_HOME_COMMAND_ID } from "../editHome";
+import { removeBox } from "../layout/homeLayout";
 import { useHomeEditStore } from "../state/useHomeEditStore";
 import { useHomeHiddenStore } from "../state/useHomeLayoutStore";
 import { HomeBoxGrid } from "./HomeBoxes";
@@ -117,6 +119,9 @@ export function HomePage() {
     labelOf,
     onOpenRun: (run) => setOpenRun(runKey(run)),
     onAllRuns: () => void runCommandFromClick("workspace.open_agents"),
+    onRemoveBox: view.editable
+      ? (id) => void saveHomeLayout(removeBox(view.layout, id), new Date().toISOString())
+      : undefined,
   };
 
   return (

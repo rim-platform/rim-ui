@@ -165,6 +165,7 @@ describe("Agent sessions box", () => {
     expect(kind.multiple).toBe(false);
     expect(kind.settingsReadable).toBeUndefined();
     expect(defaultLayout(true, true).boxes.map((box) => box.kind)).toEqual([
+      "start",
       "waiting",
       "mentions",
       "unread",
