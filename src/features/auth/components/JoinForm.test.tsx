@@ -11,6 +11,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { renderWithServerInfo, type FakeServerDetails } from "../../../test/serverInfo";
 
 const keys = vi.hoisted(() => ({ value: true, probing: false }));
@@ -174,6 +175,18 @@ describe("JoinForm — the key signup", () => {
     expect(screen.queryByText("Create your RIM account")).toBeNull();
     expect(screen.queryByLabelText(/invite code/i)).toBeNull();
     expect(screen.getByTestId("key-signup")).toBeInTheDocument();
+  });
+
+  it("asks the shell to open the first channel once the account exists", async () => {
+    const user = userEvent.setup();
+    useShellStore.getState().setOpenFirstChannelOnce(false);
+    renderVariant("CODE", null);
+    expect(useShellStore.getState().openFirstChannelOnce).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: /create key account/i }));
+
+    expect(useShellStore.getState().openFirstChannelOnce).toBe(true);
+    useShellStore.getState().setOpenFirstChannelOnce(false);
   });
 
   it("hands no token to the key form on a relay that takes key signups with a proof-of-work", () => {

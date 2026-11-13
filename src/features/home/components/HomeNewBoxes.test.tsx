@@ -135,6 +135,8 @@ const channelConversation = (extra: object = {}) => ({
 const state = vi.hoisted(() => ({
   stored: null as { layout: unknown; editedAt: string } | null,
   conversation: null as null | (() => unknown),
+  /** The workspace's joined channels, or `null` for the two the fixture has. */
+  channels: null as null | unknown[],
   messages: [] as unknown[],
   commands: [] as unknown[],
   execute: null as null | ((vars: Record<string, unknown>) => unknown),
@@ -166,7 +168,10 @@ function serve() {
     }),
     "query Channels": () => ({
       channels: {
-        items: [channelConversation(), channelConversation({ id: "c-other", title: "other" })],
+        items: state.channels ?? [
+          channelConversation(),
+          channelConversation({ id: "c-other", title: "other" }),
+        ],
         pageInfo: { hasNext: false, hasPrev: false },
         next: null,
         prev: null,
@@ -233,6 +238,7 @@ describe("Home's new boxes", () => {
     requestMock.mockReset();
     state.stored = null;
     state.conversation = null;
+    state.channels = null;
     state.messages = [];
     state.commands = [];
     state.execute = null;
@@ -255,6 +261,20 @@ describe("Home's new boxes", () => {
     appQueryClient.clear();
     useAuthStore.setState({ session: null });
     useWorkspaceStore.setState({ workspaceId: null });
+  });
+
+  describe("the Getting started box", () => {
+    it("I'm done with this saves the layout without the box", async () => {
+      stored(box("start", "start"), box("waiting", "waiting"));
+      serve();
+      const user = userEvent.setup();
+      renderHome();
+      await user.click(await screen.findByRole("button", { name: "I'm done with this" }));
+      await waitFor(() => expect(saves()).toHaveLength(1));
+      const layout = saves()[0].layout as HomeLayoutDoc;
+      expect(layout.boxes.map((b) => b.kind)).toEqual(["waiting"]);
+      expect(screen.queryByRole("region", { name: "Getting started" })).not.toBeInTheDocument();
+    });
   });
 
   describe("a channel box", () => {
@@ -319,6 +339,9 @@ describe("Home's new boxes", () => {
       state.conversation = () => {
         throw graphqlError("NOT_FOUND", "not found");
       };
+      // Getting started, shown until the stored layout arrives, would read the channel list
+      // and with it the channel this box says is gone.
+      state.channels = [];
       stored(box("waiting", "waiting"), box("ch", "channel", CHANNEL));
       serve();
       const user = userEvent.setup();

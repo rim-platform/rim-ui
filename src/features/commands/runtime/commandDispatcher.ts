@@ -385,7 +385,9 @@ const localHandlers: Record<string, LocalHandler> = {
     const conversationId = argString(args, "conversationId", "conversation_id");
     if (!args || !conversationId) return;
     if (refuseBlockedConversation(spaceOf(args), conversationId)) return;
-    useShellStore.getState().setSelectedConversationId(conversationId);
+    const shell = useShellStore.getState();
+    shell.setMainSurface({ kind: "conversation" });
+    shell.setSelectedConversationId(conversationId);
   },
   "workspace.navigate_to_dm": (args) => {
     const conversationId = argString(args, "conversationId", "conversation_id");

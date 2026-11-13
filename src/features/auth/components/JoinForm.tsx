@@ -54,6 +54,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InviteByline } from "./InviteByline";
 import { InviteCodeField } from "./InviteCodeField";
 import { KeySignupForm, type KeySignupTokens } from "./KeySignupForm";
+import { useShellStore } from "../../../shell/state/useShellStore";
 import { BrandHeading } from "./BrandHeading";
 import { ServerChoice } from "./ServerChoice";
 import { AbuseContact } from "./AbuseContact";
@@ -179,6 +180,7 @@ export function JoinForm({
    */
   function accountCreated(userId: string) {
     setCreatedUserId(userId);
+    useShellStore.getState().setOpenFirstChannelOnce(true);
     if (!joinAfter || joinStarted.current) return;
     joinStarted.current = true;
     setJoinOutcome({ state: "pending" });

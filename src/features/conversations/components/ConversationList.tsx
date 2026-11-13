@@ -21,7 +21,7 @@ import { DmRequestsRow } from "../../relay/components/DmRequestsRow";
 import { useIsDirectSpace } from "../../relay/state/useRelayStore";
 import { useConversationMenuItems } from "../hooks/useConversationMenuItems";
 import type { ConversationSummary } from "../types";
-import { conversationRowIn, isInvited } from "../utils";
+import { conversationRowIn, isInvited, sidebarChannels } from "../utils";
 import { ConversationItem } from "./ConversationItem";
 import { WorkspaceBotsSection } from "../../bots/components/WorkspaceBotsSection";
 import { DirectConversationList } from "./DirectConversationList";
@@ -103,7 +103,7 @@ function WorkspaceConversationList() {
   const { channels, archivedChannels } = useMemo(() => {
     const items = channelsData?.items ?? [];
     return {
-      channels: items.filter((c) => !c.isArchived),
+      channels: sidebarChannels(items),
       archivedChannels: items.filter((c) => c.isArchived),
     };
   }, [channelsData]);

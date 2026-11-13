@@ -124,6 +124,7 @@ vi.mock("../../core/runtime/RuntimeProvider", async (importOriginal) => {
     },
   };
 });
+vi.mock("../hooks/useOpenFirstChannelOnce", () => ({ useOpenFirstChannelOnce: () => {} }));
 vi.mock("../hooks/useAutoFocusComposer", () => ({ useAutoFocusComposer: () => {} }));
 vi.mock("../hooks/useGlobalKeyHandlers", () => ({ useGlobalKeyHandlers: () => {} }));
 

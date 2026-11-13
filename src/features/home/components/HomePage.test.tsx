@@ -186,7 +186,7 @@ describe("HomePage", () => {
     expect(screen.getByText("No agent sessions yet.")).toBeInTheDocument();
     expect(
       screen.getAllByRole("region").map((region) => region.getAttribute("data-box-id")),
-    ).toEqual(["waiting", "mentions", "unread", "agentSessions"]);
+    ).toEqual(["start", "waiting", "mentions", "unread", "agentSessions"]);
   });
 
   it("lists mentions of every workspace newest first, naming the workspace", async () => {

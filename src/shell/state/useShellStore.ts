@@ -139,6 +139,11 @@ type ShellState = {
   navigationMode: boolean;
   /** The width class of the shell, set from its measured width. */
   shellWidth: ShellWidth;
+  /**
+   * An account was just created, so the first workspace shown with no conversation selected
+   * opens its first channel. Never kept: a restart or a later sign-in starts without it.
+   */
+  openFirstChannelOnce: boolean;
   /** Whether the navigation drawer is open: the rails and tool panel of a narrow window. */
   navDrawerOpen: boolean;
 
@@ -184,6 +189,8 @@ type ShellState = {
   /** Sets the width class; any width but narrow closes the navigation drawer. */
   setShellWidth: (width: ShellWidth) => void;
   setNavDrawerOpen: (open: boolean) => void;
+  /** Sets or clears {@link ShellState.openFirstChannelOnce}. */
+  setOpenFirstChannelOnce: (pending: boolean) => void;
   toggleNavDrawer: () => void;
   reset: () => void;
 };
@@ -249,6 +256,7 @@ export const useShellStore = create<ShellState>((set, get) => ({
   navigationMode: false,
   shellWidth: "wide",
   navDrawerOpen: false,
+  openFirstChannelOnce: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
   setMainSurface: (surface) =>
@@ -335,12 +343,14 @@ export const useShellStore = create<ShellState>((set, get) => ({
         : { shellWidth: width, ...(width === "narrow" ? {} : { navDrawerOpen: false }) },
     ),
   setNavDrawerOpen: (open) => set({ navDrawerOpen: open }),
+  setOpenFirstChannelOnce: (pending) => set({ openFirstChannelOnce: pending }),
   toggleNavDrawer: () => set((state) => ({ navDrawerOpen: !state.navDrawerOpen })),
 
   reset: () =>
     set({
       history: [],
       historyIndex: -1,
+      openFirstChannelOnce: false,
       activePanel: "inbox",
       mainSurface: { kind: "conversation" },
       activePluginPanel: null,

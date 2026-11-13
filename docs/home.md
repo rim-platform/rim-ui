@@ -21,6 +21,7 @@ nothing read.
 
 | Box | Shows | Runs |
 |---|---|---|
+| Getting started | A short list of first things to try, each row a click away, and **I'm done with this** | everywhere |
 | Waiting for you | Message requests and join requests to decide on | everywhere |
 | Mentions and replies | Unread mentions and replies across your workspaces | everywhere |
 | Unread | Unread messages per workspace, and See all unread | everywhere |
@@ -29,6 +30,25 @@ nothing read.
 | Direct messages | Your latest direct messages and groups, 3, 5 or 10, with their unread counts | everywhere |
 | Channel | The latest 3, 5 or 10 messages of one channel you pick | everywhere |
 | Quick actions | 1 to 6 buttons, each running a command you chose | where the command runs |
+
+### Getting started
+
+Getting started is the first box of a new Home, full width. Each row runs a command, as a button on
+Home does:
+
+| Row | Runs |
+|---|---|
+| Say hello | Opens the first channel under Channels in the workspace in view; shown only where it has a channel |
+| Run anything with Ctrl+K | Opens the command palette |
+| Catch up on Unreads | Opens Unreads |
+| Add a tool beside the conversation | Opens Settings > Plugins |
+| Bring alerts into a channel | Opens Settings > Bots & webhooks; shown to an Owner or Moderator |
+| Ask the assistant | Opens Settings > Assistant; the desktop app |
+| Connect an agent | Opens Settings > Agents; the desktop app |
+| Make Home yours | Runs Edit Home |
+
+**I'm done with this** takes the box off Home and saves the layout, as **Remove** does. **Add a
+box** puts it back. A layout you saved before this box existed is left as it is.
 
 Channel and Quick actions can be on Home more than once, each with its own settings; the other
 boxes once.

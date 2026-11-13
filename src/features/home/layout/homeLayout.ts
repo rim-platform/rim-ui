@@ -36,6 +36,7 @@ export const MAX_BOXES = 30;
  */
 export function defaultLayout(agents: boolean, agentSessions = false): HomeLayoutDoc {
   const boxes: HomeBox[] = [
+    { id: "start", kind: "start", width: "full" },
     { id: "waiting", kind: "waiting", width: "half" },
     { id: "mentions", kind: "mentions", width: "half" },
     { id: "unread", kind: "unread", width: "half" },
