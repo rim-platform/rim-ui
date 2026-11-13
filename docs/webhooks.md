@@ -23,8 +23,11 @@ plain text.
 
 - You're the workspace's **Owner or a Moderator**.
 - The workspace has a **bot**. Every webhook posts as a bot, so the channel shows who posted. Make
-  one in **Settings > Bots & webhooks** with **New bot**: give it a name, say **Who runs it** and **Where what
-  it reads goes**. Everyone in the workspace sees those two lines.
+  one in **Settings > Bots & webhooks** with **New bot for webhooks** (under Incoming webhooks, or
+  **New bot** and then **Only posts from webhooks**): it fills **Who runs it** and **Where what it
+  reads goes** for a bot that only posts what its webhooks send, and you can edit both. Everyone
+  in the workspace sees those two lines. The bot's token isn't needed for a webhook: close that
+  dialog.
 - The channel is **not encrypted and not archived**. Encrypted channels can't have webhooks.
 - A channel has **one webhook at a time**.
 

@@ -116,11 +116,6 @@ function imageLinkHtml(href: string, text: string, title?: string | null): strin
   return `${linkHtml(href, escapeHtml(text || href), title)} <span class="${IMAGE_LABEL_CLASS}">image</span>`;
 }
 
-/** An opening HTML tag. */
-const OPEN_TAG = /<[a-zA-Z][^<>]*>/g;
-/** An event-handler attribute such as `onerror=…`. */
-const EVENT_HANDLER_ATTR = /\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi;
-
 function createRenderer(
   highlight: Highlighter | null,
   showInlineMedia: boolean,
@@ -145,10 +140,11 @@ function createRenderer(
       }
       return isSafeLinkUrl(href) ? imageLinkHtml(href, text, title) : escapeHtml(text);
     },
-    // Strips event handlers from raw HTML so the parser never sees one; DOMPurify still
-    // sanitizes the rest.
-    html({ text }: Tokens.HTML | Tokens.Tag) {
-      return text.replace(OPEN_TAG, (tag) => tag.replace(EVENT_HANDLER_ATTR, ""));
+    // Shows raw HTML as the text that was typed, since a message is chat rather than markup;
+    // an HTML block becomes a paragraph that keeps its line breaks.
+    html({ text, block }: Tokens.HTML | Tokens.Tag) {
+      const shown = escapeHtml(block ? text.trimEnd() : text).replace(/\n/g, "<br>");
+      return block ? `<p>${shown}</p>\n` : shown;
     },
   };
 }

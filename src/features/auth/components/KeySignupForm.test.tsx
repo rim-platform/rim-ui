@@ -140,7 +140,7 @@ describe("KeySignupForm", () => {
     );
     expect(screen.getByRole("radio", { name: /PIN/ })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Passphrase/ })).toBeChecked();
-    expect(screen.getByText(/your recovery phrase resets it/i)).toBeInTheDocument();
+    expect(screen.getByText(/your recovery kit resets it/i)).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /keep me signed in/i })).not.toBeChecked();
     expect(screen.queryByLabelText(/email/i)).toBeNull();
     // A username is needed before any key is made.
@@ -686,7 +686,8 @@ describe("KeySignupForm", () => {
     await user.click(screen.getByRole("button", { name: /create keys/i }));
     const prompt = await screen.findByRole("alertdialog");
     expect(prompt).toHaveTextContent(/may clear it/i);
-    expect(prompt).toHaveTextContent(/recovery kit is then the only way back/i);
+    expect(prompt).toHaveFocus();
+    expect(prompt).toHaveTextContent(/you.ll save a recovery kit on the next screen/i);
     expect(api.beginEnrollment).not.toHaveBeenCalled();
 
     await user.click(within(prompt).getByRole("button", { name: "Go back" }));
@@ -694,7 +695,7 @@ describe("KeySignupForm", () => {
     expect(api.beginEnrollment).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /create keys/i }));
-    await user.click(await screen.findByRole("button", { name: "Continue anyway" }));
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
     expect(await screen.findByLabelText("Recovery phrase")).toBeInTheDocument();
     expect(api.beginEnrollment).toHaveBeenCalledTimes(1);
   });

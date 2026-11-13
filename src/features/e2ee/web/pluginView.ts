@@ -6,8 +6,9 @@
  * could not be verified, tombstones and unacknowledged sends are left out.
  *
  * Encrypted conversations are readable only with `encryptedAllowed`: a conversation is encrypted
- * when the caller says so, when this browser holds group state for it, or when any of its stored
- * rows is an encrypted message.
+ * when the caller says so, when this browser holds a group for it, or when any of its stored rows
+ * is an encrypted message. The empty group record the feed keeps for a plaintext conversation it
+ * follows does not count.
  */
 
 import type {
@@ -18,6 +19,7 @@ import type {
 import { isKeyPrincipalId, provisionalPrincipalId } from "../../plugins/web/principal";
 import { ErrorCode, RpcError } from "../../plugins/web/rpc";
 import { BY_ACCOUNT, BY_TIME, readIndex, readRecord } from "./db";
+import { holdsGroup, type GroupState } from "./groupState";
 import type { MessageRow } from "./messageRows";
 import type { WebAccount } from "./webAccount";
 
@@ -115,7 +117,8 @@ export async function conversationEncrypted(
 ): Promise<boolean> {
   if (scope.knownEncrypted.includes(conversationId)) return true;
   const key = [account.endpoint, account.principalId, workspaceId, conversationId];
-  if (await readRecord(db, "groups", key)) return true;
+  const group = await readRecord<GroupState>(db, "groups", key);
+  if (group && holdsGroup(group)) return true;
   const rows = await conversationRows(db, account, workspaceId, conversationId);
   return rows.some((r) => r.e2eeState !== null);
 }

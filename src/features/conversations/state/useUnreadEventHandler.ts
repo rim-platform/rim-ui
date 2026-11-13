@@ -11,6 +11,17 @@ import { useAuthStore } from "../../auth/state/useAuthStore";
 import { useShellStore } from "../../../shell/state/useShellStore";
 
 /**
+ * Whether `conversationId` is on screen now: selected, with the conversation view as the main
+ * surface. A conversation stays selected under Home, Unreads or Settings, where nobody reads it.
+ */
+export function isConversationShown(conversationId: string): boolean {
+  const shell = useShellStore.getState();
+  return (
+    shell.selectedConversationId === conversationId && shell.mainSurface.kind === "conversation"
+  );
+}
+
+/**
  * Keeps automatic marking off a conversation just marked unread while it stays open. One that
  * is not open is read as usual when it next opens.
  */
@@ -31,8 +42,7 @@ export function useUnreadEventHandler() {
       (payload) => {
         const currentUserId = useAuthStore.getState().session?.userId;
         const isOwnMessage = payload.authorId === currentUserId;
-        const isActiveConversation =
-          payload.conversationId === useShellStore.getState().selectedConversationId;
+        const isActiveConversation = isConversationShown(payload.conversationId);
 
         if (!isOwnMessage && !isActiveConversation) {
           useUnreadStore.getState().increment(payload.conversationId, payload.workspaceId);

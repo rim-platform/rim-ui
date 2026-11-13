@@ -43,6 +43,15 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Making a bot for webhooks is shorter: **New bot for webhooks** (under Incoming webhooks, and in
+  the form as **Only posts from webhooks**) fills the two required statements, which stay
+  editable. The token dialog says webhooks don't need the token, and the new webhook form says
+  to create a missing channel first.
+- The plugin permission prompt starts with the encrypted chat permissions unticked, unless they
+  were approved before. After **Approve and turn on**, a plugin with a panel says where to open
+  it. On the web, the empty Plugins page points to a plugin's release page and the RIM guide, and
+  pasting a plugin's GitHub repository link into Install from link says to copy the link from its
+  latest release instead.
 - The AI agent built into the desktop app is now called the **Assistant**: its Settings tab, its
   panel (<kbd>Ctrl+Shift+A</kbd>, **Open Assistant**), the conversation menu's "Assistant: on in
   this conversation", `/agent` ("Ask the assistant") and the palette's **Assistant & Agents**
@@ -65,9 +74,23 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 - Link previews show no image, in the web app and the desktop app alike: the image would come from
   another site, which the content policy blocks, and asking for it would tell that site who is
   reading.
+- Sign-up and first run read more plainly. The browser-storage warning now says why it appears,
+  moves into view and takes focus, and its button reads **Continue**; the recovery kit screen
+  says what **Later** means; the password hint says "recovery kit"; and the sign-in page opens
+  with "Welcome to RIM" when this device holds no account yet.
 
 ### Fixed
 
+- New messages in the last conversation you opened count as unread while Home, Unreads or Settings
+  is in front of it. They were taken as read, so Home and the rail showed too few.
+- A word in angle brackets in a message, such as "reply /vote <number>", now shows as typed
+  instead of disappearing. Any HTML in a message shows as the text that was written, never as
+  markup.
+- A plugin reading a conversation this device has not stored yet, such as the Poll panel in a
+  channel on the web, gets its messages once a short history is stored, instead of "not fully
+  stored on this device yet": the app now waits up to 5 seconds for it. In the web app, a plugin
+  with only "Read your conversations" can read a plaintext channel once the browser has stored
+  it, instead of being refused as if the channel were encrypted.
 - Ctrl+Shift+A in the web app now says the assistant is in the desktop app instead of doing
   nothing.
 - Workspace settings > Public link on a server's default workspace says everyone who signs up
