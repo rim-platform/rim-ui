@@ -221,68 +221,77 @@ export function PluginCapabilityPrompt({
           </div>
         </div>
 
-        {/* The plugin's own account of what it does, e.g. where its data goes. It is
+        <div
+          role="region"
+          aria-label="What the plugin asks for"
+          tabIndex={0}
+          className="max-h-[calc(100dvh-16rem)] space-y-4 overflow-y-auto pr-2"
+        >
+          {/* The plugin's own account of what it does, e.g. where its data goes. It is
             the author's claim, so it is labelled and set apart from the app's words. */}
-        {plugin.description && (
-          <figure className="space-y-1">
-            <figcaption className="text-[11px] text-rim-text-faint">
-              From the plugin author:
-            </figcaption>
-            <blockquote className="whitespace-pre-line border-l-2 border-rim-line pl-3 text-xs text-rim-text-muted">
-              {showInvisibleCharacters(clipDescription(plugin.description))}
-            </blockquote>
-          </figure>
-        )}
+          {plugin.description && (
+            <figure className="space-y-1">
+              <figcaption className="text-[11px] text-rim-text-faint">
+                From the plugin author:
+              </figcaption>
+              <blockquote className="whitespace-pre-line border-l-2 border-rim-line pl-3 text-xs text-rim-text-muted">
+                {showInvisibleCharacters(clipDescription(plugin.description))}
+              </blockquote>
+            </figure>
+          )}
 
-        <p className="rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-xs text-rim-text">
-          {KIND_CONSENT_TEXT[runtimeKind(plugin)]}
-        </p>
+          <p className="rounded-lg border border-rim-line bg-rim-void px-3 py-2 text-xs text-rim-text">
+            {KIND_CONSENT_TEXT[runtimeKind(plugin)]}
+          </p>
 
-        <p className="text-xs text-rim-text-muted">
-          {parsedCapabilities.length > 0
-            ? "This plugin requests the following permissions. Uncheck any you want to deny."
-            : "This plugin asks for no permissions."}
-        </p>
+          <p className="text-xs text-rim-text-muted">
+            {parsedCapabilities.length > 0
+              ? "This plugin requests the following permissions. Uncheck any you want to deny."
+              : "This plugin asks for no permissions."}
+          </p>
 
-        <div className="space-y-1">
-          {parsedCapabilities.map((cap) => (
-            <label
-              key={cap}
-              className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 transition hover:bg-white/5"
-            >
-              <input
-                type="checkbox"
-                checked={selected.has(cap)}
-                onChange={() => toggleCapability(cap)}
-                className="mt-0.5 accent-rim-accent"
-              />
-              {isChatCapability(cap) ? (
-                <ChatConsentLine text={CHAT_CONSENT_TEXT[cap]} />
-              ) : cap === "network.fetch" ? (
-                <p className="text-sm text-rim-text">
-                  <span className="font-medium">{CAPABILITY_LABELS[cap]}:</span>{" "}
-                  <span className="text-rim-text-muted">
-                    {networkFetchText(plugin.network_origins ?? [])}
-                  </span>
-                </p>
-              ) : (
-                <div>
-                  <p className="text-sm text-rim-text">{capabilityLabel(cap)}</p>
-                  <p className="text-xs text-rim-text-muted">{capabilityDescriptions[cap] ?? ""}</p>
-                </div>
-              )}
-            </label>
-          ))}
+          <div className="space-y-1">
+            {parsedCapabilities.map((cap) => (
+              <label
+                key={cap}
+                className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 transition hover:bg-white/5"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(cap)}
+                  onChange={() => toggleCapability(cap)}
+                  className="mt-0.5 accent-rim-accent"
+                />
+                {isChatCapability(cap) ? (
+                  <ChatConsentLine text={CHAT_CONSENT_TEXT[cap]} />
+                ) : cap === "network.fetch" ? (
+                  <p className="text-sm text-rim-text">
+                    <span className="font-medium">{CAPABILITY_LABELS[cap]}:</span>{" "}
+                    <span className="text-rim-text-muted">
+                      {networkFetchText(plugin.network_origins ?? [])}
+                    </span>
+                  </p>
+                ) : (
+                  <div>
+                    <p className="text-sm text-rim-text">{capabilityLabel(cap)}</p>
+                    <p className="text-xs text-rim-text-muted">
+                      {capabilityDescriptions[cap] ?? ""}
+                    </p>
+                  </div>
+                )}
+              </label>
+            ))}
+          </div>
+
+          {commandRows.length > 0 && (
+            <RunsCommandsSection
+              rows={commandRows}
+              granted={alreadyGranted}
+              selected={commandsSelected}
+              onToggle={toggleCommand}
+            />
+          )}
         </div>
-
-        {commandRows.length > 0 && (
-          <RunsCommandsSection
-            rows={commandRows}
-            granted={alreadyGranted}
-            selected={commandsSelected}
-            onToggle={toggleCommand}
-          />
-        )}
 
         {grantError && (
           <p className="text-xs text-rim-danger" role="alert">

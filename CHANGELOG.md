@@ -84,6 +84,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Fixed
 
+- The Plugin Permissions dialog scrolls in a short window: the plugin's description and its
+  permissions scroll between the header and the buttons, which stay on screen. Before, Approve
+  could sit below the window's edge with no way to reach it.
 - The empty Plugins page's link to the official plugins opens the RIM guide's Plugins page; it
   led to a page that doesn't exist.
 - New messages in the last conversation you opened count as unread while Home, Unreads or Settings
