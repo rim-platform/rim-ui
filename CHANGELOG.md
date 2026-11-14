@@ -22,6 +22,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-11-14
+
 ### Added
 
 - Home starts with a Getting started box: a short list of first things to try, such as opening
@@ -1444,7 +1446,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   nothing without a secret the tab holds in memory, so a session cookie left in the browser is
   worthless; reloading the page within a minute keeps the account open.
 
-[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.12...HEAD
+[Unreleased]: https://github.com/rim-platform/rim-ui/compare/v0.0.13...HEAD
+[0.0.13]: https://github.com/rim-platform/rim-ui/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/rim-platform/rim-ui/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/rim-platform/rim-ui/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/rim-platform/rim-ui/compare/v0.0.9...v0.0.10
