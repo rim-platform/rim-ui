@@ -373,3 +373,22 @@ describe("PluginCapabilityPrompt commands it can run", () => {
     expect(grant).not.toHaveBeenCalled();
   });
 });
+
+describe("PluginCapabilityPrompt scrolling", () => {
+  it("scrolls the description and permissions, and keeps the buttons outside the scroll area", () => {
+    render(
+      <PluginCapabilityPrompt
+        open
+        onClose={() => {}}
+        plugin={plugin({ capabilities: ["chat.read", "ui.notify"] })}
+      />,
+    );
+    const scroll = screen.getByRole("region", { name: "What the plugin asks for" });
+    expect(scroll.className).toContain("overflow-y-auto");
+    expect(scroll.className).toContain("max-h-[calc(100dvh-");
+    expect(scroll).toContainElement(screen.getByText("Lists open pull requests."));
+    expect(scroll).toContainElement(screen.getAllByRole("checkbox")[0]);
+    expect(scroll).not.toContainElement(screen.getByRole("button", { name: "Approve" }));
+    expect(scroll).not.toContainElement(screen.getByRole("button", { name: "Cancel" }));
+  });
+});
