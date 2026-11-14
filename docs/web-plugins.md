@@ -36,7 +36,10 @@ desktop); everything else goes to the Rust host as before.
 ## How a plugin runs
 
 1. The host creates a hidden `<iframe sandbox="allow-scripts">` (no referrer, no powerful
-   feature, `credentialless`) that loads the frame shell.
+   feature, `credentialless`) that loads the frame shell. On the desktop the frame gets no Tauri
+   IPC: the app sets Tauri's IPC up in the top-level frame only (`src-tauri/src/main_frame_ipc.rs`),
+   so the invoke key stays out of plugin frames even on Windows, where Tauri runs its scripts in
+   every frame.
 2. On the frame's first `load`, the host posts `rim.frame.init` with the manifest text,
    the granted origins and the verified entry module, and transfers one end of a
    `MessageChannel`. A second `load` means the plugin navigated its frame: the frame is

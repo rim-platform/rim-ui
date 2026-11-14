@@ -1,4 +1,6 @@
 mod account_lock;
+#[cfg(test)]
+mod acl_tests;
 mod agent_bridge;
 mod agent_installer;
 mod agent_proxy;
@@ -11,6 +13,7 @@ mod identity_backup;
 mod key_identity;
 mod keybind_profile;
 mod logging;
+mod main_frame_ipc;
 mod message_cache;
 mod offline_session;
 mod outbound;
@@ -35,6 +38,9 @@ pub fn run() {
         updater_config.as_ref(),
     );
     builder
+        // Tauri's IPC set-up, kept out of plugin frames on Windows, where Tauri runs it in
+        // every frame.
+        .invoke_system(main_frame_ipc::script())
         // Early, so the other plugins' and the app's start-up messages reach the log file.
         .plugin(logging::plugin())
         .manage(updater::UpdaterStatus::of(updater_config.as_ref()))
