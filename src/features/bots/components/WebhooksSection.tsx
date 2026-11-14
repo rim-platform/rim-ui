@@ -15,6 +15,7 @@ import { ConfirmActionDialog } from "../../conversations/components/ConfirmActio
 import { REVOKE_WEBHOOK_DESCRIPTION } from "../confirmTexts";
 import { useAllChannels } from "../api/useAllChannels";
 import { useIncomingWebhooks, useInvalidateBots, useRevokeIncomingWebhook } from "../api/botsApi";
+import type { ConversationSummary } from "../../conversations/types";
 import { WEBHOOK_FORMATS } from "../../updater/api/serverCapabilities";
 import { useSpaceHasCapability } from "../../updater/hooks/useSpaceHasCapability";
 import { NewWebhookDialog, type CreatedWebhook } from "./NewWebhookDialog";
@@ -53,6 +54,7 @@ export function WebhooksSection({
   const [editing, setEditing] = useState<IncomingWebhook | null>(null);
   const withFormats = useSpaceHasCapability(serverId, WEBHOOK_FORMATS);
   const invalidate = useInvalidateBots(serverId);
+  const [creatingFor, setCreatingFor] = useState<ConversationSummary | null>(null);
   const [toRevoke, setToRevoke] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const newRef = useRef<HTMLButtonElement>(null);
@@ -66,6 +68,18 @@ export function WebhooksSection({
   const withHook = new Set(active.map((w) => w.conversationId));
   const freeChannels = (channels.data?.items ?? []).filter(
     (c) => !c.encryptedAt && !withHook.has(c.id),
+  );
+  // For each channel with no active webhook, the webhook revoked last.
+  const lastRevoked = new Map<string, IncomingWebhook>();
+  for (const w of webhooks.data ?? []) {
+    if (!w.revokedAt || withHook.has(w.conversationId)) continue;
+    const seen = lastRevoked.get(w.conversationId);
+    if (!seen || new Date(w.revokedAt) > new Date(seen.revokedAt!)) {
+      lastRevoked.set(w.conversationId, w);
+    }
+  }
+  const revoked = Array.from(lastRevoked.values()).sort(
+    (x, y) => new Date(y.revokedAt!).getTime() - new Date(x.revokedAt!).getTime(),
   );
   const activeBots = bots.filter((b) => !b.deactivatedAt);
 
@@ -187,6 +201,55 @@ export function WebhooksSection({
             </li>
           ))}
         </ul>
+      )}
+      {revoked.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-rim-text-muted">Revoked</h4>
+          <ul className="space-y-2" aria-label="Revoked webhooks">
+            {revoked.map((w) => {
+              const channel = channels.data?.items.find((c) => c.id === w.conversationId);
+              return (
+                <li
+                  key={w.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rim-line bg-rim-panel px-3 py-2"
+                >
+                  <div className="min-w-0 text-sm">
+                    <p className="truncate font-medium text-rim-text">
+                      {channelName(w.conversationId)} · {botName(w.botUserId)}
+                    </p>
+                    <p className="text-xs text-rim-text-muted">
+                      Revoked {formatRelativeDate(w.revokedAt!)}. It no longer posts; make a new
+                      webhook for a new URL.
+                    </p>
+                  </div>
+                  {channel && !channel.encryptedAt && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={activeBots.length === 0}
+                      onClick={() => setCreatingFor(channel)}
+                      aria-label={`New webhook for ${channel.title}`}
+                    >
+                      New webhook
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {creatingFor && (
+        <NewWebhookDialog
+          serverId={serverId}
+          channel={creatingFor}
+          bots={activeBots}
+          onClose={() => setCreatingFor(null)}
+          onCreated={(created) => {
+            setCreatingFor(null);
+            setShown(created);
+          }}
+        />
       )}
       {creating && (
         <NewWebhookDialog

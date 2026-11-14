@@ -140,6 +140,7 @@ webhook with a ready-made format other than GitHub, or one you edited, shows as 
 
 - **Edit format** changes what it posts. The URL stays the same.
 - **Revoke** stops the URL at once. Then you can make a new webhook for the channel.
+- A channel whose webhook was revoked, by you or because the moderator who made it lost their role, and that has no active one, shows under **Revoked** with a **New webhook** button.
 - **Deactivating the bot** stops all of its webhooks.
 
 A webhook takes at most 30 calls a minute. Calls past that post nothing.
