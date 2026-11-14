@@ -43,6 +43,9 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ### Changed
 
+- Settings > Bots & webhooks lists a channel's revoked webhook, with when it was revoked and a
+  **New webhook** button, when the channel has no active one, so an Owner sees that its alerts
+  stopped.
 - Making a bot for webhooks is shorter: **New bot for webhooks** (under Incoming webhooks, and in
   the form as **Only posts from webhooks**) fills the two required statements, which stay
   editable. The token dialog says webhooks don't need the token, and the new webhook form says
