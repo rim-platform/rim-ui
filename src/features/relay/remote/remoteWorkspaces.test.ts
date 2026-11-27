@@ -49,7 +49,8 @@ import { unlockTestVault } from "../../../test/accountVault";
 
 const LINK = "https://host.example/join/rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
 const TOKEN = "rim_pjl_AAAAAAAAAAAAAAAAAAAAAA";
-const EXPIRES = "2026-11-23T00:00:00Z";
+/** A month from now, so the join request stays pending whenever the tests run. */
+const EXPIRES = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
 
 function challengeFor(mode: PublicJoinLinkMode) {
   return {

@@ -22,6 +22,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Security
+
+- The desktop app's `cookie` and `url` libraries are updated past RUSTSEC-2026-0594 and
+  RUSTSEC-2026-0592.
+
 ## [0.0.13] - 2026-11-14
 
 ### Added
