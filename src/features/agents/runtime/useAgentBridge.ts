@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { isVaultUnlocked, onVaultLock } from "../../../core/accountVault/accountVault";
+import { flushSealedStorage } from "../../../core/accountVault/sealedStorage";
 import { logger } from "../../../core/logger";
+import { storageFailed } from "../../../core/storageHealth";
 import { toast } from "../../../shared/toast";
 import { rejectOutsideAgentConfirmation } from "../../agent/state/confirmationModalStore";
 import { desktopShowWindow } from "../../desktop-shell/api/desktopShell";
@@ -34,6 +36,14 @@ async function stillListening(): Promise<boolean> {
   }
 }
 
+/** Says when an agent just connected could not be saved, so it lasts only until RIM restarts. */
+async function warnIfNotSaved(): Promise<void> {
+  await flushSealedStorage();
+  if (storageFailed("account")) {
+    toast.error("Connected, but RIM couldn't save this connection. It ends when RIM restarts.");
+  }
+}
+
 /**
  * Answers what agents ask through the bridge. It takes each request, answers nothing once the
  * bridge has stopped listening, forgets pairing and ends an agent's open confirmation when the
@@ -47,7 +57,10 @@ export function useAgentBridge(): void {
     const pairing = createPairing({
       now: () => Date.now(),
       random: secureRandom,
-      connect: (agent) => useConnectedAgentsStore.getState().add(agent),
+      connect: (agent) => {
+        useConnectedAgentsStore.getState().add(agent);
+        void warnIfNotSaved();
+      },
       onPendingChanged: (view) => {
         usePendingPairingStore.setState({ pending: view });
         if (!view) return;

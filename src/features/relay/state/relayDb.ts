@@ -24,6 +24,7 @@ import {
   sealRecord,
   type SealedStore,
 } from "../../../core/accountVault/sealedRecords";
+import { reportStorageFailure } from "../../../core/storageHealth";
 import { exclusive } from "../../key-identity/browser/persistence";
 import type { Statement } from "../../key-identity/browser/statements";
 import type { ServerRotationSigner } from "../crypto/serverStatements";
@@ -109,7 +110,11 @@ let opened: { factory: IDBFactory; db: Promise<IDBDatabase> } | null = null;
 
 function database(): Promise<IDBDatabase> {
   const factory = globalThis.indexedDB;
-  if (!factory) return Promise.reject(new Error("this browser cannot store relay state"));
+  if (!factory) {
+    const err = new Error("this browser cannot store relay state");
+    reportStorageFailure("relay", err);
+    return Promise.reject(err);
+  }
   if (opened?.factory === factory) return opened.db;
   const db = new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(DB_NAME, DB_VERSION);
@@ -135,7 +140,8 @@ function database(): Promise<IDBDatabase> {
     request.onblocked = () => reject(new Error("the relay store is blocked by another tab"));
   });
   opened = { factory, db };
-  db.catch(() => {
+  db.catch((err: unknown) => {
+    reportStorageFailure("relay", err);
     if (opened?.db === db) opened = null;
   });
   return db;

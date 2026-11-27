@@ -26,6 +26,8 @@ vi.mock("../../../core/runtime/runtime", async (importOriginal) => ({
 import { lockVault } from "../../../core/accountVault/accountVault";
 import { readSealedItem } from "../../../core/accountVault/sealedStorage";
 import { logger } from "../../../core/logger";
+import { useStorageHealthStore } from "../../../core/storageHealth";
+import { toast } from "../../../shared/toast";
 import { unlockTestVault } from "../../../test/accountVault";
 import { useConfirmationModalStore } from "../../agent/state/confirmationModalStore";
 import { AGENT_BRIDGE_REQUEST_EVENT } from "../api/agentBridge";
@@ -110,6 +112,7 @@ describe("useAgentBridge", () => {
     });
     await unlockTestVault();
     useConnectedAgentsStore.setState({ agents: [] });
+    useStorageHealthStore.setState({ failures: {} });
   });
 
   afterEach(() => {
@@ -218,6 +221,35 @@ describe("useAgentBridge", () => {
     expect(JSON.stringify(agent)).not.toContain(answer.body.token);
     act(() => useConnectedAgentsStore.getState().revoke(agent.id));
     expect((await asked("/mcp", {}, authorization)).status).toBe(401);
+  });
+
+  it("says when a connection could not be saved", async () => {
+    const user = userEvent.setup();
+    const error = vi.spyOn(toast, "error");
+    useStorageHealthStore.setState({ failures: { account: "UnknownError: x" } });
+    await renderBridge();
+    const { body } = await asked("/pair", { name: "Claude Code" });
+    await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
+    const answer = await collected({ requestId: body.requestId, pollSecret: body.pollSecret });
+    expect(answer.body.status).toBe("approved");
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith(
+        "Connected, but RIM couldn't save this connection. It ends when RIM restarts.",
+      ),
+    );
+  });
+
+  it("says nothing more when the connection is saved", async () => {
+    const user = userEvent.setup();
+    const error = vi.spyOn(toast, "error");
+    await renderBridge();
+    const { body } = await asked("/pair", { name: "Claude Code" });
+    await user.click(await screen.findByRole("button", { name: "The code matches, connect" }));
+    await collected({ requestId: body.requestId, pollSecret: body.pollSecret });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve));
+    });
+    expect(error).not.toHaveBeenCalled();
   });
 
   it("refuses from the dialog", async () => {

@@ -76,6 +76,7 @@ import { useOfflineReconnect } from "../../features/offline/runtime/useOfflineRe
 import { useResumeDeviceLinks } from "../../features/key-identity/runtime/useResumeDeviceLinks";
 import { KeySetupStep } from "../../features/key-identity/components/KeySetupStep";
 import { RecoveryKitBanner } from "../../features/key-identity/components/RecoveryKitBanner";
+import { StorageHealthBanner } from "../components/StorageHealthBanner";
 import { useRelayRuntime } from "../../features/relay/runtime/relayRuntime";
 import {
   useDirectSpaceRuntime,
@@ -191,6 +192,7 @@ function UnlockedShell() {
         <AccountDeletionBanner />
         <ProbationBanner />
         <RecoveryKitBanner />
+        <StorageHealthBanner />
         <RemovalNotices />
         <div className="min-h-0 flex-1">
           <WorkspaceSelector />
@@ -212,6 +214,7 @@ function UnlockedShell() {
       <AccountDeletionBanner />
       <ProbationBanner />
       <RecoveryKitBanner />
+      <StorageHealthBanner />
       <RemovalNotices />
       <JoinDefaultWorkspace />
       <div className="flex min-h-0 flex-1">
