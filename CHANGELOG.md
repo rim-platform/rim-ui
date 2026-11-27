@@ -22,6 +22,18 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 
 ## [Unreleased]
 
+### Changed
+
+- Builds in debug mode, such as `npm run tauri dev`, use the identifier `com.rim.rim-ui.dev`, so
+  a build from source no longer shares its data, web engine storage or credential store entry
+  with the installed app.
+
+### Fixed
+
+- The app says when it can't save on this device, with a bar across the top, a `[RIM:storage]`
+  line in `rim.log` and a warning when an agent connects, instead of forgetting connected
+  agents, drafts and assistant conversations at the next restart without a word.
+
 ## [0.0.13] - 2026-11-14
 
 ### Added

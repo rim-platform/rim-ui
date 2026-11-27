@@ -134,6 +134,10 @@ The app's identifier is `com.rim.rim-ui`; its folders are named after it.
 The vault and its key belong together: the vault does not open without the key, and the key is
 of no use without the vault. `secret-vault.md` describes both.
 
+A build in debug mode, such as `npm run tauri dev`, uses the identifier `com.rim.rim-ui.dev`
+instead: its folders in the table above end in `.dev`, and so does the credential store service
+of its vault key, so it shares no data with the installed app.
+
 ## Logs
 
 The desktop app writes `rim.log` in its log folder. Settings > About has **Open log folder**.
@@ -154,6 +158,36 @@ The desktop app writes `rim.log` in its log folder. Settings > About has **Open 
   those of the libraries it uses.
 
 In the web app, the browser's developer console (F12) shows the client's errors.
+
+## When RIM can't save on this device
+
+A red bar across the top that says "RIM can't save on this device" means the app could not open
+or write its own storage in the web engine. It keeps working from memory, but what it saves
+there is gone when RIM restarts: connected agents, drafts, assistant conversations and the state
+of workspaces on other servers. On the desktop, `rim.log` ([Logs](#logs)) has a line starting
+with `[RIM:storage]` that names the store and the error, and connecting an agent says that the
+connection couldn't be saved. An agent connected while the bar shows gets 401 after the next
+restart, and Settings > Agents lists nothing.
+
+The known causes:
+
+- **Linux, a newer web engine wrote the storage.** A build that uses a newer WebKitGTK than the
+  one bundled with RIM, such as a build from source on the system's WebKit, converts the app's
+  web storage to a format the older bundled WebKit can't open. Builds in debug mode keep
+  their own folders (see [Where the app keeps its data](#where-the-app-keeps-its-data)), but a
+  release build made from source, or storage converted before, still meets it.
+- **Web app.** A private window, a browser set to block site data, or site data cleared while
+  the app was open.
+
+What to do on the desktop (Linux):
+
+1. Quit RIM fully with Ctrl+Q; closing the window leaves it running in the tray.
+2. Move `~/.local/share/com.rim.rim-ui/databases/indexeddb` aside, for example
+   `mv ~/.local/share/com.rim.rim-ui/databases/indexeddb ~/rim-indexeddb-old`.
+3. Start RIM and sign in. The bar is gone once the storage opens again.
+4. Connect your agents again. Drafts and assistant conversations saved before are lost.
+
+In the web app, use a normal window and allow site data for the RIM address.
 
 ## Remove the app
 

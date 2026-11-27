@@ -134,6 +134,9 @@ you can read it. RIM won't show it again. If you lose it, disconnect this agent 
 - A wrong or disconnected token gets 401. opencode then starts its sign-in flow, which can't work
   with RIM: connect again and paste the new token.
 - RIM must be running and unlocked. A locked account answers 423.
+- After a restart the agent gets 401 and Settings > Agents lists nothing: RIM couldn't save the
+  connection on this device. See
+  [When RIM can't save on this device](install.md#when-rim-cant-save-on-this-device).
 
 ## For tool authors: the pairing protocol
 
