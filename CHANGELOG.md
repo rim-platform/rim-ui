@@ -34,6 +34,11 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
   line in `rim.log` and a warning when an agent connects, instead of forgetting connected
   agents, drafts and assistant conversations at the next restart without a word.
 
+### Security
+
+- The desktop app's `cookie` and `url` libraries are updated past RUSTSEC-2026-0594 and
+  RUSTSEC-2026-0592.
+
 ## [0.0.13] - 2026-11-14
 
 ### Added
