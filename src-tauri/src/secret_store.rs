@@ -35,9 +35,6 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
-/// The service name the vault key is stored under; entries differ by user name.
-const SERVICE: &str = "com.rim.rim-ui";
-
 /// Credential store name of the vault key.
 const VAULT_KEY_NAME: &str = "vault-key-v1";
 
@@ -56,7 +53,11 @@ const NONCE_LEN: usize = 24;
 /// The credential store entry for `user`.
 #[cfg(target_os = "linux")]
 fn entry(user: &str) -> keyring::Result<Entry> {
-    let credential = keyring::secret_service::SsCredential::new_with_target(None, SERVICE, user)?;
+    let credential = keyring::secret_service::SsCredential::new_with_target(
+        None,
+        crate::app_identity::identifier(),
+        user,
+    )?;
     Ok(Entry::new_with_credential(Box::new(linux::Explaining(
         Box::new(credential),
     ))))
@@ -65,7 +66,7 @@ fn entry(user: &str) -> keyring::Result<Entry> {
 /// The credential store entry for `user`.
 #[cfg(not(target_os = "linux"))]
 fn entry(user: &str) -> keyring::Result<Entry> {
-    Entry::new(SERVICE, user)
+    Entry::new(crate::app_identity::identifier(), user)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -796,7 +797,8 @@ mod system_tests {
     #[ignore = "needs a running Secret Service"]
     fn secrets_round_trip() {
         let user = format!("system-test-{}", uuid::Uuid::new_v4());
-        let current = SsCredential::new_with_target(None, SERVICE, &user).unwrap();
+        let current =
+            SsCredential::new_with_target(None, crate::app_identity::identifier(), &user).unwrap();
         let entry = entry(&user).unwrap();
 
         entry.set_password("updated").unwrap();
