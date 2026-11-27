@@ -19,7 +19,8 @@ desktop keyring for one key per run instead of one record at a time.
 ## The key
 
 - 32 random bytes, generated on first use and stored as unpadded base64url in the OS credential
-  store under the service `com.rim.rim-ui`, user name `vault-key-v1`.
+  store under the service `com.rim.rim-ui`, user name `vault-key-v1`. A build in debug mode
+  uses the service `com.rim.rim-ui.dev`, so it never reads or replaces the installed app's key.
 - macOS: Keychain. Windows: Credential Manager. Linux: the desktop keyring service (Secret
   Service over D-Bus: GNOME Keyring, KWallet or KeePassXC). With no Secret Service running, or
   the keyring locked, every secret fails with an error that says so; nothing falls back to a

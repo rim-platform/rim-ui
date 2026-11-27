@@ -1,8 +1,11 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDraftStore } from "../../features/messages/state/useDraftStore";
+import { failingIndexedDb } from "../../test/failingIndexedDb";
+import { logger } from "../logger";
+import { storageFailed, useStorageHealthStore } from "../storageHealth";
 import { lockVault, unlockVault } from "./accountVault";
 import {
   deleteSealedAccount,
@@ -38,6 +41,11 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   lockVault();
   localStorage.clear();
+  useStorageHealthStore.setState({ failures: {} });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("the account's sealed values", () => {
@@ -90,5 +98,49 @@ describe("the account's sealed values", () => {
     expect(localStorage.getItem("rim-drafts")).toBeNull();
     expect(localStorage.getItem("rim:remote-join-requests:http://x|rimp1_a")).toBeNull();
     expect(localStorage.getItem("rim-shell")).toBe("kept");
+  });
+
+  it("keep working from memory and report it when the database does not open", async () => {
+    vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    globalThis.indexedDB = failingIndexedDb();
+    await unlock(ALICE);
+    expect(storageFailed("account")).toBe(true);
+    expect(useStorageHealthStore.getState().failures.account).toBe(
+      "UnknownError: the database could not be opened",
+    );
+    writeSealedItem("note", "kept for now");
+    expect(readSealedItem("note")).toBe("kept for now");
+    await flushSealedStorage();
+  });
+
+  it("report a write that fails", async () => {
+    vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    await unlock(ALICE);
+    expect(storageFailed("account")).toBe(false);
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("the disk is full", "QuotaExceededError");
+    });
+    writeSealedItem("note", "lost at restart");
+    await flushSealedStorage();
+    expect(storageFailed("account")).toBe(true);
+    expect(useStorageHealthStore.getState().failures.account).toBe(
+      "QuotaExceededError: the disk is full",
+    );
+  });
+
+  it("do not count a lock while they are read as a failure", async () => {
+    await unlock(ALICE);
+    writeSealedItem("note", "alice");
+    await flushSealedStorage();
+    const getAll = IDBObjectStore.prototype.getAll;
+    vi.spyOn(IDBObjectStore.prototype, "getAll").mockImplementation(function (
+      this: IDBObjectStore,
+      ...args: Parameters<IDBObjectStore["getAll"]>
+    ) {
+      lockVault();
+      return getAll.apply(this, args);
+    });
+    await unlock(ALICE).catch(() => undefined);
+    expect(storageFailed("account")).toBe(false);
   });
 });

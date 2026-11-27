@@ -1,9 +1,12 @@
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { lockVault, VaultLockedError } from "../../../core/accountVault/accountVault";
+import { logger } from "../../../core/logger";
+import { storageFailed, useStorageHealthStore } from "../../../core/storageHealth";
 import { unlockTestVault } from "../../../test/accountVault";
+import { failingIndexedDb } from "../../../test/failingIndexedDb";
 import { allRecords, getRecord, putRecord, updateRecord } from "./relayDb";
 
 const ACCOUNT = "http://localhost:8080/api|rimp1_me";
@@ -26,6 +29,7 @@ async function stored(store: string): Promise<unknown[]> {
 
 beforeEach(async () => {
   globalThis.indexedDB = new IDBFactory();
+  useStorageHealthStore.setState({ failures: {} });
   await unlockTestVault();
 });
 
@@ -67,5 +71,14 @@ describe("the relay store at rest", () => {
       }));
     await Promise.all([bump(), bump(), bump()]);
     expect(await getRecord("requestSeq", key)).toMatchObject({ seq: 3 });
+  });
+
+  it("reports a database that does not open", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    globalThis.indexedDB = failingIndexedDb();
+    await expect(getRecord("servers", "rims1_a")).rejects.toThrow("could not be opened");
+    expect(storageFailed("relay")).toBe(true);
+    expect(storageFailed("account")).toBe(false);
+    error.mockRestore();
   });
 });

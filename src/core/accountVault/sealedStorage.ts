@@ -11,8 +11,14 @@
 
 import type { StateStorage } from "zustand/middleware";
 
-import { logger } from "../logger";
-import { onVaultLock, onVaultUnlock, vaultHolds, type VaultAccount } from "./accountVault";
+import { reportStorageFailure } from "../storageHealth";
+import {
+  onVaultLock,
+  onVaultUnlock,
+  vaultHolds,
+  VaultLockedError,
+  type VaultAccount,
+} from "./accountVault";
 import { openRecords, sealRecord, type SealedStore } from "./sealedRecords";
 
 const DB_NAME = "rim-account";
@@ -84,6 +90,11 @@ function database(): Promise<IDBDatabase> | null {
   return db;
 }
 
+/** Reports a failed read or write, unless the vault locked while it ran. */
+function failed(err: unknown): void {
+  if (!(err instanceof VaultLockedError)) reportStorageFailure("account", err);
+}
+
 function done<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -105,21 +116,25 @@ function accountRange(endpoint: string, principalId: string): IDBKeyRange {
 
 /**
  * Reads the account's values into memory and hydrates the stores. Where IndexedDB cannot be
- * read, the values live in memory for this page only.
+ * read, the values live in memory for this page only, and the failure is reported to the
+ * storage health store.
  */
 async function load(next: VaultAccount): Promise<void> {
   memory.clear();
   account = next;
   const db = database();
   try {
-    if (!db) return;
+    if (!db) {
+      reportStorageFailure("account", new Error("this browser has no IndexedDB"));
+      return;
+    }
     const tx = (await db).transaction(KV, "readonly");
     const stored = await done(
       tx.objectStore(KV).getAll(accountRange(next.endpoint, next.principalId)),
     );
     for (const r of await openRecords<KvRecord>(KV_RECORDS, stored)) memory.set(r.name, r.value);
   } catch (err) {
-    logger.warn("[RIM:vault] the account's values could not be read:", err);
+    failed(err);
   } finally {
     for (const store of stores) await store.persist.rehydrate();
   }
@@ -152,9 +167,7 @@ function write(name: string, value: string | null): void {
       else tx.objectStore(KV).delete(key);
       await finished;
     })
-    .catch((err: unknown) => {
-      logger.warn("[RIM:vault] keeping an account value failed:", err);
-    });
+    .catch(failed);
 }
 
 /**

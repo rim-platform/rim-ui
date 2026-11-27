@@ -5,6 +5,7 @@ mod agent_bridge;
 mod agent_installer;
 mod agent_proxy;
 mod agent_runner;
+mod app_identity;
 mod desktop_shell;
 mod e2ee;
 mod history_archive;
@@ -30,6 +31,8 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut context = tauri::generate_context!();
+    // Before anything reads the identifier, so data directories and the single-instance id follow it.
+    context.config_mut().identifier = app_identity::identifier().to_string();
     let (updater_config, updater_warning) = updater::UpdaterConfig::bundled();
     // First, so a second copy exits before any other plugin or the setup below runs.
     let builder = updater::register(
