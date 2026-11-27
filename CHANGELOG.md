@@ -25,8 +25,8 @@ deployment runs the web client at `RIM_WEB_VERSION`, apart from the server's `RI
 ### Changed
 
 - Builds in debug mode, such as `npm run tauri dev`, use the identifier `com.rim.rim-ui.dev`, so
-  a build from source no longer shares its data, web engine storage or credential store entry
-  with the installed app.
+  a build from source no longer shares its data folder, log folder or credential store entry
+  with the installed app, nor, on Linux, its web engine storage.
 
 ### Fixed
 

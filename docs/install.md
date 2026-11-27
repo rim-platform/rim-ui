@@ -135,8 +135,9 @@ The vault and its key belong together: the vault does not open without the key, 
 of no use without the vault. `secret-vault.md` describes both.
 
 A build in debug mode, such as `npm run tauri dev`, uses the identifier `com.rim.rim-ui.dev`
-instead: its folders in the table above end in `.dev`, and so does the credential store service
-of its vault key, so it shares no data with the installed app.
+instead: its app data and log folders end in `.dev`, and so does the credential store service of
+its vault key. On Linux its web engine storage moves to `~/.local/share/com.rim.rim-ui.dev/` too,
+so it shares no data with the installed app.
 
 ## Logs
 
@@ -175,7 +176,7 @@ The known causes:
   one bundled with RIM, such as a build from source on the system's WebKit, converts the app's
   web storage to a format the older bundled WebKit can't open. Builds in debug mode keep
   their own folders (see [Where the app keeps its data](#where-the-app-keeps-its-data)), but a
-  release build made from source, or storage converted before, still meets it.
+  release build made from source, or storage converted before, can still cause it.
 - **Web app.** A private window, a browser set to block site data, or site data cleared while
   the app was open.
 
